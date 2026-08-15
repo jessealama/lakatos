@@ -1,175 +1,175 @@
 # Thales-TS Growth Path
 
-There are two "story arcs" for Thales:
+This is the canonical statement of where Thales is going; when
+direction changes, this document changes with it. It was last reset in
+August 2026, replacing the earlier "two story arcs" framing (meet
+TypeScript halfway / bring proofs to TypeScript) with a single
+destination that subsumes both.
 
-1. close the gap with how TS programmers actually write code, and
-2. add the verification work that justifies a Lean sidecar in the first place.
+## The destination: proof as property-based testing's endgame
 
-The arcs build off each other — a bit of progress in one, a bit in the
-other — rather than forming a roadmap with distinct version numbers.
-What follows is the canonical statement of where Thales is going; when
-direction changes, this document changes with it.
+[pabst](https://github.com/jessealama/pabst) lets TypeScript
+programmers state properties of their functions in JSDoc and tries to
+refute them with generated inputs. Its own documentation is careful
+about the limit of that method: failing to refute a property — even
+across many runs — is evidence, not proof.
 
-## Arc 1: Meet TypeScript halfway
+Thales is the tool that crosses that limit. The destination is
+`pabst --prove`: the same annotation the user already wrote for
+testing gets escalated, where possible, to a machine-checked claim
+about **all** inputs. One spec, strongest available guarantee:
 
-Real TS code does local mutation, uses classes extensively, does
-stateful iteration, and async without ceremony.
+> You wrote a property. pabst ran it ten thousand times. Thales proved
+> it for every input there is.
 
-### Active now: mutation, loops, stdlib (June 2026)
+The dependency arrow points one way: pabst depends on Thales as its
+proof engine, the way Vite depends on esbuild or Prisma depends on its
+query engines. Thales never invokes pabst, remains a standalone
+compiler with its own repository and release cadence, and is usable
+directly by anyone who wants the engine without the funnel.
 
-The current slate, tracked in issues
-[#23](https://github.com/jessealama/thales/issues/23)–[#29](https://github.com/jessealama/thales/issues/29),
-widens the executable subset in dependency order:
+## The verdict ladder
 
-1. **Local variable mutation** — DONE ([#24](https://github.com/jessealama/thales/issues/24)).
-   Reassignment, `++`/`--`, `+=` family on non-escaping locals and parameters,
-   emitted as `Id.run do` with `let mut` bindings (parameters via
-   self-shadowing, `let mut x := x`). Mutation of captured variables stays
-   out until a concrete pattern demands an escape (then: `StateM`, or a fuller
-   heap model).
-2. **`for` / `for-of`** — DONE ([#25](https://github.com/jessealama/thales/issues/25)).
-   Canonical C-style `for` and `for-of` over array identifiers/literals, with
-   unlabeled `break`/`continue` and early `return`. Lowers to `for … in … do`
-   inside `Id.run do`. `@total` works; array iteration is structurally total.
-3. **`while` / `do-while`** — next ([#26](https://github.com/jessealama/thales/issues/26)).
-   Lean's do-notation `while`, which is backed by a `partial` combinator:
-   fine for evaluation (the byte-match contract is unaffected), opaque to
-   proofs. `@total` and `while` are therefore mutually exclusive, mirroring
-   the `@throws`/`@total` design. Verification of while-bodies arrives later
-   via loop invariants (see Arc 2).
-4. **Local array mutation** — `.push`/`.pop`/element assignment on
-   non-escaping `let` locals.
-5. **Stdlib breadth** — array methods (`join`, `indexOf`, `includes`,
-   …), `padStart`/`padEnd`, `Number.*`/`Math.*` gaps, one method at a
-   time.
+Specs are checked automatically on every run, like types. There is no
+"promote to proved" annotation and no manual proof syntax. For each
+`@ensures`, Thales attempts, in order:
 
-Progress is measured against per-feature **test262** directory slices
-(pass rate within the declared subset), with **left-pad** — ported to
-`tsc --strict`, compiled whole, byte-exact — as the end-to-end target.
+1. **Exhaustive check.** When the quantified domain is bounded —
+   `Byte`, `Bit`, bounded integer ranges, small finite ADTs — the
+   property is checked by evaluation over the entire domain. This is a
+   genuine for-all claim, and it needs no tactic sophistication at
+   all.
+2. **Proof.** A fixed, curated tactic stack attempts a general proof.
+   We expect this to succeed on a characterized class — quantifier-free
+   arithmetic, structural recursion over algebraic data — and we widen
+   that class deliberately, not speculatively.
+3. **Neither.** Thales reports "unable to prove" as a non-fatal
+   diagnostic. The spec is not an error and nothing is blocked; on the
+   pabst side it simply retains its tested status.
 
-### Later in Arc 1
+A counterexample discovered at any rung is always an error. Tactic
+weakness degrades a verdict; it never punishes the user.
 
-- **Classes with single inheritance.** Instance and static methods,
-  getters, setters, `extends`, method override, `super`. `class C`
-  becomes Lean `structure C`; `class D extends C` becomes `structure D
-extends C`, with a closures-as-fields encoding for the cases that
-  need polymorphic dispatch through a base-class parameter.
+## The unit of verification
 
-- **Generators.** `function* gen() { yield x; … }` translated to a Lean
-  `Stream` (or perhaps `List` when bounds are known). Restricted to
-  clean coalgebraic cases: no two-way communication via `.next(value)`,
-  no `yield*` delegation, no bidirectional generators.
+The unit is the annotated function plus its transitive callees — not
+the file, and not the project. Code outside that cone is invisible:
+classes, mutation, and async elsewhere in the module must not block
+verifying a pure annotated function. This reframes subset coverage
+from "handle real-world TypeScript" (unbounded) to "handle what people
+write inside pure algorithmic kernels" (tractable, and largely what
+the subset already is).
 
-- **async/await.** Modelled as `IO` (or a tailored `Async`/`Task`
-  monad), with `await` lowering to monadic bind. This captures the type
-  discipline of async TS but not faithful event-loop semantics,
-  microtask ordering, or cancellation — same modelling philosophy as
-  `@throws`.
+When the cone does escape the subset — a stdlib gap, an out-of-subset
+helper, an npm import — the callee becomes an opaque constant typed
+from its TypeScript signature, with its own `@ensures` (if any) taken
+as assumptions. The verdict then says so, explicitly:
 
-## Arc 2: Bring proofs to TypeScript
+```
+PROVED, assuming:
+  _.chunk matches its declared signature
+  parseDate satisfies its @ensures
+```
 
-This is the destination: Thales as a **verification layer over
-TypeScript**. Source files stay valid `tsc --strict` TypeScript;
-Thales-specific meaning rides on JSDoc tags, so the rest of the
-ecosystem (bundlers, editors, linters) sees ordinary TS.
+The assumption list is a feature, not an apology: it is the worklist
+of what to verify next, and the report format must make the trust
+boundary impossible to miss.
 
-- **Refinement types.** The first installment shipped in 0.6: the
-  `@thales/prelude` bounded numerics (`Integer`, `Natural`, `Byte`,
-  `Bit`) with compile-time-enforced subtyping and guard/constructor
-  functions. The next layer is user-defined refinements — `/** @refine
-x => x > 0 */ type PosInt = number;` becomes a subtype in Lean, with
-  call-site obligations discharged by the same pipeline. Encodes
-  non-empty arrays, in-range indices, sorted lists, validated strings
-  without hand-rolling a runtime guard for each.
+Today Thales compiles whole files; cone-based verification is planned
+work, sequenced below.
 
-- **Executable specifications.** `@requires`/`@ensures` on functions
-  and properties stated as ordinary boolean-returning TS functions,
-  with **dual discharge**: every spec can be run as a generated
-  property-based test (fast-check), and specs you want _proved_ rather
-  than tested escalate to Lean, where a single curated tactic attempts
-  the proof automatically. No manual proof syntax to start — when the
-  automation fails, the user gets a counterexample (when one exists)
-  and refactors or weakens the spec.
+## The spec dialect
 
-- **Loop invariants.** `@invariant` on `while`/`for-of` closes the loop
-  (literally) between the arcs: the imperative subset from Arc 1
-  becomes verifiable via verification-condition generation over the
-  monadic emission, following Lean's `mvcgen` machinery as it matures.
+The dialect is pabst's, normatively: `@ensures{name}` with `forall`
+binders and `==>`, defined by pabst's grammar and living entirely
+inside JSDoc, so `tsc --strict` and the rest of the ecosystem see
+ordinary TypeScript. Thales consumes the same annotations; the two
+tools are two discharge modes for one spec language.
+
+## Distribution
+
+No TypeScript programmer will install a Lean toolchain by hand, and
+none will be asked to. Thales ships prebuilt per-platform bundles —
+the compiler binary plus the pinned toolchain and compiled runtime —
+and the pabst integration downloads the pinned bundle on first use,
+the way Playwright fetches browsers and Prisma fetches engines. The
+words "elan" and "lake" never appear in a user's terminal. A
+first-class GitHub Action caches the same bundle so CI proving is a
+few lines of workflow.
+
+The latency bar for the check loop is seconds, not minutes: a file
+with a handful of specs should return its verdicts fast enough to run
+on save. If shelling out to the toolchain threatens that bar, the
+scoped fix is elaborating the emitted module in-process — Thales is
+itself a Lean program — as a performance task, not a change of
+direction.
+
+## What today's engine already provides
+
+The guarantees that ship today fold directly into this story:
+`@total` (Lean-checked termination, no escaping failure), `@throws`
+(failure modes in the signature), and the bounded numeric types with
+their compile-time range checking. They are the floor the verdict
+ladder stands on.
+
+The byte-identical conformance contract — emitted Lean must reproduce
+the program's stdout, stderr, and exit code exactly — is hereby
+reclassified as what it always was: translation validation. It is the
+internal soundness infrastructure that makes a PROVED verdict mean
+something about the original TypeScript, not a user-facing feature.
+It stays, and it stays strict.
+
+Subset widening continues, but demand-driven: constructs are admitted
+because verification targets need them, not to chase coverage for its
+own sake. The Decimal
+([#126](https://github.com/jessealama/thales/issues/126)) and Amount
+([#130](https://github.com/jessealama/thales/issues/130)) polyfill
+ports are repositioned from widening capstones to showcase corpus for
+the ladder — real, spec-bearing code the verdict ladder should
+eventually run on end-to-end.
+
+## Sequencing
+
+1. **Tracer bullet.** One `@ensures` on one pure, in-subset function;
+   the full ladder end-to-end (exhaustive check, tactic stack, honest
+   "unable to prove"); graded verdict printed. Whole-file subset as
+   today; no cone analysis; no pabst wiring. This is the experiment
+   that validates the direction cheaply — if the ladder cannot produce
+   PROVED on honest hand-picked examples, that is learned in weeks.
+2. **Latency.** Measure the pipeline on a decide-dischargeable spec;
+   in-process elaboration if the on-save bar is missed.
+3. **Cone-based verification.** The annotated-function unit, opaque
+   callees, and the trust report.
+4. **Distribution.** Prebuilt bundles, the auto-download path, the
+   GitHub Action, and the `pabst --prove` glue.
 
 ## Emit architecture: structured output instead of strings
 
-This is a robustness follow-on, not part of either feature arc.
-
-Today the emitter (`Thales/Emit/LeanSyntax.lean`) builds Lean source by
-rendering a custom `LExpr` AST to **strings** and concatenating them,
-with newlines. Correct **parenthesization** and **layout** are
-unenforced invariants maintained by hand — `renderExprAtom` wraps
-non-atomic forms, `indent` re-indents every line. That kind of invariant
-leaks. We have already hit two instances:
-
-- A top-level `if` branch that sequenced IO (a `console.log`) **and** a
-  nested narrowing `if` emitted a `do` block whose nested `let … else …`
-  chain was not grouped, orphaning the trailing `else` (Lean: `unexpected
-token 'else'`). Fixed by atomizing `doSeq` elements, but the fix is
-  "remember to group at this new context" — the same shape of latent bug
-  can reappear at the next layout-sensitive context.
-- A bare `number` flowing into an `Option`-typed slot emits the
-  unwrapped value, which is a different category (missing `.some`
-  injection) but the same theme: string emit makes whole classes of
-  malformed output expressible.
-
-Lean has the machinery to make these impossible by construction. The
-idea: emit a **structured representation** that gets serialized, rather
-than assembling text. Two variants, both larger than any per-bug patch:
-
-- **A — Lean's own syntax + pretty-printer.** Build `Lean.Syntax` /
-  `TSyntax` (directly or via quotation) and serialize with
-  `Lean.PrettyPrinter`: the **parenthesizer** inserts parentheses where
-  the grammar requires them (by precedence), and the **formatter** lays
-  out via `Std.Format` (`nest`/`group`/`align`, a Wadler-style engine).
-  Parenthesization and indentation become correct by construction.
-  _Cost:_ the printer runs in `CoreM` and needs an `Environment` with the
-  relevant notations imported, so emit would stand up a Lean elaborator
-  context (`importModules` + run) instead of doing pure string work; it
-  couples emit to Lean's internal pretty-printer API, which moves across
-  toolchains (a maintenance cost against the pinned toolchain and future
-  bumps); and it is a rewrite of `LeanSyntax.lean`. The conformance
-  contract is on program **stdout**, not `.lean` source, so byte-identity
-  is unaffected — but any `Test/Emit` expectations that match emitted
-  source text would need regenerating against a fixed print width.
-
-- **B — keep `LExpr`, replace the renderer.** Swap the string renderer
-  for a `Std.Format`-based one (correct indentation via `nest`/`group`)
-  plus a precedence-aware parenthesization pass over `LExpr`. Kills the
-  same bug class with no `CoreM`/`Environment` dependency and a smaller
-  blast radius, at the cost of re-implementing precedence rules ourselves
-  rather than inheriting Lean's.
-
-Neither is scheduled. The trigger to pick this up is a third instance of
-the bug class, or any larger emit expansion (e.g. classes, generators)
-that would multiply the number of layout-sensitive contexts we maintain
-by hand.
+A robustness follow-on, unchanged by the reset. The emitter builds
+Lean source by rendering a custom `LExpr` AST to strings;
+parenthesization and layout are hand-maintained invariants, and that
+class of invariant has leaked twice (an orphaned `else` in a nested
+do-block; a missing `.some` injection into an `Option`-typed slot).
+Two remedies remain on the shelf: build `Lean.Syntax` and serialize
+through Lean's own parenthesizer and formatter, or keep `LExpr` and
+replace the renderer with a `Std.Format`-based, precedence-aware one.
+The trigger to pick this up is a third instance of the bug class or an
+emit expansion that multiplies the layout-sensitive contexts we
+maintain by hand — and the in-process elaboration work in the
+sequencing above naturally revisits this choice.
 
 ## Non-goals
 
-We do not aim for Thales to ever match _all_ of
-TypeScript. That's just too big. Although I want Thales to
-be useful for "real" TypeScript, the overall goal is to make
-Lean-backed program verification for TypeScript a reality;
-full fidelity to TypeScript isn't what we're after. Some
-features strike us as a bit too heavyweight and difficult to
-model in Lean, as of today. We will probably not work on
-these in the near future (and as we progress on Arc 1, we
-will probably add more items to this list):
+- **All of TypeScript.** Thales will never accept everything
+  `tsc --strict` accepts. The goal is Lean-backed verification for a
+  disciplined subset, not fidelity to the whole language.
+- **Executing user programs.** Node runs TypeScript; Thales does not
+  and will not. The earlier idea of embedding a JS runtime so that
+  `thales foo.ts` elaborates and executes the program is explicitly
+  rejected: execution of emitted Lean serves translation validation
+  internally, and no user problem calls for more.
+- **Decorators and mixins.** Both remain hard to model faithfully in
+  Lean and are not near-term work.
 
-- **Decorators.** Used for a kind of metaprogramming in
-  TypeScript. This is conceptually very attractive! But it's
-  hard to model faithfully in Lean.
-
-* **Mixins.** Faithful modelling seems awkward in Lean.
-
-This list isn't written in stone! As Lean grows, and as our
-knowledge of Lean and TypeScript grows (it's always growing,
-thanks to Thales!) it's conceivable that some features might
-get _removed_ from this list and moved to Arc 1. (But then
-again, they might move from Arc 1 back to this list!)
+This list isn't written in stone. As Lean grows, and as our knowledge
+of Lean and TypeScript grows, items may move off it — or onto it.
