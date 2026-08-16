@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    name: Format
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 26
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check formatting
+        run: npm run format:check
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [24, 26]
+
+    name: Node ${{ matrix.node-version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Node ${{ matrix.node-version }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      # Vitest transpiles without typechecking, so broken test code and
+      # fixtures only surface here.
+      - name: Typecheck tests and fixtures
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npx vitest run --exclude '**/e2e.test.ts'
+
+      - name: End-to-end tests
+        run: npx vitest run tests/e2e.test.ts
+
+  coverage:
+    runs-on: ubuntu-latest
+    name: Coverage
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 26
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      # Pure gate: --coverage.thresholds.autoUpdate=false stops CI from
+      # rewriting the seeded thresholds in vitest.config.ts. The ratchet
+      # (bumping the numbers up) happens on local runs; CI only enforces.
+      - name: Coverage gate
+        run: npx vitest run --coverage --coverage.thresholds.autoUpdate=false

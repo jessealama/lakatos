@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.pabst/
+coverage/
+*.log
+.stryker-tmp/
+reports/

@@ -1,0 +1,426 @@
+import { describe, it, expect, afterAll, beforeAll, beforeEach } from "vitest";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { runMain, useTempProject } from "./helpers/cli.js";
+import { expectValidIssue } from "./helpers/issue-schema.js";
+
+const repoRoot = process.cwd();
+
+describe("cli main", () => {
+  const dir = useTempProject("pabst-cli-", {
+    "baz.ts": `/** @ensures{pos} forall (n: nat) { baz(n) >= 0 } */\nexport function baz(n: number): number { return n; }\n`,
+    "shadow.d.ts": `/** @ensures{pos2} forall (n: nat) { baz(n) >= 0 } */\nexport declare function baz(n: number): number;\n`,
+  });
+
+  it("gen writes generated files and returns 0", () => {
+    const { code } = runMain(["gen", "baz.ts"]);
+    expect(code).toBe(0);
+    expect(fs.existsSync(path.join(dir, ".pabst", "baz.pabst.test.ts"))).toBe(
+      true,
+    );
+  });
+
+  it("gen skips declaration files matched by a glob", () => {
+    const { code, stderr } = runMain(["gen", "*.ts"]);
+    expect(code).toBe(0);
+    expect(stderr[0]).toContain("generated 1 property across 1 file(s)");
+  });
+
+  it("gen honors an explicitly named declaration file", () => {
+    const { code, stderr } = runMain(["gen", "shadow.d.ts"]);
+    expect(code).toBe(0);
+    expect(stderr[0]).toContain("generated 1 property across 1 file(s)");
+  });
+
+  it("gen honors a glob that targets declaration files", () => {
+    const { code, stderr } = runMain(["gen", "*.d.ts"]);
+    expect(code).toBe(0);
+    expect(stderr[0]).toContain("generated 1 property across 1 file(s)");
+  });
+
+  it("returns 2 on unknown command", () => {
+    expect(runMain(["frobnicate", "baz.ts"]).code).toBe(2);
+  });
+
+  it("returns 2 when no patterns are given and nothing is discoverable", () => {
+    const { code, stderr } = runMain(["gen"]);
+    expect(code).toBe(2);
+    expect(stderr).toHaveLength(1);
+    expect(stderr[0]).toBe(
+      'error: cannot determine where your source code is; pass files or globs (e.g. pabst test "src/**/*.ts")',
+    );
+  });
+
+  it("returns 2 with usage on an unknown option", () => {
+    const { code, stderr } = runMain(["--halp"]);
+    expect(code).toBe(2);
+    expect(stderr).toHaveLength(1);
+    expect(stderr[0]).toContain("usage: pabst");
+  });
+
+  it("prints help on --help and exits 0", () => {
+    const { code, stdout, stderr } = runMain(["--help"]);
+    expect(code).toBe(0);
+    expect(stderr).toEqual([]);
+    const help = stdout.join("\n");
+    expect(help).toContain("usage: pabst");
+    expect(help).toContain("--seed");
+    expect(help).toContain("--help");
+  });
+
+  it("prints the same help on -h", () => {
+    const { code, stdout } = runMain(["-h"]);
+    expect(code).toBe(0);
+    expect(stdout).toEqual(runMain(["--help"]).stdout);
+  });
+
+  it("returns 2 on a non-integer --seed", () => {
+    expect(runMain(["gen", "--seed", "4.2", "baz.ts"]).code).toBe(2);
+  });
+
+  it("returns 2 on an out-of-range --seed", () => {
+    expect(runMain(["gen", "--seed", String(2 ** 32), "baz.ts"]).code).toBe(2);
+  });
+
+  it("gen accepts a valid --seed and returns 0", () => {
+    expect(runMain(["gen", "--seed", "123", "baz.ts"]).code).toBe(0);
+  });
+
+  it("returns 2 when no .ts files match the patterns", () => {
+    expect(runMain(["gen", "*.nope"]).code).toBe(2);
+  });
+});
+
+describe("cli zero-argument discovery", () => {
+  describe("with a src/ directory", () => {
+    useTempProject("pabst-cli-zerosrc-", {
+      "src/qux.ts": `/** @ensures{pos} forall (n: nat) { qux(n) >= 0 } */\nexport function qux(n: number): number { return n; }\n`,
+      "src/types.d.ts": `export declare function qux(n: number): number;\n`,
+    });
+
+    it("gen discovers src/ sources and announces the discovery", () => {
+      const { code, stderr } = runMain(["gen"]);
+      expect(code).toBe(0);
+      expect(stderr[0]).toBe(
+        "pabst: no files given; discovered 1 file(s) via src/",
+      );
+      expect(stderr[1]).toContain("generated 1 property across 1 file(s)");
+    });
+  });
+
+  describe("with a tsconfig.json", () => {
+    useTempProject("pabst-cli-zerotsc-", {
+      "tsconfig.json": JSON.stringify({ include: ["lib"] }),
+      "lib/qux.ts": `/** @ensures{pos} forall (n: nat) { qux(n) >= 0 } */\nexport function qux(n: number): number { return n; }\n`,
+      "src/decoy.ts": `export function decoy(): number { return 1; }\n`,
+    });
+
+    it("gen discovers via tsconfig.json, not src/", () => {
+      const { code, stderr } = runMain(["gen"]);
+      expect(code).toBe(0);
+      expect(stderr[0]).toBe(
+        "pabst: no files given; discovered 1 file(s) via tsconfig.json",
+      );
+      expect(stderr[1]).toContain("generated 1 property across 1 file(s)");
+    });
+  });
+
+  describe("with a malformed tsconfig.json", () => {
+    useTempProject("pabst-cli-zerobad-", {
+      "tsconfig.json": JSON.stringify({ extends: "./missing.json" }),
+      "src/a.ts": `export const a = 1;\n`,
+    });
+
+    it("gen exits 2 with the tsconfig diagnostic, not falling through", () => {
+      const { code, stderr } = runMain(["gen"]);
+      expect(code).toBe(2);
+      expect(stderr).toHaveLength(1);
+      expect(stderr[0]).toContain("error: tsconfig.json:");
+    });
+  });
+});
+
+// Issue #12: user-facing compile errors (malformed formulas, unsupported
+// constructs, bad references) must exit 2 with a one-line diagnostic, not
+// escape main() as an uncaught exception. One case per PabstError-throwing
+// module keeps the whole compile front-end pinned to the contract: reverting
+// any module's throws to plain Error fails its case here. These use
+// `pabst test` — compilation fails before vitest is spawned, so no timeout
+// is needed.
+//
+// `wrapped` marks errors thrown per-annotation inside buildSpec, which the
+// build-spec seam prefixes with `file:line: @ensures{name}:`. Extract-phase
+// errors (duplicate names, ineligible/unexported classes) are thrown before
+// any single annotation is compiled, so they carry no such prefix — their
+// messages name the file and subject themselves.
+interface CompileErrorCase {
+  name: string;
+  file: string;
+  source: string;
+  wrapped: boolean;
+  property: string;
+  expected: string[];
+}
+
+const COMPILE_ERROR_CASES: CompileErrorCase[] = [
+  {
+    name: "a malformed quantifier prefix (prefix-parser)",
+    file: "malformed.ts",
+    source: `/** @ensures{shapely} for every (n: nat), malformed(n) >= 0 */\nexport function malformed(n: number): number { return n; }\n`,
+    wrapped: true,
+    property: "shapely",
+    expected: ["expected 'forall'"],
+  },
+  {
+    name: "an unexported-symbol reference (free-idents)",
+    file: "unexported.ts",
+    source: `/** @ensures{agrees} forall (n: nat) { unexported(n) === helper(n) } */\nexport function unexported(n: number): number { return n; }\nfunction helper(n: number): number { return n; }\n`,
+    wrapped: true,
+    property: "agrees",
+    expected: ["'helper'", "not exported"],
+  },
+  {
+    name: "a leading existential quantifier (prefix-parser)",
+    file: "existential.ts",
+    source: `/** @ensures{someone} exists (n: nat), ex(n) > 0 */\nexport function ex(n: number): number { return n; }\n`,
+    wrapped: true,
+    property: "someone",
+    expected: ["existential quantifiers"],
+  },
+  {
+    name: "an unsupported domain (prefix-parser)",
+    file: "baddomain.ts",
+    source: `/** @ensures{rounds} forall (x: float) { rounder(x) >= 0 } */\nexport function rounder(x: number): number { return x; }\n`,
+    wrapped: true,
+    property: "rounds",
+    expected: ["unknown generation domain 'float'"],
+  },
+  {
+    name: "an existential inside the body (formula-lexer)",
+    file: "bodyexists.ts",
+    source: `/** @ensures{someInBody} forall (n: nat) { inBody(n) > 0 ∧ exists m, inBody(m) === 0 } */\nexport function inBody(n: number): number { return n; }\n`,
+    wrapped: true,
+    property: "someInBody",
+    expected: ["existential quantifiers"],
+  },
+  {
+    name: "a nested forall inside the body (formula-lexer)",
+    file: "nestedforall.ts",
+    source: `/** @ensures{deep} forall (n: nat) { forall (m: nat) { nested(n) >= 0 } } */\nexport function nested(n: number): number { return n; }\n`,
+    wrapped: true,
+    property: "deep",
+    expected: ["nested quantifiers"],
+  },
+  {
+    name: "JS && at the property's top level (formula-parser)",
+    file: "jsconj.ts",
+    source: `/** @ensures{conj} forall (n: nat) { jsconj(n) >= 0 && jsconj(n) >= 0 } */\nexport function jsconj(n: number): number { return n; }\n`,
+    wrapped: true,
+    property: "conj",
+    expected: ["use ∧ for conjunction"],
+  },
+  {
+    name: "a duplicate property name (extract)",
+    file: "dup.ts",
+    source: `/**\n * @ensures{same} forall (n: nat) { dup(n) >= 0 }\n * @ensures{same} forall (n: nat) { dup(n) >= 0 }\n */\nexport function dup(n: number): number { return n; }\n`,
+    wrapped: false,
+    property: "same",
+    expected: ["duplicate property name 'same'", "dup.ts"],
+  },
+  {
+    name: "an @ensures on an unexported class (extract)",
+    file: "hidden.ts",
+    source: `class Hidden {\n  /** @ensures{h} forall (n: nat) { n >= 0 } */\n  m(n: number): number { return n; }\n}\n`,
+    wrapped: false,
+    property: "h",
+    expected: ["class 'Hidden'", "not exported", "hidden.ts"],
+  },
+];
+
+describe("cli compile errors (exit-code contract)", () => {
+  useTempProject(
+    "pabst-cli-err-",
+    Object.fromEntries(COMPILE_ERROR_CASES.map((c) => [c.file, c.source])),
+  );
+
+  it.each(COMPILE_ERROR_CASES)(
+    "test on $name exits 2 with a one-line diagnostic",
+    (c) => {
+      const { code, stderr } = runMain(["test", c.file]);
+      expect(code).toBe(2);
+      expect(stderr).toHaveLength(1);
+      expect(stderr[0]).not.toContain("\n");
+      if (c.wrapped) {
+        expect(stderr[0]).toContain(`${c.file}:1: @ensures{${c.property}}:`);
+      }
+      for (const fragment of c.expected) {
+        expect(stderr[0]).toContain(fragment);
+      }
+    },
+  );
+
+  it("gen on a malformed @ensures exits 2 with the same diagnostic", () => {
+    const { code, stderr } = runMain(["gen", "malformed.ts"]);
+    expect(code).toBe(2);
+    expect(stderr).toHaveLength(1);
+    expect(stderr[0]).toContain("malformed.ts:1");
+    expect(stderr[0]).toContain("shapely");
+  });
+});
+
+// README usage claims: `pabst test` prints a single JSON envelope to stdout,
+// exits 0/1 on clean/failing runs, echoes the seed, and reproduces a run when
+// the seed is passed back. The generated tests import "pabst/runtime" via the
+// package self-reference, so these must run inside the repo tree (a gitignored
+// scratch dir under .pabst/), unlike the os.tmpdir()-based suites above.
+describe("cli test command (README usage claims)", () => {
+  const workDir = path.join(repoRoot, ".pabst", "clitest");
+
+  beforeAll(() => {
+    fs.rmSync(workDir, { recursive: true, force: true });
+    fs.mkdirSync(workDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(workDir, "good.ts"),
+      `/** @ensures{nonneg} forall (n: nat) { good(n) >= 0 } */\nexport function good(n: number): number { return n; }\n`,
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(workDir, "bad.ts"),
+      `/** @ensures{negative} forall (n: nat) { bad(n) < 0 } */\nexport function bad(n: number): number { return n; }\n`,
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(workDir, "plain.ts"),
+      `export function plain(n: number): number { return n; }\n`,
+      "utf8",
+    );
+    process.chdir(workDir);
+  });
+  afterAll(() => {
+    process.chdir(repoRoot);
+    fs.rmSync(workDir, { recursive: true, force: true });
+  });
+  // Each test starts from a clean mirror; the tests that exercise stale
+  // mirrors (issue #41) create their own staleness within the test body.
+  beforeEach(() => {
+    fs.rmSync(path.join(workDir, ".pabst"), { recursive: true, force: true });
+  });
+
+  it(
+    "test on a clean file prints one JSON envelope to stdout and exits 0",
+    { timeout: 60000 },
+    () => {
+      const { code, stdout } = runMain(["test", "good.ts"]);
+      expect(code).toBe(0);
+      expect(stdout).toHaveLength(1);
+      const env = JSON.parse(stdout[0]!);
+      const pkg = JSON.parse(
+        fs.readFileSync(path.join(repoRoot, "package.json"), "utf8"),
+      );
+      expect(env).toMatchObject({
+        version: pkg.version,
+        cwd: process.cwd(),
+        generated: 1,
+        passed: 1,
+        failed: 0,
+        issues: [],
+      });
+      expect(env.startedAt).toMatch(
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
+      );
+      expect(Number.isInteger(env.seed)).toBe(true);
+      expect(env.seed).toBeGreaterThanOrEqual(0);
+      expect(env.seed).toBeLessThan(2 ** 32);
+    },
+  );
+
+  it(
+    "test on a failing file exits 1 with a structured issue in the envelope",
+    { timeout: 60000 },
+    () => {
+      const { code, stdout } = runMain(["test", "bad.ts"]);
+      expect(code).toBe(1);
+      const env = JSON.parse(stdout[0]!);
+      expect(env).toMatchObject({ generated: 1, passed: 0, failed: 1 });
+      // The exact issue contents are pinned by the envelope and run-seam
+      // suites; here only the CLI-level claim matters.
+      expect(env.issues).toHaveLength(1);
+      expectValidIssue(env.issues[0]);
+    },
+  );
+
+  it(
+    "test --seed echoes the given seed in the envelope",
+    { timeout: 60000 },
+    () => {
+      const { code, stdout } = runMain(["test", "--seed", "123", "good.ts"]);
+      expect(code).toBe(0);
+      expect(JSON.parse(stdout[0]!).seed).toBe(123);
+    },
+  );
+
+  it(
+    "passing a prior run's seed back reproduces that run",
+    { timeout: 120000 },
+    () => {
+      const first = JSON.parse(runMain(["test", "bad.ts"]).stdout[0]!);
+      fs.rmSync(path.join(workDir, ".pabst"), { recursive: true, force: true });
+      const second = JSON.parse(
+        runMain(["test", "--seed", String(first.seed), "bad.ts"]).stdout[0]!,
+      );
+      expect(second.seed).toBe(first.seed);
+      expect(second.issues).toEqual(first.issues);
+      expect(second.passed).toBe(first.passed);
+      expect(second.failed).toBe(first.failed);
+    },
+  );
+
+  // Issue #41: the vitest run must be scoped to the out-files generated by
+  // THIS invocation, not the whole .pabst/ mirror.
+  it(
+    "back-to-back invocations do not leak issues from earlier runs",
+    { timeout: 120000 },
+    () => {
+      expect(runMain(["test", "bad.ts"]).code).toBe(1);
+      // No wipe of .pabst/ in between: bad.ts's stale mirror is still there.
+      const { code, stdout } = runMain(["test", "good.ts"]);
+      expect(code).toBe(0);
+      const env = JSON.parse(stdout[0]!);
+      expect(env).toMatchObject({
+        generated: 1,
+        passed: 1,
+        failed: 0,
+        issues: [],
+      });
+    },
+  );
+
+  it(
+    "a run that generates nothing reports a zero envelope, never stale mirrors",
+    { timeout: 120000 },
+    () => {
+      expect(runMain(["test", "bad.ts"]).code).toBe(1);
+      const { code, stdout } = runMain(["test", "plain.ts"]);
+      expect(code).toBe(0);
+      const env = JSON.parse(stdout[0]!);
+      expect(env).toMatchObject({
+        generated: 0,
+        passed: 0,
+        failed: 0,
+        issues: [],
+      });
+    },
+  );
+
+  it(
+    "test accepts globs and reports across all matched files",
+    { timeout: 60000 },
+    () => {
+      const { code, stdout } = runMain(["test", "*.ts"]);
+      expect(code).toBe(1);
+      const env = JSON.parse(stdout[0]!);
+      expect(env).toMatchObject({ generated: 2, passed: 1, failed: 1 });
+      expect(env.issues).toHaveLength(1);
+    },
+  );
+});
