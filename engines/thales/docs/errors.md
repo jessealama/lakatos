@@ -1,0 +1,1370 @@
+# Thales-TS Error Code Reference
+
+## Error code alignment
+
+Every thales diagnostic either:
+
+- uses a `TSXXXX` code that tsc would also emit at the same
+  line for the same input
+- uses a `TH####` code, listed below, for subset-specific
+  violations. These codes have no tsc equivalent and exist
+  only because thales is stricter than tsc about what
+  programs it is willing to embed into Lean.
+
+Extra `TH####` diagnostics never cause a conformance failure. A `TSXXXX`
+diagnostic reported by thales that tsc would not produce is a bug; report it.
+Column positions are not currently compared by the conformance harness
+because thales and tsc disagree on per-diagnostic anchoring, but they are
+displayed in diagnostics for human readability.
+
+See `docs/superpowers/specs/2026-04-21-conformance-harness-design.md` for
+the full contract and harness details.
+
+This reference lists all subset `TH####` codes plus the directive
+codes (TH9000–TH9005) with minimal detail. For full explanation,
+rationale, and idiomatic replacements, see [subset.md](./subset.md).
+
+The codes are divided into categories:
+
+- mutation
+- control flow
+- types
+- declarations
+- recursion
+- totality
+- exceptions
+- refinement types
+
+Another category, directives, exists for meta purposes
+(doesn't correspond to a real subset of TypeScript but
+rather reflects a kind of misuse of Thales or an emit-pipeline
+soundness check).
+
+## Summary
+
+| Code   | Category     | Short Message                                                   |
+| ------ | ------------ | --------------------------------------------------------------- |
+| TH0001 | Mutation     | Cannot reassign variable                                        |
+| TH0002 | Mutation     | Cannot assign to array element                                  |
+| TH0003 | Mutation     | Cannot assign to object property                                |
+| TH0004 | Mutation     | Cannot call mutating method                                     |
+| TH0005 | Mutation     | Cannot mutate variable captured by enclosing scope              |
+| TH0006 | Mutation     | Assignment only supported in statement position                 |
+| TH0007 | Mutation     | Cannot mutate inside `@throws` or `try`/`catch`                 |
+| TH0010 | Control flow | Loop not supported                                              |
+| TH0012 | Control flow | async/await not supported                                       |
+| TH0020 | Types        | `any` not permitted                                             |
+| TH0021 | Types        | `unknown` not permitted in user code                            |
+| TH0022 | Types        | Union must be discriminated                                     |
+| TH0023 | Types        | Intersection types not supported                                |
+| TH0024 | Types        | keyof/conditional/mapped types not supported                    |
+| TH0025 | Types        | null/undefined types not supported                              |
+| TH0026 | Types        | Condition must be boolean                                       |
+| TH0030 | Declarations | Unsupported class form (expression/abstract/generic/implements) |
+| TH0031 | Declarations | Inheritance (`extends`) not supported                           |
+| TH0032 | Declarations | Shadowing declaration not supported                             |
+| TH0040 | Matching     | Non-exhaustive switch on discriminated union                    |
+| TH0041 | Matching     | Switch shape not lowerable                                      |
+| TH0050 | Recursion    | Cannot verify termination                                       |
+| TH0066 | Totality     | `@total` and `@throws` declared together                        |
+| TH0067 | Totality     | `@total` function has uncaught throw                            |
+| TH0068 | Totality     | `@total` function contains an unverifiable loop                 |
+| TH0070 | Totality     | `@total` asserted but Lean rejects termination                  |
+| TH0060 | Exceptions   | Unannotated `throw`                                             |
+| TH0061 | Exceptions   | Unused `@throws` annotation                                     |
+| TH0063 | Exceptions   | Thrown value must be a record type                              |
+| TH0064 | Exceptions   | Undeclared propagation                                          |
+| TH0080 | Refinement   | Literal value out of range for refinement type                  |
+| TH0081 | Refinement   | Value not assignable to refinement without evidence             |
+| TH0082 | Subset       | Possibly-undefined operand; narrow before use                   |
+| TH0083 | Subset       | Computed index access only supported on arrays                  |
+| TH0084 | Subset       | Definedness test on a binding of undeterminable type            |
+| TH0085 | Subset       | Array method on a receiver of unlowerable element type          |
+| TH0086 | Subset       | Definedness test on a non-identifier subject                    |
+| TH0087 | Subset       | Unsupported `String.prototype` method                           |
+| TH0088 | Subset       | Unsupported `import` form (default/namespace/side-effect)       |
+| TH0089 | Subset       | Unsupported `export` form (default/re-export)                   |
+| TH0090 | Subset       | Circular imports                                                |
+| TH0091 | Subset       | Regex literals are not supported                                |
+| TH0092 | Subset       | Unsupported unary operator (`typeof`/`void`/`delete`)           |
+| TH0093 | Subset       | Top-level mutable referenced by a hoisted declaration           |
+| TH0094 | Declarations | Class accessors (get/set) not supported                         |
+| TH0095 | Declarations | Static class members not supported                              |
+| TH0096 | Declarations | Private class members not supported                             |
+| TH0097 | Declarations | Class field initializers not supported                          |
+| TH0098 | Declarations | Unsupported class field form                                    |
+| TH0099 | Declarations | Unsupported constructor form                                    |
+| TH0100 | Declarations | Unsupported class method form                                   |
+| TH0101 | Declarations | Class method referenced before its declaration                  |
+| TH0102 | Declarations | Class method used as a value                                    |
+| TH0103 | Declarations | `undefined` used as a binding name                              |
+| TH0104 | Subset       | Bare `null`/`undefined` initializer without a type annotation   |
+| TH0105 | Declarations | Top-level declaration referenced before its declaration         |
+| TH9000 | Directive    | Unused `@thales-expect-error` directive                         |
+| TH9001 | Directive    | Directive code mismatch                                         |
+| TH9002 | Directive    | Cannot emit: subset violations suppressed                       |
+| TH9003 | Directive    | Malformed `@thales-expect-error` directive                      |
+| TH9004 | Directive    | Emitted Lean code contains `sorry`                              |
+| TH9005 | Internal     | Emitted Lean would contain an unlowerable placeholder           |
+
+## Future of this table
+
+As Thales develops, some of the diagnostic codes might
+become obsolete. That is, they will never be emitted. This
+is because the subset of TypeScript that we intend to target
+will grow over time.
+
+## Mutation
+
+### TH0001 — Cannot reassign variable
+
+**Message:** `Cannot reassign variable`
+
+Since #24, function-local non-escaping mutation is **in subset** (emitted
+as `Id.run do` with `let mut`). TH0001 now covers only the still-rejected
+forms:
+
+- module-level reassignment: `let x = 0; x = 1;` at the top level;
+- logical assignment operators (`&&=`, `||=`, `??=`);
+- reassignment of a `let` declared without an initializer
+  (`let x: number; x = 1;` — give it an initializer instead);
+- reassignment of a variable whose narrowing the emitter relies on
+  (null- or undefined-tested, or refinement-predicate-tested, in a
+  condition);
+- mutation inside arrow/function-expression bodies (only declared
+  functions lower through the do-mode path in v1);
+- mutation in a function containing a `switch` shape do-mode cannot lower
+  (an arm that falls through via `break`, a `default` arm, or a scrutinee
+  that is not a discriminated-union field access);
+- mutation in a function whose body contains `try`/`catch` — the exception
+  path emits pure `Except` match-chains do-mode cannot thread through
+  (mutation _inside_ the `try` is the separate TH0007);
+- mutation in a function that reads a null/undefined-tested or
+  predicate-tested variable outside its test: the pure path bakes that
+  narrowing into its `match`/`dite` lowering, and do-mode carries no such
+  evidence, so the whole function stays on the pure path.
+
+[Details in subset.md#th0001--cannot-reassign-variable](./subset.md#th0001--cannot-reassign-variable)
+
+---
+
+### TH0002 — Cannot assign to array element
+
+**Message:** `Cannot assign to array element; use \`.concat\` or return a new array`
+
+Rejected: `arr[0] = 99;`
+
+[Details in subset.md#th0002--cannot-assign-to-array-element-use-concat-or-return-a-new-array](./subset.md#th0002--cannot-assign-to-array-element-use-concat-or-return-a-new-array)
+
+---
+
+### TH0003 — Cannot assign to object property
+
+**Message:** `Cannot assign to object property; construct a new object`
+
+Rejected: `obj.x = 10;`
+
+[Details in subset.md#th0003--cannot-assign-to-object-property-construct-a-new-object](./subset.md#th0003--cannot-assign-to-object-property-construct-a-new-object)
+
+---
+
+### TH0004 — Cannot call mutating method
+
+**Message:** `Cannot call mutating method`
+
+Rejected: `arr.push(42);`
+
+[Details in subset.md#th0004--cannot-call-mutating-method](./subset.md#th0004--cannot-call-mutating-method)
+
+---
+
+### TH0005 — Cannot mutate variable captured by enclosing scope
+
+**Message:** `Cannot mutate variable captured by enclosing scope`
+
+Rejected: `let sum = 0; arr.forEach(x => { sum += x; });`
+
+A binding is mutable only when every reference to it (read _or_ write)
+occurs in the declaring function's own body. JS closures capture the live
+binding; Lean's `let mut` cannot be captured at all, and a read-only
+capture of a mutated variable would silently snapshot the value. Mutating
+a variable declared in an enclosing scope, or mutating a variable that any
+nested function/arrow mentions, is rejected. Workaround: restructure so
+the nested function takes the value as a parameter or returns the update.
+
+[Details in subset.md#th0005--cannot-mutate-variable-captured-by-enclosing-scope](./subset.md#th0005--cannot-mutate-variable-captured-by-enclosing-scope)
+
+---
+
+### TH0006 — Assignment only supported in statement position
+
+**Message:** `Assignment and update expressions are only supported as statements; assign in a separate statement`
+
+Rejected: `const y = (n = 1);`, `f(n += 1)`, `return n++;`
+
+Assignment and update expressions produce values in JavaScript, but the
+Thales subset treats mutation as a statement-level effect. Split the
+mutation into its own statement:
+
+```ts
+n++;
+return n - 1; // instead of `return n++;`
+```
+
+---
+
+### TH0007 — Cannot mutate inside `@throws` or `try`/`catch`
+
+**Message:** ``Cannot mutate variable inside a `@throws` function or `try`/`catch` ``
+
+Rejected: mutation in the body of a `@throws`-annotated function, or
+anywhere under a `try`/`catch`.
+
+The `@throws` path emits pure `Except` match-chains; the mutation path
+emits `Id.run do` blocks. Unifying them is staged as a follow-up, mirroring
+how `@throws`/`@total` exclusivity was staged. Workaround: hoist the
+mutation into a helper function without `@throws`, or compute the value
+purely.
+
+---
+
+## Control flow
+
+### TH0010 — Loop not supported
+
+**Message:** `Loop not supported; use recursion or array methods`
+
+**Status:** Partially lifted. The following shapes are now accepted inside
+do-mode-lowerable declared functions:
+
+- `for (const x of arr)` / `for (let x of arr)` — simple-identifier array
+  operand, loop variable never reassigned in the body.
+- `for (let i = 0; i < B; i++)` — canonical C-style with `i++` update, bound
+  `B` is a non-negative integer literal or an array-typed `arr.length`, bound
+  array not reassigned in the body.
+- `while (test) body` — any boolean test expression (conditions must be
+  boolean — see TH0026); lowered to Lean do-notation `while`. Not allowed
+  in `@total` functions — see TH0068.
+- `do body while (test)` — lowered to `repeat ... until !(test)`; the body
+  runs at least once, as in TS. Same `@total` exclusion. A loop-level
+  `continue` keeps a do-while rejected: TS `continue` jumps to the test,
+  but Lean's `repeat ... until` re-enters the body without checking it.
+- Non-canonical C-style `for` (any init/test/update combination with a
+  simple-identifier `let`/`const` init declarator, bare-expression init, or
+  no init) — desugared to `init; while (test) { body; update }`. Same `@total`
+  exclusion as `while` (TH0068), and a loop-level `continue` keeps the
+  shape rejected when an update clause exists (the desugared body would
+  skip the update where TS runs it).
+- Unlabeled `break`, `continue`, and early `return` inside admitted loops.
+- Mutation inside an admitted loop follows the same rules as mutation
+  elsewhere in do-mode (see TH0001–TH0007).
+
+**Still rejected:** `for-in`; `for await`; `var` or destructuring or
+expression loop-variable heads; canonical-shaped `for` whose bound is not a
+non-negative integer literal or array-typed `arr.length` (e.g. a
+string-typed `s.length`);
+`for-of` with a call on the right-hand side; loop-variable or bound-array
+reassignment in a canonical-for body; labeled `break`/`continue`; a
+loop-level `continue` in a do-while body or in a general `for` body with an
+update clause; any loop at module level, in a
+`@throws`-annotated function, or in a function that contains `try`/`catch`
+or other do-mode-poisoning constructs.
+
+[Details in subset.md#th0010--loop-not-supported-use-recursion-or-array-methods](./subset.md#th0010--loop-not-supported-use-recursion-or-array-methods)
+
+---
+
+### TH0011 — throw/try/catch not supported
+
+**Status:** Partially lifted. `throw new E(msg)` inside a `@throws`-annotated function is now
+accepted and emitted as `Except.error`. `try/catch` blocks are also accepted (the catch type
+is inferred from the called function's `@throws` annotation). TH0011 still fires for `throw`
+outside an annotated function (use TH0060 instead) — see TH0060.
+
+**Remaining restrictions:** No `finally` clause. No multi-catch. No rethrow.
+
+[Details in subset.md](./subset.md#throws-and-exception-handling)
+
+---
+
+### TH0012 — async/await not supported
+
+**Message:** `\`async\`/\`await\` not supported`
+
+Rejected: `async function f() { await fetch(...); }`
+
+[Details in subset.md#th0012--asyncawait-not-supported](./subset.md#th0012--asyncawait-not-supported)
+
+6+ integrates async orchestration with `IO` monad.
+
+---
+
+## Types
+
+### TH0020 — any not permitted
+
+**Message:** `\`any\` is not permitted`
+
+Rejected: `function f(x: any): any { return x; }`
+
+[Details in subset.md#th0020--any-is-not-permitted](./subset.md#th0020--any-is-not-permitted)
+
+Permanent — use generics (`<T>`) instead.
+
+---
+
+### TH0021 — unknown not permitted
+
+**Message:** `\`unknown\` is not permitted in user code`
+
+Rejected: `function f(x: unknown): string { return String(x); }`
+
+[Details in subset.md#th0021--unknown-is-not-permitted-in-user-code](./subset.md#th0021--unknown-is-not-permitted-in-user-code)
+
+3 adds `Result<T, E>` for controlled narrowing in JSON parsing.
+
+---
+
+### TH0022 — Union must be discriminated
+
+**Message:** `Union must be discriminated`
+
+Rejected: `type T = string | number; function f(x: T) { ... }`
+
+[Details in subset.md#th0022--union-must-be-discriminated](./subset.md#th0022--union-must-be-discriminated)
+
+Permanent — use discriminated unions with a `kind` tag.
+
+---
+
+### TH0023 — Intersection types not supported
+
+**Message:** `Intersection types are not supported`
+
+Rejected: `type T = A & B;`
+
+[Details in subset.md#th0023--intersection-types-are-not-supported](./subset.md#th0023--intersection-types-are-not-supported)
+
+Permanent — flatten to a single `interface`.
+
+---
+
+### TH0024 — keyof/conditional/mapped types not supported
+
+**Message:** `\`keyof\`/conditional/mapped types are not supported`
+
+Rejected: `type Keys = keyof T; type Readonly<T> = { readonly [K in keyof T]: T[K] };`
+
+[Details in subset.md#th0024--keyofconditionalmapped-types-are-not-supported](./subset.md#th0024--keyofconditionalmapped-types-are-not-supported)
+
+Permanent — out of shallow-embedding scope.
+
+---
+
+### TH0025 — null/undefined types not supported
+
+**Status:** Lifted. `T | null` and `T | undefined` are now accepted and
+emitted as `Option T`. This code is no longer emitted by `thales`.
+
+Historical message: `null/undefined types not supported; use Option<T>`
+
+If you have a `@thales-expect-error TH0025` directive in your source, remove
+it — the directive is now unused and will produce TH9000.
+
+See `docs/subset.md` (Nullable types section) for the full translation rules.
+
+---
+
+### TH0026 — condition must be boolean
+
+**Message:** `Condition must be boolean, got '<type>'; truthiness is not
+mirrored — compare explicitly (e.g. \`x !== 0\`)`
+
+Every condition position — `if`, `while`, `do`/`while`, the `for` test
+clause, and the ternary — must have type `boolean`, and so must the
+operands of `!`, `&&`, and `||` (in the subset they are exactly Lean's
+boolean operators). tsc accepts any type in these positions and applies
+JS truthiness (`0`, `''`, `NaN`, `null`, `undefined` are falsy); Lean
+has no such coercion, so a non-boolean condition or operand would emit
+code the Lean stage cannot compile. Rejecting keeps the accept clause of
+the conformance contract honest: everything thales accepts must compile
+and byte-match.
+
+```typescript
+function f(n: number): number {
+  if (n) {
+    // TH0026: Condition must be boolean, got 'number'
+    return 1;
+  }
+  return 0;
+}
+```
+
+The operand rule also rejects truthy shorthands like `if (!n)`,
+`if (n && b)`, and the default-value idiom `s || 'fallback'` (which
+additionally relies on `||` returning an operand rather than a boolean).
+
+**Fix:** compare explicitly — `n !== 0` (truthiness for numbers also
+excludes `NaN`; use `Number.isNaN` if that case matters), `s !== ""` for
+strings, or a boolean-returning predicate. For defaults, use an explicit
+ternary: `s !== '' ? s : 'fallback'`.
+
+---
+
+## Declarations
+
+### TH0030 — Unsupported class form
+
+**Message:** `<form> are not supported` with forms `class expressions`,
+`abstract classes`, `generic classes`, `'implements' clauses`
+
+Immutable class _declarations_ are in subset (readonly fields, an
+assign-each-field-once constructor, public instance methods — the v1 shape),
+lowered to a Lean `structure` plus a `namespace` of receiver-first functions.
+TH0030 now covers only the unsupported class-level forms:
+
+Rejected: `const C = class { ... };`, `abstract class A { ... }`,
+`class C<T> { ... }`, `class C implements I { ... }`
+
+Member-level violations inside a plain class declaration draw the specific
+codes TH0094–TH0102 below instead.
+
+[Details in subset.md#th0030--unsupported-class-form](./subset.md#th0030--unsupported-class-form)
+
+Follow-up slices widen the class surface (getters/statics #113, privacy
+#114, `instanceof` #115).
+
+---
+
+### TH0031 — Inheritance not supported
+
+**Message:** `Inheritance (\`extends\`) not supported`
+
+Rejected: `class Dog extends Animal { ... }` — even when both classes are
+otherwise in the supported v1 shape.
+
+[Details in subset.md#th0031--inheritance-extends-not-supported](./subset.md#th0031--inheritance-extends-not-supported)
+
+6+ adds single-dispatch inheritance via typeclasses.
+
+---
+
+### TH0032 — Shadowing declaration not supported
+
+**Message:** `Declaration of '<name>' shadows a binding from an enclosing scope; rename the inner binding`
+
+Rejected: `const n = 0; { const n = 1; } return n;` inside a function.
+
+The emitter flattens bare blocks into their enclosing statement list and
+appends `if`-continuations into branches, so a block-scoped `let`/`const`
+that shadows a name from an enclosing scope of the same function would
+capture references meant for the outer binding — an accepted program with
+silently wrong output (#45). tsc allows shadowing; Thales rejects it.
+Out of scope by design: `var` re-declaration (function-scoped — the same
+binding; conflicts with `let` are tsc's TS2451), nested function/arrow
+parameters and bodies (fresh scopes — Lean lambdas shadow correctly), and
+`catch` parameters (lowered to real match binders).
+
+---
+
+## Matching
+
+### TH0040 — Non-exhaustive switch
+
+**Message:** `Non-exhaustive \`switch\` on discriminated union`
+
+Rejected: `switch (u.kind) { case "a": ...; /* missing "b" */ }`
+
+[Details in subset.md#th0040--non-exhaustive-switch-on-discriminated-union](./subset.md#th0040--non-exhaustive-switch-on-discriminated-union)
+
+Permanent — all variants must be covered.
+
+---
+
+### TH0041 — Switch shape not lowerable
+
+**Message:** ``Switch not supported here: dispatch on a discriminated-union field (e.g. `switch (shape.kind)`) with every arm ending in `return` ``
+
+The emitter lowers exactly one switch shape: a non-computed
+`ident.field` scrutinee whose binding resolves to a discriminated union
+keyed on that field, with every arm (including `default`) returning on
+every control path. Anything else — a plain-identifier scrutinee
+(`switch (x)` on a `string`), an unannotated or unresolvable scrutinee
+binding, a non-union scrutinee type, a switch on a non-discriminator
+field, or an arm that falls through (`break`, empty grouped `case`
+labels) — is rejected. Previously these switches were silently dropped
+from the emitted Lean, producing wrong output. A `default` arm whose
+body returns is fine: it lowers as the wildcard match arm.
+
+Rejected: `switch (x) { case "a": return 1; case "b": return 2; }` on
+`x: string`.
+
+---
+
+## Recursion
+
+### TH0050 — Cannot verify termination
+
+**Message:** `Cannot verify termination; add \`@decreasing\` hint or restructure`
+
+Rejected: `function f(n: bigint): bigint { ... return f(n - 1); ... /* non-structural */ }`
+
+[Details in subset.md#th0050--cannot-verify-termination-add-decreasing-hint-or-restructure](./subset.md#th0050--cannot-verify-termination-add-decreasing-hint-or-restructure)
+
+4 adds `@decreasing` JSDoc hints for non-structural recursion.
+
+---
+
+## Totality
+
+`@total` is the Thales-TS claim that **a function always returns a value of its declared return type** — it terminates and has no observable failure modes. Four diagnostics enforce this contract: TH0066 (the annotation can't coexist with `@throws`), TH0067 (no failures may escape the body), TH0068 (no loops the termination checker can't see through), and TH0070 (Lean's termination checker must accept the emitted `def`).
+
+### TH0066 — `@total` and `@throws` declared together
+
+**Message:** `` `@total` and `@throws` cannot both be declared on the same function; remove one ``
+
+A function that may throw a declared error type does not always return a value of its declared return type — its emitted Lean signature is `Except E T`, not `T`. The two annotations make incompatible claims, so they are mutually exclusive at the source level (regardless of whether Lean would accept the emitted `def : Except E T`).
+
+Example (rejected):
+
+```typescript
+/**
+ * @total
+ * @throws RangeError when age is negative
+ */
+function makeUser(name: string, age: number): User {
+  if (age < 0) throw new RangeError('age must be non-negative');
+  return { name, age };
+}
+```
+
+Fix: drop `@total` if the function may genuinely fail (the `@throws` signature already encodes that the function does not diverge); drop `@throws` if the failure case is unreachable and you want the stronger guarantee.
+
+---
+
+### TH0067 — `@total` function has uncaught throw
+
+**Message:** `` `@total` function has an uncaught `throw`; wrap it in `try`/`catch` or remove `@total` `` (or, for calls into `@throws`-annotated functions, `` `@total` function calls `@throws`-annotated `f` outside `try`/`catch`; catch the failure or remove `@total` ``)
+
+Emitted at every uncaught throw event in the body of a `@total` function. A throw is "uncaught" if it is not lexically inside a `try` block whose `catch` clause handles it. A throw inside the `catch` handler itself counts as uncaught — `@total` requires the catch path to also have no escaping failures.
+
+Example (rejected):
+
+```typescript
+/** @total */
+function bad(n: number): number {
+  if (n < 0) throw new RangeError('negative'); // TH0067
+  return n;
+}
+```
+
+Example (accepted):
+
+```typescript
+/** @throws RangeError */
+function inner(n: number): number {
+  if (n < 0) throw new RangeError('negative');
+  return n;
+}
+
+/** @total */
+function outer(n: number): number {
+  try {
+    return inner(n);
+  } catch (e) {
+    return 0;
+  }
+}
+```
+
+Fix: handle the failure case with `try`/`catch`, or annotate the function with `@throws` instead of `@total`.
+
+---
+
+### TH0068 — `@total` function contains an unverifiable loop
+
+**Message:** `` `@total` function contains a loop whose termination cannot be verified; use a for-of loop or recursion, or remove `@total` ``
+
+Emitted at each `while` / `do-while` loop inside a `@total` function. These loops lower to Lean do-notation `while` / `repeat ... until`, which are backed by a partial combinator: the emitted code compiles whether or not the loop terminates, so the lake-side termination verification (TH0070) would pass vacuously instead of checking anything. Rather than let `@total` make a claim the verifier cannot inspect, the combination is rejected outright — mirroring how TH0066 keeps `@total` and `@throws` apart.
+
+`for-of` and canonical `for` loops are unaffected: they lower to Lean's structural `for ... in`, which the termination checker does see through (see `loop-total-forof.ts` in the conformance corpus).
+
+Example (rejected):
+
+```typescript
+/** @total */
+function drain(n: number): number {
+  let i = n;
+  while (i > 0) {
+    // TH0068 (would diverge for non-integer n, unprovable either way)
+    i -= 1;
+  }
+  return i;
+}
+```
+
+Fix: rewrite the loop as for-of/canonical `for` or recursion, or remove `@total` to fall back to `partial def`.
+
+---
+
+### TH0070 — `@total` asserted but Lean rejects termination
+
+**Message:** `` `@total` asserted but Lean could not prove termination: Lean reported: ... ``
+
+Emitted when a `/** @total */` annotated function is emitted as `def` but Lean's termination checker rejects it. The message includes Lean's own error text (truncated to 400 characters).
+
+Example (rejected):
+
+```typescript
+/** @total */
+function fact(n: bigint): bigint {
+  if (n === 0n) return 1n;
+  return n * fact(n - 1n); // TH0070 here: Int subtraction is not a structural decrease
+}
+```
+
+Fix: use structural recursion over a discriminated union type, or remove `@total` to fall back to `partial def` (accepted without termination proof).
+
+[Details in subset.md](./subset.md#total-and-termination)
+
+v1.1 adds `termination_by` / `decreasing_by` emission for common measure patterns.
+
+**v1.0 limitation:** TH0070 only fires when `thales` is run inside a Lake project (it needs `lake env lean` to check the emitted Lean). Outside a Lake project, the check is skipped.
+
+---
+
+## Exceptions
+
+### TH0060 — Unannotated throw
+
+**Message:** `Function body contains \`throw\` but no \`@throws\` annotation`
+
+Rejected: `throw new Error("...")` inside a function without `/** @throws E */` JSDoc.
+
+Add a `@throws E` JSDoc annotation to the enclosing function, or remove the throw.
+
+---
+
+### TH0061 — Unused @throws annotation
+
+**Message:** `Declared \`@throws\` but no corresponding \`throw\` in body`
+
+Reserved for a future check that warns when a `@throws` annotation names a type that
+is never actually thrown by the function body. Not emitted in v1.0.
+
+---
+
+### TH0063 — Thrown value must be a record type
+
+**Message:** `Thrown value must be a record type`
+
+Emitted when a `throw` statement's argument is a primitive literal — string, number,
+boolean, `null`, or bigint. Thales requires thrown values to have named fields so
+the emitted Lean pattern match can reference them.
+
+Example (rejected):
+
+```typescript
+/** @throws string */
+function parse(s: string): number {
+  if (s === "") throw "empty";     -- TH0063: throwing a raw string
+  return parseFloat(s);
+}
+```
+
+Fix: throw a record. Either use a built-in like `new RangeError("empty")` or a
+user-defined record type with a `message` field.
+
+---
+
+### TH0064 — Undeclared propagation
+
+**Message:** `Function call throws T but enclosing function doesn't declare them in \`@throws\``
+
+Emitted at a call site inside a `@throws`-annotated function body when the callee's
+throws set includes types not covered by the enclosing function's `@throws` declaration.
+
+Example (rejected):
+
+```typescript
+/** @throws RangeError */
+function inner(): number { throw new RangeError("x"); return 1; }
+
+/** @throws TypeError */          -- missing: RangeError
+function outer(): number {
+  return inner();                 -- TH0064 here: inner throws RangeError, not declared
+}
+```
+
+Fix: add `RangeError` to `outer`'s `@throws` annotation, or wrap the call in `try/catch`.
+
+---
+
+## Directive
+
+### TH9000 — Unused `@thales-expect-error` directive
+
+**Message:** `Unused \`@thales-expect-error\` directive`
+
+Emitted when an `@thales-expect-error` directive is followed by a code line
+that produces no `TH####`. The directive is redundant and should be
+removed.
+
+Example (rejected):
+
+```typescript
+// @thales-expect-error TH0001
+const x = 0;
+```
+
+---
+
+### TH9001 — Directive code mismatch
+
+**Message:** `\`@thales-expect-error\` expects TH#### but got TH####[, ...]`
+
+Emitted when a directive declares a specific `TH####` but the applied
+code line produces a different code (or set of codes). The message
+lists every TH code that actually fired.
+
+Example (rejected):
+
+```typescript
+// @thales-expect-error TH0001
+const arr = [1];
+arr[0] = 2; // actually emits TH0002
+```
+
+---
+
+### TH9002 — Cannot emit: subset violations suppressed
+
+**Message:** `Cannot emit: file contains subset violations suppressed by \`@thales-expect-error\``
+
+Emitted in emit mode (the default) when any `TH####` was suppressed by
+a matching directive. A suppressed violation is by construction not
+embeddable into Lean; use `--no-emit` to exercise the subset check
+without producing a `.lean` sidecar.
+
+---
+
+### TH9003 — Malformed `@thales-expect-error` directive
+
+**Message:** `Malformed \`@thales-expect-error\` directive`
+
+Emitted when a comment starts with a near-miss of the directive prefix
+(e.g., `@thales-expect-erorr`, `@thales_expect_error`, or an ill-formed TH
+code suffix) but does not match the strict grammar. The directive is
+not applied for suppression.
+
+Example (rejected):
+
+```typescript
+// @thales-expect-erorr TH0001   — typo, won't suppress
+const x = 0;
+```
+
+---
+
+### TH9004 — Emitted Lean code contains `sorry`
+
+**Message:** (surfaced by the conformance harness, not by `thales` itself)
+
+Emitted by the conformance harness when it detects `sorry` or `sorryAx`
+in a `.lean` file that `thales` emitted. This indicates an emit-pipeline
+soundness regression, not a user error. Do not work around by adding
+`-- sorry` suppressions; file a bug against Thales.
+
+This check applies only to `.lean` files that `thales` emits (not to
+`Test/` WIP proofs or the runtime library).
+
+---
+
+### TH9005 — Emitted Lean would contain an unlowerable placeholder
+
+A structural emit-soundness gate. If the emitter produces an `LExpr.unsupported`
+placeholder for a construct it cannot lower, Thales refuses to write the `.lean`
+file rather than ship code that will not elaborate. This is **not** user-suppressible
+and has no `@thales-expect-error` form: the subset checks reject every known
+out-of-subset construct first, so a TH9005 firing indicates a genuine subset gap in
+the compiler and should be reported.
+
+---
+
+## Refinement types
+
+The four prelude refinement types (`Integer`, `Natural`, `Byte`, `Bit`)
+are supported since v0.6. These codes enforce the refinement contract at
+compile time.
+
+### TH0080 — Literal value out of range for refinement type
+
+**Message:** `Literal <N> out of range for <Type> (must be in [<lo>, <hi>])`
+
+Emitted when a numeric literal is assigned to a refinement-typed slot and
+the literal falls outside the type's range. `tsc` does not produce this
+diagnostic (it sees the refinement types as plain `number`).
+
+Range summary:
+
+| Type    | Valid range                                       |
+| ------- | ------------------------------------------------- |
+| Integer | −9007199254740991 to 9007199254740991 (±2^53 − 1) |
+| Natural | 0 to 9007199254740991                             |
+| Byte    | 0 to 255                                          |
+| Bit     | 0 or 1                                            |
+
+Example (rejected):
+
+```typescript
+import { Byte } from '@thales/prelude';
+// @thales-expect-error TH0080
+const b: Byte = 256; // 256 > 255
+```
+
+Fix: use an in-range literal, or use the `as<T>(...)` constructor for
+dynamic conversion (which throws `RangeError` at runtime if out of range).
+
+---
+
+### TH0081 — Value not assignable to refinement type without evidence
+
+**Message:** `Value '<name>' of type 'number' is not assignable to '<Type>' without narrowing or constructor evidence`
+
+Emitted when a `number`-typed expression is assigned to a refinement-typed
+slot without any narrowing guard or constructor call to establish
+membership evidence. `tsc` does not produce this diagnostic.
+
+Example (rejected):
+
+```typescript
+import { Integer } from '@thales/prelude';
+function wrap(n: number): Integer {
+  // @thales-expect-error TH0081
+  return n; // no evidence that n is a safe integer
+}
+```
+
+Fix: narrow with a predicate guard (`if (isInteger(n)) { ... }`) or use
+the throwing constructor (`asInteger(n)`) which validates at runtime.
+
+[Details in subset.md](./subset.md#prelude-refinement-types)
+
+---
+
+### TH0082 — Possibly-undefined operand
+
+**Message:** `Operand may be 'undefined' or 'null'; narrow it first (e.g. bind it and test !== undefined)`
+
+Emitted when an arithmetic or relational binary operator (`+ - * / % ** & | ^ << >> >>> < <= > >=`)
+has an operand whose type is `T | undefined` or `T | null` — most commonly
+an un-narrowed array element read, since `xs[i]` is `T | undefined` under
+`noUncheckedIndexedAccess`. `tsc` accepts some of these programs (e.g.
+`(string | undefined) + string`), but JS's coercion semantics for
+`undefined` operands (`undefined + "x"` is `"undefinedx"`) are not
+mirrored by the Lean runtime, so the subset requires narrowing first.
+
+Equality tests (`===`, `!==`, `==`, `!=`) are exempt — they are the
+narrowing primitives.
+
+Example (rejected):
+
+```typescript
+const greetings: string[] = ['hi', 'hello'];
+function greet(i: number, name: string): string {
+  // @thales-expect-error TH0082
+  return greetings[i] + ' ' + name;
+}
+```
+
+Fix: bind the read and narrow it before use:
+
+```typescript
+function greet(i: number, name: string): string {
+  const hit = greetings[i];
+  if (hit !== undefined) {
+    return hit + ' ' + name;
+  }
+  return name;
+}
+```
+
+---
+
+### TH0083 — Computed index access only supported on arrays
+
+**Message:** `Computed index access is only supported on array values`
+
+Emitted when a computed (bracket) access `x[i]` has a non-array base —
+string indexing (`s[0]`), object bracket access — or a non-numeric index
+expression. `tsc` accepts several of these shapes; arrays are the only
+indexable values in the subset.
+
+Example (rejected):
+
+```typescript
+function firstChar(s: string): string | undefined {
+  // @thales-expect-error TH0083
+  return s[0];
+}
+```
+
+Fix: for strings, use the supported string methods; for objects, use dot
+access with a statically-known property name.
+
+### TH0084 — Definedness test on a binding of undeterminable type
+
+**Message:** `Cannot determine whether this binding may be 'undefined'; annotate it or bind it from a recognized initializer before testing it`
+
+Emitted when a definedness test (`x === null`, `x !== undefined`, and the
+`==`/`!=` variants) is applied to a body-local binding whose type the
+emitter cannot record — i.e. an unannotated `let`/`const` whose initializer
+is not a call, element read, or literal. The emitter cannot tell whether the
+binding is `Option`-typed, so it can neither narrow the test nor fold it
+away, and rejects rather than emit Lean that fails to elaborate. `tsc`
+accepts these. Parameters and annotated or literal-initialized bindings are
+recordable and are not rejected.
+
+Example (rejected):
+
+```typescript
+function f(a: string, b: string): string {
+  const x = a + b;
+  // @thales-expect-error TH0084
+  if (x !== undefined) {
+    return x;
+  }
+  return 'n';
+}
+```
+
+Fix: annotate the binding (`const x: string = a + b;`), or restructure so
+the tested value comes from a recognized initializer. Generalizing the
+emitter's RHS type inference (issue #61) will let more of these compile.
+
+### TH0085 — Array method on an unlowerable receiver
+
+**Message (receiver resolved to an unlowerable array):** `Array method '<name>' is only supported on a \`number[]\` or \`string[]\` receiver`
+
+**Message (receiver unresolvable):** `'<name>' is only supported when the receiver is statically a \`number[]\` or \`string[]\` variable; this receiver's type cannot be resolved`
+
+`join`, `indexOf`, `includes`, `lastIndexOf`, `some`, `every`, and `findIndex`
+are lowered only when the receiver is an identifier the emitter can statically
+resolve to `number[]` or `string[]` (a module-level const, a typed parameter, or
+a body-local typed declarator). Two receiver shapes are out of subset and
+rejected rather than miscompiled — `tsc` accepts both:
+
+- a non-identifier receiver (a function-call result, a member-access chain, …),
+  whose element type cannot be resolved at emit time; and
+- an identifier whose declared element type is an array of any other type — a
+  `boolean[]`, a nested `number[][]`, an object array — for which no runtime
+  lowering exists.
+
+A receiver that is statically a string — a string literal, a string-typed
+identifier, or a call of a declared function returning `string` — never draws
+TH0085: `indexOf`/`includes`/`lastIndexOf` on strings are string methods, and
+the unsupported ones draw TH0087 instead.
+
+Examples (rejected):
+
+```typescript
+function getArr(): number[] {
+  return [3, 1, 2];
+}
+// @thales-expect-error TH0085
+console.log(getArr().join(','));
+
+const flags: boolean[] = [true, false];
+// @thales-expect-error TH0085
+console.log(flags.includes(true));
+```
+
+Fix: for a non-identifier receiver, assign the array to a typed local first
+(`const arr: number[] = getArr(); arr.join(',')`). A `boolean[]`/nested-array
+receiver has no equivalent lowering today. Generalizing the emitter's receiver
+type inference (issue #61) will let more of these compile.
+
+### TH0086 — Definedness test on a non-identifier subject
+
+**Message:** `A definedness test against 'undefined'/'null' is only supported when its subject is a variable; bind this expression to a variable first`
+
+A definedness test (`=== undefined`, `!== undefined`, and the `null` forms) is
+lowered only when its subject is a variable: the emitter narrows or folds the
+test based on the variable's recorded type. When the subject is any other
+expression — a function call, a member access, a computed index — the emitter
+cannot narrow it and would emit a literal `undefined` (an unknown Lean
+identifier) or a bare `.none`, so the test is rejected rather than miscompiled.
+`tsc` accepts these.
+
+Example (rejected):
+
+```typescript
+function g(): string {
+  return 'a';
+}
+function f(): string {
+  // @thales-expect-error TH0086
+  if (g() !== undefined) {
+    return g();
+  }
+  return 'n';
+}
+```
+
+Fix: bind the subject to a variable first
+(`const s = g(); if (s !== undefined) { … }`). Generalizing the emitter's RHS
+type inference (issue #61) will let more of these narrow directly.
+
+### TH0087 — Unsupported `String.prototype` method
+
+**Message:** `String method '<name>' is not supported; the available string operations are 'startsWith', 'endsWith', and 'split'`
+
+Most `String.prototype` methods type-check — they are declared so that calling
+them is not a spurious `tsc`-style error — but the emitter has no correct Lean
+lowering for them. Some would emit a nonexistent `String.<m>` (e.g. `charAt`,
+`toUpperCase`, `slice`, `padStart`), and some have diverging semantics: JS
+`replace` replaces only the first match, whereas Lean's `String.replace`
+replaces every occurrence. Rather than miscompile (or silently produce wrong
+output), these are rejected. Only `length`, `startsWith`, `endsWith`, and
+`split` are supported today. `tsc` accepts the rejected methods.
+
+Example (rejected):
+
+```typescript
+const s: string = 'abcabc';
+// @thales-expect-error TH0087
+console.log(s.toUpperCase());
+```
+
+Fix: restructure to avoid the method, or use one of the supported operations.
+Sound lowerings (UTF-16-faithful where it matters) are future stdlib work
+(issue #28).
+
+### TH0088 — Unsupported `import` form
+
+**Message:** `This import form (<form>) is not supported; use named imports like `import { a, b } from './m'``
+
+Only **named** imports — `import { a, b as c } from './m'` — are in the subset.
+Default imports (`import D from './m'`), namespace imports
+(`import * as ns from './m'`), and side-effect imports (`import './m'`) are
+rejected. The subset binds each imported name to a specific exported
+declaration, which the named form makes explicit; the other forms either bind a
+module's default/whole-namespace object (no Lean analogue in the selective-`open`
+lowering) or import purely for side effects (the subset has none at module
+scope). `import type { … }` is accepted. `tsc` accepts all of these forms.
+
+Example (rejected):
+
+```typescript
+// @thales-expect-error TH0088
+import * as ns from './a';
+export const v: bigint = 1n;
+```
+
+Fix: rewrite as a named import listing the specific bindings you use.
+
+### TH0089 — Unsupported `export` form
+
+**Message:** `This export form (<form>) is not supported; use inline `export`on a declaration or`export { a, b };``
+
+Only inline `export` on a declaration (`export function f …`, `export const …`,
+`export interface …`, `export type …`) and trailing named exports
+(`export { a, b as c };`) are in the subset. `export default …` and re-exports
+(`export { … } from './m'`, `export * from './m'`) are rejected: a default
+export has no named binding for the selective-`open` lowering, and re-exports
+would require threading another module's surface through this one. `tsc` accepts
+these forms.
+
+Example (rejected):
+
+```typescript
+// @thales-expect-error TH0089
+export default function f(): bigint {
+  return 1n;
+}
+```
+
+Fix: give the declaration a name and export it inline or via `export { … }`.
+
+### TH0090 — Circular imports
+
+**Message:** `Circular imports are not supported because the emitted Lean modules cannot form an import cycle (<path>)`
+
+Each TypeScript module lowers to one Lean module, and Lean's module import graph
+must be acyclic. When the resolver follows imports and re-enters a file already
+on the current import chain, it reports the cycle rather than emit Lean modules
+that cannot compile. `tsc` accepts circular imports (its module graph permits
+cycles), so this is a Thales-only restriction.
+
+Example (rejected): `a.ts` imports from `./entry` while `entry.ts` imports from
+`./a`.
+
+```typescript
+// entry.ts
+// @thales-expect-error TH0090
+import { a } from './a';
+export function b(): bigint {
+  return 1n;
+}
+console.log(a());
+```
+
+Fix: break the cycle by moving the shared declarations into a third module that
+both import, so the dependency graph is acyclic.
+
+### TH0091 — Regex literals are not supported
+
+Thales has no Lean lowering for `RegExp` values, so a regex literal such as
+`/abc/g` cannot be emitted. The emitter previously wrote an `(unsupported: …)`
+placeholder for it; it is now rejected up front.
+
+```ts
+const re = /abc/g; // TH0091
+```
+
+### TH0092 — Unsupported unary operator
+
+`typeof`, `void`, and `delete` have no Lean lowering, so they are rejected wherever
+they appear. This includes `typeof` used inside a guard such as
+`if (typeof x === "string")` or a `switch (typeof x)` discriminant: the emitter
+cannot lower the `typeof` test, so it is rejected rather than accepted and silently
+miscompiled.
+
+```ts
+const t = typeof 1; // TH0092
+const u = void 0; // TH0092
+
+function f(x: string): boolean {
+  if (typeof x === 'string') {
+    // TH0092
+    return true;
+  }
+  return false;
+}
+```
+
+### TH0093 — Top-level mutable variable referenced by a hoisted declaration
+
+A top-level `let` that is mutated at module level is lowered into the `main`
+`IO` do-block, where it is a local `let mut`. A hoisted declaration — a
+`function`, or a `const` emitted as a top-level `def` — is elaborated outside
+`main` and so cannot reference it. Move the value into a `const`, or compute it
+where it is used. (Widening this is a future task.)
+
+Only a genuine _free_ reference trips this. A name inside the declaration that
+merely shares the mutable's spelling — a shadowing parameter or local, an
+object-literal key, or a non-computed member-property name (`obj.total`) — is
+not a reference and does not fire.
+
+```ts
+let total = 0;
+for (const x of [1, 2, 3]) {
+  total += x;
+}
+function report(): number {
+  return total; // TH0093: `total` is a `main`-local `let mut`
+}
+console.log(report());
+```
+
+---
+
+## Classes
+
+The v1 class shape (readonly annotated fields, an assign-each-field-once
+constructor, public instance methods with return annotations) is in subset;
+see [subset.md#th0030--unsupported-class-form](./subset.md#th0030--unsupported-class-form)
+for the full shape. The codes below reject the member forms outside it.
+
+### TH0094 — Class accessors not supported
+
+**Message:** `Class accessors (get/set) are not supported`
+
+Rejected: `class C { get x(): bigint { return 0n; } }`
+
+The follow-up getters/statics slice (#113) lowers `get` to a zero-argument
+namespace function.
+
+---
+
+### TH0095 — Static class members not supported
+
+**Message:** `Static class members are not supported`
+
+Rejected: `class C { static count(): bigint { return 0n; } }` — also static
+fields and `static { ... }` blocks.
+
+The follow-up getters/statics slice (#113) lowers statics to plain
+namespace-level declarations.
+
+---
+
+### TH0096 — Private class members not supported
+
+**Message:** `Private class members are not supported`
+
+Rejected: `class C { #x: bigint; }`, `private x: bigint;`,
+`protected m(): void {}`
+
+The follow-up privacy slice (#114) maps member privacy onto Lean `private`
+declarations. `public` is accepted (it is the default).
+
+---
+
+### TH0097 — Class field initializers not supported
+
+**Message:** `Class field initializers are not supported; assign the field in the constructor`
+
+Rejected: `class C { readonly x: bigint = 0n; ... }`
+
+**Fix:** move the initial value into the constructor:
+`constructor() { this.x = 0n; }`. Initializers interleave with constructor
+execution order in ways the straight-line `ctor'` lowering does not model.
+
+---
+
+### TH0098 — Unsupported class field form
+
+**Message:** `Unsupported class field: <detail>`
+
+A v1 field is exactly `readonly <name>: <Type>;`, declared once. Details:
+`must be declared readonly`, `optional fields are not supported`, `computed
+names are not supported`, `missing type annotation`, `'<name>' is declared
+more than once`, `'<name>' is a reserved name` (member names that collide
+with Lean's auto-generated structure members: `mk`, `rec`, `recOn`,
+`casesOn`, `brecOn`, `below`, `ibelow`, `noConfusion`, `noConfusionType`).
+
+Rejected: `class C { count: bigint; ... }` (not readonly)
+
+---
+
+### TH0099 — Unsupported constructor form
+
+**Message:** `Unsupported constructor: <detail>`
+
+A v1 constructor body is a straight-line sequence of `this.<field> = <expr>;`
+statements assigning each declared field exactly once, in any order, where an
+RHS may read parameters, outer scope, and already-assigned fields — but not
+the class's own name (`ctor'` is a non-recursive `def`) and not any of the
+class's methods (they are all declared after `ctor'`; see TH0101). Parameters
+must be plain annotated identifiers (no defaults, rest, destructuring, or
+parameter properties) and may not share the class's name. A class with fields
+must declare a constructor; a class must declare at most one.
+
+Rejected: `constructor(x: bigint) { if (x > 0n) { this.x = x; } }`
+
+---
+
+### TH0100 — Unsupported class method form
+
+**Message:** `Unsupported class method: <detail>`
+
+A v1 method is a public non-static instance method with a return type
+annotation, plain annotated identifier parameters (no `?`, defaults, rest,
+or destructuring; no parameter sharing the class's name), and a plain
+non-duplicate name. Overload signatures parse as a second declaration of
+the same name and are rejected as duplicates. Details: `generator and async
+methods are not supported`, `computed names are not supported`, `optional
+methods are not supported`, `generic methods are not supported`, `missing
+return type annotation`, `'override' is not supported`, `parameters must be
+plain annotated identifiers`, `parameter '<name>' shadows the class name`,
+`'<name>' is declared more than once`, `'<name>' is a reserved name`.
+
+Reserved method names are the Lean structure members (see TH0098) plus the
+names matched by name-keyed checks elsewhere in the pipeline: the mutating
+method family (`push`, `pop`, `shift`, `unshift`, `splice`, `sort`,
+`reverse`, `fill`, `copyWithin`, `set`, `delete`, `clear`, `add`) and
+`reduce`.
+
+Rejected: `class C { zero() { return 0n; } }` (missing return annotation)
+
+---
+
+### TH0101 — Class method referenced before its declaration
+
+**Message:** `Class method '<name>' is referenced before its declaration`
+
+A method body may reference only methods declared _earlier_ in the same
+class; self-recursion is allowed. This mirrors the compiler's declare-before-use
+stance for top-level declarations: methods lower to namespace-level `def`s in
+source order, so a forward reference would not elaborate. A constructor may
+reference no method of its class at all (via `this` or any other instance) —
+`ctor'` is emitted before every method.
+
+Rejected: `class C { a(): bigint { return this.b(); } b(): bigint { return 1n; } }`
+
+**Fix:** reorder the methods.
+
+---
+
+### TH0102 — Class method used as a value
+
+**Message:** `Class method '<name>' may only be called, not used as a value`
+
+Methods lower to receiver-first functions, not closure-valued fields, so a
+method read outside call position has no Lean image. The check is name-based
+across the whole program (a documented conservative over-approximation): any
+non-call member access whose property name matches a declared class-method
+name is rejected.
+
+Rejected: `const f = p.norm1;`
+
+**Fix:** call the method (`p.norm1()`), or wrap it in an arrow function
+(`(q: Point) => q.norm1()`).
+
+### TH0103 — `undefined` used as a binding name
+
+**Message:** `The name 'undefined' cannot be bound; rename this binding`
+
+The emitter lowers the `undefined` global to `.none` wherever it appears in
+value position, exactly like the `null` literal. JavaScript permits shadowing
+`undefined` with a local binding (`const undefined = 5;`), but under that
+lowering every reference to the binding would be silently rewritten to
+`.none` — an accepted program with the wrong meaning. Any binder position
+that reaches the emitter is rejected: `let`/`const`/`var` declarators,
+function/class declaration names, function parameters (declarations,
+expressions, and arrows), `catch` parameters, and loop-head binders.
+
+Rejected: `const undefined = 5;`, `function g(undefined: number) { … }`
+
+**Fix:** rename the binding.
+
+### TH0104 — Bare `null`/`undefined` initializer without a type annotation
+
+**Message:** `A bare 'null' or 'undefined' initializer needs a type annotation on the binding`
+
+A bare `null` or `undefined` initializer lowers to `.none`, and only a type
+annotation on the binding tells Lean which `Option` type that `.none`
+inhabits. Without one the emitted declaration cannot elaborate (and the
+binding's TS type is the useless singleton `undefined`/`null` anyway).
+
+Rejected: `const u = undefined;`, `const n = null;`
+
+**Fix:** annotate the binding with the union it will hold:
+`const u: string | undefined = undefined;`
+
+### TH0105 — Top-level declaration referenced before its declaration
+
+**Message:** `'<name>' is referenced before its declaration; move the declaration before this use`
+
+tsc accepts a forward reference to a hoisted top-level declaration from an
+earlier function body — functions and classes are visible throughout their
+scope, and only evaluation order matters. Emitted Lean declarations appear
+in source order, so such a reference would not elaborate; it is rejected
+where it occurs. A top-level evaluated use before the declaration (e.g.
+`new Point(1n)` above `class Point`) also draws TH0105, though tsc rejects
+that shape itself (TS2449).
+
+Rejected:
+
+```ts
+function caller(): bigint {
+  return helper() + 1n; // TH0105: helper is declared below
+}
+function helper(): bigint {
+  return 41n;
+}
+```
+
+**Fix:** reorder the declarations so every name is declared before its
+first use.

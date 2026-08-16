@@ -1,0 +1,145 @@
+# Changelog
+
+All notable changes to Thales are recorded here. The README and the
+`docs/` tree are the source of documentation; this file only tracks
+release-to-release deltas. The format follows
+[Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/).
+
+## Unreleased
+
+After 0.7, the next headline candidate is **provably-safe array
+indexing**, re-deferred from 0.7 (see ADR-0002). Two contexts:
+literal-index into a literal/known-length array (`[10, 20, 30][1]`) and
+length-narrowed access with a `Natural` index (`if (i < xs.length) xs[i]`
+where `i: Natural`), both returning `T` instead of `T | undefined`. Tuple
+indexing (`tup[k]`) joins the same static-length family. The Lean-side
+soundness basis is a seventh boundary axiom (`Float.toUInt64_of_isNatural`)
+plus `Natural.toNat`, which round-trip an `isNatural` Float through
+`UInt64.toNat` for use as a `Nat`-typed index. forEach/map/filter/reduce
+callback indexing (P3) is a later stretch. Sequencing against Arc-1 work
+(loops / local mutation, see `docs/future.md`) is not yet fixed.
+
+## 0.7 — forthcoming
+
+A **0.6-completeness** release: it finishes features already inside the
+subset and adds no new language surface. Provably-safe array indexing —
+the prior 0.7 plan — was re-sequenced out; see ADR-0002 for why.
+
+### Added
+
+- `Array<T>.map` / `Array<T>.reduce` return-type inference for inline
+  arrow / function-expression callbacks: `[1, 2, 3].map(x => x * 2)` is
+  typed `number[]` (was `Array<any>`), and `reduce`'s accumulator and
+  result take the type of the seed value. Monomorphic only —
+  named-reference and generic callbacks stay conservative. `filter` was
+  already exact.
+- TH0081 at two further positions: object-literal property values and
+  array-literal elements. 0.6 fired it only at variable declarations,
+  function parameters, and return statements. (Default parameter values
+  and explicit generic type arguments are deferred — both require
+  parser/AST changes to capture syntax the parser currently discards;
+  spread arguments additionally need spread-into-call semantics; the
+  class-property context is unreachable while classes are TH0030.)
+- Top-level `if`-statements. 0.6 lowered only top-level declarations and
+  bare expressions, forcing top-level `if`s into a function wrapper; they
+  now lower into the script's `#eval (do …)` sequence, reusing the
+  existing `is<T>` narrowing emit. Conjunction guards
+  (`if (isInteger(x) && isByte(x))`) narrow to the most-specific
+  refinement kind.
+- Template-literal emission. `` `a=${x}` `` now lowers to string
+  concatenation with per-interpolation `JSShow` (previously emitted as an
+  unsupported-expression placeholder). Template literals were already
+  parsed and type-checked; this completes their emit path. No new
+  language surface.
+
+## 0.6.1 — 2026-05-24
+
+Internal refactor with no user-visible change to diagnostics, emit
+output, or runtime behavior.
+
+### Changed
+
+- Split `Thales/TypeCheck/Generic.lean` (832 → 608 lines): pure
+  structural substitution moves to `TypeSubstitution.lean`; the
+  `checkAssignable` gate moves to `Assignability.lean`. The
+  irreducible mutual block (`resolveTypeGeneric`, `isSubtype`,
+  `evaluateConditionalType`, `evaluateSingleConditional`,
+  `evaluateMappedType`) stays intact.
+- Consolidate TH0080 / TH0081 emission behind a single classifier in
+  the new `RefinementDiag.lean`; the two call sites in
+  `checkAssignable` and `emitArgMismatch` stop duplicating the logic.
+- Delete the empty `Thales/TypeCheck/Subtype.lean` (17 lines, all
+  comment) left over from an earlier reorganization.
+- Promote `exprLoc` to `Thales.AST` (exhaustive over every
+  `Expression` constructor); `tsExprLoc` moves to `Thales.TypeCheck`
+  and delegates to it. Three private copies — two identical 7-case
+  partials in `Check.lean` and `Synth.lean`, and an unused 28-case
+  version in `SubsetCheck.lean` — are removed.
+
+## 0.6 — 2026-05-24
+
+### Added
+
+- `@thales/prelude` module exporting four built-in bounded number
+  types: `Integer` (safe integer), `Natural` (non-negative safe
+  integer), `Byte` (`0..255`), and `Bit` (`0` or `1`). The chain
+  `Bit ⊆ Byte ⊆ Natural ⊆ Integer ⊆ number` is enforced at compile
+  time.
+- Eight prelude functions per refinement type:
+  `isInteger`/`isNatural`/`isByte`/`isBit` (TypeScript type-guard
+  predicates) and `asInteger`/`asNatural`/`asByte`/`asBit` (throwing
+  constructors that raise `RangeError` on out-of-range input). At the
+  top level, a bare `asBit(2);` statement is emitted as an
+  `asBitEffect` IO mirror that `IO.Process.exit 1`s on failure so the
+  Lean path matches `tsx`'s nonzero exit.
+- Predicate-guard narrowing: `if (isInteger(x)) { ... }` (also
+  `Number.isSafeInteger`) narrows `x` to the corresponding refinement
+  type in the true branch. `Number.isInteger` is intentionally not
+  recognized — it admits unsafe integers.
+- TH0080: numeric literal out of range for a refinement type (e.g.,
+  `const c: Byte = 256`).
+- TH0081: a `number`-typed value is not assignable to a refinement slot
+  without narrowing or constructor evidence (variable declarations,
+  function parameters, return statements).
+- TH9004: emitted Lean code contains `sorry`. The conformance harness
+  greps every emitted file after emit and fails on a hit.
+- Lean-side reflection for `Integer`: `Integer.toInt` and
+  `Integer.ofInt` round-trip the type into `Int`, with arithmetic
+  homomorphisms for `+`/`-`/`*`. Downstream Lean proofs can reason
+  about safe-integer arithmetic at the `Int` level.
+- Twelve IEEE-754 boundary axioms in `Thales.TS.Runtime`, grouped by
+  purpose (Float ↔ Int boundary, `Float.abs`, `Integer` reflection).
+  See [`docs/axioms.md`](docs/axioms.md) for the full list and
+  rationale. `JSShow` instances for the four refinement types so
+  `console.log(x)` prints them the same way as the VM path.
+- [`docs/beyond-typescript.md`](docs/beyond-typescript.md): an
+  orientation for readers who want to know what Thales gives you that
+  TypeScript alone cannot — the bounded number types are the v0.6
+  headline.
+
+### Changed
+
+- `Math.abs` is typed `Integer → Natural` when the argument is
+  `Integer`-typed (still `number → number` otherwise). The Lean
+  runtime ships `Math.absI : Integer → Natural` for this overload.
+- `Array<T>.length` and `string.length` are typed `Natural` (was
+  `number`). Existing code that assigned them to `number` continues to
+  work via the chain's coercions.
+- `Array<T>` callback types for `forEach`, `map`, `filter`, and
+  `reduce` give the `index` parameter type `Natural` (was `number`).
+- Conformance corpus relocated from `examples/` to
+  `tests/conformance/{accept,reject,throws,future}`. Contributors
+  adding fixtures should pick the directory that matches the fixture's
+  expected outcome; `future/` holds parked fixtures the harness
+  ignores.
+
+### Fixed
+
+- Conformance harness now passes `NODE_OPTIONS=--disable-warning=DEP0205`
+  to its `tsx` invocation. tsx triggers Node's deprecated
+  `module.register()` API once per process; the resulting stderr line
+  was failing byte-identity checks on every fixture.
+
+## 0.5 — 2026-04-28
+
+Initial release.

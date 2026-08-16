@@ -1,0 +1,18 @@
+{
+  "name": "thales-dev",
+  "version": "1.0.0",
+  "description": "Internal testing TS/JS infrastructure for Thales (should be dev deps only)",
+  "private": true,
+  "scripts": {
+    "conformance": "node scripts/run-examples.js",
+    "conformance:self-test": "node scripts/run-examples.js --self-test",
+    "setup:test262": "node scripts/setup-test262.js",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "prettier": "3.8.3",
+    "tsx": "4.21.0",
+    "typescript": "6.0.2"
+  }
+}
