@@ -27,5 +27,6 @@ jobs:
       - name: Update Lean and dependencies
         uses: leanprover-community/lean-update@main
         with:
+          lake_package_directory: engines/thales
           on_update_succeeds: pr
           on_update_fails: issue

@@ -1,15 +1,29 @@
-name: CI
+name: thales
 
 on:
   push:
     branches: [main]
+    paths:
+      - 'engines/thales/**'
+      - 'spec/**'
+      - '.github/workflows/thales.yml'
+      - '.gitmodules'
   pull_request:
+    paths:
+      - 'engines/thales/**'
+      - 'spec/**'
+      - '.github/workflows/thales.yml'
+      - '.gitmodules'
 
 env:
   NODE_VERSION: '24.x'
   LC_ALL: C.UTF-8
   LANG: C.UTF-8
   TZ: UTC
+
+defaults:
+  run:
+    working-directory: engines/thales
 
 jobs:
   build-and-test:
@@ -27,6 +41,7 @@ jobs:
       - name: Install Lean toolchain
         uses: leanprover/lean-action@v1
         with:
+          lake-package-directory: engines/thales
           # We run our own lake commands below; tell the action not to build/test/lint.
           auto-config: false
           build: false
@@ -40,6 +55,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
+          cache-dependency-path: engines/thales/package-lock.json
 
       - name: npm install
         run: npm ci
@@ -51,9 +67,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            .lake/build
-            .lake/packages
-          key: lake-${{ runner.os }}-${{ hashFiles('lean-toolchain', 'lakefile.lean', 'lake-manifest.json') }}
+            engines/thales/.lake/build
+            engines/thales/.lake/packages
+          key: lake-${{ runner.os }}-${{ hashFiles('engines/thales/lean-toolchain', 'engines/thales/lakefile.lean', 'engines/thales/lake-manifest.json') }}
           restore-keys: |
             lake-${{ runner.os }}-
 

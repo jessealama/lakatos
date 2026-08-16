@@ -1,0 +1,11 @@
+{
+  "name": "lakatos",
+  "version": "0.0.0",
+  "description": "Proofs and refutations for TypeScript.",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=24"
+  }
+}

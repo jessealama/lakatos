@@ -14,6 +14,10 @@ env:
   LANG: C.UTF-8
   TZ: UTC
 
+defaults:
+  run:
+    working-directory: engines/thales
+
 jobs:
   full-conformance:
     name: Full TS conformance corpus
@@ -28,6 +32,7 @@ jobs:
       - name: Install Lean toolchain
         uses: leanprover/lean-action@v1
         with:
+          lake-package-directory: engines/thales
           auto-config: false
           build: false
           test: false
@@ -39,6 +44,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
+          cache-dependency-path: engines/thales/package-lock.json
 
       - name: npm install
         run: npm ci
@@ -47,9 +53,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            .lake/build
-            .lake/packages
-          key: lake-${{ runner.os }}-${{ hashFiles('lean-toolchain', 'lakefile.lean', 'lake-manifest.json') }}
+            engines/thales/.lake/build
+            engines/thales/.lake/packages
+          key: lake-${{ runner.os }}-${{ hashFiles('engines/thales/lean-toolchain', 'engines/thales/lakefile.lean', 'engines/thales/lake-manifest.json') }}
           restore-keys: |
             lake-${{ runner.os }}-
 
@@ -76,7 +82,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: conformance-report-${{ github.run_id }}
-          path: conformance-report.txt
+          path: engines/thales/conformance-report.txt
 
       - name: test262 run
         run: |
@@ -97,4 +103,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test262-report-${{ github.run_id }}
-          path: test262-report.txt
+          path: engines/thales/test262-report.txt
