@@ -8,25 +8,39 @@ destination that subsumes both.
 
 ## The destination: proof as property-based testing's endgame
 
-[pabst](https://github.com/jessealama/pabst) lets TypeScript
-programmers state properties of their functions in JSDoc and tries to
-refute them with generated inputs. Its own documentation is careful
-about the limit of that method: failing to refute a property — even
-across many runs — is evidence, not proof.
+Property-based testing lets TypeScript programmers state properties of
+their functions in JSDoc and tries to refute them with generated
+inputs. The limit of that method is built in: failing to refute a
+property — even across many runs — is evidence, not proof.
 
-Thales is the tool that crosses that limit. The destination is
-`pabst --prove`: the same annotation the user already wrote for
-testing gets escalated, where possible, to a machine-checked claim
-about **all** inputs. One spec, strongest available guarantee:
+Thales is the tool that crosses that limit: the same annotation the
+user already wrote for testing gets escalated, where possible, to a
+machine-checked claim about **all** inputs. One spec, strongest
+available guarantee:
 
-> You wrote a property. pabst ran it ten thousand times. Thales proved
-> it for every input there is.
+> You wrote a property. Ten thousand generated inputs failed to refute
+> it. Thales proved it for every input there is.
 
-The dependency arrow points one way: pabst depends on Thales as its
-proof engine, the way Vite depends on esbuild or Prisma depends on its
-query engines. Thales never invokes pabst, remains a standalone
-compiler with its own repository and release cadence, and is usable
-directly by anyone who wants the engine without the funnel.
+Thales is one engine in a small constellation, each part with one job:
+
+- [lakatos](https://github.com/jessealama/lakatos) is the user-facing
+  frontend. Its flagship command, `lakatos check`, runs the
+  proofs-and-refutations loop: try to refute, then try to prove,
+  report the strongest verdict earned.
+- [pabst](https://github.com/jessealama/pabst) is the refutation
+  engine: properties become fast-check runs hunting for
+  counterexamples.
+- Thales is the proof engine.
+- [lemma-lang](https://github.com/jessealama/lemma-lang) is the
+  specification language the other three share (see "The spec
+  dialect" below).
+
+The dependency arrows point one way: lakatos depends on both engines,
+the way Vite depends on esbuild or Prisma depends on its query
+engines; the engines never depend on each other. Thales never invokes
+pabst, remains a standalone compiler with its own repository and
+release cadence, and is usable directly by anyone who wants the
+engine without the frontend.
 
 ## The verdict ladder
 
@@ -44,11 +58,19 @@ Specs are checked automatically on every run, like types. There is no
    arithmetic, structural recursion over algebraic data — and we widen
    that class deliberately, not speculatively.
 3. **Neither.** Thales reports "unable to prove" as a non-fatal
-   diagnostic. The spec is not an error and nothing is blocked; on the
-   pabst side it simply retains its tested status.
+   diagnostic. The spec is not an error and nothing is blocked; under
+   `lakatos check` the property simply retains its tested status.
 
 A counterexample discovered at any rung is always an error. Tactic
 weakness degrades a verdict; it never punishes the user.
+
+Verdicts carry [SZS ontology](https://tptp.org/UserDocs/SZSOntology/)
+statuses as machine-readable metadata — `Theorem` for a proved
+property, `CounterSatisfiable` for a refuted one, `Unknown` with a
+`GaveUp` sub-status when the ladder is exhausted — shared vocabulary
+across Thales, pabst, and lakatos output. Exit codes stay boring and
+Unix-shaped; the ontology lives in output and JSON, never in exit
+codes.
 
 ## The unit of verification
 
@@ -80,19 +102,26 @@ work, sequenced below.
 
 ## The spec dialect
 
-The dialect is pabst's, normatively: `@ensures{name}` with `forall`
-binders and `==>`, defined by pabst's grammar and living entirely
+The dialect is [Lemma](https://github.com/jessealama/lemma-lang):
+`@ensures{name}` with `forall` binders and `==>`, living entirely
 inside JSDoc, so `tsc --strict` and the rest of the ecosystem see
-ordinary TypeScript. Thales consumes the same annotations; the two
-tools are two discharge modes for one spec language.
+ordinary TypeScript. The grammar was developed in pabst and now has a
+neutral normative home — an engine cannot own the shared surface —
+along with prose semantics and a conformance-fixture corpus. Thales's
+annotation parser is held to that corpus; the two engines are two
+discharge modes for one spec language. The Lemma grammar stops at the
+annotation boundary: formula structure is Lemma, the leaves are
+opaque TypeScript expressions, and Thales's accepted subset of
+TypeScript itself remains specified operationally by this
+repository's conformance corpus, not by any grammar.
 
 ## Distribution
 
 No TypeScript programmer will install a Lean toolchain by hand, and
 none will be asked to. Thales ships prebuilt per-platform bundles —
 the compiler binary plus the pinned toolchain and compiled runtime —
-and the pabst integration downloads the pinned bundle on first use,
-the way Playwright fetches browsers and Prisma fetches engines. The
+and lakatos pins a Thales version and downloads the bundle on first
+use, the way Playwright fetches browsers and Prisma fetches engines. The
 words "elan" and "lake" never appear in a user's terminal. A
 first-class GitHub Action caches the same bundle so CI proving is a
 few lines of workflow.
@@ -141,7 +170,7 @@ eventually run on end-to-end.
 3. **Cone-based verification.** The annotated-function unit, opaque
    callees, and the trust report.
 4. **Distribution.** Prebuilt bundles, the auto-download path, the
-   GitHub Action, and the `pabst --prove` glue.
+   GitHub Action, and the lakatos glue.
 
 ## Emit architecture: structured output instead of strings
 
