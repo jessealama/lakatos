@@ -4,11 +4,12 @@
   "description": "Property-based testing from @ensures annotations, powered by fast-check.",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jessealama/pabst.git"
+    "url": "git+https://github.com/jessealama/lakatos.git",
+    "directory": "engines/pabst"
   },
-  "homepage": "https://github.com/jessealama/pabst#readme",
+  "homepage": "https://github.com/jessealama/lakatos#readme",
   "bugs": {
-    "url": "https://github.com/jessealama/pabst/issues"
+    "url": "https://github.com/jessealama/lakatos/issues"
   },
   "keywords": [
     "property-based-testing",

@@ -27,19 +27,18 @@ Thales is one engine in a small constellation, each part with one job:
   frontend. Its flagship command, `lakatos check`, runs the
   proofs-and-refutations loop: try to refute, then try to prove,
   report the strongest verdict earned.
-- [pabst](https://github.com/jessealama/pabst) is the refutation
-  engine: properties become fast-check runs hunting for
-  counterexamples.
+- [pabst](../../pabst/) is the refutation engine: properties become
+  fast-check runs hunting for counterexamples.
 - Thales is the proof engine.
-- [lemma-lang](https://github.com/jessealama/lemma-lang) is the
-  specification language the other three share (see "The spec
-  dialect" below).
+- [Lemma](../../../spec/) is the specification language the other
+  three share (see "The spec dialect" below).
 
 The dependency arrows point one way: lakatos depends on both engines,
 the way Vite depends on esbuild or Prisma depends on its query
 engines; the engines never depend on each other. Thales never invokes
-pabst, remains a standalone compiler with its own repository and
-release cadence, and is usable directly by anyone who wants the
+pabst. All three live in one repository — the lakatos monorepo — as
+components of one product, cut from the same commit with one version
+number; Thales remains usable directly by anyone who wants the
 engine without the frontend.
 
 ## The verdict ladder
@@ -102,10 +101,10 @@ work, sequenced below.
 
 ## The spec dialect
 
-The dialect is [Lemma](https://github.com/jessealama/lemma-lang):
-`@ensures{name}` with `forall` binders and `==>`, living entirely
-inside JSDoc, so `tsc --strict` and the rest of the ecosystem see
-ordinary TypeScript. The grammar was developed in pabst and now has a
+The dialect is [Lemma](../../../spec/): `@ensures{name}` with
+`forall` binders and `==>`, living entirely inside JSDoc, so
+`tsc --strict` and the rest of the ecosystem see ordinary TypeScript.
+The grammar was developed in pabst and now has a
 neutral normative home — an engine cannot own the shared surface —
 along with prose semantics and a conformance-fixture corpus. Thales's
 annotation parser is held to that corpus; the two engines are two
@@ -118,10 +117,11 @@ repository's conformance corpus, not by any grammar.
 ## Distribution
 
 No TypeScript programmer will install a Lean toolchain by hand, and
-none will be asked to. Thales ships prebuilt per-platform bundles —
-the compiler binary plus the pinned toolchain and compiled runtime —
-and lakatos pins a Thales version and downloads the bundle on first
-use, the way Playwright fetches browsers and Prisma fetches engines. The
+none will be asked to. The monorepo's releases include prebuilt
+per-platform engine bundles — the compiler binary plus the pinned
+toolchain and compiled runtime — cut from the same commit as the
+frontend (one version number, no pin to bump), and lakatos downloads
+the bundle on first use, the way Playwright fetches browsers. The
 words "elan" and "lake" never appear in a user's terminal. A
 first-class GitHub Action caches the same bundle so CI proving is a
 few lines of workflow.
@@ -153,7 +153,8 @@ because verification targets need them, not to chase coverage for its
 own sake. The Decimal
 ([#126](https://github.com/jessealama/thales/issues/126)) and Amount
 ([#130](https://github.com/jessealama/thales/issues/130)) polyfill
-ports are repositioned from widening capstones to showcase corpus for
+ports (issues on the pre-monorepo thales tracker) are repositioned
+from widening capstones to showcase corpus for
 the ladder — real, spec-bearing code the verdict ladder should
 eventually run on end-to-end.
 

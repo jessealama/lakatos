@@ -56,8 +56,8 @@ one. See [`docs/subset.md`](docs/subset.md#total-and-termination).
 ## Install
 
 ```bash
-git clone https://github.com/jessealama/thales.git
-cd thales
+git clone git@github.com:jessealama/lakatos.git
+cd lakatos/engines/thales
 lake build thales
 ```
 

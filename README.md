@@ -20,8 +20,23 @@ the conjecture to be repaired. That loop is exactly what this tool runs.
 
 ## Status
 
-Design phase. The two engines exist and work today; this frontend does not
-yet. This README describes the committed design.
+Design phase. The two engines live in this repository and work today; the
+frontend does not yet exist. This README describes the committed design.
+
+## Layout
+
+Everything is one repository, one product, one version number:
+
+- `src/` — the lakatos CLI frontend (the npm package at the repo root;
+  forthcoming).
+- [`engines/thales/`](engines/thales/) — the proof engine: a
+  TypeScript-to-Lean 4 compiler with a graded automatic discharge ladder
+  (exhaustive checking on bounded domains, then a fixed tactic stack, then
+  an honest "unable to prove").
+- [`engines/pabst/`](engines/pabst/) — the refutation engine: compiles
+  properties to [fast-check](https://fast-check.dev/) runs.
+- [`spec/`](spec/) — the Lemma annotation language: grammar, prose
+  semantics, and conformance fixtures.
 
 ## Architecture
 
@@ -32,27 +47,21 @@ Lakatos is a thin frontend over two engines, one per side of the dialectic:
                 /        \
         refute /          \ prove
               v            v
-           pabst         thales
-     (TypeScript;       (Lean 4; pinned binary bundle,
-      npm dependency;    auto-downloaded to ~/.thales
-      fast-check)        on first use)
+        engines/pabst   engines/thales
+        (TypeScript;    (Lean 4; prebuilt per-platform
+         fast-check)     bundle, auto-downloaded on
+                         first use)
 ```
 
-- [pabst](https://github.com/jessealama/pabst) — the refutation engine:
-  compiles properties to [fast-check](https://fast-check.dev/) runs.
-- [thales](https://github.com/jessealama/thales) — the proof engine: a
-  TypeScript-to-Lean 4 compiler with a graded automatic discharge ladder
-  (exhaustive checking on bounded domains, then a fixed tactic stack, then
-  an honest "unable to prove").
-
 The engines never depend on each other. Neither requires you to install
-Lean: thales ships as a prebuilt per-platform bundle that lakatos pins and
-fetches once, Playwright-style.
+Lean: the Lean engine ships as a prebuilt per-platform bundle that lakatos
+fetches once, Playwright-style. The bundle is built from this repository's
+own releases — frontend and engine are cut from the same commit, so there
+is no engine version to pin and no skew to manage.
 
-Properties are written in
-[Lemma](https://github.com/jessealama/lemma-lang), a little specification
-language embedded in JSDoc — annotated files remain ordinary TypeScript
-accepted by `tsc --strict`.
+Properties are written in [Lemma](spec/), a little specification language
+embedded in JSDoc — annotated files remain ordinary TypeScript accepted by
+`tsc --strict`.
 
 ## Commands
 

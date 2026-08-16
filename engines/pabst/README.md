@@ -38,7 +38,7 @@ is evidence that it holds, but the property might still be
 false on inputs the generator never tried. If your goal is
 to prove the absence of counterexamples, you need
 proof-based tools such as
-[Thales](https://github.com/jessealama/thales). That said,
+[Thales](../thales/), this repository's proof engine. That said,
 property-based testing is a powerful technique that exposes
 a lot of bugs for very little effort, and it sits
 comfortably alongside proof-based approaches.

@@ -47,7 +47,8 @@ across four versions so each ships independently.
   branch `feat/thales-grind-poc` (validates the 0.8 verification
   approach before any 0.6 code lands).
 - GitHub milestone snapshot:
-  https://github.com/jessealama/thales/milestone/1 (was a
+  https://github.com/jessealama/thales/milestone/1 (on the
+  pre-monorepo thales repo; was a
   single-version snapshot; will be re-issued per-version from this
   spec when work is ready to start).
 
