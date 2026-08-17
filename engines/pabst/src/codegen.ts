@@ -3,14 +3,20 @@ import * as path from "node:path";
 import { buildSpecs } from "./build-spec.js";
 import { emit } from "./emit.js";
 import { PabstError } from "./errors.js";
+import { qualifiedName } from "./qualified-name.js";
 import { randomSeed } from "./seed.js";
 
 const SRC_EXT = /\.(ts|tsx|mts|cts|js|mjs|cjs)$/;
 
+export interface GeneratedProperty {
+  function: string;
+  property: string;
+}
+
 export interface GenResult {
   sourceFile: string;
   outFile: string;
-  propertyCount: number;
+  properties: GeneratedProperty[];
 }
 
 export function generate(
@@ -39,7 +45,14 @@ export function generate(
     const outFile = path.join(outRoot, noExt + ".pabst.test.ts");
     fs.mkdirSync(path.dirname(outFile), { recursive: true });
     fs.writeFileSync(outFile, emit(specs, file, outFile, seed), "utf8");
-    results.push({ sourceFile: file, outFile, propertyCount: specs.length });
+    results.push({
+      sourceFile: file,
+      outFile,
+      properties: specs.map((s) => ({
+        function: qualifiedName(s.functionName, s.className, s.isStatic),
+        property: s.name,
+      })),
+    });
   }
   return results;
 }

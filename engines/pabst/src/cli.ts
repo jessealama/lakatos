@@ -110,7 +110,7 @@ function run(
   const version = readVersion();
 
   const results = generate(files, ".pabst", seed);
-  const generated = results.reduce((n, r) => n + r.propertyCount, 0);
+  const generated = results.reduce((n, r) => n + r.properties.length, 0);
   console.error(
     `pabst: generated ${generated} propert${generated === 1 ? "y" : "ies"} across ${results.length} file(s) into .pabst/`,
   );
