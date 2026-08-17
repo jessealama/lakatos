@@ -1,16 +1,25 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
-import { readFileSync, realpathSync } from "node:fs";
-import { pathToFileURL } from "node:url";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
+import * as path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { generate } from "./codegen.js";
 import { resolveFiles } from "./discover.js";
 import { PabstError } from "./errors.js";
 import { runTests } from "./run.js";
 import { randomSeed, parseSeed } from "./seed.js";
 
+// The module runs from src/ under vitest and dist/engines/pabst/src/ as a
+// bin, so package.json sits a different number of levels up in each: walk.
 function readVersion(): string {
-  const url = new URL("../package.json", import.meta.url);
-  return JSON.parse(readFileSync(url, "utf8")).version as string;
+  let dir = path.dirname(fileURLToPath(import.meta.url));
+  while (!existsSync(path.join(dir, "package.json"))) {
+    const parent = path.dirname(dir);
+    if (parent === dir) throw new Error("package.json not found");
+    dir = parent;
+  }
+  return JSON.parse(readFileSync(path.join(dir, "package.json"), "utf8"))
+    .version as string;
 }
 
 const USAGE = "usage: pabst <test|gen> [--seed <n>] [files-or-globs...]";

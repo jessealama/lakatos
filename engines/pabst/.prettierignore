@@ -1,5 +1,0 @@
-# npm owns this file's formatting
-package-lock.json
-
-# local Claude Code artifacts (globally gitignored, so absent in CI)
-.claude/

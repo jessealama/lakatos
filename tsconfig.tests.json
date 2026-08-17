@@ -5,8 +5,7 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": true,
-    "declaration": false,
-    "rootDir": "."
+    "declaration": false
   },
-  "include": ["src", "tests"]
+  "include": ["src", "engines/pabst/src", "tests", "engines/pabst/tests"]
 }

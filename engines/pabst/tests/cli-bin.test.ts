@@ -5,7 +5,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 
 const root = process.cwd();
-const cliJs = path.join(root, "dist", "cli.js");
+const cliJs = path.join(root, "dist", "engines", "pabst", "src", "cli.js");
 
 // npm exposes the package's bin as a symlink (node_modules/.bin/pabst ->
 // dist/cli.js), so these tests run the *built* CLI the way an installed copy

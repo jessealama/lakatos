@@ -16,10 +16,16 @@ import * as runtime from "../src/runtime.js";
 describe("contract pins", () => {
   it("spells the runtime specifier as package.json's name + /runtime", () => {
     const pkg = JSON.parse(
-      readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+      readFileSync(new URL("../../../package.json", import.meta.url), "utf8"),
     );
     expect(RUNTIME_SPECIFIER).toBe(`${pkg.name}/runtime`);
     expect(Object.keys(pkg.exports)).toContain("./runtime");
+    expect(pkg.exports["./runtime"].default).toBe(
+      "./dist/engines/pabst/src/runtime.js",
+    );
+    expect(pkg.exports["./runtime"].types).toBe(
+      "./dist/engines/pabst/src/runtime.d.ts",
+    );
   });
 
   it("binds aliases to exports the runtime actually has", () => {

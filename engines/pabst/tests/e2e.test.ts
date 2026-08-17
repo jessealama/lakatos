@@ -8,40 +8,73 @@ import { expectValidIssue } from "./helpers/issue-schema.js";
 import { META } from "./helpers/fixtures.js";
 
 const root = process.cwd();
-const passSrc = path.join(root, "tests/fixtures/e2e/pass.ts");
-const failSrc = path.join(root, "tests/fixtures/e2e/fail.ts");
-const classPassSrc = path.join(root, "tests/fixtures/e2e/class-pass.ts");
-const classFailSrc = path.join(root, "tests/fixtures/e2e/class-fail.ts");
-const nearMissSrc = path.join(root, "tests/fixtures/e2e/near-miss.ts");
-const stringLawsSrc = path.join(root, "tests/fixtures/e2e/string-laws.ts");
-const intRoundTripSrc = path.join(root, "tests/fixtures/e2e/int-round-trip.ts");
+const passSrc = path.join(root, "engines/pabst/tests/fixtures/e2e/pass.ts");
+const failSrc = path.join(root, "engines/pabst/tests/fixtures/e2e/fail.ts");
+const classPassSrc = path.join(
+  root,
+  "engines/pabst/tests/fixtures/e2e/class-pass.ts",
+);
+const classFailSrc = path.join(
+  root,
+  "engines/pabst/tests/fixtures/e2e/class-fail.ts",
+);
+const nearMissSrc = path.join(
+  root,
+  "engines/pabst/tests/fixtures/e2e/near-miss.ts",
+);
+const stringLawsSrc = path.join(
+  root,
+  "engines/pabst/tests/fixtures/e2e/string-laws.ts",
+);
+const intRoundTripSrc = path.join(
+  root,
+  "engines/pabst/tests/fixtures/e2e/int-round-trip.ts",
+);
 const floatAssocSrc = path.join(
   root,
-  "tests/fixtures/e2e/float-associativity.ts",
+  "engines/pabst/tests/fixtures/e2e/float-associativity.ts",
 );
 const parseRoundTripSrc = path.join(
   root,
-  "tests/fixtures/e2e/parse-round-trip.ts",
+  "engines/pabst/tests/fixtures/e2e/parse-round-trip.ts",
 );
-const safeSqrtSrc = path.join(root, "tests/fixtures/e2e/safe-sqrt.ts");
-const boundedSrc = path.join(root, "tests/fixtures/e2e/bounded.ts");
-const regexGuardSrc = path.join(root, "tests/fixtures/e2e/regex-guard.ts");
-const equationPassSrc = path.join(root, "tests/fixtures/e2e/equation-pass.ts");
-const equationFailSrc = path.join(root, "tests/fixtures/e2e/equation-fail.ts");
+const safeSqrtSrc = path.join(
+  root,
+  "engines/pabst/tests/fixtures/e2e/safe-sqrt.ts",
+);
+const boundedSrc = path.join(
+  root,
+  "engines/pabst/tests/fixtures/e2e/bounded.ts",
+);
+const regexGuardSrc = path.join(
+  root,
+  "engines/pabst/tests/fixtures/e2e/regex-guard.ts",
+);
+const equationPassSrc = path.join(
+  root,
+  "engines/pabst/tests/fixtures/e2e/equation-pass.ts",
+);
+const equationFailSrc = path.join(
+  root,
+  "engines/pabst/tests/fixtures/e2e/equation-fail.ts",
+);
 const exhaustedSrc = path.join(
   root,
-  "tests/fixtures/e2e/precondition-exhausted.ts",
+  "engines/pabst/tests/fixtures/e2e/precondition-exhausted.ts",
 );
-const connectivesSrc = path.join(root, "tests/fixtures/e2e/connectives.ts");
+const connectivesSrc = path.join(
+  root,
+  "engines/pabst/tests/fixtures/e2e/connectives.ts",
+);
 const atomNotBoolSrc = path.join(
   root,
-  "tests/fixtures/e2e/atom-not-boolean.ts",
+  "engines/pabst/tests/fixtures/e2e/atom-not-boolean.ts",
 );
 const readmeExampleSrc = path.join(
   root,
-  "tests/fixtures/e2e/readme-example.ts",
+  "engines/pabst/tests/fixtures/e2e/readme-example.ts",
 );
-const genDir = path.join(root, ".pabst/tests/fixtures/e2e");
+const genDir = path.join(root, ".pabst/engines/pabst/tests/fixtures/e2e");
 
 function clean(): void {
   fs.rmSync(genDir, { recursive: true, force: true });
@@ -147,12 +180,15 @@ describe("end-to-end", () => {
     "the README front-page example is verbatim on disk and is falsified",
     { timeout: 30000 },
     () => {
-      const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
+      const readme = fs.readFileSync(
+        path.join(root, "engines/pabst/README.md"),
+        "utf8",
+      );
       const block = /```ts\n([\s\S]*?)```/.exec(readme)?.[1];
       expect(block, "README has no ```ts code block").toBeDefined();
       expect(
         fs.readFileSync(readmeExampleSrc, "utf8"),
-        "tests/fixtures/e2e/readme-example.ts must be byte-identical to the README's first ts block",
+        "engines/pabst/tests/fixtures/e2e/readme-example.ts must be byte-identical to the README's first ts block",
       ).toBe(block);
       const [r] = generate([readmeExampleSrc], ".pabst", 3);
       expect(r).toBeDefined();

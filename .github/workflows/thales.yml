@@ -4,19 +4,19 @@ on:
   push:
     branches: [main]
     paths:
-      - 'engines/thales/**'
-      - 'spec/**'
-      - '.github/workflows/thales.yml'
-      - '.gitmodules'
+      - "engines/thales/**"
+      - "spec/**"
+      - ".github/workflows/thales.yml"
+      - ".gitmodules"
   pull_request:
     paths:
-      - 'engines/thales/**'
-      - 'spec/**'
-      - '.github/workflows/thales.yml'
-      - '.gitmodules'
+      - "engines/thales/**"
+      - "spec/**"
+      - ".github/workflows/thales.yml"
+      - ".gitmodules"
 
 env:
-  NODE_VERSION: '24.x'
+  NODE_VERSION: "24.x"
   LC_ALL: C.UTF-8
   LANG: C.UTF-8
   TZ: UTC

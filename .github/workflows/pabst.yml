@@ -4,14 +4,14 @@ on:
   push:
     branches: [main]
     paths:
-      - 'engines/pabst/**'
-      - 'spec/**'
-      - '.github/workflows/pabst.yml'
+      - "engines/pabst/**"
+      - "spec/**"
+      - ".github/workflows/pabst.yml"
   pull_request:
     paths:
-      - 'engines/pabst/**'
-      - 'spec/**'
-      - '.github/workflows/pabst.yml'
+      - "engines/pabst/**"
+      - "spec/**"
+      - ".github/workflows/pabst.yml"
 
 defaults:
   run:

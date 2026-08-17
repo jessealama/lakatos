@@ -47,10 +47,10 @@ describe("emit", () => {
   });
 
   it("imports the reporter from the runtime library once", () => {
-    // "pabst-checker" is the published package name (the self-reference
-    // the generated tests resolve), distinct from the `pabst` bin name.
+    // "lakatos" is the root package name (the self-reference the
+    // generated tests resolve), distinct from any bin name.
     expect(out).toContain(
-      'import { report as __pabstReport, bool as __bool } from "pabst-checker/runtime";',
+      'import { report as __pabstReport, bool as __bool } from "lakatos/runtime";',
     );
     // no inline copy of the helper
     expect(out).not.toContain("function __pabstReport(");
@@ -61,7 +61,7 @@ describe("emit", () => {
       ".pabst/foo.pabst.test.ts",
       42,
     );
-    const occurrences = multi.split('from "pabst-checker/runtime"').length - 1;
+    const occurrences = multi.split('from "lakatos/runtime"').length - 1;
     expect(occurrences).toBe(1);
   });
 });

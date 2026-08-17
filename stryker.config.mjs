@@ -4,11 +4,11 @@ export default {
   commandRunner: {
     command: "./node_modules/.bin/vitest run --bail 1",
   },
-  mutate: ["src/**/*.ts", "!src/**/*.d.ts"],
-  ignorePatterns: [".pabst", "coverage", "reports"],
+  mutate: ["src/**/*.ts", "engines/pabst/src/**/*.ts", "!**/*.d.ts"],
+  ignorePatterns: [".pabst", "coverage", "reports", "engines/thales"],
   concurrency: 8,
   timeoutFactor: 3,
   timeoutMS: 60000,
-  disableTypeChecks: "src/**/*.ts",
+  disableTypeChecks: "{src,engines/pabst/src}/**/*.ts",
   reporters: ["clear-text", "html", "progress"],
 };

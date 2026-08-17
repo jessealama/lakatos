@@ -1,0 +1,11 @@
+# npm owns this file's formatting
+package-lock.json
+
+# local Claude Code artifacts (globally gitignored, so absent in CI)
+.claude/
+
+# thales keeps its own toolchain and formatting
+engines/thales/
+
+# the Lemma spec's fixtures are conformance inputs, not repo prose
+spec/

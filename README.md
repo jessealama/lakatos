@@ -14,7 +14,7 @@ bar # involutive   PROVED
 baz # monotone     TESTED     10,000 runs, no counterexample; not proved
 ```
 
-The name is from Imre Lakatos's *Proofs and Refutations*: mathematics
+The name is from Imre Lakatos's _Proofs and Refutations_: mathematics
 advances by conjectures, attempted proofs, and counterexamples that force
 the conjecture to be repaired. That loop is exactly what this tool runs.
 
@@ -70,7 +70,7 @@ embedded in JSDoc — annotated files remain ordinary TypeScript accepted by
   per property.
 - `lakatos prove <file>` — proof engine only.
 - `lakatos refute <file>` — refutation engine only. Note the semantics:
-  the command names the *attempt*; finding no counterexample is success
+  the command names the _attempt_; finding no counterexample is success
   (exit 0), like any test run.
 
 ## Verdicts
@@ -80,11 +80,11 @@ Human-readable verdicts lead; each carries an
 (in detail lines and in `--json` output), shared with both engines'
 own output:
 
-| Verdict | SZS status | Meaning |
-|---|---|---|
-| PROVED | `Theorem` | Holds for all inputs. Any assumptions (opaque callees, assumed contracts) are listed with the verdict — the trust boundary is impossible to miss. |
-| REFUTED | `CounterSatisfiable` | A concrete counterexample was found and is reported. |
-| TESTED, not proved | `Unknown` | The refuter found nothing in its budget and the prover gave up; per-engine sub-statuses (`GaveUp`, `Timeout`) say why. |
+| Verdict            | SZS status           | Meaning                                                                                                                                           |
+| ------------------ | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PROVED             | `Theorem`            | Holds for all inputs. Any assumptions (opaque callees, assumed contracts) are listed with the verdict — the trust boundary is impossible to miss. |
+| REFUTED            | `CounterSatisfiable` | A concrete counterexample was found and is reported.                                                                                              |
+| TESTED, not proved | `Unknown`            | The refuter found nothing in its budget and the prover gave up; per-engine sub-statuses (`GaveUp`, `Timeout`) say why.                            |
 
 Exit codes are deliberately boring: `0` — no property refuted; `1` — at
 least one property refuted (or a counterexample found by the prover);
