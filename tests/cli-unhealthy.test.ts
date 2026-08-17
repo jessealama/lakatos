@@ -75,8 +75,6 @@ describe("cli refute on unhealthy runs", () => {
         szs: "NotTried",
       },
     ]);
-    expect(stderr).toContain(
-      "error: Cannot find module 'lakatos/runtime'",
-    );
+    expect(stderr).toContain("error: Cannot find module 'lakatos/runtime'");
   });
 });

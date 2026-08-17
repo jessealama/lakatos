@@ -60,12 +60,12 @@ The report (schema: `schemas/envelope.schema.json`) lists every scraped
 annotation with an [SZS ontology](https://tptp.org/UserDocs/SZSOntology/)
 status:
 
-| Outcome                                | SZS status           |
-| -------------------------------------- | -------------------- |
-| falsified (counterexample)             | `CounterSatisfiable` |
-| property body threw                    | `Error`              |
-| generation exhausted / passed          | `GaveUp`             |
-| not attempted (stubs, unhealthy runs)  | `NotTried`           |
+| Outcome                               | SZS status           |
+| ------------------------------------- | -------------------- |
+| falsified (counterexample)            | `CounterSatisfiable` |
+| property body threw                   | `Error`              |
+| generation exhausted / passed         | `GaveUp`             |
+| not attempted (stubs, unhealthy runs) | `NotTried`           |
 
 The two `GaveUp` cases are distinguished by the `kind` field: present
 (`"exhausted"`) when generation gave up, absent when every run passed.
