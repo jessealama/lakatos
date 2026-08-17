@@ -2,8 +2,11 @@
   "name": "lakatos",
   "version": "0.1.0",
   "description": "Proofs and refutations for TypeScript.",
-  "private": true,
   "type": "module",
+  "files": [
+    "dist",
+    "schemas"
+  ],
   "license": "MIT",
   "engines": {
     "node": ">=24"
