@@ -49,7 +49,8 @@ history from here on.
 ### Added
 
 - The annotation surface syntax now has a normative grammar:
-  [`docs/grammar.ebnf`](docs/grammar.ebnf). The parser is a token-based
+  [`grammar.ebnf`](../../spec/grammar.ebnf) (now maintained in the
+  repository's `spec/` directory). The parser is a token-based
   recursive descent mirroring it production-for-production, replacing the
   character-level scanning of the binder prefix.
 
