@@ -150,14 +150,28 @@ function refute(patterns: string[], seedArg: string | undefined): number {
 
   const result = runTests(results.map((r) => r.outFile));
 
-  if (result.kind === "no-results") {
-    process.stderr.write(result.stdout);
-    process.stderr.write(result.stderr);
-    return result.status;
-  }
-  if (result.kind === "broken-run") {
-    for (const m of result.messages) console.error(`error: ${m}`);
-    return result.status;
+  // Unhealthy runs (vitest died before reporting, or the generated suite
+  // failed to load) still honor the output contract: diagnostics on stderr,
+  // a NotTried envelope on stdout — the annotations were generated but
+  // never evaluated — and the documented exit 2, not vitest's raw status.
+  if (result.kind !== "completed") {
+    if (result.kind === "no-results") {
+      process.stderr.write(result.stdout);
+      process.stderr.write(result.stderr);
+    } else {
+      for (const m of result.messages) console.error(`error: ${m}`);
+    }
+    console.log(
+      JSON.stringify(
+        {
+          ...meta,
+          annotations: identities.map((i) => ({ ...i, szs: "NotTried" })),
+        },
+        null,
+        2,
+      ),
+    );
+    return 2;
   }
 
   const envelope = buildEnvelope(meta, result.json, identities);

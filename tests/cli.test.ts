@@ -449,6 +449,41 @@ describe("cli refute command (README usage claims)", () => {
     },
   );
 
+  // End-to-end unhealthy run, no mocks: the module throws at load, so the
+  // generated test can't even import it — vitest reports a file-level
+  // failure with zero counted tests.
+  it(
+    "refute on a module that explodes at load prints a NotTried envelope and exits 2",
+    { timeout: 60000 },
+    () => {
+      const explosive = path.join(workDir, "explosive.ts");
+      fs.writeFileSync(
+        explosive,
+        `/** @ensures{pos} forall (n: nat) { boom(n) >= 0 } */\nexport function boom(n: number): number { return n; }\nthrow new Error("boom: module exploded");\n`,
+        "utf8",
+      );
+      try {
+        const { code, stdout, stderr } = runMain(["refute", "explosive.ts"]);
+        expect(code).toBe(2);
+        expect(stdout).toHaveLength(1);
+        const env = JSON.parse(stdout[0]!);
+        expectValidEnvelope(env);
+        expect(env).toMatchObject({ generated: 1 });
+        expect(env.annotations).toEqual([
+          {
+            file: "explosive.ts",
+            function: "boom",
+            property: "pos",
+            szs: "NotTried",
+          },
+        ]);
+        expect(stderr.join("\n")).toContain("boom: module exploded");
+      } finally {
+        fs.rmSync(explosive, { force: true });
+      }
+    },
+  );
+
   it(
     "refute accepts globs and reports across all matched files",
     { timeout: 60000 },
