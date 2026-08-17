@@ -17,7 +17,7 @@ export interface ParsedPrefix {
 
 const NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
-/** prefix ::= FORALL binder-group+   (docs/grammar.ebnf) */
+/** prefix ::= FORALL binder-group+   (spec/grammar.ebnf) */
 export function parsePrefix(formula: string): ParsedPrefix {
   const { toks, unterminatedSlash } = prefixTokens(formula);
   const head = toks[0];

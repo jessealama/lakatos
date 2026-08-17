@@ -18,7 +18,7 @@ interface Cursor {
 
 const BINARY = new Set<FToken["kind"]>(["and", "or", "implies", "iff"]);
 
-/** formula ::= equivalence   (docs/grammar.ebnf) — must consume the whole range. */
+/** formula ::= equivalence   (spec/grammar.ebnf) — must consume the whole range. */
 function parseFormula(
   toks: FToken[],
   start: number,
