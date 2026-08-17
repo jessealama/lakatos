@@ -1,21 +1,33 @@
-name: pabst
+name: lakatos
 
 on:
   push:
     branches: [main]
     paths:
+      - "src/**"
+      - "tests/**"
+      - "schemas/**"
       - "engines/pabst/**"
       - "spec/**"
-      - ".github/workflows/pabst.yml"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.json"
+      - "tsconfig.tests.json"
+      - "vitest.config.ts"
+      - ".github/workflows/lakatos.yml"
   pull_request:
     paths:
+      - "src/**"
+      - "tests/**"
+      - "schemas/**"
       - "engines/pabst/**"
       - "spec/**"
-      - ".github/workflows/pabst.yml"
-
-defaults:
-  run:
-    working-directory: engines/pabst
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.json"
+      - "tsconfig.tests.json"
+      - "vitest.config.ts"
+      - ".github/workflows/lakatos.yml"
 
 jobs:
   format:
@@ -29,7 +41,7 @@ jobs:
         with:
           node-version: 26
           cache: npm
-          cache-dependency-path: engines/pabst/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -53,7 +65,7 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
-          cache-dependency-path: engines/pabst/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -70,7 +82,7 @@ jobs:
         run: npx vitest run --exclude '**/e2e.test.ts'
 
       - name: End-to-end tests
-        run: npx vitest run tests/e2e.test.ts
+        run: npx vitest run engines/pabst/tests/e2e.test.ts
 
   coverage:
     runs-on: ubuntu-latest
@@ -83,7 +95,7 @@ jobs:
         with:
           node-version: 26
           cache: npm
-          cache-dependency-path: engines/pabst/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci

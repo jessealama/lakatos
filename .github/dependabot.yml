@@ -1,7 +1,7 @@
 version: 2
 updates:
   - package-ecosystem: "npm"
-    directory: "/engines/pabst"
+    directory: "/"
     schedule:
       interval: "weekly"
     # Bundle every non-breaking update (dependencies + devDependencies)

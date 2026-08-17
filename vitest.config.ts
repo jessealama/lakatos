@@ -18,12 +18,12 @@ export default defineConfig({
       thresholds: {
         // Ratchet: when coverage rises, Vitest rewrites these numbers
         // upward in this file; if it drops below, the run fails. Seeded
-        // from the baseline on 2026-06-27 — bump only happens via autoUpdate.
+        // from the baseline on 2026-08-17 — bump only happens via autoUpdate.
         autoUpdate: true,
-        statements: 0,
-        branches: 0,
-        functions: 0,
-        lines: 0,
+        statements: 97.98,
+        branches: 96.04,
+        functions: 100,
+        lines: 98.7,
       },
     },
   },
