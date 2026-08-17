@@ -129,10 +129,11 @@ embedded in JSDoc — annotated files remain ordinary TypeScript accepted by
 
 ## Verdicts
 
+This section is the committed design for `lakatos check`, which is still
+a stub; today the JSON report shown under Usage is the only output.
 Human-readable verdicts lead; each carries an
-[SZS ontology](https://tptp.org/UserDocs/SZSOntology/) status as metadata
-(in detail lines and in `--json` output), shared with both engines'
-own output:
+[SZS ontology](https://tptp.org/UserDocs/SZSOntology/) status as
+metadata, shared with both engines' own output:
 
 | Verdict            | SZS status           | Meaning                                                                                                                                           |
 | ------------------ | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
