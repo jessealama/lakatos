@@ -1,0 +1,104 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://lakatos.test/schemas/envelope.schema.json",
+  "title": "Lakatos Envelope",
+  "description": "The JSON report of one lakatos run.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "startedAt", "cwd", "annotations"],
+  "properties": {
+    "version": { "type": "string" },
+    "startedAt": { "type": "string" },
+    "cwd": { "type": "string" },
+    "seed": { "type": "integer" },
+    "generated": { "type": "integer", "minimum": 0 },
+    "passed": { "type": "integer", "minimum": 0 },
+    "failed": { "type": "integer", "minimum": 0 },
+    "annotations": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/annotation" }
+    }
+  },
+  "definitions": {
+    "functionName": {
+      "type": "string",
+      "description": "Bare function name, or Class#method (instance) / Class.method (static).",
+      "pattern": "^[$A-Za-z_][$A-Za-z0-9_]*([#.][$A-Za-z_][$A-Za-z0-9_]*)?$"
+    },
+    "counterexample": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "type": ["number", "boolean", "string"] }
+    },
+    "annotation": {
+      "oneOf": [
+        {
+          "title": "unattempted or unrefuted",
+          "additionalProperties": false,
+          "required": ["file", "function", "property", "szs"],
+          "properties": {
+            "file": { "type": "string" },
+            "function": { "$ref": "#/definitions/functionName" },
+            "property": { "type": "string", "minLength": 1 },
+            "szs": { "enum": ["GaveUp", "NotTried"] }
+          }
+        },
+        {
+          "title": "falsified",
+          "additionalProperties": false,
+          "required": [
+            "file",
+            "function",
+            "property",
+            "szs",
+            "kind",
+            "counterexample"
+          ],
+          "properties": {
+            "file": { "type": "string" },
+            "function": { "$ref": "#/definitions/functionName" },
+            "property": { "type": "string", "minLength": 1 },
+            "szs": { "const": "CounterSatisfiable" },
+            "kind": { "const": "falsified" },
+            "counterexample": { "$ref": "#/definitions/counterexample" }
+          }
+        },
+        {
+          "title": "threw",
+          "additionalProperties": false,
+          "required": [
+            "file",
+            "function",
+            "property",
+            "szs",
+            "kind",
+            "counterexample",
+            "error"
+          ],
+          "properties": {
+            "file": { "type": "string" },
+            "function": { "$ref": "#/definitions/functionName" },
+            "property": { "type": "string", "minLength": 1 },
+            "szs": { "const": "Error" },
+            "kind": { "const": "threw" },
+            "counterexample": { "$ref": "#/definitions/counterexample" },
+            "error": { "type": "string" }
+          }
+        },
+        {
+          "title": "exhausted",
+          "additionalProperties": false,
+          "required": ["file", "function", "property", "szs", "kind", "error"],
+          "properties": {
+            "file": { "type": "string" },
+            "function": { "$ref": "#/definitions/functionName" },
+            "property": { "type": "string", "minLength": 1 },
+            "szs": { "const": "GaveUp" },
+            "kind": { "const": "exhausted" },
+            "error": { "type": "string" }
+          }
+        }
+      ]
+    }
+  }
+}
