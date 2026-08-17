@@ -4,6 +4,13 @@ Notable changes to pabst. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [semver](https://semver.org/).
 
+## 2026-08-17
+
+0.13.0 was the last standalone `pabst-checker` release. The engine now
+ships inside the `lakatos` package at this repository's root and is
+versioned with the repository; its changes are recorded in lakatos's
+history from here on.
+
 ## [0.13.0] - 2026-07-13
 
 ### Changed

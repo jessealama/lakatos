@@ -1,9 +1,12 @@
 # Pabst: A blue-ribbon approach to **P**roperty-**B**ased **T**esting
 
-Annotate your functions with properties they're supposed to have, then try to invalidate them with [fast-check](https://fast-check.dev/).
+Pabst is lakatos's refutation engine. Annotate your functions with
+properties they're supposed to have, then try to invalidate them with
+[fast-check](https://fast-check.dev/).
 
-Put the properties your functions should have in a JSDoc comment, run Pabst,
-and get either "cases passed" or a counterexample that shows the property doesn't hold.
+Put the properties your functions should have in a JSDoc comment, run
+`lakatos refute` (the CLI lives at the repo root), and get either "cases
+passed" or a counterexample that shows the property doesn't hold.
 
 _Example_ Look at this code. We're trying to assert that the value of the function is
 non-zero provided the second argument is an integer. Can you spot the error?
@@ -22,7 +25,7 @@ export function foo(x: bigint, y: number): number {
 Each remainder looks like it should be 0 or 1, so the sum looks like it's at
 least 1. But JavaScript's `%` returns _negative_ remainders for negative
 operands: `foo(-1n, 0)` is `-1 + 0 + 1 === 0`. You don't have to spot that —
-`pabst test` falsifies the property and reports a counterexample.
+`lakatos refute` falsifies the property and reports a counterexample.
 
 ## Philosophy
 
@@ -43,43 +46,40 @@ property-based testing is a powerful technique that exposes
 a lot of bugs for very little effort, and it sits
 comfortably alongside proof-based approaches.
 
-## Installation
+## Getting it
 
-```bash
-npm install --save-dev pabst-checker
-```
+Pabst is not a standalone package: it ships inside the `lakatos` npm
+package at this repository's root, which owns the CLI (`lakatos refute`),
+the dependency declarations, and the version number. (Through 0.13.0 it
+was published standalone as `pabst-checker`; that line has ended.)
 
-The package is `pabst-checker`; the command it installs is `pabst`.
-
-Requires Node 24+. Pabst bundles its own [vitest](https://vitest.dev/) and
-declares [fast-check](https://fast-check.dev/) as a peer dependency (npm
-installs it for you), so nothing else is needed. The peer relationship
-means pabst validates your annotations against the same fast-check copy
-the generated tests run with — if your project pins an incompatible
-fast-check, npm says so at install time instead of your tests failing
-mysteriously.
+Pabst bundles its own [vitest](https://vitest.dev/) and declares
+[fast-check](https://fast-check.dev/) as a peer dependency (npm installs
+it for you), so nothing else is needed. The peer relationship means pabst
+validates your annotations against the same fast-check copy the generated
+tests run with — if your project pins an incompatible fast-check, npm says
+so at install time instead of your tests failing mysteriously.
 
 ## Usage
 
 ```bash
-pabst test                             # discover sources, test, print a JSON report
-pabst test <files-or-globs>            # same, on an explicit file list
-pabst test --seed <n> <files-or-globs> # reproduce a prior run's generation
-pabst gen  [files-or-globs]            # generate only; run your own vitest against .pabst/
+lakatos refute                             # discover sources, test, print a JSON report
+lakatos refute <files-or-globs>            # same, on an explicit file list
+lakatos refute --seed <n> <files-or-globs> # reproduce a prior run's generation
 ```
 
-With no file arguments, pabst discovers your sources: if `tsconfig.json`
+With no file arguments, lakatos discovers your sources: if `tsconfig.json`
 exists, it scans exactly the files `tsc` would compile; otherwise it falls
 back to `src/**`. If neither yields anything, it exits with an error asking
 for an explicit glob. Discovery stays inside the current directory — a
 tsconfig reaching outside it (say, a monorepo `include` of `../shared`) has
-those files skipped; run pabst in the package that owns them.
+those files skipped; run lakatos in the package that owns them.
 
 Declaration files (`.d.ts`) are skipped by default — tsc copies JSDoc into
 them, so scanning both a declaration and its source would extract every
 property twice. A pattern that explicitly names declarations
-(`pabst gen "index.d.ts"`) is honored, for packages whose hand-written types
-are the source.
+(`lakatos refute "index.d.ts"`) is honored, for packages whose hand-written
+types are the source.
 
 Pabst writes the test files it generates to a `.pabst/` directory in your
 project. Those files are regenerated on every run, so there is no reason to
@@ -91,24 +91,13 @@ commit them — add `.pabst/` to your `.gitignore`:
 
 ## Output
 
-`pabst test` prints a single JSON object to **stdout**; **stderr** carries only
-progress and crashes. The envelope is always present — a clean run just has an
-empty `issues` array:
-
-```json
-{
-  "version": "0.7.0",
-  "startedAt": "2026-06-26T17:42:03.000Z",
-  "cwd": "/path/to/project",
-  "seed": 1834592013,
-  "generated": 5,
-  "passed": 5,
-  "failed": 0,
-  "issues": []
-}
-```
-
-Each issue records where the property lived and why it failed:
+`lakatos refute` prints a single JSON envelope to **stdout**; **stderr**
+carries only progress and crashes. The envelope's shape — one entry per
+annotation, each with an SZS status — is documented in the
+[root README](../../README.md) and pinned by
+[`schemas/envelope.schema.json`](../../schemas/envelope.schema.json). The
+failure detail pabst attaches to a flagged annotation is the engine's own
+issue format ([`schemas/issue.schema.json`](schemas/issue.schema.json)):
 
 ```json
 {
@@ -128,10 +117,10 @@ Each issue records where the property lived and why it failed:
 - The `seed` is generated per run and echoed back; pass it to `--seed` to
   reproduce a failing run exactly.
 
-The process exits `0` when `issues` is empty, `1` when there is at least one
-issue, and `2` on usage errors — including annotation errors such as a
-malformed formula, an unsupported domain, or a reference to an unexported
-symbol, which are reported as a one-line message on stderr.
+The process exits `0` when nothing was flagged, `1` when at least one
+annotation was, and `2` on usage errors — including annotation errors such
+as a malformed formula, an unsupported domain, or a reference to an
+unexported symbol, which are reported as a one-line message on stderr.
 
 ## Grammar
 
@@ -226,9 +215,12 @@ must never be hand-edited.
 
 ## Development
 
+Pabst is built and tested as part of the root `lakatos` package — run
+everything from the repository root:
+
 ```bash
 npm install
-npm test          # vitest
+npm test          # vitest (root suite, includes engines/pabst/tests)
 npm run build     # tsc -> dist/
 ```
 

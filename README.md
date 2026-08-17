@@ -20,15 +20,69 @@ the conjecture to be repaired. That loop is exactly what this tool runs.
 
 ## Status
 
-Design phase. The two engines live in this repository and work today; the
-frontend does not yet exist. This README describes the committed design.
+The refutation half works end to end: `lakatos refute` scrapes `@ensures`
+annotations, generates fast-check property tests, runs them, and prints a
+per-annotation JSON report. `lakatos prove` and `lakatos check` are stubs:
+they scrape the same annotations, report each one `NotTried`, and exit 1.
+The rest of this README describes the committed design.
+
+## Usage
+
+```
+$ lakatos refute src/foo.ts
+lakatos: generated 1 property across 1 file(s) into .pabst/
+{
+  "version": "0.1.0",
+  "startedAt": "2026-08-17T12:53:06.896Z",
+  "cwd": "/path/to/project",
+  "seed": 4226542574,
+  "generated": 1,
+  "passed": 0,
+  "failed": 1,
+  "annotations": [
+    {
+      "file": "src/foo.ts",
+      "function": "isZero",
+      "property": "wrong",
+      "szs": "CounterSatisfiable",
+      "kind": "falsified",
+      "counterexample": {
+        "x": 1
+      }
+    }
+  ]
+}
+$ echo $?
+1
+```
+
+The report (schema: `schemas/envelope.schema.json`) lists every scraped
+annotation with an [SZS ontology](https://tptp.org/UserDocs/SZSOntology/)
+status:
+
+| Outcome                       | SZS status           |
+| ----------------------------- | -------------------- |
+| falsified (counterexample)    | `CounterSatisfiable` |
+| property body threw           | `Error`              |
+| generation exhausted / passed | `GaveUp`             |
+| not attempted (stubs)         | `NotTried`           |
+
+The two `GaveUp` cases are distinguished by the `kind` field: present
+(`"exhausted"`) when generation gave up, absent when every run passed.
+
+Commands: `lakatos refute` (works today), `lakatos prove` and
+`lakatos check` (stubs). All take `[--seed <n>] [files-or-globs...]`;
+with no files, sources are discovered via `tsconfig.json` or `src/**`.
+Passing a report's `seed` back reproduces its run.
+
+Exit codes: `0` — clean run; `1` — counterexamples found, or a stubbed
+command; `2` — usage or user error.
 
 ## Layout
 
 Everything is one repository, one product, one version number:
 
-- `src/` — the lakatos CLI frontend (the npm package at the repo root;
-  forthcoming).
+- `src/` — the lakatos CLI frontend (the npm package at the repo root).
 - [`engines/thales/`](engines/thales/) — the proof engine: a
   TypeScript-to-Lean 4 compiler with a graded automatic discharge ladder
   (exhaustive checking on bounded domains, then a fixed tactic stack, then
