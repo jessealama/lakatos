@@ -2,52 +2,50 @@ import { describe, it, expect, afterAll, beforeAll, beforeEach } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { runMain, useTempProject } from "./helpers/cli.js";
-import { expectValidIssue } from "./helpers/issue-schema.js";
+import { expectValidEnvelope } from "./helpers/envelope-schema.js";
 
 const repoRoot = process.cwd();
 
 describe("cli main", () => {
-  const dir = useTempProject("pabst-cli-", {
+  useTempProject("lakatos-cli-", {
     "baz.ts": `/** @ensures{pos} forall (n: nat) { baz(n) >= 0 } */\nexport function baz(n: number): number { return n; }\n`,
     "shadow.d.ts": `/** @ensures{pos2} forall (n: nat) { baz(n) >= 0 } */\nexport declare function baz(n: number): number;\n`,
   });
 
-  it("gen writes generated files and returns 0", () => {
-    const { code } = runMain(["gen", "baz.ts"]);
-    expect(code).toBe(0);
-    expect(fs.existsSync(path.join(dir, ".pabst", "baz.pabst.test.ts"))).toBe(
-      true,
-    );
+  it("skips declaration files matched by a glob", () => {
+    const { code, stdout } = runMain(["prove", "*.ts"]);
+    expect(code).toBe(1);
+    const env = JSON.parse(stdout[0]!);
+    expect(env.annotations).toHaveLength(1);
+    expect(env.annotations[0]).toMatchObject({ file: "baz.ts" });
   });
 
-  it("gen skips declaration files matched by a glob", () => {
-    const { code, stderr } = runMain(["gen", "*.ts"]);
-    expect(code).toBe(0);
-    expect(stderr[0]).toContain("generated 1 property across 1 file(s)");
+  it("honors an explicitly named declaration file", () => {
+    const { code, stdout } = runMain(["prove", "shadow.d.ts"]);
+    expect(code).toBe(1);
+    const env = JSON.parse(stdout[0]!);
+    expect(env.annotations).toHaveLength(1);
+    expect(env.annotations[0]).toMatchObject({ property: "pos2" });
   });
 
-  it("gen honors an explicitly named declaration file", () => {
-    const { code, stderr } = runMain(["gen", "shadow.d.ts"]);
-    expect(code).toBe(0);
-    expect(stderr[0]).toContain("generated 1 property across 1 file(s)");
-  });
-
-  it("gen honors a glob that targets declaration files", () => {
-    const { code, stderr } = runMain(["gen", "*.d.ts"]);
-    expect(code).toBe(0);
-    expect(stderr[0]).toContain("generated 1 property across 1 file(s)");
+  it("honors a glob that targets declaration files", () => {
+    const { code, stdout } = runMain(["prove", "*.d.ts"]);
+    expect(code).toBe(1);
+    expect(JSON.parse(stdout[0]!).annotations).toHaveLength(1);
   });
 
   it("returns 2 on unknown command", () => {
-    expect(runMain(["frobnicate", "baz.ts"]).code).toBe(2);
+    const { code, stderr } = runMain(["frobnicate", "baz.ts"]);
+    expect(code).toBe(2);
+    expect(stderr[0]).toContain("usage: lakatos");
   });
 
   it("returns 2 when no patterns are given and nothing is discoverable", () => {
-    const { code, stderr } = runMain(["gen"]);
+    const { code, stderr } = runMain(["prove"]);
     expect(code).toBe(2);
     expect(stderr).toHaveLength(1);
     expect(stderr[0]).toBe(
-      'error: cannot determine where your source code is; pass files or globs (e.g. pabst test "src/**/*.ts")',
+      'error: cannot determine where your source code is; pass files or globs (e.g. lakatos refute "src/**/*.ts")',
     );
   });
 
@@ -55,7 +53,7 @@ describe("cli main", () => {
     const { code, stderr } = runMain(["--halp"]);
     expect(code).toBe(2);
     expect(stderr).toHaveLength(1);
-    expect(stderr[0]).toContain("usage: pabst");
+    expect(stderr[0]).toContain("usage: lakatos");
   });
 
   it("prints help on --help and exits 0", () => {
@@ -63,7 +61,10 @@ describe("cli main", () => {
     expect(code).toBe(0);
     expect(stderr).toEqual([]);
     const help = stdout.join("\n");
-    expect(help).toContain("usage: pabst");
+    expect(help).toContain("usage: lakatos");
+    expect(help).toContain("prove");
+    expect(help).toContain("refute");
+    expect(help).toContain("check");
     expect(help).toContain("--seed");
     expect(help).toContain("--help");
   });
@@ -75,64 +76,94 @@ describe("cli main", () => {
   });
 
   it("returns 2 on a non-integer --seed", () => {
-    expect(runMain(["gen", "--seed", "4.2", "baz.ts"]).code).toBe(2);
+    expect(runMain(["refute", "--seed", "4.2", "baz.ts"]).code).toBe(2);
   });
 
   it("returns 2 on an out-of-range --seed", () => {
-    expect(runMain(["gen", "--seed", String(2 ** 32), "baz.ts"]).code).toBe(2);
-  });
-
-  it("gen accepts a valid --seed and returns 0", () => {
-    expect(runMain(["gen", "--seed", "123", "baz.ts"]).code).toBe(0);
+    expect(runMain(["refute", "--seed", String(2 ** 32), "baz.ts"]).code).toBe(
+      2,
+    );
   });
 
   it("returns 2 when no .ts files match the patterns", () => {
-    expect(runMain(["gen", "*.nope"]).code).toBe(2);
+    expect(runMain(["prove", "*.nope"]).code).toBe(2);
+  });
+});
+
+describe("prove and check stubs", () => {
+  useTempProject("lakatos-cli-stub-", {
+    "annotated.ts": `/** @ensures{pos} forall (n: nat) { annotated(n) >= 0 } */\nexport function annotated(n: number): number { return n; }\n`,
+  });
+
+  it("prove lists every annotation as NotTried and exits 1", () => {
+    const { code, stdout, stderr } = runMain(["prove", "annotated.ts"]);
+    expect(code).toBe(1);
+    const env = JSON.parse(stdout[0]!);
+    expectValidEnvelope(env);
+    expect(env.annotations).toHaveLength(1);
+    expect(env.annotations[0]).toEqual({
+      file: "annotated.ts",
+      function: "annotated",
+      property: "pos",
+      szs: "NotTried",
+    });
+    expect(env.seed).toBeUndefined();
+    expect(env.generated).toBeUndefined();
+    expect(env.passed).toBeUndefined();
+    expect(env.failed).toBeUndefined();
+    expect(stderr.join("\n")).toContain("prove is not implemented yet");
+  });
+
+  it("check does the same", () => {
+    const { code, stdout, stderr } = runMain(["check", "annotated.ts"]);
+    expect(code).toBe(1);
+    expect(JSON.parse(stdout[0]!).annotations[0].szs).toBe("NotTried");
+    expect(stderr.join("\n")).toContain("check is not implemented yet");
   });
 });
 
 describe("cli zero-argument discovery", () => {
   describe("with a src/ directory", () => {
-    useTempProject("pabst-cli-zerosrc-", {
+    useTempProject("lakatos-cli-zerosrc-", {
       "src/qux.ts": `/** @ensures{pos} forall (n: nat) { qux(n) >= 0 } */\nexport function qux(n: number): number { return n; }\n`,
       "src/types.d.ts": `export declare function qux(n: number): number;\n`,
     });
 
-    it("gen discovers src/ sources and announces the discovery", () => {
-      const { code, stderr } = runMain(["gen"]);
-      expect(code).toBe(0);
+    it("discovers src/ sources and announces the discovery", () => {
+      const { code, stdout, stderr } = runMain(["prove"]);
+      expect(code).toBe(1);
       expect(stderr[0]).toBe(
-        "pabst: no files given; discovered 1 file(s) via src/",
+        "lakatos: no files given; discovered 1 file(s) via src/",
       );
-      expect(stderr[1]).toContain("generated 1 property across 1 file(s)");
+      expect(JSON.parse(stdout[0]!).annotations).toHaveLength(1);
     });
   });
 
   describe("with a tsconfig.json", () => {
-    useTempProject("pabst-cli-zerotsc-", {
+    useTempProject("lakatos-cli-zerotsc-", {
       "tsconfig.json": JSON.stringify({ include: ["lib"] }),
       "lib/qux.ts": `/** @ensures{pos} forall (n: nat) { qux(n) >= 0 } */\nexport function qux(n: number): number { return n; }\n`,
       "src/decoy.ts": `export function decoy(): number { return 1; }\n`,
     });
 
-    it("gen discovers via tsconfig.json, not src/", () => {
-      const { code, stderr } = runMain(["gen"]);
-      expect(code).toBe(0);
+    it("discovers via tsconfig.json, not src/", () => {
+      const { code, stdout, stderr } = runMain(["prove"]);
+      expect(code).toBe(1);
       expect(stderr[0]).toBe(
-        "pabst: no files given; discovered 1 file(s) via tsconfig.json",
+        "lakatos: no files given; discovered 1 file(s) via tsconfig.json",
       );
-      expect(stderr[1]).toContain("generated 1 property across 1 file(s)");
+      expect(JSON.parse(stdout[0]!).annotations).toHaveLength(1);
     });
   });
 
   describe("with a malformed tsconfig.json", () => {
-    useTempProject("pabst-cli-zerobad-", {
+    useTempProject("lakatos-cli-zerobad-", {
       "tsconfig.json": JSON.stringify({ extends: "./missing.json" }),
       "src/a.ts": `export const a = 1;\n`,
     });
 
-    it("gen exits 2 with the tsconfig diagnostic, not falling through", () => {
-      const { code, stderr } = runMain(["gen"]);
+    it("exits 2 with the tsconfig diagnostic, not falling through", () => {
+      const { code, stderr } = runMain(["prove"]);
       expect(code).toBe(2);
       expect(stderr).toHaveLength(1);
       expect(stderr[0]).toContain("error: tsconfig.json:");
@@ -140,13 +171,12 @@ describe("cli zero-argument discovery", () => {
   });
 });
 
-// Issue #12: user-facing compile errors (malformed formulas, unsupported
-// constructs, bad references) must exit 2 with a one-line diagnostic, not
-// escape main() as an uncaught exception. One case per PabstError-throwing
-// module keeps the whole compile front-end pinned to the contract: reverting
-// any module's throws to plain Error fails its case here. These use
-// `pabst test` — compilation fails before vitest is spawned, so no timeout
-// is needed.
+// User-facing compile errors (malformed formulas, unsupported constructs,
+// bad references) must exit 2 with a one-line diagnostic, not escape main()
+// as an uncaught exception. One case per PabstError-throwing module keeps
+// the whole compile front-end pinned to the contract: reverting any module's
+// throws to plain Error fails its case here. These use `lakatos refute` —
+// compilation fails before vitest is spawned, so no timeout is needed.
 //
 // `wrapped` marks errors thrown per-annotation inside buildSpec, which the
 // build-spec seam prefixes with `file:line: @ensures{name}:`. Extract-phase
@@ -239,14 +269,14 @@ const COMPILE_ERROR_CASES: CompileErrorCase[] = [
 
 describe("cli compile errors (exit-code contract)", () => {
   useTempProject(
-    "pabst-cli-err-",
+    "lakatos-cli-err-",
     Object.fromEntries(COMPILE_ERROR_CASES.map((c) => [c.file, c.source])),
   );
 
   it.each(COMPILE_ERROR_CASES)(
-    "test on $name exits 2 with a one-line diagnostic",
+    "refute on $name exits 2 with a one-line diagnostic",
     (c) => {
-      const { code, stderr } = runMain(["test", c.file]);
+      const { code, stderr } = runMain(["refute", c.file]);
       expect(code).toBe(2);
       expect(stderr).toHaveLength(1);
       expect(stderr[0]).not.toContain("\n");
@@ -258,22 +288,15 @@ describe("cli compile errors (exit-code contract)", () => {
       }
     },
   );
-
-  it("gen on a malformed @ensures exits 2 with the same diagnostic", () => {
-    const { code, stderr } = runMain(["gen", "malformed.ts"]);
-    expect(code).toBe(2);
-    expect(stderr).toHaveLength(1);
-    expect(stderr[0]).toContain("malformed.ts:1");
-    expect(stderr[0]).toContain("shapely");
-  });
 });
 
-// README usage claims: `pabst test` prints a single JSON envelope to stdout,
-// exits 0/1 on clean/failing runs, echoes the seed, and reproduces a run when
-// the seed is passed back. The generated tests import "pabst/runtime" via the
-// package self-reference, so these must run inside the repo tree (a gitignored
-// scratch dir under .pabst/), unlike the os.tmpdir()-based suites above.
-describe("cli test command (README usage claims)", () => {
+// README usage claims: `lakatos refute` prints a single JSON envelope to
+// stdout, exits 0/1 on clean/failing runs, echoes the seed, and reproduces a
+// run when the seed is passed back. The generated tests import
+// "lakatos/runtime" via the package self-reference, so these must run inside
+// the repo tree (a gitignored scratch dir under .pabst/), unlike the
+// os.tmpdir()-based suites above.
+describe("cli refute command (README usage claims)", () => {
   const workDir = path.join(repoRoot, ".pabst", "clitest");
 
   beforeAll(() => {
@@ -301,19 +324,20 @@ describe("cli test command (README usage claims)", () => {
     fs.rmSync(workDir, { recursive: true, force: true });
   });
   // Each test starts from a clean mirror; the tests that exercise stale
-  // mirrors (issue #41) create their own staleness within the test body.
+  // mirrors create their own staleness within the test body.
   beforeEach(() => {
     fs.rmSync(path.join(workDir, ".pabst"), { recursive: true, force: true });
   });
 
   it(
-    "test on a clean file prints one JSON envelope to stdout and exits 0",
+    "refute on a clean file prints one JSON envelope to stdout and exits 0",
     { timeout: 60000 },
     () => {
-      const { code, stdout } = runMain(["test", "good.ts"]);
+      const { code, stdout } = runMain(["refute", "good.ts"]);
       expect(code).toBe(0);
       expect(stdout).toHaveLength(1);
       const env = JSON.parse(stdout[0]!);
+      expectValidEnvelope(env);
       const pkg = JSON.parse(
         fs.readFileSync(path.join(repoRoot, "package.json"), "utf8"),
       );
@@ -323,8 +347,16 @@ describe("cli test command (README usage claims)", () => {
         generated: 1,
         passed: 1,
         failed: 0,
-        issues: [],
+        annotations: [
+          {
+            file: "good.ts",
+            function: "good",
+            property: "nonneg",
+            szs: "GaveUp",
+          },
+        ],
       });
+      expect(env.annotations[0].kind).toBeUndefined();
       expect(env.startedAt).toMatch(
         /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
       );
@@ -335,25 +367,29 @@ describe("cli test command (README usage claims)", () => {
   );
 
   it(
-    "test on a failing file exits 1 with a structured issue in the envelope",
+    "refute on a failing file exits 1 with a flagged annotation in the envelope",
     { timeout: 60000 },
     () => {
-      const { code, stdout } = runMain(["test", "bad.ts"]);
+      const { code, stdout } = runMain(["refute", "bad.ts"]);
       expect(code).toBe(1);
       const env = JSON.parse(stdout[0]!);
+      expectValidEnvelope(env);
       expect(env).toMatchObject({ generated: 1, passed: 0, failed: 1 });
-      // The exact issue contents are pinned by the envelope and run-seam
-      // suites; here only the CLI-level claim matters.
-      expect(env.issues).toHaveLength(1);
-      expectValidIssue(env.issues[0]);
+      expect(env.annotations).toHaveLength(1);
+      expect(env.annotations[0]).toMatchObject({
+        function: "bad",
+        property: "negative",
+        szs: "CounterSatisfiable",
+        kind: "falsified",
+      });
     },
   );
 
   it(
-    "test --seed echoes the given seed in the envelope",
+    "refute --seed echoes the given seed in the envelope",
     { timeout: 60000 },
     () => {
-      const { code, stdout } = runMain(["test", "--seed", "123", "good.ts"]);
+      const { code, stdout } = runMain(["refute", "--seed", "123", "good.ts"]);
       expect(code).toBe(0);
       expect(JSON.parse(stdout[0]!).seed).toBe(123);
     },
@@ -363,34 +399,34 @@ describe("cli test command (README usage claims)", () => {
     "passing a prior run's seed back reproduces that run",
     { timeout: 120000 },
     () => {
-      const first = JSON.parse(runMain(["test", "bad.ts"]).stdout[0]!);
+      const first = JSON.parse(runMain(["refute", "bad.ts"]).stdout[0]!);
       fs.rmSync(path.join(workDir, ".pabst"), { recursive: true, force: true });
       const second = JSON.parse(
-        runMain(["test", "--seed", String(first.seed), "bad.ts"]).stdout[0]!,
+        runMain(["refute", "--seed", String(first.seed), "bad.ts"]).stdout[0]!,
       );
       expect(second.seed).toBe(first.seed);
-      expect(second.issues).toEqual(first.issues);
+      expect(second.annotations).toEqual(first.annotations);
       expect(second.passed).toBe(first.passed);
       expect(second.failed).toBe(first.failed);
     },
   );
 
-  // Issue #41: the vitest run must be scoped to the out-files generated by
-  // THIS invocation, not the whole .pabst/ mirror.
+  // The vitest run must be scoped to the out-files generated by THIS
+  // invocation, not the whole .pabst/ mirror.
   it(
     "back-to-back invocations do not leak issues from earlier runs",
     { timeout: 120000 },
     () => {
-      expect(runMain(["test", "bad.ts"]).code).toBe(1);
+      expect(runMain(["refute", "bad.ts"]).code).toBe(1);
       // No wipe of .pabst/ in between: bad.ts's stale mirror is still there.
-      const { code, stdout } = runMain(["test", "good.ts"]);
+      const { code, stdout } = runMain(["refute", "good.ts"]);
       expect(code).toBe(0);
       const env = JSON.parse(stdout[0]!);
       expect(env).toMatchObject({
         generated: 1,
         passed: 1,
         failed: 0,
-        issues: [],
+        annotations: [{ file: "good.ts", szs: "GaveUp" }],
       });
     },
   );
@@ -399,28 +435,33 @@ describe("cli test command (README usage claims)", () => {
     "a run that generates nothing reports a zero envelope, never stale mirrors",
     { timeout: 120000 },
     () => {
-      expect(runMain(["test", "bad.ts"]).code).toBe(1);
-      const { code, stdout } = runMain(["test", "plain.ts"]);
+      expect(runMain(["refute", "bad.ts"]).code).toBe(1);
+      const { code, stdout } = runMain(["refute", "plain.ts"]);
       expect(code).toBe(0);
       const env = JSON.parse(stdout[0]!);
+      expectValidEnvelope(env);
       expect(env).toMatchObject({
         generated: 0,
         passed: 0,
         failed: 0,
-        issues: [],
+        annotations: [],
       });
     },
   );
 
   it(
-    "test accepts globs and reports across all matched files",
+    "refute accepts globs and reports across all matched files",
     { timeout: 60000 },
     () => {
-      const { code, stdout } = runMain(["test", "*.ts"]);
+      const { code, stdout } = runMain(["refute", "*.ts"]);
       expect(code).toBe(1);
       const env = JSON.parse(stdout[0]!);
+      expectValidEnvelope(env);
       expect(env).toMatchObject({ generated: 2, passed: 1, failed: 1 });
-      expect(env.issues).toHaveLength(1);
+      const flagged = env.annotations.filter(
+        (a: { kind?: string }) => a.kind !== undefined,
+      );
+      expect(flagged).toHaveLength(1);
     },
   );
 });

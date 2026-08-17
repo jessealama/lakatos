@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { runMain, useTempProject } from "./helpers/cli.js";
+import { runMain, useTempProject } from "../../../tests/helpers/cli.js";
 
 // The per-annotation catch in build-spec wraps only PabstError in the
 // `file:line: @ensures{name}:` diagnostic; anything else must be rethrown
@@ -20,8 +20,8 @@ describe("build-spec internal errors", () => {
   });
 
   it("a non-PabstError thrown mid-annotation escapes main() unwrapped", () => {
-    expect(() => runMain(["test", "fine.ts"])).toThrow(TypeError);
-    expect(() => runMain(["test", "fine.ts"])).toThrow(
+    expect(() => runMain(["refute", "fine.ts"])).toThrow(TypeError);
+    expect(() => runMain(["refute", "fine.ts"])).toThrow(
       /internal invariant violated in lowering/,
     );
   });

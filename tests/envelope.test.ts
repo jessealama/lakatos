@@ -1,11 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { encodeIssue } from "../engines/pabst/src/contract.js";
+import { encodeIssue, type Issue } from "../engines/pabst/src/contract.js";
 import type {
   AssertionResult,
   VitestJson,
 } from "../engines/pabst/src/vitest-json.js";
 import {
   buildEnvelope,
+  collectIssues,
   notTriedEnvelope,
   type PropertyIdentity,
 } from "../src/envelope.js";
@@ -41,6 +42,56 @@ function json(
     testResults: [{ assertionResults: results }],
   };
 }
+
+describe("collectIssues", () => {
+  const FALSIFIED: Issue = {
+    file: "a.ts",
+    function: "f",
+    property: "p",
+    kind: "falsified",
+    counterexample: { x: 1 },
+  };
+  const THREW: Issue = {
+    file: "a.ts",
+    function: "f",
+    property: "q",
+    kind: "threw",
+    counterexample: { x: 0 },
+    error: "boom",
+  };
+  const EXHAUSTED: Issue = {
+    file: "a.ts",
+    function: "f",
+    property: "r",
+    kind: "exhausted",
+    error: "too many skipped runs",
+  };
+  // Realistic failure message: the sentinel arrives wrapped in an Error
+  // rendering with a stack trace, not bare.
+  function wrapped(issue: Issue): AssertionResult {
+    return failed(`Error: ${encodeIssue(issue)}\n    at x`);
+  }
+
+  it("collects only failed assertions and parses each issue", () => {
+    const v = json(
+      [passed, wrapped(FALSIFIED), wrapped(THREW), wrapped(EXHAUSTED)],
+      1,
+      3,
+    );
+    expect(collectIssues(v)).toEqual([FALSIFIED, THREW, EXHAUSTED]);
+  });
+
+  it("tolerates missing testResults and assertionResults arrays", () => {
+    expect(collectIssues({} as VitestJson)).toEqual([]);
+    expect(
+      collectIssues({ testResults: [{}] } as unknown as VitestJson),
+    ).toEqual([]);
+  });
+
+  it("ignores a failed assertion that carries no failure message", () => {
+    expect(collectIssues(json([failed("")], 0, 1))).toEqual([]);
+  });
+});
 
 describe("buildEnvelope", () => {
   it("joins issues onto identities and marks the rest GaveUp", () => {

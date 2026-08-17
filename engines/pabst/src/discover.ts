@@ -49,7 +49,7 @@ function globbedFiles(patterns: string[]): string[] {
 }
 
 const NO_SOURCES =
-  'cannot determine where your source code is; pass files or globs (e.g. pabst test "src/**/*.ts")';
+  'cannot determine where your source code is; pass files or globs (e.g. lakatos refute "src/**/*.ts")';
 
 // TS18003 ("No inputs were found in config file") and TS18002 ("The 'files'
 // list in config file is empty") are the config saying it names no files —

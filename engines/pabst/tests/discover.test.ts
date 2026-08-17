@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import * as path from "node:path";
 import { isTsSource, resolveFiles } from "../src/discover.js";
 import { PabstError } from "../src/errors.js";
-import { useTempProject } from "./helpers/cli.js";
+import { useTempProject } from "../../../tests/helpers/cli.js";
 
 describe("isTsSource", () => {
   it.each(["a.ts", "a.tsx", "a.mts", "a.cts", "src/deep/a.ts"])(

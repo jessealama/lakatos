@@ -1,4 +1,4 @@
-import type { RunMeta } from "../../src/envelope.js";
+import type { RunMeta } from "../../../../src/envelope.js";
 import type { Issue } from "../../src/contract.js";
 
 // Envelope meta is echoed through verbatim; these placeholder values just

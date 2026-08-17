@@ -1,31 +1,25 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync, rmSync } from "node:fs";
-import {
-  buildEnvelope,
-  type Envelope,
-  type FileResult,
-  type RunMeta,
-} from "./envelope.js";
+import type { FileResult, VitestJson } from "./vitest-json.js";
 
 /** Where the spawned vitest writes its JSON results, relative to cwd. */
 export const RESULTS_FILE = ".pabst/.last-run.json";
 
 export type RunResult =
-  | { kind: "completed"; envelope: Envelope }
+  | { kind: "completed"; json: VitestJson }
   | { kind: "no-results"; status: number; stdout: string; stderr: string }
   | { kind: "broken-run"; status: number; messages: string[] };
 
 /**
  * Run vitest over `target` (the generated out-files of one invocation, or a
- * single file or directory) and assemble the run envelope from its JSON
- * results. When vitest produces no parseable results file (e.g. it died on
- * startup before its reporter ran), the run yielded nothing trustworthy to
- * report: instead of an envelope, return vitest's raw output and exit status
- * so the caller can surface the underlying error.
+ * single file or directory) and return its parsed JSON results. When vitest
+ * produces no parseable results file (e.g. it died on startup before its
+ * reporter ran), the run yielded nothing trustworthy to report: instead,
+ * return vitest's raw output and exit status so the caller can surface the
+ * underlying error.
  */
 export function runTests(
   target: string | string[],
-  meta: RunMeta,
   resultsFile: string = RESULTS_FILE,
 ): RunResult {
   // A stale results file from a previous run must not be mistaken for this
@@ -37,7 +31,7 @@ export function runTests(
       kind: "no-results",
       status: 1,
       stdout: "",
-      stderr: `pabst: cannot clear stale results file ${resultsFile}: ${e instanceof Error ? e.message : String(e)}\n`,
+      stderr: `lakatos: cannot clear stale results file ${resultsFile}: ${e instanceof Error ? e.message : String(e)}\n`,
     };
   }
   const targets = Array.isArray(target) ? target : [target];
@@ -73,5 +67,5 @@ export function runTests(
     );
     return { kind: "broken-run", status: res.status || 1, messages };
   }
-  return { kind: "completed", envelope: buildEnvelope(meta, json) };
+  return { kind: "completed", json };
 }

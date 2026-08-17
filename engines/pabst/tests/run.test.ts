@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { runTests, RESULTS_FILE } from "../src/run.js";
 import { encodeIssue } from "../src/contract.js";
-import { META, FALSIFIED } from "./helpers/fixtures.js";
+import { FALSIFIED } from "./helpers/fixtures.js";
 
 const repoRoot = process.cwd();
 
@@ -74,25 +74,20 @@ describe("runTests", () => {
   });
 
   it(
-    "assembles an envelope from a run, collecting tagged failures",
+    "returns the parsed vitest JSON from a completed run",
     { timeout: 60000 },
     () => {
-      const result = inDir(okDir, () => runTests(".", META));
+      const result = inDir(okDir, () => runTests("."));
       expect(result.kind).toBe("completed");
       if (result.kind !== "completed") return;
-      expect(result.envelope).toEqual({
-        ...META,
-        passed: 1,
-        failed: 1,
-        issues: [FALSIFIED],
-      });
+      expect(result.json.numPassedTests).toBe(1);
+      expect(result.json.numFailedTests).toBe(1);
+      expect(result.json.success).toBe(false);
     },
   );
 
   it("writes results to a caller-provided path", { timeout: 60000 }, () => {
-    const result = inDir(okDir, () =>
-      runTests(".", META, "custom-results.json"),
-    );
+    const result = inDir(okDir, () => runTests(".", "custom-results.json"));
     expect(result.kind).toBe("completed");
     expect(fs.existsSync(path.join(okDir, "custom-results.json"))).toBe(true);
   });
@@ -102,7 +97,7 @@ describe("runTests", () => {
       fs.rmSync(RESULTS_FILE, { force: true });
       fs.mkdirSync(RESULTS_FILE, { recursive: true });
       try {
-        return runTests(".", META);
+        return runTests(".");
       } finally {
         fs.rmSync(RESULTS_FILE, { recursive: true, force: true });
       }
@@ -118,7 +113,7 @@ describe("runTests", () => {
     const result = inDir(okDir, () => {
       process.env.PATH = "";
       try {
-        return runTests(".", META);
+        return runTests(".");
       } finally {
         process.env.PATH = prevPath;
       }
@@ -133,7 +128,7 @@ describe("runTests", () => {
     "reports a broken run when a test file fails to load",
     { timeout: 60000 },
     () => {
-      const result = inDir(brokenDir, () => runTests(".", META));
+      const result = inDir(brokenDir, () => runTests("."));
       expect(result.kind).toBe("broken-run");
       if (result.kind !== "broken-run") return;
       expect(result.status).not.toBe(0);
@@ -157,7 +152,7 @@ describe("runTests", () => {
           }),
           "utf8",
         );
-        return runTests(".", META);
+        return runTests(".");
       });
       expect(result.kind).toBe("no-results");
       if (result.kind !== "no-results") return;

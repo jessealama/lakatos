@@ -36,7 +36,7 @@ export function generate(
       path.isAbsolute(rel)
     ) {
       throw new PabstError(
-        `${file} is outside the current directory; run pabst from the directory containing it`,
+        `${file} is outside the current directory; run lakatos from the directory containing it`,
       );
     }
     const specs = buildSpecs(file);

@@ -1,10 +1,12 @@
 import { describe, it, expect, afterAll, beforeAll } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { generate } from "../src/codegen.js";
+import { generate, type GenResult } from "../src/codegen.js";
 import { runTests } from "../src/run.js";
-import type { Envelope } from "../src/envelope.js";
+import type { Issue } from "../src/contract.js";
+import { buildEnvelope, type Envelope } from "../../../src/envelope.js";
 import { expectValidIssue } from "./helpers/issue-schema.js";
+import { expectValidEnvelope } from "../../../tests/helpers/envelope-schema.js";
 import { META } from "./helpers/fixtures.js";
 
 const root = process.cwd();
@@ -84,12 +86,25 @@ function clean(): void {
 // survive a run of this suite untouched.
 const E2E_RESULTS = ".pabst/.e2e-run.json";
 
-function run(file: string): Envelope {
-  const result = runTests(file, META, E2E_RESULTS);
+function run(gen: GenResult): Envelope {
+  const result = runTests(gen.outFile, E2E_RESULTS);
   if (result.kind !== "completed") {
     throw new Error(`vitest run failed: ${JSON.stringify(result)}`);
   }
-  return result.envelope;
+  const env = buildEnvelope(
+    META,
+    result.json,
+    gen.properties.map((p) => ({ file: gen.sourceFile, ...p })),
+  );
+  expectValidEnvelope(env);
+  return env;
+}
+
+/** The flagged annotations, reshaped as bare issues for the pinned checks. */
+function issuesOf(env: Envelope): Issue[] {
+  return env.annotations
+    .filter((a) => a.kind !== undefined)
+    .map(({ szs, ...issue }) => issue as Issue);
 }
 
 describe("end-to-end", () => {
@@ -99,9 +114,9 @@ describe("end-to-end", () => {
   it("a true property passes vitest", { timeout: 30000 }, () => {
     const [r] = generate([passSrc]);
     expect(r).toBeDefined();
-    const env = run(r!.outFile);
+    const env = run(r!);
     expect(env.failed).toBe(0);
-    expect(env.issues).toEqual([]);
+    expect(issuesOf(env)).toEqual([]);
   });
 
   it(
@@ -110,11 +125,11 @@ describe("end-to-end", () => {
     () => {
       const [r] = generate([failSrc]);
       expect(r).toBeDefined();
-      const env = run(r!.outFile);
+      const env = run(r!);
       expect(env.failed).toBeGreaterThan(0);
-      expect(env.issues).toHaveLength(1);
-      expectValidIssue(env.issues[0]);
-      expect(env.issues[0]).toMatchObject({
+      expect(issuesOf(env)).toHaveLength(1);
+      expectValidIssue(issuesOf(env)[0]);
+      expect(issuesOf(env)[0]).toMatchObject({
         property: "wrong",
         kind: "falsified",
         counterexample: { x: 1 },
@@ -132,9 +147,9 @@ describe("end-to-end", () => {
     () => {
       const [r] = generate([classPassSrc], ".pabst", 3);
       expect(r).toBeDefined();
-      const env = run(r!.outFile);
+      const env = run(r!);
       expect(env.failed).toBe(0);
-      expect(env.issues).toEqual([]);
+      expect(issuesOf(env)).toEqual([]);
     },
   );
 
@@ -144,11 +159,11 @@ describe("end-to-end", () => {
     () => {
       const [r] = generate([classFailSrc], ".pabst", 3);
       expect(r).toBeDefined();
-      const env = run(r!.outFile);
+      const env = run(r!);
       expect(env.failed).toBeGreaterThan(0);
-      expect(env.issues).toHaveLength(1);
-      expectValidIssue(env.issues[0]);
-      expect(env.issues[0]).toMatchObject({
+      expect(issuesOf(env)).toHaveLength(1);
+      expectValidIssue(issuesOf(env)[0]);
+      expect(issuesOf(env)[0]).toMatchObject({
         function: "BoundedCounter#dec",
         property: "neverNegative",
         kind: "falsified",
@@ -163,11 +178,11 @@ describe("end-to-end", () => {
     () => {
       const [r] = generate([nearMissSrc], ".pabst", 3);
       expect(r).toBeDefined();
-      const env = run(r!.outFile);
+      const env = run(r!);
       expect(env.failed).toBeGreaterThan(0);
-      expect(env.issues).toHaveLength(1);
-      expectValidIssue(env.issues[0]);
-      expect(env.issues[0]).toMatchObject({
+      expect(issuesOf(env)).toHaveLength(1);
+      expectValidIssue(issuesOf(env)[0]);
+      expect(issuesOf(env)[0]).toMatchObject({
         function: "Arith.negate",
         property: "matchesSubtraction",
         kind: "falsified",
@@ -192,16 +207,16 @@ describe("end-to-end", () => {
       ).toBe(block);
       const [r] = generate([readmeExampleSrc], ".pabst", 3);
       expect(r).toBeDefined();
-      const env = run(r!.outFile);
+      const env = run(r!);
       expect(env.failed).toBeGreaterThan(0);
-      expect(env.issues).toHaveLength(1);
-      expectValidIssue(env.issues[0]);
-      expect(env.issues[0]).toMatchObject({
+      expect(issuesOf(env)).toHaveLength(1);
+      expectValidIssue(issuesOf(env)[0]);
+      expect(issuesOf(env)[0]).toMatchObject({
         function: "foo",
         property: "nonzero",
         kind: "falsified",
       });
-      expect(Object.keys(env.issues[0]!.counterexample ?? {})).toEqual([
+      expect(Object.keys(issuesOf(env)[0]!.counterexample ?? {})).toEqual([
         "x",
         "y",
       ]);
@@ -211,17 +226,17 @@ describe("end-to-end", () => {
   it("README string laws (contains) pass vitest", { timeout: 30000 }, () => {
     const [r] = generate([stringLawsSrc]);
     expect(r).toBeDefined();
-    const env = run(r!.outFile);
+    const env = run(r!);
     expect(env.failed).toBe(0);
-    expect(env.issues).toEqual([]);
+    expect(issuesOf(env)).toEqual([]);
   });
 
   it("Number(String(x)) round-trips over int", { timeout: 30000 }, () => {
     const [r] = generate([intRoundTripSrc]);
     expect(r).toBeDefined();
-    const env = run(r!.outFile);
+    const env = run(r!);
     expect(env.failed).toBe(0);
-    expect(env.issues).toEqual([]);
+    expect(issuesOf(env)).toEqual([]);
   });
 
   it(
@@ -230,15 +245,15 @@ describe("end-to-end", () => {
     () => {
       const [r] = generate([floatAssocSrc], ".pabst", 1);
       expect(r).toBeDefined();
-      const env = run(r!.outFile);
+      const env = run(r!);
       expect(env.failed).toBeGreaterThan(0);
-      expect(env.issues).toHaveLength(1);
-      expectValidIssue(env.issues[0]);
-      expect(env.issues[0]).toMatchObject({
+      expect(issuesOf(env)).toHaveLength(1);
+      expectValidIssue(issuesOf(env)[0]);
+      expect(issuesOf(env)[0]).toMatchObject({
         property: "associative",
         kind: "falsified",
       });
-      expect(Object.keys(env.issues[0]!.counterexample ?? {})).toEqual([
+      expect(Object.keys(issuesOf(env)[0]!.counterexample ?? {})).toEqual([
         "x",
         "y",
         "z",
@@ -252,15 +267,17 @@ describe("end-to-end", () => {
     () => {
       const [r] = generate([parseRoundTripSrc], ".pabst", 3);
       expect(r).toBeDefined();
-      const env = run(r!.outFile);
+      const env = run(r!);
       expect(env.failed).toBeGreaterThan(0);
-      expect(env.issues).toHaveLength(1);
-      expectValidIssue(env.issues[0]);
-      expect(env.issues[0]).toMatchObject({
+      expect(issuesOf(env)).toHaveLength(1);
+      expectValidIssue(issuesOf(env)[0]);
+      expect(issuesOf(env)[0]).toMatchObject({
         property: "parseIntInverts",
         kind: "falsified",
       });
-      expect(Object.keys(env.issues[0]!.counterexample ?? {})).toEqual(["x"]);
+      expect(Object.keys(issuesOf(env)[0]!.counterexample ?? {})).toEqual([
+        "x",
+      ]);
     },
   );
 
@@ -270,16 +287,18 @@ describe("end-to-end", () => {
     () => {
       const [r] = generate([safeSqrtSrc], ".pabst", 3);
       expect(r).toBeDefined();
-      const env = run(r!.outFile);
+      const env = run(r!);
       expect(env.failed).toBeGreaterThan(0);
-      expect(env.issues).toHaveLength(1);
-      expectValidIssue(env.issues[0]);
-      expect(env.issues[0]).toMatchObject({
+      expect(issuesOf(env)).toHaveLength(1);
+      expectValidIssue(issuesOf(env)[0]);
+      expect(issuesOf(env)[0]).toMatchObject({
         property: "nonNegativeRoot",
         kind: "threw",
       });
-      expect(env.issues[0]!.error).toContain("negative");
-      expect(Object.keys(env.issues[0]!.counterexample ?? {})).toEqual(["x"]);
+      expect(issuesOf(env)[0]!.error).toContain("negative");
+      expect(Object.keys(issuesOf(env)[0]!.counterexample ?? {})).toEqual([
+        "x",
+      ]);
     },
   );
 
@@ -289,15 +308,15 @@ describe("end-to-end", () => {
     () => {
       const [r] = generate([exhaustedSrc]);
       expect(r).toBeDefined();
-      const env = run(r!.outFile);
+      const env = run(r!);
       expect(env.failed).toBeGreaterThan(0);
-      expect(env.issues).toHaveLength(1);
-      expectValidIssue(env.issues[0]);
-      expect(env.issues[0]).toMatchObject({
+      expect(issuesOf(env)).toHaveLength(1);
+      expectValidIssue(issuesOf(env)[0]);
+      expect(issuesOf(env)[0]).toMatchObject({
         property: "unsatisfiable",
         kind: "exhausted",
       });
-      expect(env.issues[0]!.counterexample).toBeUndefined();
+      expect(issuesOf(env)[0]!.counterexample).toBeUndefined();
     },
   );
 
@@ -307,9 +326,9 @@ describe("end-to-end", () => {
     () => {
       const [r] = generate([boundedSrc]);
       expect(r).toBeDefined();
-      const env = run(r!.outFile);
+      const env = run(r!);
       expect(env.failed).toBe(0);
-      expect(env.issues).toEqual([]);
+      expect(issuesOf(env)).toEqual([]);
     },
   );
 
@@ -323,9 +342,9 @@ describe("end-to-end", () => {
       const emitted = fs.readFileSync(r!.outFile, "utf8");
       expect(emitted).toContain("fc.stringMatching(/^(?:[a-z]+)$/)");
       expect(emitted).toContain("fc.stringMatching(/^(?:\\p{Lu}{2,5})$/u)");
-      const env = run(r!.outFile);
+      const env = run(r!);
       expect(env.failed).toBe(0);
-      expect(env.issues).toEqual([]);
+      expect(issuesOf(env)).toEqual([]);
     },
   );
 
@@ -335,9 +354,9 @@ describe("end-to-end", () => {
     () => {
       const [r] = generate([equationPassSrc], ".pabst", 3);
       expect(r).toBeDefined();
-      const env = run(r!.outFile);
+      const env = run(r!);
       expect(env.failed).toBe(0);
-      expect(env.issues).toEqual([]);
+      expect(issuesOf(env)).toEqual([]);
     },
   );
 
@@ -347,11 +366,11 @@ describe("end-to-end", () => {
     () => {
       const [r] = generate([equationFailSrc], ".pabst", 3);
       expect(r).toBeDefined();
-      const env = run(r!.outFile);
+      const env = run(r!);
       expect(env.failed).toBeGreaterThan(0);
-      expect(env.issues).toHaveLength(1);
-      expectValidIssue(env.issues[0]);
-      expect(env.issues[0]).toMatchObject({
+      expect(issuesOf(env)).toHaveLength(1);
+      expectValidIssue(issuesOf(env)[0]);
+      expect(issuesOf(env)[0]).toMatchObject({
         function: "negate",
         property: "matchesSubtraction",
         kind: "falsified",
@@ -370,8 +389,8 @@ describe("e2e — math-y connectives", () => {
     () => {
       clean();
       const [res] = generate([connectivesSrc], ".pabst", 1234);
-      const env = run(res!.outFile);
-      expect(env.issues).toEqual([]);
+      const env = run(res!);
+      expect(issuesOf(env)).toEqual([]);
       expect(env.failed).toBe(0);
     },
   );
@@ -382,8 +401,8 @@ describe("e2e — math-y connectives", () => {
     () => {
       clean();
       const [res] = generate([atomNotBoolSrc], ".pabst", 1234);
-      const env = run(res!.outFile);
-      const issue = env.issues.find((i) => i.property === "notBool");
+      const env = run(res!);
+      const issue = issuesOf(env).find((i) => i.property === "notBool");
       expect(issue?.kind).toBe("threw");
       expect(issue?.error).toMatch(
         /atom "addOne\(x\)" evaluated to .*not a boolean/,
