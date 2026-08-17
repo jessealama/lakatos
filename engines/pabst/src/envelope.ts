@@ -1,4 +1,5 @@
 import { parseIssue, type Issue } from "./contract.js";
+import type { VitestJson } from "./vitest-json.js";
 
 /** The full report of one pabst run: metadata, counts, and parsed issues. */
 export interface Envelope {
@@ -12,22 +13,7 @@ export interface Envelope {
   issues: Issue[];
 }
 
-/** The subset of vitest's JSON reporter output the envelope consumes. */
-export interface AssertionResult {
-  status: string;
-  failureMessages: string[];
-}
-export interface FileResult {
-  status?: string;
-  message?: string;
-  assertionResults: AssertionResult[];
-}
-export interface VitestJson {
-  numPassedTests: number;
-  numFailedTests: number;
-  success: boolean;
-  testResults: FileResult[];
-}
+export type { AssertionResult, FileResult, VitestJson } from "./vitest-json.js";
 
 /** Run-level metadata the CLI captures, independent of the vitest run. */
 export interface RunMeta {
