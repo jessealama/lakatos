@@ -60,15 +60,22 @@ The report (schema: `schemas/envelope.schema.json`) lists every scraped
 annotation with an [SZS ontology](https://tptp.org/UserDocs/SZSOntology/)
 status:
 
-| Outcome                       | SZS status           |
-| ----------------------------- | -------------------- |
-| falsified (counterexample)    | `CounterSatisfiable` |
-| property body threw           | `Error`              |
-| generation exhausted / passed | `GaveUp`             |
-| not attempted (stubs)         | `NotTried`           |
+| Outcome                                | SZS status           |
+| -------------------------------------- | -------------------- |
+| falsified (counterexample)             | `CounterSatisfiable` |
+| property body threw                    | `Error`              |
+| generation exhausted / passed          | `GaveUp`             |
+| not attempted (stubs, unhealthy runs)  | `NotTried`           |
 
 The two `GaveUp` cases are distinguished by the `kind` field: present
 (`"exhausted"`) when generation gave up, absent when every run passed.
+
+`NotTried` also covers unhealthy runs: when the underlying test run
+fails outright — the runner dies before reporting, or a generated test
+can't even load — no property was actually evaluated, so `lakatos
+refute` reports every scraped annotation `NotTried`, keeps the
+diagnostics on stderr, and exits 2. Stdout is one parseable envelope in
+every mode.
 
 Commands: `lakatos refute` (works today), `lakatos prove` and
 `lakatos check` (stubs). All take `[--seed <n>] [files-or-globs...]`;
@@ -76,7 +83,7 @@ with no files, sources are discovered via `tsconfig.json` or `src/**`.
 Passing a report's `seed` back reproduces its run.
 
 Exit codes: `0` — clean run; `1` — counterexamples found, or a stubbed
-command; `2` — usage or user error.
+command; `2` — usage or user error, including an unhealthy run.
 
 ## Layout
 
