@@ -6,11 +6,25 @@ on:
     paths:
       - "engines/thales/**"
       - "spec/**"
+      - "src/**"
+      - "tests/**"
+      - "lemma/**"
+      - "schemas/**"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.json"
       - ".github/workflows/thales.yml"
   pull_request:
     paths:
       - "engines/thales/**"
       - "spec/**"
+      - "src/**"
+      - "tests/**"
+      - "lemma/**"
+      - "schemas/**"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.json"
       - ".github/workflows/thales.yml"
 
 env:
@@ -88,3 +102,9 @@ jobs:
 
       - name: Transcriber end-to-end
         run: npm run check:transcriber
+
+      - name: Prove end-to-end
+        run: npx vitest run tests/e2e.test.ts
+        working-directory: .
+        env:
+          LAKATOS_PROVE_E2E: "1"
