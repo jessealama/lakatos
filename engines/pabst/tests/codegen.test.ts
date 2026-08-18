@@ -46,7 +46,9 @@ export class Counter {
     expect(results[0]!.properties).toEqual([
       { function: "bar", property: "pos" },
     ]);
-    expect(results[0]!.outFile).toBe(path.join(".pabst", "bar.pabst.test.ts"));
+    expect(results[0]!.outFile).toBe(
+      path.join(".pabst", "bar.ts.pabst.test.ts"),
+    );
     expect(fs.existsSync(results[0]!.outFile!)).toBe(true);
     const code = fs.readFileSync(results[0]!.outFile!, "utf8");
     expect(code).toContain(
@@ -66,7 +68,7 @@ export class Counter {
   it("skips a file with no @ensures annotations", () => {
     const results = generate(["plain.ts"], ".pabst", 7);
     expect(results).toEqual([]);
-    expect(fs.existsSync(path.join(".pabst", "plain.pabst.test.ts"))).toBe(
+    expect(fs.existsSync(path.join(".pabst", "plain.ts.pabst.test.ts"))).toBe(
       false,
     );
   });
@@ -96,7 +98,7 @@ describe("generate: source outside the current directory", () => {
       /outside the current directory/,
     );
     // Nothing may leak into the tree: not under .pabst/, not beside it.
-    expect(fs.existsSync(path.join(dir, "evil.pabst.test.ts"))).toBe(false);
+    expect(fs.existsSync(path.join(dir, "evil.ts.pabst.test.ts"))).toBe(false);
     expect(fs.existsSync(path.join(dir, "pkg", ".pabst"))).toBe(false);
   });
 });

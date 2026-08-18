@@ -152,6 +152,111 @@ describe("envelope schema", () => {
     ).toThrow();
   });
 
+  it("accepts prove-pipeline reasons on kindless GaveUp and NotTried", () => {
+    expect(() =>
+      expectValidEnvelope({
+        ...META,
+        annotations: [
+          {
+            file: "f.ts",
+            function: "f",
+            property: "p",
+            szs: "GaveUp",
+            reason: "decide failed: the goal is not decidable",
+          },
+          {
+            file: "f.ts",
+            function: "g",
+            property: "q",
+            szs: "NotTried",
+            reason: "no structured property provided",
+          },
+        ],
+      }),
+    ).not.toThrow();
+  });
+
+  it("accepts a prover Error carrying only its diagnostic", () => {
+    expect(() =>
+      expectValidEnvelope({
+        ...META,
+        annotations: [
+          {
+            file: "f.ts",
+            function: "f",
+            property: "p",
+            szs: "Error",
+            error: "property elaboration failed",
+          },
+        ],
+      }),
+    ).not.toThrow();
+  });
+
+  it("rejects an Error annotation with no diagnostic at all", () => {
+    expect(() =>
+      expectValidEnvelope({
+        ...META,
+        annotations: [
+          { file: "f.ts", function: "f", property: "p", szs: "Error" },
+        ],
+      }),
+    ).toThrow();
+  });
+
+  it("rejects an empty prove reason", () => {
+    expect(() =>
+      expectValidEnvelope({
+        ...META,
+        annotations: [
+          {
+            file: "f.ts",
+            function: "f",
+            property: "p",
+            szs: "GaveUp",
+            reason: "",
+          },
+        ],
+      }),
+    ).toThrow();
+  });
+
+  it("rejects a reason on a Theorem entry", () => {
+    expect(() =>
+      expectValidEnvelope({
+        ...META,
+        annotations: [
+          {
+            file: "f.ts",
+            function: "f",
+            property: "p",
+            szs: "Theorem",
+            reason: "proved by decide, kernel-checked as TsProof.thm_1",
+          },
+        ],
+      }),
+    ).toThrow();
+  });
+
+  it("rejects a reason on an exhausted (kinded) GaveUp", () => {
+    expect(() =>
+      expectValidEnvelope({
+        ...META,
+        annotations: [
+          {
+            file: "f.ts",
+            function: "f",
+            property: "p",
+            szs: "GaveUp",
+            kind: "exhausted",
+            error: "too many skipped runs",
+            reason: "does not belong here",
+          },
+        ],
+      } as unknown as Envelope),
+    ).toThrow();
+  });
+
   it("rejects an unknown szs value", () => {
     expect(() =>
       expectValidEnvelope({

@@ -20,11 +20,16 @@ the conjecture to be repaired. That loop is exactly what this tool runs.
 
 ## Status
 
-The refutation half works end to end: `lakatos refute` scrapes `@ensures`
+Both engines work end to end. `lakatos refute` scrapes `@ensures`
 annotations, generates fast-check property tests, runs them, and prints a
-per-annotation JSON report. `lakatos prove` and `lakatos check` are stubs:
-they scrape the same annotations, report each one `NotTried`, and exit 1.
-The rest of this README describes the committed design.
+per-annotation JSON report. `lakatos prove` transcribes each file into a
+`.lean` artifact under `.thales/`, runs it through the Lean engine
+(`lake env lean`), and assembles the same per-annotation envelope from the
+prover's verdicts; it requires the Lean toolchain (elan/lake) on PATH and,
+for now, a lakatos checkout — the npm package does not yet ship the Lean
+engine. `lakatos check` is a stub: it scrapes the same annotations,
+reports each one `NotTried`, and exits 1. The rest of this README
+describes the committed design.
 
 ## Usage
 
@@ -60,21 +65,24 @@ The report (schema: `schemas/envelope.schema.json`) lists every scraped
 annotation with an [SZS ontology](https://tptp.org/UserDocs/SZSOntology/)
 status:
 
-| Outcome                               | SZS status           |
-| ------------------------------------- | -------------------- |
-| falsified (counterexample)            | `CounterSatisfiable` |
-| property body threw                   | `Error`              |
-| generation exhausted / passed         | `GaveUp`             |
-| not attempted (stubs, unhealthy runs) | `NotTried`           |
-| malformed annotation input            | `InputError`         |
+| Outcome                                 | SZS status           |
+| --------------------------------------- | -------------------- |
+| proved for all inputs                   | `Theorem`            |
+| falsified (counterexample)              | `CounterSatisfiable` |
+| property body threw / prover errored    | `Error`              |
+| generation exhausted / passed / gave up | `GaveUp`             |
+| annotation depends on unmappable code   | `Inappropriate`      |
+| not attempted (stubs, unhealthy runs)   | `NotTried`           |
+| malformed annotation input              | `InputError`         |
 
 The two `GaveUp` cases are distinguished by the `kind` field: present
 (`"exhausted"`) when generation gave up, absent when every run passed.
 
-`NotTried` also covers unhealthy runs: when the underlying test run
-fails outright — the runner dies before reporting, or a generated test
-can't even load — no property was actually evaluated, so `lakatos
-refute` reports every scraped annotation `NotTried`, keeps the
+`NotTried` also covers unhealthy runs: when the underlying engine run
+fails outright — the test runner dies before reporting, a generated test
+can't even load, the Lean toolchain is missing, the Lean run fails, or
+its verdict lines are malformed — no property was actually evaluated, so
+the run reports every scraped annotation `NotTried`, keeps the
 diagnostics on stderr, and exits 2. Stdout is one parseable envelope in
 every mode.
 
@@ -87,10 +95,11 @@ carries the diagnostic, and the run exits 2. Subjects without a proper
 name still get entries under best-effort labels (`<anonymous>#m`,
 `Box#<computed>`), with the diagnostic saying what is unsupported.
 
-Commands: `lakatos refute` (works today), `lakatos prove` and
-`lakatos check` (stubs). All take `[--seed <n>] [files-or-globs...]`;
-with no files, sources are discovered via `tsconfig.json` or `src/**`.
-Passing a report's `seed` back reproduces its run.
+Commands: `lakatos refute` and `lakatos prove` (work today),
+`lakatos check` (stub). All take `[files-or-globs...]`; with no files,
+sources are discovered via `tsconfig.json` or `src/**`. `--seed <n>`
+applies to refute only: passing a report's `seed` back reproduces its
+run.
 
 Exit codes: `0` — clean run; `1` — counterexamples found, or a stubbed
 command; `2` — usage or user error, including an unhealthy run.

@@ -33,14 +33,28 @@
     "annotation": {
       "oneOf": [
         {
-          "title": "unattempted, unrefuted, or proven",
+          "title": "unattempted or unrefuted",
+          "description": "reason, when present, is the prover's account of why it stopped (GaveUp) or never started (NotTried).",
           "additionalProperties": false,
           "required": ["file", "function", "property", "szs"],
           "properties": {
             "file": { "type": "string" },
             "function": { "$ref": "#/definitions/functionName" },
             "property": { "type": "string", "minLength": 1 },
-            "szs": { "enum": ["GaveUp", "NotTried", "Theorem"] }
+            "szs": { "enum": ["GaveUp", "NotTried"] },
+            "reason": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "title": "proven",
+          "description": "The property is a kernel-checked theorem; no prover internals travel with it.",
+          "additionalProperties": false,
+          "required": ["file", "function", "property", "szs"],
+          "properties": {
+            "file": { "type": "string" },
+            "function": { "$ref": "#/definitions/functionName" },
+            "property": { "type": "string", "minLength": 1 },
+            "szs": { "const": "Theorem" }
           }
         },
         {
@@ -66,6 +80,19 @@
             "function": { "type": "string", "minLength": 1 },
             "property": { "type": "string", "minLength": 1 },
             "szs": { "const": "InputError" },
+            "error": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "title": "prover error",
+          "description": "The prover failed on this annotation before reaching a verdict on the property itself; error carries the diagnostic.",
+          "additionalProperties": false,
+          "required": ["file", "function", "property", "szs", "error"],
+          "properties": {
+            "file": { "type": "string" },
+            "function": { "$ref": "#/definitions/functionName" },
+            "property": { "type": "string", "minLength": 1 },
+            "szs": { "const": "Error" },
             "error": { "type": "string", "minLength": 1 }
           }
         },

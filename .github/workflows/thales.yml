@@ -2,18 +2,30 @@ name: thales
 
 on:
   push:
-    branches: [main]
+    branches: [main, thales-rewrite]
     paths:
       - "engines/thales/**"
       - "spec/**"
+      - "src/**"
+      - "tests/**"
+      - "lemma/**"
+      - "schemas/**"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.json"
       - ".github/workflows/thales.yml"
-      - ".gitmodules"
   pull_request:
     paths:
       - "engines/thales/**"
       - "spec/**"
+      - "src/**"
+      - "tests/**"
+      - "lemma/**"
+      - "schemas/**"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.json"
       - ".github/workflows/thales.yml"
-      - ".gitmodules"
 
 env:
   NODE_VERSION: "24.x"
@@ -27,16 +39,12 @@ defaults:
 
 jobs:
   build-and-test:
-    name: Build + Lean tests + conformance
+    name: Build + verdict channel
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-        with:
-          # Fetches typescript-tests/ — its .gitmodules entry sets shallow=true,
-          # so this stays cheap despite the upstream repo being huge.
-          submodules: recursive
 
       - name: Install Lean toolchain
         uses: leanprover/lean-action@v1
@@ -55,10 +63,20 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: engines/thales/package-lock.json
+          cache-dependency-path: |
+            engines/thales/package-lock.json
+            package-lock.json
 
       - name: npm install
         run: npm ci
+
+      - name: npm install (root)
+        run: npm ci
+        working-directory: .
+
+      - name: Build the front end
+        run: npx tsc -p tsconfig.json
+        working-directory: .
 
       - name: Format check
         run: npm run format:check
@@ -73,20 +91,20 @@ jobs:
           restore-keys: |
             lake-${{ runner.os }}-
 
-      - name: Build thales
+      - name: Build
         run: lake build
 
       - name: Lean tests
-        run: lake build ThalesTest
+        run: lake build ThalesDslTest
 
-      - name: Harness self-test
-        run: node scripts/run-examples.js --self-test
+      - name: Verdict channel
+        run: npm run check:verdict-channel
 
-      - name: Conformance corpus
-        run: node scripts/run-examples.js
+      - name: Transcriber end-to-end
+        run: npm run check:transcriber
 
-      - name: TS conformance (sample)
-        # Strided deterministic sample over microsoft/TypeScript's conformance
-        # corpus; thresholds chosen with ~7 pts of headroom below the current
-        # measured agreement. Bump these as thales improves.
-        run: node scripts/run-ts-conformance.js --sample 200 --min-agreement 75 --max-parse-errors 0
+      - name: Prove end-to-end
+        run: npx vitest run tests/e2e.test.ts
+        working-directory: .
+        env:
+          LAKATOS_PROVE_E2E: "1"

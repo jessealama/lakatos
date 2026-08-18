@@ -3,11 +3,9 @@ import * as path from "node:path";
 import { buildSpecs } from "./build-spec.js";
 import type { InvalidAnnotation } from "../../../lemma/src/extract.js";
 import { emit } from "./emit.js";
-import { PabstError } from "./errors.js";
+import { mirrorPath } from "../../../lemma/src/mirror.js";
 import { qualifiedName } from "../../../lemma/src/qualified-name.js";
 import { randomSeed } from "./seed.js";
-
-const SRC_EXT = /\.(ts|tsx|mts|cts|js|mjs|cjs)$/;
 
 export interface GeneratedProperty {
   function: string;
@@ -30,27 +28,15 @@ export function generate(
 ): GenResult[] {
   const results: GenResult[] = [];
   for (const file of files) {
-    const rel = path.relative(process.cwd(), path.resolve(file));
-    // Out files mirror rel under outRoot, so a ".."-led (or, across Windows
-    // drives, absolute) rel would place them outside it — where the runner
-    // never looks. Refuse rather than silently skip what looks generated.
-    if (
-      rel === ".." ||
-      rel.startsWith(`..${path.sep}`) ||
-      path.isAbsolute(rel)
-    ) {
-      throw new PabstError(
-        `${file} is outside the current directory; run lakatos from the directory containing it`,
-      );
-    }
+    // Mirroring shared with thales; the outside-cwd guard fires here even
+    // for files that turn out to have nothing to generate.
+    const outFile = mirrorPath(file, outRoot, ".pabst.test.ts");
     const { specs, invalid } = buildSpecs(file);
     if (specs.length === 0 && invalid.length === 0) continue;
     if (specs.length === 0) {
       results.push({ sourceFile: file, properties: [], invalid });
       continue;
     }
-    const noExt = rel.replace(SRC_EXT, "");
-    const outFile = path.join(outRoot, noExt + ".pabst.test.ts");
     fs.mkdirSync(path.dirname(outFile), { recursive: true });
     fs.writeFileSync(outFile, emit(specs, file, outFile, seed), "utf8");
     results.push({

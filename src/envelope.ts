@@ -3,6 +3,7 @@ import {
   type Issue,
   type IssueKind,
 } from "../engines/pabst/src/contract.js";
+import type { LeanVerdict } from "../engines/thales/frontend/src/run.js";
 import type { VitestJson } from "../engines/pabst/src/vitest-json.js";
 import { szsForIssue, type SzsStatus } from "./szs.js";
 
@@ -19,7 +20,8 @@ export interface AnnotationResult extends PropertyIdentity {
   kind?: IssueKind;
   counterexample?: Record<string, unknown>;
   error?: string;
-  /** Inappropriate only: the construct outside the mappable subset. */
+  /** Prove pipeline: the construct outside the mappable subset
+   * (Inappropriate), or why the prover stopped (GaveUp, NotTried). */
   reason?: string;
 }
 
@@ -102,17 +104,76 @@ export function buildEnvelope(
   };
 }
 
-/** Envelope for commands that scrape but do not attempt anything yet. */
-export function notTriedEnvelope(
-  version: string,
-  startedAt: string,
-  cwd: string,
+/** One #thales_prove verdict line; run.ts, which parses the wire
+ * format, owns the shape. */
+export type ProveVerdict = LeanVerdict;
+
+export type ProveJoin =
+  | { kind: "joined"; annotations: AnnotationResult[] }
+  | { kind: "mismatched"; messages: string[] };
+
+/** The verdict statuses the prove contract carries. The engine-side
+ * check (engines/thales/scripts/check-verdict-channel.js) must allowlist
+ * exactly this set — tests/verdict-contract.test.ts pins the two. */
+export const PROVE_STATUSES: ReadonlySet<string> = new Set([
+  "Theorem",
+  "Inappropriate",
+  "GaveUp",
+  "NotTried",
+  "Error",
+]);
+
+/** The Theorem reason (a run-internal kernel name) is dropped; Error
+ * diagnostics travel in `error` like every other engine failure. */
+function verdictResult(
+  id: PropertyIdentity,
+  v: ProveVerdict,
+): AnnotationResult {
+  const szs = v.szs as SzsStatus;
+  if (szs === "Theorem") return { ...id, szs };
+  if (szs === "Error") return { ...id, szs, error: v.reason };
+  return { ...id, szs, reason: v.reason };
+}
+
+/**
+ * Join the extracted identities against the prover's verdict lines. The
+ * transcriber emits exactly one #thales_prove per valid annotation, so a
+ * missing, duplicate, or surplus verdict means the run cannot be trusted.
+ */
+export function joinProveVerdicts(
   identities: PropertyIdentity[],
-): Envelope {
-  return {
-    version,
-    startedAt,
-    cwd,
-    annotations: identities.map((i) => ({ ...i, szs: "NotTried" })),
-  };
+  verdicts: ProveVerdict[],
+): ProveJoin {
+  const messages: string[] = [];
+  const byKey = new Map<string, ProveVerdict>();
+  for (const v of verdicts) {
+    const key = identityKey({
+      file: v.identity[0],
+      function: v.identity[1],
+      property: v.identity[2],
+    });
+    if (byKey.has(key)) messages.push(`duplicate verdict for ${key}`);
+    if (!PROVE_STATUSES.has(v.szs)) {
+      messages.push(
+        `verdict status ${JSON.stringify(v.szs)} for ${key} is not representable in the envelope`,
+      );
+    }
+    byKey.set(key, v);
+  }
+  const annotations: AnnotationResult[] = [];
+  for (const id of identities) {
+    const key = identityKey(id);
+    const v = byKey.get(key);
+    if (v === undefined) {
+      messages.push(`no verdict for ${key}`);
+      continue;
+    }
+    byKey.delete(key);
+    annotations.push(verdictResult(id, v));
+  }
+  for (const key of byKey.keys()) {
+    messages.push(`verdict for unknown annotation ${key}`);
+  }
+  if (messages.length > 0) return { kind: "mismatched", messages };
+  return { kind: "joined", annotations };
 }

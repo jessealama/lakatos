@@ -11,8 +11,10 @@
     "src",
     "lemma/src",
     "engines/pabst/src",
+    "engines/thales/frontend/src",
     "tests",
     "lemma/tests",
-    "engines/pabst/tests"
+    "engines/pabst/tests",
+    "engines/thales/frontend/tests"
   ]
 }

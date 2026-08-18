@@ -13,7 +13,7 @@ describe("cli main", () => {
   });
 
   it("skips declaration files matched by a glob", () => {
-    const { code, stdout } = runMain(["prove", "*.ts"]);
+    const { code, stdout } = runMain(["check", "*.ts"]);
     expect(code).toBe(1);
     const env = JSON.parse(stdout[0]!);
     expect(env.annotations).toHaveLength(1);
@@ -21,7 +21,7 @@ describe("cli main", () => {
   });
 
   it("honors an explicitly named declaration file", () => {
-    const { code, stdout } = runMain(["prove", "shadow.d.ts"]);
+    const { code, stdout } = runMain(["check", "shadow.d.ts"]);
     expect(code).toBe(1);
     const env = JSON.parse(stdout[0]!);
     expect(env.annotations).toHaveLength(1);
@@ -29,7 +29,7 @@ describe("cli main", () => {
   });
 
   it("honors a glob that targets declaration files", () => {
-    const { code, stdout } = runMain(["prove", "*.d.ts"]);
+    const { code, stdout } = runMain(["check", "*.d.ts"]);
     expect(code).toBe(1);
     expect(JSON.parse(stdout[0]!).annotations).toHaveLength(1);
   });
@@ -41,7 +41,7 @@ describe("cli main", () => {
   });
 
   it("returns 2 when no patterns are given and nothing is discoverable", () => {
-    const { code, stderr } = runMain(["prove"]);
+    const { code, stderr } = runMain(["check"]);
     expect(code).toBe(2);
     expect(stderr).toHaveLength(1);
     expect(stderr[0]).toBe(
@@ -86,17 +86,17 @@ describe("cli main", () => {
   });
 
   it("returns 2 when no .ts files match the patterns", () => {
-    expect(runMain(["prove", "*.nope"]).code).toBe(2);
+    expect(runMain(["check", "*.nope"]).code).toBe(2);
   });
 });
 
-describe("prove and check stubs", () => {
+describe("check stub", () => {
   useTempProject("lakatos-cli-stub-", {
     "annotated.ts": `/** @ensures{pos} forall (n: nat) { annotated(n) >= 0 } */\nexport function annotated(n: number): number { return n; }\n`,
   });
 
-  it("prove lists every annotation as NotTried and exits 1", () => {
-    const { code, stdout, stderr } = runMain(["prove", "annotated.ts"]);
+  it("lists every annotation as NotTried and exits 1", () => {
+    const { code, stdout, stderr } = runMain(["check", "annotated.ts"]);
     expect(code).toBe(1);
     const env = JSON.parse(stdout[0]!);
     expectValidEnvelope(env);
@@ -111,13 +111,6 @@ describe("prove and check stubs", () => {
     expect(env.generated).toBeUndefined();
     expect(env.passed).toBeUndefined();
     expect(env.failed).toBeUndefined();
-    expect(stderr.join("\n")).toContain("prove is not implemented yet");
-  });
-
-  it("check does the same", () => {
-    const { code, stdout, stderr } = runMain(["check", "annotated.ts"]);
-    expect(code).toBe(1);
-    expect(JSON.parse(stdout[0]!).annotations[0].szs).toBe("NotTried");
     expect(stderr.join("\n")).toContain("check is not implemented yet");
   });
 });
@@ -140,8 +133,8 @@ export function f(x: number): number { return x; }
 `,
   });
 
-  it("prove stub reports InputError entries beside NotTried and exits 2", () => {
-    const { code, stdout, stderr } = runMain(["prove", "mixed.ts"]);
+  it("check stub reports InputError entries beside NotTried and exits 2", () => {
+    const { code, stdout, stderr } = runMain(["check", "mixed.ts"]);
     expect(code).toBe(2);
     const env = JSON.parse(stdout[0]!);
     expectValidEnvelope(env);
@@ -189,7 +182,7 @@ describe("cli zero-argument discovery", () => {
     });
 
     it("discovers src/ sources and announces the discovery", () => {
-      const { code, stdout, stderr } = runMain(["prove"]);
+      const { code, stdout, stderr } = runMain(["check"]);
       expect(code).toBe(1);
       expect(stderr[0]).toBe(
         "lakatos: no files given; discovered 1 file(s) via src/",
@@ -206,7 +199,7 @@ describe("cli zero-argument discovery", () => {
     });
 
     it("discovers via tsconfig.json, not src/", () => {
-      const { code, stdout, stderr } = runMain(["prove"]);
+      const { code, stdout, stderr } = runMain(["check"]);
       expect(code).toBe(1);
       expect(stderr[0]).toBe(
         "lakatos: no files given; discovered 1 file(s) via tsconfig.json",
@@ -222,7 +215,7 @@ describe("cli zero-argument discovery", () => {
     });
 
     it("exits 2 with the tsconfig diagnostic, not falling through", () => {
-      const { code, stderr } = runMain(["prove"]);
+      const { code, stderr } = runMain(["check"]);
       expect(code).toBe(2);
       expect(stderr).toHaveLength(1);
       expect(stderr[0]).toContain("error: tsconfig.json:");
