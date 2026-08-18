@@ -7,5 +7,12 @@
     "noEmit": true,
     "declaration": false
   },
-  "include": ["src", "engines/pabst/src", "tests", "engines/pabst/tests"]
+  "include": [
+    "src",
+    "lemma/src",
+    "engines/pabst/src",
+    "tests",
+    "lemma/tests",
+    "engines/pabst/tests"
+  ]
 }

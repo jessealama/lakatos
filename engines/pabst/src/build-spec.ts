@@ -1,8 +1,8 @@
-import { extract, type RawAnnotation } from "./extract.js";
-import { parsePrefix } from "./prefix-parser.js";
-import { parseBody } from "./formula-parser.js";
+import { extract, type RawAnnotation } from "../../../lemma/src/extract.js";
+import { parsePrefix } from "../../../lemma/src/prefix-parser.js";
+import { parseBody } from "../../../lemma/src/formula-parser.js";
 import { lowerTop } from "./lower.js";
-import { collectAtoms } from "./formula-ast.js";
+import { collectAtoms } from "../../../lemma/src/formula-ast.js";
 import { freeIdentifiers, classify } from "./free-idents.js";
 import { PabstError } from "./errors.js";
 import type { PropertySpec } from "./ir.js";

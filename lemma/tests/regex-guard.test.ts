@@ -4,7 +4,7 @@ import {
   parseRegexGuard,
   scanRegexLiteral,
 } from "../src/regex-guard.js";
-import { expectPabstError } from "./helpers/errors.js";
+import { expectLemmaError } from "./helpers/errors.js";
 
 describe("scanRegexLiteral", () => {
   it("scans a literal and its flags, stopping at the next non-letter", () => {
@@ -69,20 +69,20 @@ describe("parseRegexGuard — accepted", () => {
 
 describe("parseRegexGuard — rejected", () => {
   it("rejects non-string domains", () => {
-    expectPabstError(() => parseRegexGuard("/a/", "int"), /only string/);
-    expectPabstError(() => parseRegexGuard("/a/", "number"), /only string/);
-    expectPabstError(() => parseRegexGuard("/a/", "boolean"), /only string/);
+    expectLemmaError(() => parseRegexGuard("/a/", "int"), /only string/);
+    expectLemmaError(() => parseRegexGuard("/a/", "number"), /only string/);
+    expectLemmaError(() => parseRegexGuard("/a/", "boolean"), /only string/);
   });
 
   it("rejects an unterminated literal with the JSDoc-truncation hint", () => {
-    expectPabstError(
+    expectLemmaError(
       () => parseRegexGuard("/[a-z]", "string"),
       /ends the enclosing JSDoc comment/,
     );
   });
 
   it("treats a newline as terminating the literal (as JS does)", () => {
-    expectPabstError(
+    expectLemmaError(
       () => parseRegexGuard("/a\nb/", "string"),
       /unterminated regular expression/,
     );
@@ -92,87 +92,87 @@ describe("parseRegexGuard — rejected", () => {
     // Were the escaped newline admitted into pattern.source, lowering
     // would re-emit it inside a regex literal — a SyntaxError in the
     // generated spec, since regex literals cannot span lines.
-    expectPabstError(
+    expectLemmaError(
       () => parseRegexGuard("/a\\\nb/", "string"),
       /unterminated regular expression/,
     );
-    expectPabstError(
+    expectLemmaError(
       () => parseRegexGuard("/a\\\rb/", "string"),
       /unterminated regular expression/,
     );
   });
 
   it("treats U+2028 and U+2029 as line terminators (as JS does)", () => {
-    expectPabstError(
+    expectLemmaError(
       () => parseRegexGuard("/a\u2028b/", "string"),
       /unterminated regular expression/,
     );
-    expectPabstError(
+    expectLemmaError(
       () => parseRegexGuard("/a\u2029b/", "string"),
       /unterminated regular expression/,
     );
   });
 
   it("rejects trailing text after the literal", () => {
-    expectPabstError(
+    expectLemmaError(
       () => parseRegexGuard("/a/ x", "string"),
       /unexpected text after regular expression/,
     );
   });
 
   it("rejects an empty pattern with a hint", () => {
-    expectPabstError(() => parseRegexGuard("//", "string"), "use ∈ /^$/");
+    expectLemmaError(() => parseRegexGuard("//", "string"), "use ∈ /^$/");
   });
 
   it("rejects flags outside the allowlist with tailored hints", () => {
-    expectPabstError(() => parseRegexGuard("/a/m", "string"), /whole string/);
-    expectPabstError(
+    expectLemmaError(() => parseRegexGuard("/a/m", "string"), /whole string/);
+    expectLemmaError(
       () => parseRegexGuard("/a/i", "string"),
       /not supported by fast-check/,
     );
-    expectPabstError(
+    expectLemmaError(
       () => parseRegexGuard("/a/v", "string"),
       /not supported by fast-check/,
     );
-    expectPabstError(
+    expectLemmaError(
       () => parseRegexGuard("/a/g", "string"),
       /no effect on generation/,
     );
-    expectPabstError(
+    expectLemmaError(
       () => parseRegexGuard("/a/y", "string"),
       /no effect on generation/,
     );
-    expectPabstError(
+    expectLemmaError(
       () => parseRegexGuard("/a/d", "string"),
       /no effect on generation/,
     );
-    expectPabstError(
+    expectLemmaError(
       () => parseRegexGuard("/a/x", "string"),
       /allowed flags: s, u/,
     );
   });
 
   it("rejects invalid regexes via the RegExp constructor", () => {
-    expectPabstError(
+    expectLemmaError(
       () => parseRegexGuard("/a)b/", "string"),
       /invalid regular expression/,
     );
-    expectPabstError(
+    expectLemmaError(
       () => parseRegexGuard("/a/ss", "string"),
       /invalid regular expression/,
     );
   });
 
   it("rejects constructs outside fast-check's supported subset", () => {
-    expectPabstError(
+    expectLemmaError(
       () => parseRegexGuard("/(?=a)b/", "string"),
       /not supported by fast-check/,
     );
-    expectPabstError(
+    expectLemmaError(
       () => parseRegexGuard("/\\bx/", "string"),
       /not supported by fast-check/,
     );
-    expectPabstError(
+    expectLemmaError(
       () => parseRegexGuard("/(a)\\1/", "string"),
       /not supported by fast-check/,
     );

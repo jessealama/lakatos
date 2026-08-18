@@ -1,8 +1,8 @@
 import fc from "fast-check";
 import type { DoubleConstraints } from "fast-check";
 import { bigintBounds, intBounds, numberConstraints } from "./domains.js";
-import { PabstError } from "./errors.js";
-import type { Domain, Range } from "./ir.js";
+import { LemmaError } from "./errors.js";
+import type { Domain, Range } from "./binder.js";
 
 const INT_LITERAL = /^[+-]?\d+$/;
 const BIGINT_LITERAL = /^[+-]?\d+n?$/;
@@ -21,32 +21,32 @@ const CLOSE_DELIM = /[\])]/;
  * A round bracket excludes its endpoint. */
 export function parseRange(text: string, domain: Domain): Range {
   if (!isNumericDomain(domain)) {
-    throw new PabstError(
+    throw new LemmaError(
       `domain '${domain}' does not support ∈ interval constraints — ` +
         `only int, nat, number, and bigint do`,
     );
   }
   const minOpen = text.startsWith("(");
   if (!minOpen && !text.startsWith("[")) {
-    throw new PabstError(
+    throw new LemmaError(
       `expected interval '[lo, hi]' or '(lo, hi]' after ∈, got: ${text || "(nothing)"}`,
     );
   }
   const close = text.search(CLOSE_DELIM);
   if (close === -1) {
-    throw new PabstError(
+    throw new LemmaError(
       `interval is missing its closing ']' or ')' (in: ${text})`,
     );
   }
   if (close !== text.length - 1) {
-    throw new PabstError(
+    throw new LemmaError(
       `unexpected text after interval: '${text.slice(close + 1).trim()}' (in: ${text})`,
     );
   }
   const maxOpen = text[close] === ")";
   const parts = text.slice(1, close).split(",");
   if (parts.length !== 2) {
-    throw new PabstError(
+    throw new LemmaError(
       `expected exactly two endpoints '[lo, hi]', got: ${text}`,
     );
   }
@@ -76,17 +76,17 @@ function parseBound(
   const inf = INFINITE_LITERAL.exec(lit);
   if (!inf) return parseEndpoint(lit, domain);
   if (side === "lower" && inf[1] !== "-") {
-    throw new PabstError(
+    throw new LemmaError(
       `an interval's lower endpoint cannot be +∞ (in endpoint '${lit}')`,
     );
   }
   if (side === "upper" && inf[1] === "-") {
-    throw new PabstError(
+    throw new LemmaError(
       `an interval's upper endpoint cannot be -∞ (in endpoint '${lit}')`,
     );
   }
   if (domain !== "number" && !open) {
-    throw new PabstError(
+    throw new LemmaError(
       `${domain} has no infinite values, so an ∞ endpoint must be open — ` +
         `use ${side === "lower" ? `'(${lit},'` : `'${lit})'`} (a closed ∞ ` +
         `bound is only meaningful for number, where Infinity is a value)`,
@@ -106,13 +106,13 @@ function validateIntegerInterval(domain: Domain, range: Range, text: string) {
   if (domain === "bigint") {
     const { lo, hi } = bigintBounds(range);
     if (lo !== undefined && hi !== undefined && lo > hi) {
-      throw new PabstError(`empty interval: no bigint satisfies ${text}`);
+      throw new LemmaError(`empty interval: no bigint satisfies ${text}`);
     }
     return;
   }
   const { lo, hi, clamped } = intBounds(domain as "int" | "nat", range);
   if (lo > hi) {
-    throw new PabstError(
+    throw new LemmaError(
       `empty interval: no ${domain}${clamped ? " within the safe integer range (±9007199254740991)" : ""} satisfies ${text}`,
     );
   }
@@ -143,7 +143,7 @@ function validateNumberInterval(range: Range, text: string): void {
   try {
     fc.double(opts);
   } catch {
-    throw new PabstError(
+    throw new LemmaError(
       `empty interval: no number satisfies ${text} (fast-check treats every ` +
         `double as distinct — it orders -0 below 0, and an excluded bound ` +
         `removes exactly one double)`,
@@ -156,21 +156,21 @@ function parseEndpoint(lit: string, domain: Domain): string {
     case "int":
     case "nat": {
       if (!INT_LITERAL.test(lit))
-        throw new PabstError(
+        throw new LemmaError(
           `interval endpoint '${lit}' is not an integer literal (domain ${domain})`,
         );
       return normalizeLiteral(lit);
     }
     case "bigint": {
       if (!BIGINT_LITERAL.test(lit))
-        throw new PabstError(
+        throw new LemmaError(
           `interval endpoint '${lit}' is not an integer literal (domain bigint)`,
         );
       return normalizeLiteral(lit.endsWith("n") ? lit.slice(0, -1) : lit);
     }
     default: {
       if (!NUMBER_LITERAL.test(lit) || !Number.isFinite(Number(lit)))
-        throw new PabstError(
+        throw new LemmaError(
           `interval endpoint '${lit}' is not a finite number literal`,
         );
       return normalizeLiteral(lit);

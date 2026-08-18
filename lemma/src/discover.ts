@@ -1,7 +1,7 @@
 import { existsSync, globSync } from "node:fs";
 import * as path from "node:path";
 import ts from "typescript";
-import { PabstError } from "./errors.js";
+import { LemmaError } from "./errors.js";
 
 const TS_EXT = /\.(ts|tsx|mts|cts)$/;
 const DECL_EXT = /\.d\.(ts|mts|cts)$/;
@@ -23,7 +23,7 @@ export interface Discovery {
 /**
  * The files pabst should scan: matches of the given patterns or, with no
  * patterns, zero-argument discovery (the tsconfig.json file list, then the
- * src/ convention). Throws PabstError when nothing usable is found.
+ * src/ convention). Throws LemmaError when nothing usable is found.
  */
 export function resolveFiles(patterns: string[]): Discovery {
   if (patterns.length > 0) {
@@ -44,7 +44,7 @@ function globbedFiles(patterns: string[]): string[] {
       ),
     ),
   ];
-  if (files.length === 0) throw new PabstError("no matching .ts files");
+  if (files.length === 0) throw new LemmaError("no matching .ts files");
   return files;
 }
 
@@ -75,9 +75,9 @@ function fatalError(diagnostics: ts.Diagnostic[]): ts.Diagnostic | undefined {
   );
 }
 
-function configError(diagnostic: ts.Diagnostic): PabstError {
+function configError(diagnostic: ts.Diagnostic): LemmaError {
   const text = ts.flattenDiagnosticMessageText(diagnostic.messageText, " ");
-  return new PabstError(`tsconfig.json: ${text}`);
+  return new LemmaError(`tsconfig.json: ${text}`);
 }
 
 // path.relative yields ".."-led (or, across Windows drives, absolute) paths
@@ -119,7 +119,7 @@ function tsconfigFiles(cwd: string): string[] | undefined {
   // the eventual read. (include-glob matches exist by construction.)
   const missing = files.find((f) => !existsSync(path.resolve(cwd, f)));
   if (missing) {
-    throw new PabstError(`tsconfig.json: file not found: ${missing}`);
+    throw new LemmaError(`tsconfig.json: file not found: ${missing}`);
   }
   return files;
 }
@@ -127,7 +127,7 @@ function tsconfigFiles(cwd: string): string[] | undefined {
 /**
  * Zero-argument mode: find the project's TypeScript sources. Uses the file
  * list of ./tsconfig.json when it names any, then the src/ convention;
- * throws PabstError when nothing is found.
+ * throws LemmaError when nothing is found.
  */
 function discoverFiles(): Discovery {
   const fromConfig = tsconfigFiles(process.cwd());
@@ -136,5 +136,5 @@ function discoverFiles(): Discovery {
   }
   const files = globSync("src/**/*").filter(isTsSource).sort();
   if (files.length > 0) return { files, source: "src/" };
-  throw new PabstError(NO_SOURCES);
+  throw new LemmaError(NO_SOURCES);
 }

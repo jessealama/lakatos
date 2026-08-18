@@ -5,11 +5,11 @@ import * as path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { buildSpecs } from "../engines/pabst/src/build-spec.js";
 import { generate } from "../engines/pabst/src/codegen.js";
-import { resolveFiles } from "../engines/pabst/src/discover.js";
-import { PabstError } from "../engines/pabst/src/errors.js";
-import { qualifiedName } from "../engines/pabst/src/qualified-name.js";
 import { runTests } from "../engines/pabst/src/run.js";
 import { parseSeed, randomSeed } from "../engines/pabst/src/seed.js";
+import { resolveFiles } from "../lemma/src/discover.js";
+import { LemmaError } from "../lemma/src/errors.js";
+import { qualifiedName } from "../lemma/src/qualified-name.js";
 import {
   buildEnvelope,
   notTriedEnvelope,
@@ -88,7 +88,7 @@ export function main(argv: string[] = process.argv.slice(2)): number {
     return 2;
   }
   // User-facing errors below — a bad --seed, file resolution coming up
-  // empty, a malformed tsconfig, compile errors — are PabstErrors and map
+  // empty, a malformed tsconfig, compile errors — are LemmaErrors and map
   // to the documented exit-2 error mode; anything else is an internal bug
   // and crashes loudly.
   try {
@@ -96,7 +96,7 @@ export function main(argv: string[] = process.argv.slice(2)): number {
       ? refute(patterns, values.seed)
       : notTried(command as Command, patterns);
   } catch (e) {
-    if (e instanceof PabstError) {
+    if (e instanceof LemmaError) {
       console.error(`error: ${e.message}`);
       return 2;
     }

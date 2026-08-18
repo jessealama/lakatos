@@ -7,7 +7,7 @@ import {
   RUNTIME_SPECIFIER,
 } from "./contract.js";
 import { arbitraryFor } from "./domains.js";
-import { qualifiedName } from "./qualified-name.js";
+import { qualifiedName } from "../../../lemma/src/qualified-name.js";
 import type { PropertySpec } from "./ir.js";
 
 const SRC_EXT = /\.(ts|tsx|mts|cts|js|mjs|cjs)$/;

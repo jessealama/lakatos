@@ -1,5 +1,5 @@
 import ts from "typescript";
-import { PabstError } from "./errors.js";
+import { LemmaError } from "./errors.js";
 
 export type FTokenKind =
   "not" | "and" | "or" | "implies" | "iff" | "open" | "close" | "js";
@@ -155,14 +155,14 @@ export function regexCanFollow(prev: ts.SyntaxKind | null): boolean {
 
 function rejectQuantifiers(text: string): void {
   if (text === "∃" || text === "exists") {
-    throw new PabstError(
+    throw new LemmaError(
       "existential quantifiers (∃ / exists) are not supported: property-based " +
         "testing samples inputs, so it can refute ∀ with a counterexample but cannot " +
         "soundly confirm ∃ (a bounded/exhaustive mode would be needed)",
     );
   }
   if (text === "∀" || text === "forall") {
-    throw new PabstError(
+    throw new LemmaError(
       "nested quantifiers are not supported: bind all variables in the leading ∀ prefix",
     );
   }
