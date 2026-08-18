@@ -3,6 +3,7 @@ import {
   type Issue,
   type IssueKind,
 } from "../engines/pabst/src/contract.js";
+import type { LeanVerdict } from "../engines/thales/frontend/src/run.js";
 import type { VitestJson } from "../engines/pabst/src/vitest-json.js";
 import { szsForIssue, type SzsStatus } from "./szs.js";
 
@@ -103,13 +104,9 @@ export function buildEnvelope(
   };
 }
 
-/** One #thales_prove verdict line, parsed. Declared here rather than
- * imported so the shared envelope module stays engine-independent. */
-export interface ProveVerdict {
-  identity: [string, string, string];
-  szs: string;
-  reason: string;
-}
+/** One #thales_prove verdict line; run.ts, which parses the wire
+ * format, owns the shape. */
+export type ProveVerdict = LeanVerdict;
 
 export type ProveJoin =
   | { kind: "joined"; annotations: AnnotationResult[] }
