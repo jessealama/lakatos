@@ -7,8 +7,11 @@ import type {
 import {
   buildEnvelope,
   collectIssues,
+  joinProveVerdicts,
   notTriedEnvelope,
+  type AnnotationResult,
   type PropertyIdentity,
+  type ProveVerdict,
 } from "../src/envelope.js";
 
 const META = {
@@ -199,6 +202,90 @@ describe("buildEnvelope", () => {
       kind: "exhausted",
       error: "too many skipped runs",
     });
+  });
+});
+
+describe("joinProveVerdicts", () => {
+  const id = (fn: string): PropertyIdentity => ({
+    file: "t.ts",
+    function: fn,
+    property: "p",
+  });
+  const verdict = (fn: string, szs: string, reason = "r"): ProveVerdict => ({
+    identity: ["t.ts", fn, "p"],
+    szs,
+    reason,
+  });
+
+  it("maps each status to its envelope shape", () => {
+    const join = joinProveVerdicts(
+      [id("a"), id("b"), id("c"), id("d"), id("e")],
+      [
+        verdict("a", "Theorem", "proved by decide, kernel-checked as X"),
+        verdict("b", "Inappropriate", "await is unmapped"),
+        verdict("c", "Error", "elaboration failed"),
+        verdict("d", "GaveUp", "decide failed"),
+        verdict("e", "NotTried", "no structured property"),
+      ],
+    );
+    expect(join).toEqual({
+      kind: "joined",
+      annotations: [
+        { ...id("a"), szs: "Theorem" },
+        { ...id("b"), szs: "Inappropriate", reason: "await is unmapped" },
+        { ...id("c"), szs: "Error", error: "elaboration failed" },
+        { ...id("d"), szs: "GaveUp", reason: "decide failed" },
+        { ...id("e"), szs: "NotTried", reason: "no structured property" },
+      ],
+    });
+  });
+
+  it("order follows the identities, not the verdict lines", () => {
+    const join = joinProveVerdicts(
+      [id("a"), id("b")],
+      [verdict("b", "Theorem"), verdict("a", "Theorem")],
+    );
+    expect(join.kind).toBe("joined");
+    expect(
+      (join as { annotations: AnnotationResult[] }).annotations.map(
+        (a) => a.function,
+      ),
+    ).toEqual(["a", "b"]);
+  });
+
+  it("a missing verdict is a mismatch naming the annotation", () => {
+    const join = joinProveVerdicts(
+      [id("a"), id("b")],
+      [verdict("a", "Theorem")],
+    );
+    expect(join.kind).toBe("mismatched");
+    expect((join as { messages: string[] }).messages.join("\n")).toContain(
+      '"b"',
+    );
+  });
+
+  it("a surplus verdict is a mismatch", () => {
+    expect(
+      joinProveVerdicts(
+        [id("a")],
+        [verdict("a", "Theorem"), verdict("ghost", "Theorem")],
+      ).kind,
+    ).toBe("mismatched");
+  });
+
+  it("a duplicate verdict is a mismatch", () => {
+    expect(
+      joinProveVerdicts(
+        [id("a")],
+        [verdict("a", "Theorem"), verdict("a", "GaveUp")],
+      ).kind,
+    ).toBe("mismatched");
+  });
+
+  it("a status the envelope cannot represent is a mismatch", () => {
+    expect(joinProveVerdicts([id("a")], [verdict("a", "Timeout")]).kind).toBe(
+      "mismatched",
+    );
   });
 });
 
