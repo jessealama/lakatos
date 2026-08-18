@@ -19,6 +19,8 @@ export interface AnnotationResult extends PropertyIdentity {
   kind?: IssueKind;
   counterexample?: Record<string, unknown>;
   error?: string;
+  /** Inappropriate only: the construct outside the mappable subset. */
+  reason?: string;
 }
 
 /** Run metadata the refute command captures before running tests. */

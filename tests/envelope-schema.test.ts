@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { expectValidEnvelope } from "./helpers/envelope-schema.js";
+import type { Envelope } from "../src/envelope.js";
 
 const META = {
   version: "0.1.0",
@@ -77,12 +78,49 @@ describe("envelope schema", () => {
     ).toThrow();
   });
 
+  it("accepts a Theorem annotation (property proven)", () => {
+    const envelope: Envelope = {
+      ...META,
+      annotations: [
+        { file: "f.ts", function: "f", property: "p", szs: "Theorem" },
+      ],
+    };
+    expect(() => expectValidEnvelope(envelope)).not.toThrow();
+  });
+
+  it("accepts an Inappropriate annotation carrying its reason", () => {
+    const envelope: Envelope = {
+      ...META,
+      annotations: [
+        {
+          file: "f.ts",
+          function: "f",
+          property: "p",
+          szs: "Inappropriate",
+          reason: "calls fetch(), which is outside the mappable subset",
+        },
+      ],
+    };
+    expect(() => expectValidEnvelope(envelope)).not.toThrow();
+  });
+
+  it("rejects an Inappropriate annotation without a reason", () => {
+    expect(() =>
+      expectValidEnvelope({
+        ...META,
+        annotations: [
+          { file: "f.ts", function: "f", property: "p", szs: "Inappropriate" },
+        ],
+      }),
+    ).toThrow();
+  });
+
   it("rejects an unknown szs value", () => {
     expect(() =>
       expectValidEnvelope({
         ...META,
         annotations: [
-          { file: "f.ts", function: "f", property: "p", szs: "Theorem" },
+          { file: "f.ts", function: "f", property: "p", szs: "Satisfiable" },
         ],
       }),
     ).toThrow();

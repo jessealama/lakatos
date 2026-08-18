@@ -1,38 +1,38 @@
 import { describe, it, expect } from "vitest";
 import { parsePrefix } from "../src/prefix-parser.js";
-import { expectPabstError } from "./helpers/errors.js";
+import { expectLemmaError } from "./helpers/errors.js";
 
 describe("parsePrefix — errors", () => {
   it("throws on an unbalanced binder group", () => {
-    expectPabstError(
+    expectLemmaError(
       () => parsePrefix("forall (x: int, x === x"),
       /unbalanced parentheses in binder group/,
     );
   });
 
   it("throws on an empty body", () => {
-    expectPabstError(
+    expectLemmaError(
       () => parsePrefix("forall (x: int) { }"),
       /property body is empty/,
     );
   });
 
   it("throws on a binder group without ':'", () => {
-    expectPabstError(
+    expectLemmaError(
       () => parsePrefix("forall (x int) { x === x }"),
       /binder group missing ':'/,
     );
   });
 
   it("throws on a binder group without variable names", () => {
-    expectPabstError(
+    expectLemmaError(
       () => parsePrefix("forall (: int) { x === x }"),
       /binder group has no variable names/,
     );
   });
 
   it("throws on an invalid binder variable name", () => {
-    expectPabstError(
+    expectLemmaError(
       () => parsePrefix("forall (x-y: int) { x === x }"),
       /invalid binder variable name/,
     );
@@ -71,28 +71,28 @@ describe("parsePrefix", () => {
   });
 
   it("rejects an unknown domain", () => {
-    expectPabstError(
+    expectLemmaError(
       () => parsePrefix("forall (x: float) { x === x }"),
       /unknown generation domain 'float'/,
     );
   });
 
   it("requires forall", () => {
-    expectPabstError(() => parsePrefix("(x: int) { x === x }"), /forall/);
+    expectLemmaError(() => parsePrefix("(x: int) { x === x }"), /forall/);
   });
 
   it("requires at least one binder group", () => {
-    expectPabstError(() => parsePrefix("forall { x === x }"), /binder group/);
+    expectLemmaError(() => parsePrefix("forall { x === x }"), /binder group/);
   });
 });
 
 describe("parsePrefix — existential", () => {
   it("rejects a leading ∃ / exists with a teaching error", () => {
-    expectPabstError(
+    expectLemmaError(
       () => parsePrefix("∃ (x: int) { p(x) }"),
       /existential quantifiers .* not supported/i,
     );
-    expectPabstError(
+    expectLemmaError(
       () => parsePrefix("exists (x: int) { p(x) }"),
       /existential quantifiers .* not supported/i,
     );
@@ -146,49 +146,49 @@ describe("parsePrefix — interval constraints", () => {
   });
 
   it("rejects an interval on a non-numeric domain", () => {
-    expectPabstError(
+    expectLemmaError(
       () => parsePrefix("forall (s: string ∈ [1, 30]) { s === s }"),
       /does not support ∈/,
     );
   });
 
   it("rejects an inverted interval", () => {
-    expectPabstError(
+    expectLemmaError(
       () => parsePrefix("forall (x: int ∈ [30, 1]) { x === x }"),
       /empty interval/,
     );
   });
 
   it("still rejects an unknown domain when an interval is attached", () => {
-    expectPabstError(
+    expectLemmaError(
       () => parsePrefix("forall (x: float ∈ [1, 30]) { x === x }"),
       /unknown generation domain 'float'/,
     );
   });
 
   it("still reports unbalanced groups when 'in (' is just body text", () => {
-    expectPabstError(
+    expectLemmaError(
       () => parsePrefix("forall (x: int, contains(x) && x in (whatever"),
       /unbalanced parentheses/,
     );
   });
 
   it("reports a forgotten ']' before the next binder as a missing delimiter, not unbalanced parens", () => {
-    expectPabstError(
+    expectLemmaError(
       () => parsePrefix("forall (x: int ∈ [1, 2, y: int) { x > 0 }"),
       /missing its closing/,
     );
   });
 
   it("reports a forgotten ']' before the body as a missing delimiter", () => {
-    expectPabstError(
+    expectLemmaError(
       () => parsePrefix("forall (x: int ∈ [1, 2, x > 0) { x !== 3 }"),
       /missing its closing/,
     );
   });
 
   it("reports three endpoints in a well-delimited interval as such", () => {
-    expectPabstError(
+    expectLemmaError(
       () => parsePrefix("forall (x: int ∈ [1, 2, 3]) { x > 0 }"),
       /exactly two endpoints/,
     );
@@ -332,21 +332,21 @@ describe("parsePrefix — regex guards", () => {
   });
 
   it("rejects a regex guard on a non-string domain", () => {
-    expectPabstError(
+    expectLemmaError(
       () => parsePrefix("forall (n: int ∈ /[0-9]+/) { f(n) }"),
       /only string/,
     );
   });
 
   it("hints about JSDoc truncation when the pattern never closes", () => {
-    expectPabstError(
+    expectLemmaError(
       () => parsePrefix("forall (s: string ∈ /[a-z]"),
       /ends the enclosing JSDoc comment/,
     );
   });
 
   it("still rejects intervals on string binders", () => {
-    expectPabstError(
+    expectLemmaError(
       () => parsePrefix("forall (s: string ∈ [1, 2]) { f(s) }"),
       /does not support ∈ interval/,
     );
@@ -356,7 +356,7 @@ describe("parsePrefix — regex guards", () => {
     // '/2, 5]' is a mistyped '(2, 5]', not a regex guard attempt: the
     // literal never closes and the domain is numeric, so the precise
     // interval complaint applies, not regex-guard diagnostics.
-    expectPabstError(
+    expectLemmaError(
       () => parsePrefix("forall (n: int ∈ /2, 5]) { f(n) }"),
       /expected interval '\[lo, hi\]' or '\(lo, hi\]' after ∈, got: \/2, 5\]/,
     );
@@ -364,35 +364,35 @@ describe("parsePrefix — regex guards", () => {
 
   it("does not blame the pattern when a terminated guard sits in an unbalanced group", () => {
     const stray = () => parsePrefix("forall ((s: string ∈ /a/), f(s)");
-    expectPabstError(stray, /unbalanced parentheses in binder group/);
+    expectLemmaError(stray, /unbalanced parentheses in binder group/);
     expect(stray).not.toThrow(/JSDoc/);
   });
 });
 
 describe("parsePrefix — braced body", () => {
   it("rejects the pre-0.13 comma form with a migration hint", () => {
-    expectPabstError(
+    expectLemmaError(
       () => parsePrefix("forall (x: int), x + 1 > x"),
       /body goes in braces/,
     );
   });
 
   it("throws when the body never opens with '{'", () => {
-    expectPabstError(
+    expectLemmaError(
       () => parsePrefix("forall (x: int) foo(x)"),
       /expected '\{' to open the property body/,
     );
   });
 
   it("throws on unbalanced braces in the body", () => {
-    expectPabstError(
+    expectLemmaError(
       () => parsePrefix("forall (x: int) { f({a: 1})"),
       /unbalanced braces in property body/,
     );
   });
 
   it("throws on text after the closing '}'", () => {
-    expectPabstError(
+    expectLemmaError(
       () => parsePrefix("forall (x: int) { x > 0 } stray"),
       /unexpected text after the property body's closing '\}'/,
     );

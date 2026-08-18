@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { extractFromSource } from "../src/extract.js";
-import { expectPabstError } from "./helpers/errors.js";
+import { expectLemmaError } from "./helpers/errors.js";
 
 const FOO = `/** @ensures{nonzero} forall (x: int) (y: number) {
  *    Number.isInteger(y) ==> foo(x, y) !== 0 } */
@@ -156,28 +156,28 @@ describe("extract — class methods", () => {
   });
 
   it("throws on @ensures on a non-public method", () => {
-    expectPabstError(
+    expectLemmaError(
       () => extractFromSource(CLASS_PRIVATE, "class-private.ts"),
       /non-public method 'touch'/,
     );
   });
 
   it("throws on @ensures on an accessor", () => {
-    expectPabstError(
+    expectLemmaError(
       () => extractFromSource(CLASS_ACCESSOR, "class-accessor.ts"),
       /unsupported member 'value'/,
     );
   });
 
   it("throws on @ensures on a method of a non-exported class", () => {
-    expectPabstError(
+    expectLemmaError(
       () => extractFromSource(CLASS_UNEXPORTED, "class-unexported.ts"),
       /which is not exported/,
     );
   });
 
   it("throws on a duplicate qualified property name", () => {
-    expectPabstError(
+    expectLemmaError(
       () => extractFromSource(CLASS_DUP, "class-dup.ts"),
       /duplicate property name 'p' on method 'Box\.id'/,
     );
@@ -189,7 +189,7 @@ describe("extract — class methods", () => {
   m(x: number): number { return x; }
 }
 `;
-    expectPabstError(
+    expectLemmaError(
       () => extractFromSource(src, "anon.ts"),
       /anonymous class/,
     );
@@ -201,7 +201,7 @@ describe("extract — class methods", () => {
   constructor(readonly n: number) {}
 }
 `;
-    expectPabstError(
+    expectLemmaError(
       () => extractFromSource(src, "ctor.ts"),
       /unsupported member 'constructor'/,
     );
@@ -213,7 +213,7 @@ describe("extract — class methods", () => {
   [Symbol.iterator](): number { return 0; }
 }
 `;
-    expectPabstError(
+    expectLemmaError(
       () => extractFromSource(src, "computed.ts"),
       /unsupported member '<computed>'/,
     );

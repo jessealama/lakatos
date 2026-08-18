@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { parseRange, isNumericDomain } from "../src/range.js";
-import { expectPabstError } from "./helpers/errors.js";
+import { expectLemmaError } from "./helpers/errors.js";
 
 describe("parseRange — accepted", () => {
   it("parses a closed int interval", () => {
@@ -64,22 +64,22 @@ describe("parseRange — accepted", () => {
 
 describe("parseRange — rejected", () => {
   it("rejects inverted intervals", () => {
-    expectPabstError(() => parseRange("[30, 1]", "int"), /empty interval/);
-    expectPabstError(
+    expectLemmaError(() => parseRange("[30, 1]", "int"), /empty interval/);
+    expectLemmaError(
       () => parseRange("[0.2, 0.1]", "number"),
       /empty interval/,
     );
   });
 
   it("rejects [0, -0]-style intervals, following fast-check's -0 < 0 ordering", () => {
-    expectPabstError(() => parseRange("[0, -0]", "number"), /empty interval/);
-    expectPabstError(() => parseRange("[+0, -0]", "number"), /empty interval/);
+    expectLemmaError(() => parseRange("[0, -0]", "number"), /empty interval/);
+    expectLemmaError(() => parseRange("[+0, -0]", "number"), /empty interval/);
     // 1e-400 underflows to +0, so this is [0, -0] in disguise.
-    expectPabstError(
+    expectLemmaError(
       () => parseRange("[1e-400, -0]", "number"),
       /empty interval/,
     );
-    expectPabstError(() => parseRange("[0, -0]", "number"), /-0 below 0/);
+    expectLemmaError(() => parseRange("[0, -0]", "number"), /-0 below 0/);
   });
 
   it("accepts negative nat lower bounds, which clamp to 0 like (-∞ does", () => {
@@ -92,11 +92,11 @@ describe("parseRange — rejected", () => {
   });
 
   it("rejects nat intervals lying entirely below 0", () => {
-    expectPabstError(() => parseRange("[-5, -2]", "nat"), /empty interval/);
+    expectLemmaError(() => parseRange("[-5, -2]", "nat"), /empty interval/);
   });
 
   it("rejects non-integer endpoints for int", () => {
-    expectPabstError(
+    expectLemmaError(
       () => parseRange("[1.5, 3]", "int"),
       /not an integer literal/,
     );
@@ -119,32 +119,32 @@ describe("parseRange — rejected", () => {
   });
 
   it("rejects intervals lying entirely outside the safe integer range", () => {
-    expectPabstError(
+    expectLemmaError(
       () => parseRange("[9007199254740992, 99999999999999999999]", "int"),
       /empty interval.*safe integer/s,
     );
   });
 
   it("rejects non-finite or malformed number endpoints", () => {
-    expectPabstError(() => parseRange("[0, 1e400]", "number"), /finite number/);
-    expectPabstError(() => parseRange("[0, NaN]", "number"), /finite number/);
+    expectLemmaError(() => parseRange("[0, 1e400]", "number"), /finite number/);
+    expectLemmaError(() => parseRange("[0, NaN]", "number"), /finite number/);
   });
 
   it("rejects the n suffix on non-bigint domains", () => {
-    expectPabstError(
+    expectLemmaError(
       () => parseRange("[0n, 5n]", "int"),
       /not an integer literal/,
     );
   });
 
   it("rejects intervals on non-numeric domains", () => {
-    expectPabstError(() => parseRange("[1, 2]", "boolean"), /does not support/);
-    expectPabstError(() => parseRange("[1, 2]", "string"), /does not support/);
+    expectLemmaError(() => parseRange("[1, 2]", "boolean"), /does not support/);
+    expectLemmaError(() => parseRange("[1, 2]", "string"), /does not support/);
   });
 
   it("rejects a missing or extra endpoint", () => {
-    expectPabstError(() => parseRange("[1]", "int"), /two endpoints/);
-    expectPabstError(() => parseRange("[1, 2, 3]", "int"), /two endpoints/);
+    expectLemmaError(() => parseRange("[1]", "int"), /two endpoints/);
+    expectLemmaError(() => parseRange("[1, 2, 3]", "int"), /two endpoints/);
   });
 
   it("rejects trailing text after the interval without blaming open bounds", () => {
@@ -159,8 +159,8 @@ describe("parseRange — rejected", () => {
   });
 
   it("rejects text that is not an interval at all", () => {
-    expectPabstError(() => parseRange("hello", "int"), /expected interval/);
-    expectPabstError(() => parseRange("", "int"), /expected interval/);
+    expectLemmaError(() => parseRange("hello", "int"), /expected interval/);
+    expectLemmaError(() => parseRange("", "int"), /expected interval/);
   });
 });
 
@@ -218,16 +218,16 @@ describe("parseRange — open and half-open intervals", () => {
 
 describe("parseRange — open-interval rejections", () => {
   it("rejects integer intervals that contain no integer", () => {
-    expectPabstError(() => parseRange("(3, 4)", "int"), /empty interval/);
-    expectPabstError(() => parseRange("(5, 5]", "int"), /empty interval/);
-    expectPabstError(() => parseRange("[5, 5)", "int"), /empty interval/);
-    expectPabstError(() => parseRange("(0n, 1n)", "bigint"), /empty interval/);
+    expectLemmaError(() => parseRange("(3, 4)", "int"), /empty interval/);
+    expectLemmaError(() => parseRange("(5, 5]", "int"), /empty interval/);
+    expectLemmaError(() => parseRange("[5, 5)", "int"), /empty interval/);
+    expectLemmaError(() => parseRange("(0n, 1n)", "bigint"), /empty interval/);
   });
 
   it("rejects number intervals with equal endpoints and an open bound", () => {
-    expectPabstError(() => parseRange("(1, 1)", "number"), /empty interval/);
-    expectPabstError(() => parseRange("[1, 1)", "number"), /empty interval/);
-    expectPabstError(() => parseRange("(1, 1]", "number"), /empty interval/);
+    expectLemmaError(() => parseRange("(1, 1)", "number"), /empty interval/);
+    expectLemmaError(() => parseRange("[1, 1)", "number"), /empty interval/);
+    expectLemmaError(() => parseRange("(1, 1]", "number"), /empty interval/);
   });
 
   it("treats -0 and 0 as distinct doubles, following fast-check: (-0, 0] and [-0, 0) are singletons", () => {
@@ -241,18 +241,18 @@ describe("parseRange — open-interval rejections", () => {
       max: "0",
       maxOpen: true,
     });
-    expectPabstError(() => parseRange("(-0, 0)", "number"), /empty interval/);
+    expectLemmaError(() => parseRange("(-0, 0)", "number"), /empty interval/);
   });
 
   it("rejects open intervals between adjacent doubles: excluding both endpoints leaves nothing", () => {
-    expectPabstError(
+    expectLemmaError(
       () => parseRange("(0, 5e-324)", "number"),
       /empty interval/,
     );
   });
 
   it("rejects a half-open interval with trailing text", () => {
-    expectPabstError(
+    expectLemmaError(
       () => parseRange("(0, 1] oops", "number"),
       /unexpected text after interval/,
     );
@@ -310,36 +310,36 @@ describe("parseRange — unbounded endpoints", () => {
   });
 
   it("rejects closed ∞ endpoints for int, nat, and bigint", () => {
-    expectPabstError(() => parseRange("[0, ∞]", "int"), /must be open/);
-    expectPabstError(() => parseRange("[-∞, 5]", "nat"), /must be open/);
-    expectPabstError(() => parseRange("[0n, ∞]", "bigint"), /must be open/);
+    expectLemmaError(() => parseRange("[0, ∞]", "int"), /must be open/);
+    expectLemmaError(() => parseRange("[-∞, 5]", "nat"), /must be open/);
+    expectLemmaError(() => parseRange("[0n, ∞]", "bigint"), /must be open/);
   });
 
   it("rejects ∞ on the wrong side", () => {
-    expectPabstError(
+    expectLemmaError(
       () => parseRange("(∞, 5]", "int"),
       /lower endpoint cannot be \+∞/,
     );
-    expectPabstError(
+    expectLemmaError(
       () => parseRange("[0, -∞)", "number"),
       /upper endpoint cannot be -∞/,
     );
   });
 
   it("rejects nat intervals that are empty over the naturals", () => {
-    expectPabstError(() => parseRange("(-∞, -1]", "nat"), /empty interval/);
+    expectLemmaError(() => parseRange("(-∞, -1]", "nat"), /empty interval/);
   });
 
   it("rejects an open endpoint whose ±1 adjustment leaves the safe range", () => {
-    expectPabstError(
+    expectLemmaError(
       () => parseRange("(9007199254740991, ∞)", "int"),
       /safe integer/,
     );
   });
 
   it("still rejects overflowing and malformed number literals", () => {
-    expectPabstError(() => parseRange("[0, 1e400]", "number"), /finite number/);
-    expectPabstError(() => parseRange("[0, NaN]", "number"), /finite number/);
+    expectLemmaError(() => parseRange("[0, 1e400]", "number"), /finite number/);
+    expectLemmaError(() => parseRange("[0, NaN]", "number"), /finite number/);
   });
 });
 

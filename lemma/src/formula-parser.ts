@@ -1,6 +1,6 @@
 import type { Formula } from "./formula-ast.js";
 import { lexFormula, sliceText, type FToken } from "./formula-lexer.js";
-import { PabstError } from "./errors.js";
+import { LemmaError } from "./errors.js";
 import { desugarEquations } from "./equations.js";
 
 export function parseBody(body: string): Formula {
@@ -28,7 +28,7 @@ function parseFormula(
   const c: Cursor = { toks, pos: start, end, src };
   const f = parseEquivalence(c);
   if (c.pos !== c.end) {
-    throw new PabstError(
+    throw new LemmaError(
       `unbalanced parentheses in formula: unexpected '${c.toks[c.pos]!.text}' (in: ${src})`,
     );
   }
@@ -42,7 +42,7 @@ function parseEquivalence(c: Cursor): Formula {
   c.pos++;
   const right = parseImplication(c);
   if (peek(c)?.kind === "iff") {
-    throw new PabstError(
+    throw new LemmaError(
       "chained ↔ is ambiguous: parenthesize, e.g. (a ↔ b) ↔ c",
     );
   }
@@ -112,7 +112,7 @@ function parsePrimary(c: Cursor): Formula {
   }
   const span = c.toks.slice(start, c.pos);
   if (span.length === 0) {
-    throw new PabstError("empty operand: a connective is missing a side");
+    throw new LemmaError("empty operand: a connective is missing a side");
   }
   if (whollyWrapped(span)) {
     return parseFormula(c.toks, start + 1, c.pos - 1, c.src);

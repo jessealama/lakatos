@@ -4,6 +4,7 @@ export default defineConfig({
   test: {
     include: [
       "tests/**/*.test.ts",
+      "lemma/tests/**/*.test.ts",
       "engines/pabst/tests/**/*.test.ts",
       ".pabst/**/*.test.ts",
     ],
@@ -12,7 +13,11 @@ export default defineConfig({
       // Count every source file, even ones no test imports, so untested
       // code drags the baseline down instead of hiding from the ratchet.
       all: true,
-      include: ["src/**/*.ts", "engines/pabst/src/**/*.ts"],
+      include: [
+        "src/**/*.ts",
+        "lemma/src/**/*.ts",
+        "engines/pabst/src/**/*.ts",
+      ],
       exclude: ["**/*.test.ts", "**/*.d.ts"],
       reporter: ["text", "html"],
       thresholds: {
@@ -20,10 +25,10 @@ export default defineConfig({
         // upward in this file; if it drops below, the run fails. Seeded
         // from the baseline on 2026-08-17 — bump only happens via autoUpdate.
         autoUpdate: true,
-        statements: 97.98,
-        branches: 96.04,
+        statements: 98.56,
+        branches: 96.42,
         functions: 100,
-        lines: 98.7,
+        lines: 99.24,
       },
     },
   },

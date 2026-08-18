@@ -42,11 +42,13 @@ implementation exists or a standards venue asks for a normative reference
 
 ## Implementations
 
-Two engines implement Lemma, one from each side of the
-proofs-and-refutations dialectic:
+The reference implementation of the grammar — file discovery, `@ensures`
+extraction, and prefix/formula parsing — lives in [`lemma/`](../lemma/) at
+the repository root, exercised against `fixtures/` in CI. Two engines
+build on it, one from each side of the proofs-and-refutations dialectic:
 
 - [`engines/pabst/`](../engines/pabst/) (TypeScript) — the **refutation
-  engine** and reference implementation: compiles properties to
+  engine**: compiles properties to
   [fast-check](https://fast-check.dev/) runs and hunts for
   counterexamples.
 - [`engines/thales/`](../engines/thales/) (Lean 4) — the **proof
@@ -68,10 +70,10 @@ function.
 
 Early. The grammar is real and shipped (extracted from pabst, where it was
 developed); the semantics document is a skeleton being filled in; the
-fixture corpus is a verified seed. Planned next: golden parse trees for the
-fixtures once the AST is canonicalized, and CI wiring so both engines run
-the fixture corpus from this sibling directory. (The formula parser stays
-internal to the engines; there is no separate reference-parser package.)
+fixture corpus is a verified seed, run in CI against the shared parser in
+`lemma/`. Planned next: golden parse trees for the fixtures once the AST
+is canonicalized. (The parser is a module of this repository's root
+package; there is no separate reference-parser package.)
 
 ## License
 
