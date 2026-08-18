@@ -47,8 +47,8 @@ export class Counter {
       { function: "bar", property: "pos" },
     ]);
     expect(results[0]!.outFile).toBe(path.join(".pabst", "bar.pabst.test.ts"));
-    expect(fs.existsSync(results[0]!.outFile)).toBe(true);
-    const code = fs.readFileSync(results[0]!.outFile, "utf8");
+    expect(fs.existsSync(results[0]!.outFile!)).toBe(true);
+    const code = fs.readFileSync(results[0]!.outFile!, "utf8");
     expect(code).toContain(
       'test.prop([fc.nat()], { seed: 7, reporter: (d) => __pabstReport("bar.ts", "bar", "pos", ["n"], d) })("pos"',
     );

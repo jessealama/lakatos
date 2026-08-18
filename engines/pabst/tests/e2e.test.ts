@@ -87,7 +87,7 @@ function clean(): void {
 const E2E_RESULTS = ".pabst/.e2e-run.json";
 
 function run(gen: GenResult): Envelope {
-  const result = runTests(gen.outFile, E2E_RESULTS);
+  const result = runTests(gen.outFile!, E2E_RESULTS);
   if (result.kind !== "completed") {
     throw new Error(`vitest run failed: ${JSON.stringify(result)}`);
   }
@@ -339,7 +339,7 @@ describe("end-to-end", () => {
       const [r] = generate([regexGuardSrc]);
       expect(r).toBeDefined();
       // Pin the emitted arbitraries: anchored, non-capturing, flags kept.
-      const emitted = fs.readFileSync(r!.outFile, "utf8");
+      const emitted = fs.readFileSync(r!.outFile!, "utf8");
       expect(emitted).toContain("fc.stringMatching(/^(?:[a-z]+)$/)");
       expect(emitted).toContain("fc.stringMatching(/^(?:\\p{Lu}{2,5})$/u)");
       const env = run(r!);

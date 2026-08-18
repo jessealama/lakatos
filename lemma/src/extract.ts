@@ -1,7 +1,6 @@
 import ts from "typescript";
 import * as fs from "node:fs";
 import { qualifiedName } from "./qualified-name.js";
-import { LemmaError } from "./errors.js";
 
 export interface RawAnnotation {
   propertyName: string;
@@ -12,10 +11,28 @@ export interface RawAnnotation {
   line: number;
 }
 
+/**
+ * An annotation whose input is malformed — the SZS `InputError` cases.
+ * Extraction collects these instead of throwing, so a run can report the
+ * offender per annotation while sound annotations still get verdicts.
+ * Identity is best-effort: subjects and properties without a proper name are
+ * labeled with placeholders (`<anonymous>`, `<computed>`, `<unnamed>`) and
+ * the message states what is unsupported.
+ */
+export interface InvalidAnnotation {
+  propertyName: string;
+  functionName: string;
+  className?: string;
+  isStatic?: boolean;
+  line: number;
+  message: string;
+}
+
 export interface ExtractResult {
   file: string;
   exports: Set<string>;
   annotations: RawAnnotation[];
+  invalid: InvalidAnnotation[];
 }
 
 // The `@ensures` tag name is matched via the JSDoc AST; this only peels the
@@ -26,6 +43,12 @@ interface EnsuresMatch {
   propertyName: string;
   formula: string;
   line: number;
+}
+
+interface EnsuresScan {
+  matches: EnsuresMatch[];
+  /** Lines of `@ensures` tags whose `{name}` prefix is missing or malformed. */
+  unnamed: number[];
 }
 
 /** Read a source file from disk and extract its annotations. */
@@ -42,57 +65,134 @@ export function extractFromSource(text: string, file: string): ExtractResult {
   const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
   const exportsSet = collectExports(sf);
   const annotations: RawAnnotation[] = [];
-  const seen = new Map<string, Set<string>>();
-
-  const record = (a: RawAnnotation, key: string, subject: string): void => {
-    const set = seen.get(key) ?? new Set<string>();
-    if (set.has(a.propertyName)) {
-      throw new LemmaError(
-        `duplicate property name '${a.propertyName}' on ${subject} in ${file}`,
-      );
-    }
-    set.add(a.propertyName);
-    seen.set(key, set);
-    annotations.push(a);
-  };
+  const invalid: InvalidAnnotation[] = [];
 
   for (const stmt of sf.statements) {
     if (ts.isClassDeclaration(stmt)) {
-      collectClassAnnotations(stmt, sf, exportsSet, file, record);
+      collectClassAnnotations(stmt, sf, exportsSet, file, annotations, invalid);
       continue;
     }
     const fnName = functionNameOf(stmt);
     if (!fnName) continue;
-    for (const m of ensuresComments(stmt, sf)) {
-      record(
-        {
-          propertyName: m.propertyName,
-          functionName: fnName,
-          formula: m.formula,
-          line: m.line,
-        },
-        fnName,
-        `function '${fnName}'`,
-      );
+    const { matches, unnamed } = ensuresComments(stmt, sf);
+    for (const line of unnamed) {
+      invalid.push({
+        propertyName: "<unnamed>",
+        functionName: fnName,
+        line,
+        message: unnamedMessage(`function '${fnName}'`, file),
+      });
+    }
+    for (const m of matches) {
+      annotations.push({
+        propertyName: m.propertyName,
+        functionName: fnName,
+        formula: m.formula,
+        line: m.line,
+      });
     }
   }
-  return { file, exports: exportsSet, annotations };
+  return {
+    file,
+    exports: exportsSet,
+    ...resolveDuplicates(annotations, invalid, file),
+  };
 }
 
-function ensuresComments(node: ts.Node, sf: ts.SourceFile): EnsuresMatch[] {
-  const out: EnsuresMatch[] = [];
+/** The identity an annotation claims, as a collision key. */
+function identityKey(a: {
+  propertyName: string;
+  functionName: string;
+  className?: string;
+  isStatic?: boolean;
+}): string {
+  return `${qualifiedName(a.functionName, a.className, a.isStatic)}\0${a.propertyName}`;
+}
+
+/**
+ * A duplicated property name makes the identity ambiguous, so no claimant
+ * can be attributed a verdict: the valid claimants collapse into a single
+ * invalid entry for that identity. Invalid claimants count toward the
+ * ambiguity and are deduplicated by identity for the same reason — unless
+ * the identity contains a placeholder, which can cover distinct subjects.
+ */
+function resolveDuplicates(
+  annotations: RawAnnotation[],
+  invalid: InvalidAnnotation[],
+  file: string,
+): { annotations: RawAnnotation[]; invalid: InvalidAnnotation[] } {
+  const counts = new Map<string, number>();
+  for (const a of [...annotations, ...invalid]) {
+    const key = identityKey(a);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+
+  const kept: RawAnnotation[] = [];
+  const out: InvalidAnnotation[] = [];
+  const emitted = new Set<string>();
+  for (const a of annotations) {
+    const key = identityKey(a);
+    const n = counts.get(key)!;
+    if (n === 1) {
+      kept.push(a);
+      continue;
+    }
+    if (emitted.has(key)) continue;
+    emitted.add(key);
+    const subject =
+      a.className === undefined
+        ? `function '${a.functionName}'`
+        : `method '${qualifiedName(a.functionName, a.className, a.isStatic)}'`;
+    out.push({
+      propertyName: a.propertyName,
+      functionName: a.functionName,
+      ...(a.className !== undefined
+        ? { className: a.className, isStatic: a.isStatic }
+        : {}),
+      line: a.line,
+      message: `duplicate property name '${a.propertyName}' on ${subject} in ${file} (declared ${n} times)`,
+    });
+  }
+  for (const i of invalid) {
+    // A placeholder label can cover several distinct subjects, so identity
+    // dedup would swallow real entries — emit those verbatim.
+    if (!hasPlaceholderIdentity(i)) {
+      const key = identityKey(i);
+      if (emitted.has(key)) continue;
+      emitted.add(key);
+    }
+    out.push(i);
+  }
+  return { annotations: kept, invalid: out };
+}
+
+function hasPlaceholderIdentity(a: InvalidAnnotation): boolean {
+  return (
+    a.propertyName === "<unnamed>" ||
+    a.functionName === "<computed>" ||
+    a.className === "<anonymous>"
+  );
+}
+
+function unnamedMessage(subject: string, file: string): string {
+  return `@ensures on ${subject} in ${file} has a missing or malformed {name} prefix (expected '@ensures{name} <formula>')`;
+}
+
+function ensuresComments(node: ts.Node, sf: ts.SourceFile): EnsuresScan {
+  const matches: EnsuresMatch[] = [];
+  const unnamed: number[] = [];
   for (const tag of ts.getJSDocTags(node)) {
     if (tag.tagName.escapedText !== "ensures") continue;
     const comment = ts.getTextOfJSDocComment(tag.comment)?.trim() ?? "";
     const m = ENSURES_NAME.exec(comment);
-    if (!m) continue;
-    out.push({
-      propertyName: m[1]!,
-      formula: m[2]!.trim(),
-      line: sf.getLineAndCharacterOfPosition(tag.pos).line + 1,
-    });
+    const line = sf.getLineAndCharacterOfPosition(tag.pos).line + 1;
+    if (!m) {
+      unnamed.push(line);
+      continue;
+    }
+    matches.push({ propertyName: m[1]!, formula: m[2]!.trim(), line });
   }
-  return out;
+  return { matches, unnamed };
 }
 
 function collectClassAnnotations(
@@ -100,41 +200,63 @@ function collectClassAnnotations(
   sf: ts.SourceFile,
   exportsSet: Set<string>,
   file: string,
-  record: (a: RawAnnotation, key: string, subject: string) => void,
+  annotations: RawAnnotation[],
+  invalid: InvalidAnnotation[],
 ): void {
   const className = cls.name?.text;
   for (const member of cls.members) {
-    const matches = ensuresComments(member, sf);
-    if (matches.length === 0) continue;
+    const { matches, unnamed } = ensuresComments(member, sf);
+    if (matches.length === 0 && unnamed.length === 0) continue;
     const label = memberLabel(member);
-    if (!className) {
-      throw new LemmaError(
-        `@ensures on method '${label}' of an anonymous class in ${file}`,
-      );
-    }
-    if (!isEligibleMethod(member)) {
-      throw new LemmaError(ineligibleMessage(member, label, className, file));
-    }
-    if (!exportsSet.has(className)) {
-      throw new LemmaError(
-        `@ensures on method '${label}' of class '${className}', which is not exported from ${file}`,
-      );
-    }
     const isStatic = hasModifier(member, ts.SyntaxKind.StaticKeyword);
-    const key = qualifiedName(label, className, isStatic);
-    for (const m of matches) {
-      record(
-        {
+    for (const line of unnamed) {
+      const subject =
+        className === undefined
+          ? `method '${label}' of an anonymous class`
+          : `method '${label}' of class '${className}'`;
+      invalid.push({
+        propertyName: "<unnamed>",
+        functionName: label,
+        className: className ?? "<anonymous>",
+        isStatic,
+        line,
+        message: unnamedMessage(subject, file),
+      });
+    }
+    if (matches.length === 0) continue;
+    // Every detected annotation gets an entry, even when the subject has no
+    // proper name: placeholder labels (`<anonymous>`, `<computed>`) keep the
+    // identity best-effort and the message states what is unsupported.
+    const problem =
+      className === undefined
+        ? `@ensures on method '${label}' of an anonymous class in ${file} (anonymous classes are not supported)`
+        : !isEligibleMethod(member)
+          ? ineligibleMessage(member, label, className, file)
+          : !exportsSet.has(className)
+            ? `@ensures on method '${label}' of class '${className}', which is not exported from ${file}`
+            : undefined;
+    if (problem !== undefined) {
+      for (const m of matches) {
+        invalid.push({
           propertyName: m.propertyName,
           functionName: label,
-          className,
+          className: className ?? "<anonymous>",
           isStatic,
-          formula: m.formula,
           line: m.line,
-        },
-        key,
-        `method '${key}'`,
-      );
+          message: problem,
+        });
+      }
+      continue;
+    }
+    for (const m of matches) {
+      annotations.push({
+        propertyName: m.propertyName,
+        functionName: label,
+        className: className!,
+        isStatic,
+        formula: m.formula,
+        line: m.line,
+      });
     }
   }
 }
