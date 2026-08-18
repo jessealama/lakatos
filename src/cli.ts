@@ -4,6 +4,8 @@ import { existsSync, readFileSync, realpathSync } from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { buildSpecs } from "../engines/pabst/src/build-spec.js";
+import { writeArtifacts } from "../engines/thales/frontend/src/artifacts.js";
+import { findEngineRoot, runLean } from "../engines/thales/frontend/src/run.js";
 import { generate } from "../engines/pabst/src/codegen.js";
 import { runTests } from "../engines/pabst/src/run.js";
 import { parseSeed, randomSeed } from "../engines/pabst/src/seed.js";
@@ -13,8 +15,10 @@ import { qualifiedName } from "../lemma/src/qualified-name.js";
 import type { InvalidAnnotation } from "../lemma/src/extract.js";
 import {
   buildEnvelope,
+  joinProveVerdicts,
   notTriedEnvelope,
   type AnnotationResult,
+  type Envelope,
   type PropertyIdentity,
 } from "./envelope.js";
 
@@ -56,7 +60,8 @@ const USAGE =
 const HELP = `${USAGE}
 
 commands:
-  prove   try to prove each annotation (not implemented yet)
+  prove   transcribe each file to Lean and attempt a proof per annotation;
+          artifacts land in .thales/ (requires the Lean toolchain)
   refute  generate property tests from @ensures annotations, run them, and
           print a JSON report to stdout
   check   prove and refute combined (not implemented yet)
@@ -115,7 +120,9 @@ export function main(argv: string[] = process.argv.slice(2)): number {
   try {
     return command === "refute"
       ? refute(patterns, values.seed)
-      : notTried(command as Command, patterns);
+      : command === "prove"
+        ? prove(patterns)
+        : notTried("check", patterns);
   } catch (e) {
     if (e instanceof LemmaError) {
       console.error(`error: ${e.message}`);
@@ -211,6 +218,73 @@ function refute(patterns: string[], seedArg: string | undefined): number {
   // found, so malformed annotations are never mistaken for a clean 0/1 run.
   if (inputErrors.length > 0) return 2;
   return (envelope.failed ?? 0) > 0 ? 1 : 0;
+}
+
+function prove(patterns: string[]): number {
+  const files = resolve(patterns);
+  const startedAt = new Date().toISOString();
+  const cwd = process.cwd();
+  const version = readVersion();
+
+  const artifacts = writeArtifacts(files);
+  const identities: PropertyIdentity[] = artifacts.flatMap((a) =>
+    a.annotations.map((r) => ({
+      file: a.sourceFile,
+      function: qualifiedName(r.functionName, r.className, r.isStatic),
+      property: r.propertyName,
+    })),
+  );
+  const inputErrors = inputErrorResults(
+    artifacts.map((a) => ({ file: a.sourceFile, invalid: a.invalid })),
+  );
+  const n = identities.length;
+  console.error(
+    `lakatos: transcribed ${n} annotation${n === 1 ? "" : "s"} across ${artifacts.length} file(s) into .thales/`,
+  );
+  const meta = { version, startedAt, cwd };
+
+  // Unhealthy runs honor the output contract: diagnostics on stderr, a
+  // NotTried envelope on stdout, and the documented exit 2.
+  const unhealthy = (messages: string[]): number => {
+    for (const m of messages) console.error(`error: ${m}`);
+    const envelope: Envelope = {
+      ...meta,
+      annotations: [
+        ...identities.map((i) => ({ ...i, szs: "NotTried" as const })),
+        ...inputErrors,
+      ],
+    };
+    console.log(JSON.stringify(envelope, null, 2));
+    return 2;
+  };
+
+  const outFiles = artifacts.flatMap((a) =>
+    a.outFile !== undefined ? [a.outFile] : [],
+  );
+  if (outFiles.length === 0) {
+    console.log(JSON.stringify({ ...meta, annotations: inputErrors }, null, 2));
+    return inputErrors.length > 0 ? 2 : 0;
+  }
+
+  const result = runLean(outFiles, findEngineRoot());
+  if (result.kind === "no-project") return unhealthy([result.message]);
+  if (result.kind === "failed") {
+    process.stderr.write(result.stdout);
+    process.stderr.write(result.stderr);
+    return unhealthy(["the Lean run failed before reporting verdicts"]);
+  }
+  if (result.kind === "bad-verdicts") return unhealthy(result.messages);
+  const join = joinProveVerdicts(identities, result.verdicts);
+  if (join.kind === "mismatched") return unhealthy(join.messages);
+
+  const envelope: Envelope = {
+    ...meta,
+    annotations: [...join.annotations, ...inputErrors],
+  };
+  console.log(JSON.stringify(envelope, null, 2));
+  // Bad input outranks everything else, as in refute; no prove verdict
+  // maps to exit 1 yet (the prover cannot report counterexamples).
+  return inputErrors.length > 0 ? 2 : 0;
 }
 
 function notTried(command: Command, patterns: string[]): number {
