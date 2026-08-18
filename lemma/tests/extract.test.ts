@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import { extractFromSource } from "../src/extract.js";
-import { expectLemmaError } from "./helpers/errors.js";
 
 const FOO = `/** @ensures{nonzero} forall (x: int) (y: number) {
  *    Number.isInteger(y) ==> foo(x, y) !== 0 } */
@@ -32,6 +31,7 @@ describe("extract", () => {
 
   it("records every @ensures in a single JSDoc block as its own property", () => {
     const src = `/**
+ * @param x the input
  * @ensures{lo} forall (x: int) { foo(x) >= 0 }
  * @ensures{hi} forall (x: int) { foo(x) <= 100 }
  */
@@ -155,68 +155,249 @@ describe("extract — class methods", () => {
     expect(r.annotations.some((a) => a.functionName === "secret")).toBe(false);
   });
 
-  it("throws on @ensures on a non-public method", () => {
-    expectLemmaError(
-      () => extractFromSource(CLASS_PRIVATE, "class-private.ts"),
-      /non-public method 'touch'/,
-    );
+  it("collects @ensures on a non-public method as invalid, with identity", () => {
+    const r = extractFromSource(CLASS_PRIVATE, "class-private.ts");
+    expect(r.annotations).toEqual([]);
+    expect(r.invalid).toHaveLength(1);
+    const i = r.invalid[0]!;
+    expect(i.propertyName).toBe("p");
+    expect(i.functionName).toBe("touch");
+    expect(i.className).toBe("Box");
+    expect(i.isStatic).toBe(false);
+    expect(i.line).toBeGreaterThan(0);
+    expect(i.message).toMatch(/non-public method 'touch'/);
   });
 
-  it("throws on @ensures on an accessor", () => {
-    expectLemmaError(
-      () => extractFromSource(CLASS_ACCESSOR, "class-accessor.ts"),
-      /unsupported member 'value'/,
-    );
+  it("collects @ensures on an accessor as invalid", () => {
+    const r = extractFromSource(CLASS_ACCESSOR, "class-accessor.ts");
+    expect(r.annotations).toEqual([]);
+    expect(r.invalid).toHaveLength(1);
+    expect(r.invalid[0]!.functionName).toBe("value");
+    expect(r.invalid[0]!.message).toMatch(/unsupported member 'value'/);
   });
 
-  it("throws on @ensures on a method of a non-exported class", () => {
-    expectLemmaError(
-      () => extractFromSource(CLASS_UNEXPORTED, "class-unexported.ts"),
-      /which is not exported/,
-    );
+  it("collects @ensures on a method of a non-exported class as invalid", () => {
+    const r = extractFromSource(CLASS_UNEXPORTED, "class-unexported.ts");
+    expect(r.annotations).toEqual([]);
+    expect(r.invalid).toHaveLength(1);
+    const i = r.invalid[0]!;
+    expect(i.functionName).toBe("id");
+    expect(i.className).toBe("Box");
+    expect(i.isStatic).toBe(true);
+    expect(i.message).toMatch(/which is not exported/);
   });
 
-  it("throws on a duplicate qualified property name", () => {
-    expectLemmaError(
-      () => extractFromSource(CLASS_DUP, "class-dup.ts"),
+  it("collapses all claimants of a duplicate property name into one invalid entry", () => {
+    const r = extractFromSource(CLASS_DUP, "class-dup.ts");
+    expect(r.annotations).toEqual([]);
+    expect(r.invalid).toHaveLength(1);
+    const i = r.invalid[0]!;
+    expect(i.propertyName).toBe("p");
+    expect(i.message).toMatch(
       /duplicate property name 'p' on method 'Box\.id'/,
     );
   });
 
-  it("throws on @ensures on a method of an anonymous class", () => {
+  it("keeps extracting after an invalid annotation", () => {
+    const src = `class Hidden {
+  /** @ensures{p} forall (x: int) { Hidden.id(x) === x } */
+  static id(x: number): number { return x; }
+}
+
+/** @ensures{q} forall (x: int) { later(x) === x } */
+export function later(x: number): number { return x; }
+`;
+    const r = extractFromSource(src, "mixed.ts");
+    expect(r.annotations.map((a) => a.propertyName)).toEqual(["q"]);
+    expect(r.invalid.map((i) => i.propertyName)).toEqual(["p"]);
+  });
+
+  it("a duplicate on one function leaves its distinct siblings valid", () => {
+    const src = `/**
+ * @ensures{dup} forall (x: int) { f(x) === x }
+ * @ensures{dup} forall (x: int) { f(x) === x }
+ * @ensures{ok} forall (x: int) { f(x) >= x }
+ */
+export function f(x: number): number { return x; }
+`;
+    const r = extractFromSource(src, "dup.ts");
+    expect(r.annotations.map((a) => a.propertyName)).toEqual(["ok"]);
+    expect(r.invalid).toHaveLength(1);
+    expect(r.invalid[0]!.propertyName).toBe("dup");
+    expect(r.invalid[0]!.message).toMatch(/duplicate property name 'dup'/);
+  });
+
+  it("attributes no verdict when a valid annotation collides with an invalid one's identity", () => {
+    const src = `export class Box {
+  /** @ensures{p} forall (x: int) { new Box().id(x) === x } */
+  id(x: number): number { return x; }
+
+  /** @ensures{p} forall (x: int) { x === x } */
+  "id"(x: number): number { return x; }
+}
+`;
+    const r = extractFromSource(src, "collide.ts");
+    expect(r.annotations).toEqual([]);
+    expect(r.invalid).toHaveLength(1);
+    expect(r.invalid[0]!.message).toMatch(/duplicate property name 'p'/);
+  });
+
+  it("keeps identity keys unique: duplicates on a non-exported class collapse too", () => {
+    const src = `class Box {
+  /**
+   * @ensures{p} forall (x: int) { x === x }
+   * @ensures{p} forall (x: int) { x === x }
+   */
+  static id(x: number): number { return x; }
+}
+`;
+    const r = extractFromSource(src, "dup-unexported.ts");
+    expect(r.annotations).toEqual([]);
+    expect(r.invalid).toHaveLength(1);
+  });
+
+  it("reports no invalid annotations for a clean file", () => {
+    expect(extractFromSource(CLASS_OK, "class-ok.ts").invalid).toEqual([]);
+  });
+
+  it("collects @ensures on protected and abstract methods as invalid", () => {
+    const src = `export abstract class Box {
+  /** @ensures{p} forall (x: int) { x === x } */
+  protected touch(x: number): number { return x; }
+
+  /** @ensures{q} forall (x: int) { x === x } */
+  abstract probe(x: number): number;
+}
+`;
+    const r = extractFromSource(src, "modifiers.ts");
+    expect(r.annotations).toEqual([]);
+    expect(r.invalid.map((i) => i.propertyName).sort()).toEqual(["p", "q"]);
+    expect(r.invalid[0]!.message).toMatch(/non-public method 'touch'/);
+    expect(r.invalid[1]!.message).toMatch(/unsupported member 'probe'/);
+  });
+
+  it("collects an @ensures tag with a missing or malformed {name} prefix as invalid", () => {
+    const src = `/**
+ * @ensures forall (x: int) { f(x) === x }
+ * @ensures{9bad} forall (x: int) { f(x) === x }
+ * @ensures
+ */
+export function f(x: number): number { return x; }
+`;
+    const r = extractFromSource(src, "unnamed.ts");
+    expect(r.annotations).toEqual([]);
+    expect(r.invalid).toHaveLength(3);
+    for (const i of r.invalid) {
+      expect(i.propertyName).toBe("<unnamed>");
+      expect(i.functionName).toBe("f");
+      expect(i.line).toBeGreaterThan(0);
+      expect(i.message).toMatch(/missing or malformed \{name\} prefix/);
+    }
+  });
+
+  it("collects a nameless @ensures on a class method as invalid", () => {
+    const src = `export class Box {
+  /** @ensures forall (x: int) { new Box().id(x) === x } */
+  id(x: number): number { return x; }
+}
+`;
+    const r = extractFromSource(src, "unnamed-method.ts");
+    expect(r.annotations).toEqual([]);
+    expect(r.invalid).toHaveLength(1);
+    const i = r.invalid[0]!;
+    expect(i.propertyName).toBe("<unnamed>");
+    expect(i.functionName).toBe("id");
+    expect(i.className).toBe("Box");
+    expect(i.message).toMatch(/missing or malformed \{name\} prefix/);
+  });
+
+  it("collects a nameless @ensures on an anonymous-class method as invalid", () => {
+    const src = `export default class {
+  /** @ensures forall (x: int) { x === x } */
+  m(x: number): number { return x; }
+}
+`;
+    const r = extractFromSource(src, "unnamed-anon.ts");
+    expect(r.annotations).toEqual([]);
+    expect(r.invalid).toHaveLength(1);
+    const i = r.invalid[0]!;
+    expect(i.propertyName).toBe("<unnamed>");
+    expect(i.functionName).toBe("m");
+    expect(i.className).toBe("<anonymous>");
+    expect(i.message).toMatch(/method 'm' of an anonymous class/);
+  });
+
+  it("collects a private-identifier member as invalid under its literal label", () => {
+    const src = `export class Box {
+  /** @ensures{p} forall (x: int) { x === x } */
+  #hidden(x: number): number { return x; }
+}
+`;
+    const r = extractFromSource(src, "hash.ts");
+    expect(r.annotations).toEqual([]);
+    expect(r.invalid).toHaveLength(1);
+    expect(r.invalid[0]!.functionName).toBe("#hidden");
+    expect(r.invalid[0]!.message).toMatch(/non-public method '#hidden'/);
+  });
+
+  it("collects @ensures on a method of an anonymous class under a placeholder", () => {
     const src = `export default class {
   /** @ensures{p} forall (x: int) { x === x } */
   m(x: number): number { return x; }
 }
 `;
-    expectLemmaError(
-      () => extractFromSource(src, "anon.ts"),
-      /anonymous class/,
-    );
+    const r = extractFromSource(src, "anon.ts");
+    expect(r.annotations).toEqual([]);
+    expect(r.invalid).toHaveLength(1);
+    const i = r.invalid[0]!;
+    expect(i.functionName).toBe("m");
+    expect(i.className).toBe("<anonymous>");
+    expect(i.message).toMatch(/anonymous class/);
   });
 
-  it("reports a constructor as 'constructor' when @ensures sits on it", () => {
+  it("keeps distinct invalid entries whose subjects share a placeholder label", () => {
+    const src = `export class A {
+  /** @ensures{p} forall (x: int) { x === x } */
+  [Symbol.iterator](x: number): number { return x; }
+
+  /** @ensures{p} forall (x: int) { x === x } */
+  ["other"](x: number): number { return x; }
+}
+`;
+    const r = extractFromSource(src, "computed-two.ts");
+    expect(r.annotations).toEqual([]);
+    expect(r.invalid).toHaveLength(2);
+    expect(r.invalid.map((i) => i.functionName)).toEqual([
+      "<computed>",
+      "<computed>",
+    ]);
+  });
+
+  it("collects @ensures on a constructor as invalid, labeled 'constructor'", () => {
     const src = `export class Box {
   /** @ensures{p} forall (x: int) { x === x } */
   constructor(readonly n: number) {}
 }
 `;
-    expectLemmaError(
-      () => extractFromSource(src, "ctor.ts"),
-      /unsupported member 'constructor'/,
-    );
+    const r = extractFromSource(src, "ctor.ts");
+    expect(r.annotations).toEqual([]);
+    expect(r.invalid).toHaveLength(1);
+    expect(r.invalid[0]!.functionName).toBe("constructor");
+    expect(r.invalid[0]!.message).toMatch(/unsupported member 'constructor'/);
   });
 
-  it("reports a computed-name member as '<computed>' when @ensures sits on it", () => {
+  it("collects a computed-name member as invalid under '<computed>'", () => {
     const src = `export class Box {
   /** @ensures{p} forall (x: int) { x === x } */
   [Symbol.iterator](): number { return 0; }
 }
 `;
-    expectLemmaError(
-      () => extractFromSource(src, "computed.ts"),
-      /unsupported member '<computed>'/,
-    );
+    const r = extractFromSource(src, "computed.ts");
+    expect(r.annotations).toEqual([]);
+    expect(r.invalid).toHaveLength(1);
+    expect(r.invalid[0]!.functionName).toBe("<computed>");
+    expect(r.invalid[0]!.className).toBe("Box");
+    expect(r.invalid[0]!.message).toMatch(/unsupported member '<computed>'/);
   });
 });
 

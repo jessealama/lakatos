@@ -1,4 +1,8 @@
-import { extract, type RawAnnotation } from "../../../lemma/src/extract.js";
+import {
+  extract,
+  type InvalidAnnotation,
+  type RawAnnotation,
+} from "../../../lemma/src/extract.js";
 import { parsePrefix } from "../../../lemma/src/prefix-parser.js";
 import { parseBody } from "../../../lemma/src/formula-parser.js";
 import { lowerTop } from "./lower.js";
@@ -7,8 +11,14 @@ import { freeIdentifiers, classify } from "./free-idents.js";
 import { PabstError } from "./errors.js";
 import type { PropertySpec } from "./ir.js";
 
-export function buildSpecs(file: string): PropertySpec[] {
-  const { exports, annotations } = extract(file);
+export interface BuildResult {
+  specs: PropertySpec[];
+  /** Extraction-level input errors, reported per annotation (InputError). */
+  invalid: InvalidAnnotation[];
+}
+
+export function buildSpecs(file: string): BuildResult {
+  const { exports, annotations, invalid } = extract(file);
   const specs: PropertySpec[] = [];
   for (const a of annotations) {
     try {
@@ -23,7 +33,7 @@ export function buildSpecs(file: string): PropertySpec[] {
       throw e;
     }
   }
-  return specs;
+  return { specs, invalid };
 }
 
 function buildSpec(
