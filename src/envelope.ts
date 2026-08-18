@@ -180,18 +180,3 @@ export function joinProveVerdicts(
   if (messages.length > 0) return { kind: "mismatched", messages };
   return { kind: "joined", annotations };
 }
-
-/** Envelope for commands that scrape but do not attempt anything yet. */
-export function notTriedEnvelope(
-  version: string,
-  startedAt: string,
-  cwd: string,
-  identities: PropertyIdentity[],
-): Envelope {
-  return {
-    version,
-    startedAt,
-    cwd,
-    annotations: identities.map((i) => ({ ...i, szs: "NotTried" })),
-  };
-}

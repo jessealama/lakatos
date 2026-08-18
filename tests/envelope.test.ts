@@ -8,7 +8,6 @@ import {
   buildEnvelope,
   collectIssues,
   joinProveVerdicts,
-  notTriedEnvelope,
   type AnnotationResult,
   type PropertyIdentity,
   type ProveVerdict,
@@ -286,17 +285,5 @@ describe("joinProveVerdicts", () => {
     expect(joinProveVerdicts([id("a")], [verdict("a", "Timeout")]).kind).toBe(
       "mismatched",
     );
-  });
-});
-
-describe("notTriedEnvelope", () => {
-  it("marks every identity NotTried and omits run stats", () => {
-    const env = notTriedEnvelope("0.1.0", META.startedAt, META.cwd, IDS);
-    expect(env.seed).toBeUndefined();
-    expect(env.generated).toBeUndefined();
-    expect(env.passed).toBeUndefined();
-    expect(env.failed).toBeUndefined();
-    expect(env.annotations).toHaveLength(3);
-    expect(env.annotations.every((a) => a.szs === "NotTried")).toBe(true);
   });
 });
