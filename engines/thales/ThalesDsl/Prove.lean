@@ -73,13 +73,16 @@ elab_rules : command
       match p with
       | none => pure ⟨identity, "NotTried", "stub: no structured property provided"⟩
       | some p =>
-        try
-          let propStx ← elabProp [] p
-          let thmName := freshTheoremName (← getEnv) identity
-          liftTermElabM (attemptDecide identity thmName propStx)
-        catch ex =>
-          pure ⟨identity, "Error",
-            s!"property elaboration failed: {← ex.toMessageData.toString}"⟩
+        if let some reason := propInappropriate? (← getEnv) p then
+          pure ⟨identity, "Inappropriate", reason⟩
+        else
+          try
+            let propStx ← elabProp [] p
+            let thmName := freshTheoremName (← getEnv) identity
+            liftTermElabM (attemptDecide identity thmName propStx)
+          catch ex =>
+            pure ⟨identity, "Error",
+              s!"property elaboration failed: {← ex.toMessageData.toString}"⟩
     verdict.emit
 
 end ThalesDsl

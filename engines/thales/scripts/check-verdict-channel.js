@@ -35,8 +35,9 @@ const FIXTURES = [
       ['add', 'NotTried'],
       ['sub', 'NotTried'],
       ['bad', 'Error'],
-      ['opq', 'Error', /YieldExpression.*3:14/],
+      ['opq', 'Inappropriate', /YieldExpression.*3:14/],
       ['tail', 'NotTried'],
+      ['viaAw', 'Inappropriate', /AwaitExpression/],
     ],
   },
   {

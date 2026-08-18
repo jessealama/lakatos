@@ -57,6 +57,29 @@ partial def findOpaque? (stx : Syntax) : Option (String × String) :=
 def unmappedMsg (construct pos : String) : String :=
   s!"unmapped TypeScript construct '{construct}' at {pos}"
 
+/-- Every function name `stx` calls, in tree order. -/
+partial def callNames (stx : Syntax) : List String :=
+  let here := match stx with
+    | `(ts_expr| ts.call[$f:str]($_args:ts_expr,*)) => [f.getString]
+    | _ => []
+  here ++ stx.getArgs.toList.flatMap callNames
+
+/-- Why `p` cannot be attempted under the containment contract: an opaque
+node in the formula itself, or a call to a declaration whose `ts_def`
+failed on an unmapped construct. `none` means the formula may elaborate. -/
+def propInappropriate? (env : Environment) (p : TSyntax `ts_prop) : Option String :=
+  match findOpaque? p.raw with
+  | some (construct, pos) => some (unmappedMsg construct pos)
+  | none =>
+    (callNames p.raw).findSome? fun n =>
+      if (findModel? env n).isSome then none
+      else match findFailed? env n with
+        | some failed =>
+          if failed.construct.isSome then
+            some s!"'{n}' could not be modeled: {failed.reason}"
+          else none
+        | none => none
+
 /-- The value types of the slice. Expression elaboration is type-directed:
 the operator decides its operand and result types. -/
 inductive ValTy where
