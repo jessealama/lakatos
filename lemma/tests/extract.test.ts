@@ -31,6 +31,7 @@ describe("extract", () => {
 
   it("records every @ensures in a single JSDoc block as its own property", () => {
     const src = `/**
+ * @param x the input
  * @ensures{lo} forall (x: int) { foo(x) >= 0 }
  * @ensures{hi} forall (x: int) { foo(x) <= 100 }
  */
@@ -279,12 +280,13 @@ export function f(x: number): number { return x; }
     const src = `/**
  * @ensures forall (x: int) { f(x) === x }
  * @ensures{9bad} forall (x: int) { f(x) === x }
+ * @ensures
  */
 export function f(x: number): number { return x; }
 `;
     const r = extractFromSource(src, "unnamed.ts");
     expect(r.annotations).toEqual([]);
-    expect(r.invalid).toHaveLength(2);
+    expect(r.invalid).toHaveLength(3);
     for (const i of r.invalid) {
       expect(i.propertyName).toBe("<unnamed>");
       expect(i.functionName).toBe("f");
@@ -307,6 +309,22 @@ export function f(x: number): number { return x; }
     expect(i.functionName).toBe("id");
     expect(i.className).toBe("Box");
     expect(i.message).toMatch(/missing or malformed \{name\} prefix/);
+  });
+
+  it("collects a nameless @ensures on an anonymous-class method as invalid", () => {
+    const src = `export default class {
+  /** @ensures forall (x: int) { x === x } */
+  m(x: number): number { return x; }
+}
+`;
+    const r = extractFromSource(src, "unnamed-anon.ts");
+    expect(r.annotations).toEqual([]);
+    expect(r.invalid).toHaveLength(1);
+    const i = r.invalid[0]!;
+    expect(i.propertyName).toBe("<unnamed>");
+    expect(i.functionName).toBe("m");
+    expect(i.className).toBe("<anonymous>");
+    expect(i.message).toMatch(/method 'm' of an anonymous class/);
   });
 
   it("collects a private-identifier member as invalid under its literal label", () => {
