@@ -33,14 +33,27 @@
     "annotation": {
       "oneOf": [
         {
-          "title": "unattempted or unrefuted",
+          "title": "unattempted, unrefuted, or proven",
           "additionalProperties": false,
           "required": ["file", "function", "property", "szs"],
           "properties": {
             "file": { "type": "string" },
             "function": { "$ref": "#/definitions/functionName" },
             "property": { "type": "string", "minLength": 1 },
-            "szs": { "enum": ["GaveUp", "NotTried"] }
+            "szs": { "enum": ["GaveUp", "NotTried", "Theorem"] }
+          }
+        },
+        {
+          "title": "inappropriate",
+          "description": "The code the annotation depends on is outside the mappable subset; reason names the offending construct.",
+          "additionalProperties": false,
+          "required": ["file", "function", "property", "szs", "reason"],
+          "properties": {
+            "file": { "type": "string" },
+            "function": { "$ref": "#/definitions/functionName" },
+            "property": { "type": "string", "minLength": 1 },
+            "szs": { "const": "Inappropriate" },
+            "reason": { "type": "string", "minLength": 1 }
           }
         },
         {
