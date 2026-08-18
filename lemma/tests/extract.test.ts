@@ -226,6 +226,21 @@ export function f(x: number): number { return x; }
     expect(r.invalid[0]!.message).toMatch(/duplicate property name 'dup'/);
   });
 
+  it("attributes no verdict when a valid annotation collides with an invalid one's identity", () => {
+    const src = `export class Box {
+  /** @ensures{p} forall (x: int) { new Box().id(x) === x } */
+  id(x: number): number { return x; }
+
+  /** @ensures{p} forall (x: int) { x === x } */
+  "id"(x: number): number { return x; }
+}
+`;
+    const r = extractFromSource(src, "collide.ts");
+    expect(r.annotations).toEqual([]);
+    expect(r.invalid).toHaveLength(1);
+    expect(r.invalid[0]!.message).toMatch(/duplicate property name 'p'/);
+  });
+
   it("keeps identity keys unique: duplicates on a non-exported class collapse too", () => {
     const src = `class Box {
   /**
@@ -260,14 +275,38 @@ export function f(x: number): number { return x; }
     expect(r.invalid[1]!.message).toMatch(/unsupported member 'probe'/);
   });
 
-  it("ignores an @ensures tag without a {name} prefix", () => {
-    const src = `/** @ensures forall (x: int) { f(x) === x } */
-/** @ensures */
+  it("collects an @ensures tag with a missing or malformed {name} prefix as invalid", () => {
+    const src = `/**
+ * @ensures forall (x: int) { f(x) === x }
+ * @ensures{9bad} forall (x: int) { f(x) === x }
+ */
 export function f(x: number): number { return x; }
 `;
     const r = extractFromSource(src, "unnamed.ts");
     expect(r.annotations).toEqual([]);
-    expect(r.invalid).toEqual([]);
+    expect(r.invalid).toHaveLength(2);
+    for (const i of r.invalid) {
+      expect(i.propertyName).toBe("<unnamed>");
+      expect(i.functionName).toBe("f");
+      expect(i.line).toBeGreaterThan(0);
+      expect(i.message).toMatch(/missing or malformed \{name\} prefix/);
+    }
+  });
+
+  it("collects a nameless @ensures on a class method as invalid", () => {
+    const src = `export class Box {
+  /** @ensures forall (x: int) { new Box().id(x) === x } */
+  id(x: number): number { return x; }
+}
+`;
+    const r = extractFromSource(src, "unnamed-method.ts");
+    expect(r.annotations).toEqual([]);
+    expect(r.invalid).toHaveLength(1);
+    const i = r.invalid[0]!;
+    expect(i.propertyName).toBe("<unnamed>");
+    expect(i.functionName).toBe("id");
+    expect(i.className).toBe("Box");
+    expect(i.message).toMatch(/missing or malformed \{name\} prefix/);
   });
 
   it("collects a private-identifier member as invalid under its literal label", () => {
@@ -296,6 +335,24 @@ export function f(x: number): number { return x; }
     expect(i.functionName).toBe("m");
     expect(i.className).toBe("<anonymous>");
     expect(i.message).toMatch(/anonymous class/);
+  });
+
+  it("keeps distinct invalid entries whose subjects share a placeholder label", () => {
+    const src = `export class A {
+  /** @ensures{p} forall (x: int) { x === x } */
+  [Symbol.iterator](x: number): number { return x; }
+
+  /** @ensures{p} forall (x: int) { x === x } */
+  ["other"](x: number): number { return x; }
+}
+`;
+    const r = extractFromSource(src, "computed-two.ts");
+    expect(r.annotations).toEqual([]);
+    expect(r.invalid).toHaveLength(2);
+    expect(r.invalid.map((i) => i.functionName)).toEqual([
+      "<computed>",
+      "<computed>",
+    ]);
   });
 
   it("collects @ensures on a constructor as invalid, labeled 'constructor'", () => {

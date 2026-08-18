@@ -9,7 +9,7 @@ import type { IssueKind } from "../engines/pabst/src/contract.js";
  * (its `reason` names the offending construct). InputError marks an
  * annotation whose input is malformed at extraction (a duplicate property
  * name, an inaccessible subject); its `error` carries the diagnostic and
- * the run exits via the unhealthy path.
+ * the run exits 2, the documented error mode.
  */
 export type SzsStatus =
   | "Theorem"
