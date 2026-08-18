@@ -1,8 +1,0 @@
-[submodule "typescript-tests"]
-	path = engines/thales/typescript-tests
-	url = https://github.com/microsoft/TypeScript.git
-	shallow = true
-[submodule "test262"]
-	path = engines/thales/test262
-	url = https://github.com/tc39/test262.git
-	shallow = true
