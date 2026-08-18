@@ -10,11 +10,31 @@ import { parseSeed, randomSeed } from "../engines/pabst/src/seed.js";
 import { resolveFiles } from "../lemma/src/discover.js";
 import { LemmaError } from "../lemma/src/errors.js";
 import { qualifiedName } from "../lemma/src/qualified-name.js";
+import type { InvalidAnnotation } from "../lemma/src/extract.js";
 import {
   buildEnvelope,
   notTriedEnvelope,
+  type AnnotationResult,
   type PropertyIdentity,
 } from "./envelope.js";
+
+/** Envelope entries for extraction-level input errors, with their
+ * diagnostics echoed to stderr. Any such entry makes the run exit 2. */
+function inputErrorResults(
+  perFile: { file: string; invalid: InvalidAnnotation[] }[],
+): AnnotationResult[] {
+  const results = perFile.flatMap(({ file, invalid }) =>
+    invalid.map((i) => ({
+      file,
+      function: qualifiedName(i.functionName, i.className, i.isStatic),
+      property: i.propertyName,
+      szs: "InputError" as const,
+      error: i.message,
+    })),
+  );
+  for (const r of results) console.error(`error: ${r.error}`);
+  return results;
+}
 
 // The module runs from src/ under vitest and dist/src/ as a bin, so
 // package.json sits a different number of levels up in each: walk.
@@ -125,6 +145,9 @@ function refute(patterns: string[], seedArg: string | undefined): number {
   const identities: PropertyIdentity[] = results.flatMap((r) =>
     r.properties.map((p) => ({ file: r.sourceFile, ...p })),
   );
+  const inputErrors = inputErrorResults(
+    results.map((r) => ({ file: r.sourceFile, invalid: r.invalid })),
+  );
   const generated = identities.length;
   console.error(
     `lakatos: generated ${generated} propert${generated === 1 ? "y" : "ies"} across ${results.length} file(s) into .pabst/`,
@@ -137,18 +160,21 @@ function refute(patterns: string[], seedArg: string | undefined): number {
   // would re-execute them and mix their issues into this envelope. With
   // nothing generated there is nothing to run — and an empty file list
   // would tell vitest to run everything, so short-circuit instead.
-  if (results.length === 0) {
+  const outFiles = results.flatMap((r) =>
+    r.outFile !== undefined ? [r.outFile] : [],
+  );
+  if (outFiles.length === 0) {
     console.log(
       JSON.stringify(
-        { ...meta, passed: 0, failed: 0, annotations: [] },
+        { ...meta, passed: 0, failed: 0, annotations: inputErrors },
         null,
         2,
       ),
     );
-    return 0;
+    return inputErrors.length > 0 ? 2 : 0;
   }
 
-  const result = runTests(results.map((r) => r.outFile));
+  const result = runTests(outFiles);
 
   // Unhealthy runs (vitest died before reporting, or the generated suite
   // failed to load) still honor the output contract: diagnostics on stderr,
@@ -165,7 +191,10 @@ function refute(patterns: string[], seedArg: string | undefined): number {
       JSON.stringify(
         {
           ...meta,
-          annotations: identities.map((i) => ({ ...i, szs: "NotTried" })),
+          annotations: [
+            ...identities.map((i) => ({ ...i, szs: "NotTried" })),
+            ...inputErrors,
+          ],
         },
         null,
         2,
@@ -175,7 +204,9 @@ function refute(patterns: string[], seedArg: string | undefined): number {
   }
 
   const envelope = buildEnvelope(meta, result.json, identities);
+  envelope.annotations.push(...inputErrors);
   console.log(JSON.stringify(envelope, null, 2));
+  if (inputErrors.length > 0) return 2;
   return (envelope.failed ?? 0) > 0 ? 1 : 0;
 }
 
@@ -184,22 +215,20 @@ function notTried(command: Command, patterns: string[]): number {
   const startedAt = new Date().toISOString();
   const cwd = process.cwd();
   const version = readVersion();
-  const identities: PropertyIdentity[] = files.flatMap((file) =>
-    buildSpecs(file).map((s) => ({
+  const perFile = files.map((file) => ({ file, ...buildSpecs(file) }));
+  const identities: PropertyIdentity[] = perFile.flatMap(({ file, specs }) =>
+    specs.map((s) => ({
       file,
       function: qualifiedName(s.functionName, s.className, s.isStatic),
       property: s.name,
     })),
   );
+  const inputErrors = inputErrorResults(perFile);
   console.error(`lakatos: ${command} is not implemented yet`);
-  console.log(
-    JSON.stringify(
-      notTriedEnvelope(version, startedAt, cwd, identities),
-      null,
-      2,
-    ),
-  );
-  return 1;
+  const envelope = notTriedEnvelope(version, startedAt, cwd, identities);
+  envelope.annotations.push(...inputErrors);
+  console.log(JSON.stringify(envelope, null, 2));
+  return inputErrors.length > 0 ? 2 : 1;
 }
 
 // npm installs the bin as a symlink (node_modules/.bin/lakatos -> this

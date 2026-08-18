@@ -104,6 +104,43 @@ describe("envelope schema", () => {
     expect(() => expectValidEnvelope(envelope)).not.toThrow();
   });
 
+  it("accepts an InputError annotation carrying its diagnostic", () => {
+    expect(() =>
+      expectValidEnvelope({
+        ...META,
+        annotations: [
+          {
+            file: "f.ts",
+            function: "Point#norm",
+            property: "nonneg",
+            szs: "InputError",
+            error:
+              "@ensures on method 'norm' of class 'Point', which is not exported from f.ts",
+          },
+          {
+            file: "f.ts",
+            function: "<anonymous>#m",
+            property: "p",
+            szs: "InputError",
+            error:
+              "@ensures on method 'm' of an anonymous class in f.ts (anonymous classes are not supported)",
+          },
+        ],
+      }),
+    ).not.toThrow();
+  });
+
+  it("rejects an InputError annotation without a diagnostic", () => {
+    expect(() =>
+      expectValidEnvelope({
+        ...META,
+        annotations: [
+          { file: "f.ts", function: "f", property: "p", szs: "InputError" },
+        ],
+      } as unknown as Envelope),
+    ).toThrow();
+  });
+
   it("rejects an Inappropriate annotation without a reason", () => {
     expect(() =>
       expectValidEnvelope({

@@ -66,6 +66,7 @@ status:
 | property body threw                   | `Error`              |
 | generation exhausted / passed         | `GaveUp`             |
 | not attempted (stubs, unhealthy runs) | `NotTried`           |
+| malformed annotation input            | `InputError`         |
 
 The two `GaveUp` cases are distinguished by the `kind` field: present
 (`"exhausted"`) when generation gave up, absent when every run passed.
@@ -76,6 +77,15 @@ can't even load — no property was actually evaluated, so `lakatos
 refute` reports every scraped annotation `NotTried`, keeps the
 diagnostics on stderr, and exits 2. Stdout is one parseable envelope in
 every mode.
+
+`InputError` marks an annotation whose input is malformed at extraction
+— a duplicate property name (all claimants of the ambiguous identity
+collapse into one entry), or an `@ensures` on an inaccessible subject
+such as a non-exported class or a non-public member. Sound annotations
+in the same run still get real verdicts; the entry's `error` field
+carries the diagnostic, and the run exits 2. Subjects without a proper
+name still get entries under best-effort labels (`<anonymous>#m`,
+`Box#<computed>`), with the diagnostic saying what is unsupported.
 
 Commands: `lakatos refute` (works today), `lakatos prove` and
 `lakatos check` (stubs). All take `[--seed <n>] [files-or-globs...]`;

@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { buildSpecs } from "./build-spec.js";
+import type { InvalidAnnotation } from "../../../lemma/src/extract.js";
 import { emit } from "./emit.js";
 import { PabstError } from "./errors.js";
 import { qualifiedName } from "../../../lemma/src/qualified-name.js";
@@ -15,8 +16,11 @@ export interface GeneratedProperty {
 
 export interface GenResult {
   sourceFile: string;
-  outFile: string;
+  /** Absent when the file yielded no runnable specs (only input errors). */
+  outFile?: string;
   properties: GeneratedProperty[];
+  /** Extraction-level input errors, reported per annotation (InputError). */
+  invalid: InvalidAnnotation[];
 }
 
 export function generate(
@@ -39,8 +43,12 @@ export function generate(
         `${file} is outside the current directory; run lakatos from the directory containing it`,
       );
     }
-    const specs = buildSpecs(file);
-    if (specs.length === 0) continue;
+    const { specs, invalid } = buildSpecs(file);
+    if (specs.length === 0 && invalid.length === 0) continue;
+    if (specs.length === 0) {
+      results.push({ sourceFile: file, properties: [], invalid });
+      continue;
+    }
     const noExt = rel.replace(SRC_EXT, "");
     const outFile = path.join(outRoot, noExt + ".pabst.test.ts");
     fs.mkdirSync(path.dirname(outFile), { recursive: true });
@@ -52,6 +60,7 @@ export function generate(
         function: qualifiedName(s.functionName, s.className, s.isStatic),
         property: s.name,
       })),
+      invalid,
     });
   }
   return results;

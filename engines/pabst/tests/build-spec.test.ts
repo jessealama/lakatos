@@ -7,7 +7,7 @@ const FIXTURE = new URL("./fixtures/e2e/readme-example.ts", import.meta.url)
 
 describe("buildSpecs", () => {
   it("produces a PropertySpec for the README's worked example", () => {
-    const specs = buildSpecs(FIXTURE);
+    const { specs } = buildSpecs(FIXTURE);
     expect(specs).toHaveLength(1);
     const s = specs[0]!;
     expect(s.name).toBe("nonzero");
@@ -55,7 +55,7 @@ const CLASS_OK = new URL("./fixtures/extract/class-ok.ts", import.meta.url)
 
 describe("buildSpecs — class methods", () => {
   it("carries className and isStatic onto the spec", () => {
-    const specs = buildSpecs(CLASS_OK);
+    const { specs } = buildSpecs(CLASS_OK);
     const inc = specs.find((s) => s.functionName === "inc")!;
     expect(inc.className).toBe("Counter");
     expect(inc.isStatic).toBe(false);

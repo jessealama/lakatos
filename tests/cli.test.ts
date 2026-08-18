@@ -122,6 +122,62 @@ describe("prove and check stubs", () => {
   });
 });
 
+describe("cli input errors", () => {
+  useTempProject("lakatos-cli-inputerror-", {
+    "mixed.ts": `class Hidden {
+  /** @ensures{p} forall (x: int) { Hidden.id(x) === x } */
+  static id(x: number): number { return x; }
+}
+
+/** @ensures{q} forall (x: int ∈ [0, 5)) { ok(x) === x } */
+export function ok(x: number): number { return x; }
+`,
+    "dup.ts": `/**
+ * @ensures{d} forall (x: int) { f(x) === x }
+ * @ensures{d} forall (x: int) { f(x) === x }
+ */
+export function f(x: number): number { return x; }
+`,
+  });
+
+  it("prove stub reports InputError entries beside NotTried and exits 2", () => {
+    const { code, stdout, stderr } = runMain(["prove", "mixed.ts"]);
+    expect(code).toBe(2);
+    const env = JSON.parse(stdout[0]!);
+    expectValidEnvelope(env);
+    expect(env.annotations).toContainEqual({
+      file: "mixed.ts",
+      function: "Hidden.id",
+      property: "p",
+      szs: "InputError",
+      error: expect.stringContaining("not exported"),
+    });
+    expect(env.annotations).toContainEqual({
+      file: "mixed.ts",
+      function: "ok",
+      property: "q",
+      szs: "NotTried",
+    });
+    expect(stderr.join("\n")).toContain("not exported");
+  });
+
+  it("refute with only input errors keeps the contract and exits 2", () => {
+    const { code, stdout, stderr } = runMain(["refute", "dup.ts"]);
+    expect(code).toBe(2);
+    const env = JSON.parse(stdout[0]!);
+    expectValidEnvelope(env);
+    expect(env.annotations).toHaveLength(1);
+    expect(env.annotations[0]).toEqual({
+      file: "dup.ts",
+      function: "f",
+      property: "d",
+      szs: "InputError",
+      error: expect.stringContaining("duplicate property name 'd'"),
+    });
+    expect(stderr.join("\n")).toContain("duplicate property name 'd'");
+  });
+});
+
 describe("cli zero-argument discovery", () => {
   describe("with a src/ directory", () => {
     useTempProject("lakatos-cli-zerosrc-", {
@@ -180,9 +236,9 @@ describe("cli zero-argument discovery", () => {
 //
 // `wrapped` marks errors thrown per-annotation inside buildSpec, which the
 // build-spec seam prefixes with `file:line: @ensures{name}:`. Extract-phase
-// errors (duplicate names, ineligible/unexported classes) are thrown before
-// any single annotation is compiled, so they carry no such prefix — their
-// messages name the file and subject themselves.
+// input errors (duplicate names, ineligible/unexported/unnameable subjects)
+// no longer throw at all — they surface as per-annotation InputError
+// entries (see "cli input errors").
 interface CompileErrorCase {
   name: string;
   file: string;
@@ -249,22 +305,6 @@ const COMPILE_ERROR_CASES: CompileErrorCase[] = [
     property: "conj",
     expected: ["use ∧ for conjunction"],
   },
-  {
-    name: "a duplicate property name (extract)",
-    file: "dup.ts",
-    source: `/**\n * @ensures{same} forall (n: nat) { dup(n) >= 0 }\n * @ensures{same} forall (n: nat) { dup(n) >= 0 }\n */\nexport function dup(n: number): number { return n; }\n`,
-    wrapped: false,
-    property: "same",
-    expected: ["duplicate property name 'same'", "dup.ts"],
-  },
-  {
-    name: "an @ensures on an unexported class (extract)",
-    file: "hidden.ts",
-    source: `class Hidden {\n  /** @ensures{h} forall (n: nat) { n >= 0 } */\n  m(n: number): number { return n; }\n}\n`,
-    wrapped: false,
-    property: "h",
-    expected: ["class 'Hidden'", "not exported", "hidden.ts"],
-  },
 ];
 
 describe("cli compile errors (exit-code contract)", () => {
@@ -317,6 +357,19 @@ describe("cli refute command (README usage claims)", () => {
       `export function plain(n: number): number { return n; }\n`,
       "utf8",
     );
+    fs.mkdirSync(path.join(workDir, "inputerr"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workDir, "inputerr", "mixed.ts"),
+      `class Hidden {
+  /** @ensures{p} forall (x: int) { Hidden.id(x) === x } */
+  static id(x: number): number { return x; }
+}
+
+/** @ensures{q} forall (x: int ∈ [0, 5)) { ok(x) === x } */
+export function ok(x: number): number { return x; }
+`,
+      "utf8",
+    );
     process.chdir(workDir);
   });
   afterAll(() => {
@@ -328,6 +381,25 @@ describe("cli refute command (README usage claims)", () => {
   beforeEach(() => {
     fs.rmSync(path.join(workDir, ".pabst"), { recursive: true, force: true });
   });
+
+  it(
+    "refute still evaluates sound annotations beside InputError entries",
+    { timeout: 60000 },
+    () => {
+      const { code, stdout } = runMain(["refute", "inputerr/mixed.ts"]);
+      expect(code).toBe(2);
+      const env = JSON.parse(stdout[0]!);
+      expectValidEnvelope(env);
+      const byProperty = Object.fromEntries(
+        env.annotations.map((a: { property: string; szs: string }) => [
+          a.property,
+          a.szs,
+        ]),
+      );
+      expect(byProperty).toEqual({ p: "InputError", q: "GaveUp" });
+      expect(env.generated).toBe(1);
+    },
+  );
 
   it(
     "refute on a clean file prints one JSON envelope to stdout and exits 0",
