@@ -4,6 +4,7 @@
   "description": "Internal dev tooling for Thales",
   "private": true,
   "scripts": {
+    "check:verdict-channel": "node scripts/check-verdict-channel.js",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

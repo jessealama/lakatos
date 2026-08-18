@@ -6,3 +6,7 @@ package «thales» where
     ⟨`pp.unicode.fun, true⟩,
     ⟨`autoImplicit, false⟩
   ]
+
+@[default_target]
+lean_lib «ThalesDsl» where
+  globs := #[.submodules `ThalesDsl, .one `ThalesDsl]

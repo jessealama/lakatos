@@ -69,3 +69,6 @@ jobs:
 
       - name: Build
         run: lake build
+
+      - name: Verdict channel
+        run: npm run check:verdict-channel
