@@ -16,15 +16,9 @@ const engineRoot = path.resolve(
 // stream, and only framed lines are part of the contract.
 const SENTINEL = 'thales-verdict:';
 
-const SZS = new Set([
-  'Theorem',
-  'CounterSatisfiable',
-  'GaveUp',
-  'Timeout',
-  'Inappropriate',
-  'NotTried',
-  'Error',
-]);
+// Must match PROVE_STATUSES in src/envelope.ts; the root suite pins the
+// two together.
+const SZS = new Set(['Theorem', 'Inappropriate', 'GaveUp', 'NotTried', 'Error']);
 
 // Expected [function, szs, reasonPattern?] sequence per fixture, in
 // command order; reasonPattern, when present, must match the reason.

@@ -115,9 +115,10 @@ export type ProveJoin =
   | { kind: "joined"; annotations: AnnotationResult[] }
   | { kind: "mismatched"; messages: string[] };
 
-/** Statuses the prove envelope can represent today; anything else from the
- * verdict channel (Timeout, CounterSatisfiable) is a contract mismatch. */
-const PROVE_STATUSES: ReadonlySet<string> = new Set([
+/** The verdict statuses the prove contract carries. The engine-side
+ * check (engines/thales/scripts/check-verdict-channel.js) must allowlist
+ * exactly this set — tests/verdict-contract.test.ts pins the two. */
+export const PROVE_STATUSES: ReadonlySet<string> = new Set([
   "Theorem",
   "Inappropriate",
   "GaveUp",
