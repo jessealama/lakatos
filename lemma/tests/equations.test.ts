@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { desugarEquations } from "../src/equations.js";
-import { PabstError } from "../src/errors.js";
+import { LemmaError } from "../src/errors.js";
 
 const throws = (input: string, re: RegExp) => {
-  expect(() => desugarEquations(input)).toThrowError(PabstError);
+  expect(() => desugarEquations(input)).toThrowError(LemmaError);
   expect(() => desugarEquations(input)).toThrowError(re);
 };
 

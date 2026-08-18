@@ -1,12 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { parseBody } from "../src/formula-parser.js";
+import { parseBody } from "../../../lemma/src/formula-parser.js";
 import { lowerTop } from "../src/lower.js";
-import { expectPabstError } from "./helpers/errors.js";
 
 // Lower the parsed AST to a string so assertions read clearly.
 const lo = (s: string) => lowerTop(parseBody(s));
 
-describe("parseBody — precedence", () => {
+describe("parse + lower — precedence", () => {
   it("¬ binds tighter than ∧ binds tighter than ∨", () => {
     expect(lo("¬a ∧ b ∨ c")).toEqual({
       preconditions: [],
@@ -39,7 +38,7 @@ describe("parseBody — precedence", () => {
   });
 });
 
-describe("parseBody — atoms keep their JS", () => {
+describe("parse + lower — atoms keep their JS", () => {
   it("treats a call with commas as one atom", () => {
     expect(lo("f(x, y) !== 0")).toEqual({
       preconditions: [],
@@ -66,7 +65,7 @@ describe("parseBody — atoms keep their JS", () => {
   });
 });
 
-describe("parseBody — equations", () => {
+describe("parse + lower — equations", () => {
   it("lowers ≡ to Object.is, labeled with the original text", () => {
     expect(lo("negate(x) ≡ 0 - x")).toEqual({
       preconditions: [],
@@ -91,21 +90,6 @@ describe("parseBody — equations", () => {
       body: '!(__bool(Object.is(x, y), "x ≡ y"))',
     });
   });
-  it("rejects loose ==", () => {
-    expectPabstError(() => parseBody("a == b"), /loose equality/);
-  });
-  it("rejects loose !=", () => {
-    expectPabstError(() => parseBody("a != b"), /loose inequality/);
-  });
-  it("rejects = assignment with a ≡ hint", () => {
-    expectPabstError(() => parseBody("x = 0"), /write A ≡ B/);
-  });
-  it("rejects ≠ with a ≢ hint", () => {
-    expectPabstError(() => parseBody("a ≠ b"), /write ≢/);
-  });
-  it("rejects chained equations", () => {
-    expectPabstError(() => parseBody("a ≡ b ≡ c"), /chained equations/);
-  });
   it("allows JS ! on an equation side (the ¬ rule judges the desugared atom)", () => {
     expect(lo("!x ≡ y")).toEqual({
       preconditions: [],
@@ -115,24 +99,5 @@ describe("parseBody — equations", () => {
       preconditions: [],
       body: '__bool(Object.is((!x), y), "(!x) ≡ y")',
     });
-  });
-});
-
-describe("parseBody — errors", () => {
-  it("rejects a chained ↔", () => {
-    expectPabstError(() => parseBody("a ↔ b ↔ c"), /parenthesi[sz]e/i);
-  });
-  it("rejects a top-level JS && with a glyph hint", () => {
-    expectPabstError(() => parseBody("a && b"), /use ∧/);
-  });
-  it("rejects a top-level JS || with a glyph hint", () => {
-    expectPabstError(() => parseBody("a || b"), /use ∨/);
-  });
-  it("rejects a top-level prefix ! with a glyph hint", () => {
-    expectPabstError(() => parseBody("!p"), /use ¬/);
-    expectPabstError(() => parseBody("!Object.is(a, b)"), /use ¬/);
-  });
-  it("rejects an empty operand", () => {
-    expectPabstError(() => parseBody("a ∧ "), /empty/i);
   });
 });

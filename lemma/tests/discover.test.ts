@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import * as path from "node:path";
 import { isTsSource, resolveFiles } from "../src/discover.js";
-import { PabstError } from "../src/errors.js";
-import { useTempProject } from "../../../tests/helpers/cli.js";
+import { LemmaError } from "../src/errors.js";
+import { useTempProject } from "../../tests/helpers/cli.js";
 
 describe("isTsSource", () => {
   it.each(["a.ts", "a.tsx", "a.mts", "a.cts", "src/deep/a.ts"])(
@@ -21,7 +21,7 @@ describe("isTsSource", () => {
 });
 
 describe("zero-arg discovery: src/ convention", () => {
-  useTempProject("pabst-disc-src-", {
+  useTempProject("lemma-disc-src-", {
     "src/a.ts": "export const a = 1;\n",
     "src/nested/b.mts": "export const b = 2;\n",
     "src/types.d.ts": "export declare const a: number;\n",
@@ -37,23 +37,23 @@ describe("zero-arg discovery: src/ convention", () => {
 });
 
 describe("zero-arg discovery: src/ holding only declaration files", () => {
-  useTempProject("pabst-disc-decl-", {
+  useTempProject("lemma-disc-decl-", {
     "src/types.d.ts": "export declare const a: number;\n",
   });
 
-  it("throws PabstError rather than reporting zero files", () => {
-    expect(() => resolveFiles([])).toThrow(PabstError);
+  it("throws LemmaError rather than reporting zero files", () => {
+    expect(() => resolveFiles([])).toThrow(LemmaError);
   });
 });
 
 describe("zero-arg discovery: nothing to go on", () => {
-  useTempProject("pabst-disc-none-", {
+  useTempProject("lemma-disc-none-", {
     "readme.md": "hi\n",
     "loose.ts": "export const x = 1;\n",
   });
 
-  it("throws PabstError suggesting a glob (root-level .ts does not count)", () => {
-    expect(() => resolveFiles([])).toThrow(PabstError);
+  it("throws LemmaError suggesting a glob (root-level .ts does not count)", () => {
+    expect(() => resolveFiles([])).toThrow(LemmaError);
     expect(() => resolveFiles([])).toThrow(
       /cannot determine where your source code is/,
     );
@@ -61,7 +61,7 @@ describe("zero-arg discovery: nothing to go on", () => {
 });
 
 describe("zero-arg discovery: tsconfig.json", () => {
-  useTempProject("pabst-disc-tsc-", {
+  useTempProject("lemma-disc-tsc-", {
     "tsconfig.json": JSON.stringify({ include: ["lib"] }),
     "lib/a.ts": "export const a = 1;\n",
     "lib/types.d.ts": "export declare const a: number;\n",
@@ -77,7 +77,7 @@ describe("zero-arg discovery: tsconfig.json", () => {
 });
 
 describe("zero-arg discovery: exclude is honored", () => {
-  useTempProject("pabst-disc-excl-", {
+  useTempProject("lemma-disc-excl-", {
     "tsconfig.json": JSON.stringify({
       include: ["src"],
       exclude: ["src/legacy"],
@@ -92,7 +92,7 @@ describe("zero-arg discovery: exclude is honored", () => {
 });
 
 describe("zero-arg discovery: solution-style tsconfig", () => {
-  useTempProject("pabst-disc-solution-", {
+  useTempProject("lemma-disc-solution-", {
     "tsconfig.json": JSON.stringify({
       files: [],
       references: [{ path: "./packages/a" }],
@@ -111,7 +111,7 @@ describe("zero-arg discovery: solution-style tsconfig", () => {
 });
 
 describe("zero-arg discovery: editor-only tsconfig (files: [])", () => {
-  useTempProject("pabst-disc-files-empty-", {
+  useTempProject("lemma-disc-files-empty-", {
     "tsconfig.json": JSON.stringify({ files: [] }),
     "src/a.ts": "export const a = 1;\n",
   });
@@ -125,7 +125,7 @@ describe("zero-arg discovery: editor-only tsconfig (files: [])", () => {
 });
 
 describe("zero-arg discovery: tsconfig with an unknown compiler option", () => {
-  useTempProject("pabst-disc-skew-", {
+  useTempProject("lemma-disc-skew-", {
     "tsconfig.json": JSON.stringify({
       compilerOptions: { someFutureFlag: true },
       include: ["lib"],
@@ -142,7 +142,7 @@ describe("zero-arg discovery: tsconfig with an unknown compiler option", () => {
 });
 
 describe("zero-arg discovery: tsconfig with a bad compiler-option value", () => {
-  useTempProject("pabst-disc-badval-", {
+  useTempProject("lemma-disc-badval-", {
     "tsconfig.json": JSON.stringify({
       compilerOptions: { target: "es2099", strict: "yes" },
       include: ["lib"],
@@ -159,7 +159,7 @@ describe("zero-arg discovery: tsconfig with a bad compiler-option value", () => 
 });
 
 describe("zero-arg discovery: tsconfig reaching outside the project", () => {
-  const dir = useTempProject("pabst-disc-outside-", {
+  const dir = useTempProject("lemma-disc-outside-", {
     "pkg/tsconfig.json": JSON.stringify({ include: ["src", "../shared"] }),
     "pkg/src/a.ts": "export const a = 1;\n",
     "shared/b.ts": "export const b = 1;\n",
@@ -177,15 +177,15 @@ describe("zero-arg discovery: tsconfig reaching outside the project", () => {
 });
 
 describe("zero-arg discovery: tsconfig files entry that does not exist", () => {
-  useTempProject("pabst-disc-stale-", {
+  useTempProject("lemma-disc-stale-", {
     "tsconfig.json": JSON.stringify({
       files: ["src/removed.ts", "src/a.ts"],
     }),
     "src/a.ts": "export const a = 1;\n",
   });
 
-  it("throws PabstError naming the missing file, not crashing downstream", () => {
-    expect(() => resolveFiles([])).toThrow(PabstError);
+  it("throws LemmaError naming the missing file, not crashing downstream", () => {
+    expect(() => resolveFiles([])).toThrow(LemmaError);
     expect(() => resolveFiles([])).toThrow(
       /^tsconfig\.json: file not found: src\/removed\.ts$/,
     );
@@ -193,7 +193,7 @@ describe("zero-arg discovery: tsconfig files entry that does not exist", () => {
 });
 
 describe("zero-arg discovery: misspelled root option (excludes)", () => {
-  useTempProject("pabst-disc-rootopt-", {
+  useTempProject("lemma-disc-rootopt-", {
     "tsconfig.json": JSON.stringify({
       include: ["lib"],
       excludes: ["lib/legacy"],
@@ -208,11 +208,11 @@ describe("zero-arg discovery: misspelled root option (excludes)", () => {
 });
 
 describe("zero-arg discovery: tsconfig matching nothing, no src/", () => {
-  useTempProject("pabst-disc-empty-", {
+  useTempProject("lemma-disc-empty-", {
     "tsconfig.json": JSON.stringify({ include: ["nope"] }),
   });
 
-  it("throws the no-sources PabstError (18003 is not an error)", () => {
+  it("throws the no-sources LemmaError (18003 is not an error)", () => {
     expect(() => resolveFiles([])).toThrow(
       /cannot determine where your source code is/,
     );
@@ -220,19 +220,19 @@ describe("zero-arg discovery: tsconfig matching nothing, no src/", () => {
 });
 
 describe("zero-arg discovery: malformed tsconfig JSON", () => {
-  useTempProject("pabst-disc-garbage-", {
+  useTempProject("lemma-disc-garbage-", {
     "tsconfig.json": "{ not json",
     "src/a.ts": "export const a = 1;\n",
   });
 
-  it("throws PabstError naming tsconfig.json, not falling through", () => {
-    expect(() => resolveFiles([])).toThrow(PabstError);
+  it("throws LemmaError naming tsconfig.json, not falling through", () => {
+    expect(() => resolveFiles([])).toThrow(LemmaError);
     expect(() => resolveFiles([])).toThrow(/^tsconfig\.json:/);
   });
 });
 
 describe("resolveFiles: explicit patterns", () => {
-  useTempProject("pabst-disc-patterns-", {
+  useTempProject("lemma-disc-patterns-", {
     "a.ts": "export const a = 1;\n",
     "a.d.ts": "export declare const a: number;\n",
     "b.d.ts": "export declare const b: number;\n",
@@ -253,19 +253,19 @@ describe("resolveFiles: explicit patterns", () => {
     expect(resolveFiles(["a.ts", "*.ts"]).files).toEqual(["a.ts"]);
   });
 
-  it("throws PabstError when nothing matches", () => {
-    expect(() => resolveFiles(["*.nope"])).toThrow(PabstError);
+  it("throws LemmaError when nothing matches", () => {
+    expect(() => resolveFiles(["*.nope"])).toThrow(LemmaError);
     expect(() => resolveFiles(["*.nope"])).toThrow(/^no matching \.ts files$/);
   });
 });
 
 describe("zero-arg discovery: unresolvable extends", () => {
-  useTempProject("pabst-disc-extends-", {
+  useTempProject("lemma-disc-extends-", {
     "tsconfig.json": JSON.stringify({ extends: "./missing.json" }),
     "src/a.ts": "export const a = 1;\n",
   });
 
-  it("throws PabstError naming tsconfig.json, not falling through", () => {
+  it("throws LemmaError naming tsconfig.json, not falling through", () => {
     expect(() => resolveFiles([])).toThrow(/^tsconfig\.json:/);
   });
 });

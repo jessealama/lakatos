@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { lexFormula } from "../src/formula-lexer.js";
-import { expectPabstError } from "./helpers/errors.js";
+import { expectLemmaError } from "./helpers/errors.js";
 
 const kinds = (s: string) => lexFormula(s).map((t) => t.kind);
 const texts = (s: string) => lexFormula(s).map((t) => t.text);
@@ -95,21 +95,21 @@ describe("lexFormula — template substitutions nest", () => {
 
 describe("lexFormula — rejected quantifiers", () => {
   it("rejects ∃ / exists with a teaching error", () => {
-    expectPabstError(
+    expectLemmaError(
       () => lexFormula("∃ x, p(x)"),
       /existential quantifiers .* not supported/i,
     );
-    expectPabstError(
+    expectLemmaError(
       () => lexFormula("exists x"),
       /existential quantifiers .* not supported/i,
     );
   });
   it("rejects a nested ∀ / forall in the body", () => {
-    expectPabstError(
+    expectLemmaError(
       () => lexFormula("p ∧ ∀ y"),
       /nested quantifiers are not supported/i,
     );
-    expectPabstError(
+    expectLemmaError(
       () => lexFormula("forall y"),
       /nested quantifiers are not supported/i,
     );

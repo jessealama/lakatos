@@ -1,9 +1,3 @@
-/**
- * A user-facing error: the input (an annotation, formula, or reference) is at
- * fault, not pabst. The CLI catches these and reports them as exit 2 with a
- * one-line diagnostic. Anything else escaping the compile front-end is an
- * internal bug and crashes loudly.
- */
-export class PabstError extends Error {
-  override name = "PabstError";
-}
+/** Pabst's user-facing errors are the shared Lemma error class, so parse
+ * errors from the shared module and engine errors stay one catchable type. */
+export { LemmaError as PabstError } from "../../../lemma/src/errors.js";

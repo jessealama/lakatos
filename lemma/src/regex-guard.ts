@@ -1,6 +1,6 @@
 import { stringMatching } from "fast-check";
-import { PabstError } from "./errors.js";
-import type { Domain, StringPattern } from "./ir.js";
+import { LemmaError } from "./errors.js";
+import type { Domain, StringPattern } from "./binder.js";
 
 // A line comment on purpose: spelling star-slash inside a block comment
 // would end it — which is exactly the hazard this hint is about. An
@@ -66,8 +66,8 @@ export function anchoredSource(source: string): string {
 
 /** The complaint a regex guard on a non-string domain raises; shared with
  * arbitraryFor's backstop so the two throw sites cannot drift apart. */
-export function regexGuardDomainError(domain: Domain): PabstError {
-  return new PabstError(
+export function regexGuardDomainError(domain: Domain): LemmaError {
+  return new LemmaError(
     `domain '${domain}' does not support ∈ regex guards — only string does`,
   );
 }
@@ -82,38 +82,38 @@ export function parseRegexGuard(text: string, domain: Domain): StringPattern {
   }
   const { end, close } = scanRegexLiteral(text, 0);
   if (close === -1) {
-    throw new PabstError(
+    throw new LemmaError(
       `unterminated regular expression (in: ${text}) — ${TRUNCATION_HINT}`,
     );
   }
   if (end !== text.length) {
-    throw new PabstError(
+    throw new LemmaError(
       `unexpected text after regular expression: '${text.slice(end).trim()}' (in: ${text})`,
     );
   }
   const source = text.slice(1, close);
   const flags = text.slice(close + 1, end);
   if (source.length === 0) {
-    throw new PabstError(
+    throw new LemmaError(
       "empty regular expression after ∈ — to generate only the empty string, use ∈ /^$/",
     );
   }
   for (const f of flags) {
     if (f === "s" || f === "u") continue;
     const why = FLAG_ERRORS[f] ?? `regex flag '${f}' is not supported`;
-    throw new PabstError(`${why} (allowed flags: s, u; in: ${text})`);
+    throw new LemmaError(`${why} (allowed flags: s, u; in: ${text})`);
   }
   try {
     new RegExp(source, flags);
   } catch (e) {
-    throw new PabstError(
+    throw new LemmaError(
       `invalid regular expression (in: ${text}): ${(e as Error).message}`,
     );
   }
   try {
     stringMatching(new RegExp(anchoredSource(source), flags));
   } catch (e) {
-    throw new PabstError(
+    throw new LemmaError(
       `regular expression not supported by fast-check (in: ${text}): ${(e as Error).message}`,
     );
   }

@@ -1,7 +1,7 @@
 import ts from "typescript";
 import { isDomain } from "./domains.js";
-import { PabstError } from "./errors.js";
-import type { Binder, Range, StringPattern } from "./ir.js";
+import { LemmaError } from "./errors.js";
+import type { Binder, Range, StringPattern } from "./binder.js";
 import { parseRange } from "./range.js";
 import {
   parseRegexGuard,
@@ -22,14 +22,14 @@ export function parsePrefix(formula: string): ParsedPrefix {
   const { toks, unterminatedSlash } = prefixTokens(formula);
   const head = toks[0];
   if (head && (head.text === "∃" || head.text === "exists")) {
-    throw new PabstError(
+    throw new LemmaError(
       "existential quantifiers (∃ / exists) are not supported: property-based " +
         "testing samples inputs, so it can refute ∀ with a counterexample but cannot " +
         "soundly confirm ∃ (a bounded/exhaustive mode would be needed)",
     );
   }
   if (!head || (head.text !== "forall" && head.text !== "∀")) {
-    throw new PabstError(
+    throw new LemmaError(
       `expected 'forall' (or ∀) at start of property: ${formula.trim().slice(0, 60)}`,
     );
   }
@@ -41,32 +41,32 @@ export function parsePrefix(formula: string): ParsedPrefix {
     i = close + 1;
   }
   if (binders.length === 0) {
-    throw new PabstError(
+    throw new LemmaError(
       `expected at least one binder group '(x: domain)' after forall`,
     );
   }
   const open = toks[i];
   if (open && open.text === ",") {
-    throw new PabstError(
+    throw new LemmaError(
       `since pabst 0.13.0 the property body goes in braces instead of after ` +
         `a comma: forall (x: int) { ... }`,
     );
   }
   if (!open || open.text !== "{") {
     const at = open?.start ?? formula.length;
-    throw new PabstError(
+    throw new LemmaError(
       `expected '{' to open the property body, got: ${formula.slice(at, at + 60)}`,
     );
   }
   const close = braceExtent(toks, i, formula);
   const after = toks[close + 1];
   if (after) {
-    throw new PabstError(
+    throw new LemmaError(
       `unexpected text after the property body's closing '}': ${formula.slice(after.start, after.start + 60)}`,
     );
   }
   const body = formula.slice(open.end, toks[close]!.start).trim();
-  if (body.length === 0) throw new PabstError(`property body is empty`);
+  if (body.length === 0) throw new LemmaError(`property body is empty`);
   return { binders, body };
 }
 
@@ -142,7 +142,7 @@ function groupExtent(
   const hint = sawUnterminated
     ? ` (if this is a regex guard: ${TRUNCATION_HINT})`
     : "";
-  throw new PabstError(
+  throw new LemmaError(
     `unbalanced parentheses in binder group: ${formula.slice(toks[open]!.start)}${hint}`,
   );
 }
@@ -166,7 +166,7 @@ function braceExtent(
       if (depth === 0) return j;
     }
   }
-  throw new PabstError(
+  throw new LemmaError(
     `unbalanced braces in property body: ${formula.slice(toks[open]!.start)}`,
   );
 }
@@ -198,7 +198,7 @@ function parseBinderGroup(
   const groupText = formula.slice(toks[open]!.end, toks[close]!.start).trim();
   const colon = interior.findIndex((t) => t.text === ":");
   if (colon === -1) {
-    throw new PabstError(
+    throw new LemmaError(
       `binder group missing ':' — expected '(x: domain)', got: (${groupText})`,
     );
   }
@@ -207,7 +207,7 @@ function parseBinderGroup(
   const nameEnd = member === -1 ? domainToks.length : member;
   const domainName = sliceText(formula, domainToks.slice(0, nameEnd)).trim();
   if (!isDomain(domainName)) {
-    throw new PabstError(
+    throw new LemmaError(
       `unknown generation domain '${domainName}' — valid domains: int, nat, number, boolean, string, bigint`,
     );
   }
@@ -230,11 +230,11 @@ function parseBinderGroup(
   }
   const names = adjacentRuns(interior.slice(0, colon), formula);
   if (names.length === 0) {
-    throw new PabstError(`binder group has no variable names: (${groupText})`);
+    throw new LemmaError(`binder group has no variable names: (${groupText})`);
   }
   for (const n of names) {
     if (!NAME.test(n)) {
-      throw new PabstError(`invalid binder variable name '${n}'`);
+      throw new LemmaError(`invalid binder variable name '${n}'`);
     }
   }
   return names.map((varName) => {

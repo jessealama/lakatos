@@ -3,7 +3,7 @@ import * as path from "node:path";
 import { buildSpecs } from "./build-spec.js";
 import { emit } from "./emit.js";
 import { PabstError } from "./errors.js";
-import { qualifiedName } from "./qualified-name.js";
+import { qualifiedName } from "../../../lemma/src/qualified-name.js";
 import { randomSeed } from "./seed.js";
 
 const SRC_EXT = /\.(ts|tsx|mts|cts|js|mjs|cjs)$/;

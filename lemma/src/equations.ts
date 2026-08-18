@@ -1,5 +1,5 @@
 import ts from "typescript";
-import { PabstError } from "./errors.js";
+import { LemmaError } from "./errors.js";
 import {
   lexFormula,
   scanTokens,
@@ -23,7 +23,7 @@ export function desugarEquations(text: string): string {
   for (let i = 0; i < toks.length; i++) {
     const t = toks[i]!;
     if (t.text === "≠") {
-      throw new PabstError(
+      throw new LemmaError(
         `≠ is not pabst syntax: write ≢ for negated identity (in: ${text})`,
       );
     }
@@ -35,7 +35,7 @@ export function desugarEquations(text: string): string {
         (prev && prev.end === t.start && scansAsOne(prev.text + sub[0])) ||
         (next && next.start === t.end && !scanSplitsAt(sub, next.text));
       if (fused) {
-        throw new PabstError(
+        throw new LemmaError(
           `an equation glyph fused with an adjacent operator (e.g. ≡= scans ` +
             `as ===): write the equation as A ≡ B with the glyph standing ` +
             `alone (in: ${text})`,
@@ -59,32 +59,32 @@ export function desugarEquations(text: string): string {
     for (const i of depth0.keys()) {
       const t = toks[i]!.text;
       if (t === "?" || t === ":") {
-        throw new PabstError(
+        throw new LemmaError(
           `an equation cannot sit beside an unparenthesized ternary: write ` +
             `a ≡ (b ? c : d), or call Object.is in the ternary's branches ` +
             `(in: ${text})`,
         );
       }
       if (t === ",") {
-        throw new PabstError(
+        throw new LemmaError(
           `an equation cannot sit beside a depth-0 comma: parenthesize ` +
             `the comma expression, e.g. (a, b) ≡ x (in: ${text})`,
         );
       }
       if (t === "=>") {
-        throw new PabstError(
+        throw new LemmaError(
           `an equation cannot sit beside an unparenthesized arrow ` +
             `function: parenthesize it, e.g. f ≡ (x => x) (in: ${text})`,
         );
       }
       if (t === "&&") {
-        throw new PabstError(
+        throw new LemmaError(
           `use ∧ for conjunction at the property's top level, not JS && ` +
             `(note: ≡ binds tighter than &&) (in: ${text})`,
         );
       }
       if (t === "||") {
-        throw new PabstError(
+        throw new LemmaError(
           `use ∨ for disjunction at the property's top level, not JS || ` +
             `(note: ≡ binds tighter than ||) (in: ${text})`,
         );
@@ -92,7 +92,7 @@ export function desugarEquations(text: string): string {
     }
   }
   if (glyphs.length > 1) {
-    throw new PabstError(
+    throw new LemmaError(
       `chained equations are not supported: split into conjuncts, ` +
         `e.g. a ≡ b ∧ b ≡ c, or parenthesize (in: ${text})`,
     );
@@ -101,13 +101,13 @@ export function desugarEquations(text: string): string {
   // --- Loose equality (any depth) ---
   for (const t of toks) {
     if (t.text === "==") {
-      throw new PabstError(
+      throw new LemmaError(
         `loose equality (==) is not allowed: use ≡ for identity ` +
           `(Object.is) or === for JS strict equality (in: ${text})`,
       );
     }
     if (t.text === "!=") {
-      throw new PabstError(
+      throw new LemmaError(
         `loose inequality (!=) is not allowed: use ≢ for negated ` +
           `identity or !== for JS strict inequality (in: ${text})`,
       );
@@ -121,7 +121,7 @@ export function desugarEquations(text: string): string {
     const left = toks.slice(0, g);
     const right = toks.slice(g + 1);
     if (left.length === 0 || right.length === 0) {
-      throw new PabstError(`cannot parse atom: ${text}`);
+      throw new LemmaError(`cannot parse atom: ${text}`);
     }
     guardSide(left, "left", text);
     guardSide(right, "right", text);
@@ -148,17 +148,17 @@ export function desugarEquations(text: string): string {
       ? stmt.expression.expression
       : null;
   if (!root || diags.length > 0) {
-    if (sawPlainAssign) throw new PabstError(assignmentMessage(text));
+    if (sawPlainAssign) throw new LemmaError(assignmentMessage(text));
     const nested = nestedGlyph(toks, depth0);
     if (nested) {
-      throw new PabstError(
+      throw new LemmaError(
         `${nested.text} is only available at an atom's top level — in a ` +
           `nested position, call Object.is(A, B) (or !Object.is(A, B)) ` +
           `directly (in: ${text})`,
       );
     }
     if (glyphs.length > 0 || sawAssignMaterial) {
-      throw new PabstError(`cannot parse atom: ${text}`);
+      throw new LemmaError(`cannot parse atom: ${text}`);
     }
     // Not TS-parseable and no formula material: leave the atom for the
     // generated test code to diagnose.
@@ -247,18 +247,18 @@ function guardSide(side: FToken[], which: "left" | "right", text: string) {
   for (const i of depthZeroIndex(side)) {
     const t = side[i]!;
     if (t.text === "===" || t.text === "!==") {
-      throw new PabstError(
+      throw new LemmaError(
         `chained equations are not supported: split into conjuncts, ` +
           `e.g. a ≡ b ∧ b ≡ c, or parenthesize (in: ${text})`,
       );
     }
     if (t.text === "??") {
       throw which === "right"
-        ? new PabstError(
+        ? new LemmaError(
             `parenthesize the ?? expression: ≡ binds tighter than ?? , so ` +
               `a ≡ b ?? c means (a ≡ b) ?? c (in: ${text})`,
           )
-        : new PabstError(
+        : new LemmaError(
             `?? at an atom's top level over an equation is dead code — ` +
               `Object.is results are never nullish: parenthesize the ` +
               `intended grouping (in: ${text})`,
@@ -277,7 +277,7 @@ function banAssignments(root: ts.Node, text: string): void {
         op >= ts.SyntaxKind.FirstAssignment &&
         op <= ts.SyntaxKind.LastAssignment
       ) {
-        throw new PabstError(
+        throw new LemmaError(
           op === ts.SyntaxKind.EqualsToken
             ? assignmentMessage(text)
             : `${ts.tokenToString(op)} is JS assignment: assignments are ` +
@@ -297,12 +297,12 @@ function enforceLeafRule(root: ts.Expression, text: string): void {
   while (ts.isParenthesizedExpression(expr)) expr = expr.expression;
   if (ts.isBinaryExpression(expr)) {
     if (expr.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) {
-      throw new PabstError(
+      throw new LemmaError(
         `use ∧ for conjunction at the property's top level, not JS && (in: ${text})`,
       );
     }
     if (expr.operatorToken.kind === ts.SyntaxKind.BarBarToken) {
-      throw new PabstError(
+      throw new LemmaError(
         `use ∨ for disjunction at the property's top level, not JS || (in: ${text})`,
       );
     }
@@ -311,7 +311,7 @@ function enforceLeafRule(root: ts.Expression, text: string): void {
     ts.isPrefixUnaryExpression(expr) &&
     expr.operator === ts.SyntaxKind.ExclamationToken
   ) {
-    throw new PabstError(
+    throw new LemmaError(
       `use ¬ for negation at the property's top level, not JS ! (in: ${text})`,
     );
   }

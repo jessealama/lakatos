@@ -10,7 +10,7 @@ import {
 import {
   QUALIFIED_NAME_PATTERN,
   qualifiedName,
-} from "../src/qualified-name.js";
+} from "../../../lemma/src/qualified-name.js";
 import * as runtime from "../src/runtime.js";
 
 describe("contract pins", () => {
