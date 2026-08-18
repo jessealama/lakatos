@@ -213,8 +213,25 @@ describe("envelope schema", () => {
             file: "f.ts",
             function: "f",
             property: "p",
-            szs: "Theorem",
+            szs: "GaveUp",
             reason: "",
+          },
+        ],
+      }),
+    ).toThrow();
+  });
+
+  it("rejects a reason on a Theorem entry", () => {
+    expect(() =>
+      expectValidEnvelope({
+        ...META,
+        annotations: [
+          {
+            file: "f.ts",
+            function: "f",
+            property: "p",
+            szs: "Theorem",
+            reason: "proved by decide, kernel-checked as TsProof.thm_1",
           },
         ],
       }),

@@ -33,7 +33,7 @@
     "annotation": {
       "oneOf": [
         {
-          "title": "unattempted, unrefuted, or proven",
+          "title": "unattempted or unrefuted",
           "description": "reason, when present, is the prover's account of why it stopped (GaveUp) or never started (NotTried).",
           "additionalProperties": false,
           "required": ["file", "function", "property", "szs"],
@@ -41,8 +41,20 @@
             "file": { "type": "string" },
             "function": { "$ref": "#/definitions/functionName" },
             "property": { "type": "string", "minLength": 1 },
-            "szs": { "enum": ["GaveUp", "NotTried", "Theorem"] },
+            "szs": { "enum": ["GaveUp", "NotTried"] },
             "reason": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "title": "proven",
+          "description": "The property is a kernel-checked theorem; no prover internals travel with it.",
+          "additionalProperties": false,
+          "required": ["file", "function", "property", "szs"],
+          "properties": {
+            "file": { "type": "string" },
+            "function": { "$ref": "#/definitions/functionName" },
+            "property": { "type": "string", "minLength": 1 },
+            "szs": { "const": "Theorem" }
           }
         },
         {
