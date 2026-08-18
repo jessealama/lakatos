@@ -3,10 +3,14 @@
 // command elaborator and the CLI: one parseable line per command on stdout,
 // in command order, failures contained per command, clean exit.
 
-const { spawnSync } = require('node:child_process');
-const path = require('node:path');
+import { spawnSync } from 'node:child_process';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const engineRoot = path.resolve(__dirname, '..');
+const engineRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+);
 
 const SZS = new Set([
   'Theorem',

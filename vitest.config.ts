@@ -6,6 +6,7 @@ export default defineConfig({
       "tests/**/*.test.ts",
       "lemma/tests/**/*.test.ts",
       "engines/pabst/tests/**/*.test.ts",
+      "engines/thales/frontend/tests/**/*.test.ts",
       ".pabst/**/*.test.ts",
     ],
     coverage: {
@@ -17,6 +18,7 @@ export default defineConfig({
         "src/**/*.ts",
         "lemma/src/**/*.ts",
         "engines/pabst/src/**/*.ts",
+        "engines/thales/frontend/src/**/*.ts",
       ],
       exclude: ["**/*.test.ts", "**/*.d.ts"],
       reporter: ["text", "html"],
@@ -25,10 +27,10 @@ export default defineConfig({
         // upward in this file; if it drops below, the run fails. Seeded
         // from the baseline on 2026-08-17 — bump only happens via autoUpdate.
         autoUpdate: true,
-        statements: 98.56,
-        branches: 96.42,
+        statements: 98.68,
+        branches: 96.52,
         functions: 100,
-        lines: 99.24,
+        lines: 99.34,
       },
     },
   },

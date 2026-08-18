@@ -149,6 +149,13 @@ def mkModelType (arity : Nat) : CommandElabM (TSyntax `term) := do
   pure ty
 
 elab_rules : command
+  | `(ts_def $name:str := ts.opaque[$kind:str]($line:num, $col:num)) => do
+    let pos := s!"{line.getNat}:{col.getNat}"
+    modifyEnv fun env =>
+      failedExt.addEntry env
+        ⟨name.getString, some kind.getString, unmappedMsg kind.getString pos⟩
+
+elab_rules : command
   | `(ts_def $name:str := ts.fn($params:ts_param,*) : ts.number {$stmts:ts_stmt*}) => do
     let recordFailure (construct : Option String) (reason : String) : CommandElabM Unit :=
       modifyEnv fun env => failedExt.addEntry env ⟨name.getString, construct, reason⟩

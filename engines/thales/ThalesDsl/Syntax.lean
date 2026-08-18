@@ -38,6 +38,12 @@ syntax "ts.param[" str "](" ts_type ")" : ts_param
 definition under `TsModel.*` and registers it by its TS name. -/
 syntax "ts_def " str " := " "ts.fn(" ts_param,* ")" " : " ts_type " {" ts_stmt* "}" : command
 
+/-- A whole declaration the front end could not shape as `ts.fn` — a class
+member, a const-arrow, an inexpressible signature. Elaborating it records
+the name as failed with the unmapped construct, so its annotations degrade
+to `Inappropriate`. -/
+syntax "ts_def " str " := " "ts.opaque[" str "](" num ", " num ")" : command
+
 /-! Property constructors for the Lemma prefix/formula shapes this slice
 supports: bounded ∀-binders over int ranges, `≡` equations between value
 islands, and boolean islands. -/

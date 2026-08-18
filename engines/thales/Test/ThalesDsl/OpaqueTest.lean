@@ -19,6 +19,11 @@ ts_def "spin" := ts.fn(ts.param["n"](ts.number)) : ts.number {
 -- records no construct.
 ts_def "oops" := ts.fn() : ts.number { ts.return(ts.id["ghost"]) }
 
+-- A whole declaration the front end cannot shape as ts.fn (a class, a
+-- const-arrow, an inexpressible signature) arrives as an opaque ts_def:
+-- named, failed, construct recorded.
+ts_def "Point#norm" := ts.opaque["ClassDeclaration"](4, 1)
+
 -- Later declarations elaborate normally.
 ts_def "after" := ts.fn() : ts.number { ts.return(ts.num[5]) }
 #guard decide (TsModel.after = (pure 5 : TsM Int))
@@ -37,7 +42,13 @@ ts_def "after" := ts.fn() : ts.number { ts.return(ts.num[5]) }
     | throwError "'oops' should be recorded as failed"
   unless oops.construct == none do
     throwError "'oops' is not an opaque failure, got {repr oops.construct}"
-  for tsName in ["halts", "spin", "oops"] do
+  let some norm := findFailed? env "Point#norm"
+    | throwError "'Point#norm' should be recorded as failed"
+  unless norm.construct == some "ClassDeclaration" do
+    throwError "'Point#norm' should record its unmapped construct, got {repr norm.construct}"
+  unless norm.reason == unmappedMsg "ClassDeclaration" "4:1" do
+    throwError "'Point#norm' reason should carry the position, got {norm.reason}"
+  for tsName in ["halts", "spin", "oops", "Point#norm"] do
     unless (findModel? env tsName).isNone do
       throwError "failed declaration '{tsName}' must register no model"
   unless (findFailed? env "after").isNone do

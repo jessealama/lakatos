@@ -13,5 +13,10 @@
     "esModuleInterop": true,
     "skipLibCheck": true
   },
-  "include": ["src", "lemma/src", "engines/pabst/src"]
+  "include": [
+    "src",
+    "lemma/src",
+    "engines/pabst/src",
+    "engines/thales/frontend/src"
+  ]
 }

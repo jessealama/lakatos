@@ -49,10 +49,20 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: engines/thales/package-lock.json
+          cache-dependency-path: |
+            engines/thales/package-lock.json
+            package-lock.json
 
       - name: npm install
         run: npm ci
+
+      - name: npm install (root)
+        run: npm ci
+        working-directory: .
+
+      - name: Build the front end
+        run: npx tsc -p tsconfig.json
+        working-directory: .
 
       - name: Format check
         run: npm run format:check
@@ -75,3 +85,6 @@ jobs:
 
       - name: Verdict channel
         run: npm run check:verdict-channel
+
+      - name: Transcriber end-to-end
+        run: npm run check:transcriber

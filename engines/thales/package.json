@@ -3,8 +3,10 @@
   "version": "1.0.0",
   "description": "Internal dev tooling for Thales",
   "private": true,
+  "type": "module",
   "scripts": {
     "check:verdict-channel": "node scripts/check-verdict-channel.js",
+    "check:transcriber": "node scripts/check-transcriber.js",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
