@@ -25,6 +25,7 @@ const verdict = (fn: string, szs: string, reason = "r"): ProveVerdict => ({
 describe("cli prove", () => {
   useTempProject("lakatos-cli-prove-", {
     "annotated.ts": ANNOTATED,
+    "other.ts": `/** @ensures{pos} forall (n: int ∈ [0, 5)) { other(n) >= 0 } */\nexport function other(n: number): number { return n; }\n`,
     "plain.ts": "export const x = 1;\n",
     "invalid.ts": `class Hidden {\n  /** @ensures{p} forall (x: int) { id(x) === x } */\n  static id(x: number): number { return x; }\n}\n`,
   });
@@ -38,6 +39,8 @@ describe("cli prove", () => {
     runLeanMock.mockReturnValue({
       kind: "completed",
       verdicts: [verdict("annotated", "Theorem")],
+      failures: [],
+      diagnostics: [],
     });
     const { code, stdout, stderr } = runMain(["prove", "annotated.ts"]);
     expect(code).toBe(0);
@@ -65,6 +68,8 @@ describe("cli prove", () => {
       verdicts: [
         verdict("annotated", "Inappropriate", "AwaitExpression at 2:10"),
       ],
+      failures: [],
+      diagnostics: [],
     });
     const { code, stdout } = runMain(["prove", "annotated.ts"]);
     expect(code).toBe(0);
@@ -77,7 +82,12 @@ describe("cli prove", () => {
   });
 
   it("input errors join the envelope and force exit 2", () => {
-    runLeanMock.mockReturnValue({ kind: "completed", verdicts: [] });
+    runLeanMock.mockReturnValue({
+      kind: "completed",
+      verdicts: [],
+      failures: [],
+      diagnostics: [],
+    });
     const { code, stdout, stderr } = runMain(["prove", "invalid.ts"]);
     expect(code).toBe(2);
     const env = JSON.parse(stdout[0]!);
@@ -97,7 +107,12 @@ describe("cli prove", () => {
   });
 
   it("no annotations at all: empty envelope, no prover run, exit 0", () => {
-    runLeanMock.mockReturnValue({ kind: "completed", verdicts: [] });
+    runLeanMock.mockReturnValue({
+      kind: "completed",
+      verdicts: [],
+      failures: [],
+      diagnostics: [],
+    });
     const { code, stdout } = runMain(["prove", "plain.ts"]);
     expect(code).toBe(0);
     const env = JSON.parse(stdout[0]!);
@@ -152,24 +167,76 @@ describe("cli prove", () => {
     }
   });
 
-  it("bad-verdicts and join mismatches surface as unhealthy exit 2", () => {
-    runLeanMock.mockReturnValue({
-      kind: "bad-verdicts",
-      messages: ["unparseable verdict line: x"],
-    });
-    const bad = runMain(["prove", "annotated.ts"]);
-    expect(bad.code).toBe(2);
-    expect(bad.stderr.join("\n")).toContain("unparseable verdict line: x");
-    expect(JSON.parse(bad.stdout[0]!).annotations[0].szs).toBe("NotTried");
-
+  it("join mismatches surface as unhealthy exit 2", () => {
     // A healthy Lean run whose verdicts do not cover the annotations is
-    // just as untrustworthy.
-    runLeanMock.mockReturnValue({ kind: "completed", verdicts: [] });
+    // untrustworthy: it indicates a transcriber or engine bug.
+    runLeanMock.mockReturnValue({
+      kind: "completed",
+      verdicts: [],
+      failures: [],
+      diagnostics: [],
+    });
     const missing = runMain(["prove", "annotated.ts"]);
     expect(missing.code).toBe(2);
     expect(missing.stderr.join("\n")).toContain("no verdict for");
     const env = JSON.parse(missing.stdout[0]!);
     expectValidEnvelope(env);
     expect(env.annotations[0].szs).toBe("NotTried");
+  });
+
+  it("a contained file failure: Error entries for that file, others verdict, exit 2", () => {
+    runLeanMock.mockReturnValue({
+      kind: "completed",
+      verdicts: [verdict("annotated", "Theorem")],
+      failures: [
+        {
+          file: path.join(".thales", "other.ts.lean"),
+          messages: [
+            "the Lean run on .thales/other.ts.lean failed before reporting its verdicts",
+          ],
+        },
+      ],
+      diagnostics: [],
+    });
+    const { code, stdout, stderr } = runMain([
+      "prove",
+      "annotated.ts",
+      "other.ts",
+    ]);
+    expect(code).toBe(2);
+    const env = JSON.parse(stdout[0]!);
+    expectValidEnvelope(env);
+    expect(env.annotations).toEqual(
+      expect.arrayContaining([
+        {
+          file: "annotated.ts",
+          function: "annotated",
+          property: "pos",
+          szs: "Theorem",
+        },
+        {
+          file: "other.ts",
+          function: "other",
+          property: "pos",
+          szs: "Error",
+          error:
+            "the Lean run on this file's artifact failed before reporting its verdicts",
+        },
+      ]),
+    );
+    expect(env.annotations).toHaveLength(2);
+    expect(stderr.join("\n")).toContain("failed before reporting its verdicts");
+  });
+
+  it("Lean diagnostics pass through to stderr on a healthy run", () => {
+    runLeanMock.mockReturnValue({
+      kind: "completed",
+      verdicts: [verdict("annotated", "Theorem")],
+      failures: [],
+      diagnostics: ["note: some linter chatter"],
+    });
+    const { code, stderr } = runMain(["prove", "annotated.ts"]);
+    expect(code).toBe(0);
+    expect(stderr.join("\n")).toContain("note: some linter chatter");
   });
 });

@@ -10,14 +10,26 @@ export interface LeanVerdict {
   reason: string;
 }
 
+/** One artifact whose Lean run failed or broke the verdict contract;
+ * only its own annotations are affected. */
+export interface FileFailure {
+  file: string;
+  messages: string[];
+}
+
 export type LeanRunResult =
-  | { kind: 'completed'; verdicts: LeanVerdict[] }
+  | {
+      kind: 'completed';
+      verdicts: LeanVerdict[];
+      failures: FileFailure[];
+      diagnostics: string[];
+    }
   | { kind: 'no-project'; message: string }
-  | { kind: 'failed'; stdout: string; stderr: string }
-  | { kind: 'bad-verdicts'; messages: string[] };
+  | { kind: 'failed'; stdout: string; stderr: string };
 
 const LEAN_TIMEOUT_MS = 300_000;
 const BUILD_TIMEOUT_MS = 600_000;
+const SENTINEL = 'thales-verdict:';
 
 /** Locate the ThalesDsl lake project: walk up from this module looking for
  * a lakefile here or under engines/thales — covers the source tree, the
@@ -62,18 +74,23 @@ function isVerdict(v: unknown): v is LeanVerdict {
   );
 }
 
-function parseVerdicts(
-  stdout: string,
-):
-  | { kind: 'completed'; verdicts: LeanVerdict[] }
-  | { kind: 'bad-verdicts'; messages: string[] } {
+function parseVerdicts(stdout: string): {
+  verdicts: LeanVerdict[];
+  diagnostics: string[];
+  messages: string[];
+} {
   const verdicts: LeanVerdict[] = [];
+  const diagnostics: string[] = [];
   const messages: string[] = [];
   for (const line of stdout.split('\n')) {
     if (line.trim() === '') continue;
+    if (!line.startsWith(SENTINEL)) {
+      diagnostics.push(line);
+      continue;
+    }
     let v: unknown;
     try {
-      v = JSON.parse(line);
+      v = JSON.parse(line.slice(SENTINEL.length));
     } catch {
       messages.push(`unparseable verdict line: ${line}`);
       continue;
@@ -84,8 +101,7 @@ function parseVerdicts(
     }
     verdicts.push(v);
   }
-  if (messages.length > 0) return { kind: 'bad-verdicts', messages };
-  return { kind: 'completed', verdicts };
+  return { verdicts, diagnostics, messages };
 }
 
 function isEnoent(e: Error | undefined): boolean {
@@ -101,11 +117,13 @@ function failed(r: SpawnOutcome): LeanRunResult {
 }
 
 /**
- * Run `lake env lean` over each artifact and collect the JSON verdict
- * lines. `engineRoot` is the caller's `findEngineRoot()` result — absent
- * means this installation has no Lean engine. `lake build` runs first:
- * the DSL library must be compiled for the pinned toolchain, and a cached
- * build is a fast no-op.
+ * Run `lake env lean` over each artifact and collect the sentinel-framed
+ * verdict lines. `engineRoot` is the caller's `findEngineRoot()` result —
+ * absent means this installation has no Lean engine. `lake build` runs
+ * first: the DSL library must be compiled for the pinned toolchain, and a
+ * cached build is a fast no-op. Only a build failure or a missing engine
+ * aborts the run; a hung, crashed, or contract-breaking artifact is
+ * contained in `failures`, and unframed stdout is `diagnostics`.
  */
 export function runLean(
   leanFiles: string[],
@@ -133,15 +151,33 @@ export function runLean(
   }
   if (build.error !== undefined || build.status !== 0) return failed(build);
   const verdicts: LeanVerdict[] = [];
+  const failures: FileFailure[] = [];
+  const diagnostics: string[] = [];
   for (const file of leanFiles) {
     const run = spawn('lake', ['env', 'lean', path.resolve(file)], {
       ...opts,
       timeout: LEAN_TIMEOUT_MS,
     });
-    if (run.error !== undefined || run.status !== 0) return failed(run);
+    if (run.error !== undefined || run.status !== 0) {
+      // A hung or crashed artifact degrades only its own annotations.
+      failures.push({
+        file,
+        messages: [
+          `the Lean run on ${file} failed before reporting its verdicts`,
+          ...[run.stdout, run.stderr, run.error && String(run.error)].filter(
+            (s): s is string => typeof s === 'string' && s.trim() !== '',
+          ),
+        ],
+      });
+      continue;
+    }
     const parsed = parseVerdicts(run.stdout ?? '');
-    if (parsed.kind === 'bad-verdicts') return parsed;
+    diagnostics.push(...parsed.diagnostics);
+    if (parsed.messages.length > 0) {
+      failures.push({ file, messages: parsed.messages });
+      continue;
+    }
     verdicts.push(...parsed.verdicts);
   }
-  return { kind: 'completed', verdicts };
+  return { kind: 'completed', verdicts, failures, diagnostics };
 }

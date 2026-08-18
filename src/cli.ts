@@ -273,18 +273,42 @@ function prove(patterns: string[]): number {
     process.stderr.write(result.stderr);
     return unhealthy(["the Lean run failed before reporting verdicts"]);
   }
-  if (result.kind === "bad-verdicts") return unhealthy(result.messages);
-  const join = joinProveVerdicts(identities, result.verdicts);
+  for (const d of result.diagnostics) console.error(d);
+  for (const f of result.failures)
+    for (const m of f.messages) console.error(`error: ${m}`);
+
+  // A contained per-artifact failure degrades only that file's
+  // annotations; every healthy verdict still reaches the envelope.
+  const sourceOf = new Map(
+    artifacts.flatMap((a) =>
+      a.outFile !== undefined ? [[a.outFile, a.sourceFile] as const] : [],
+    ),
+  );
+  const failedSources = new Set(
+    result.failures.map((f) => sourceOf.get(f.file)),
+  );
+  const failedResults: AnnotationResult[] = identities
+    .filter((i) => failedSources.has(i.file))
+    .map((i) => ({
+      ...i,
+      szs: "Error" as const,
+      error:
+        "the Lean run on this file's artifact failed before reporting its verdicts",
+    }));
+  const join = joinProveVerdicts(
+    identities.filter((i) => !failedSources.has(i.file)),
+    result.verdicts,
+  );
   if (join.kind === "mismatched") return unhealthy(join.messages);
 
   const envelope: Envelope = {
     ...meta,
-    annotations: [...join.annotations, ...inputErrors],
+    annotations: [...join.annotations, ...failedResults, ...inputErrors],
   };
   console.log(JSON.stringify(envelope, null, 2));
-  // Bad input outranks everything else, as in refute; no prove verdict
-  // maps to exit 1 yet (the prover cannot report counterexamples).
-  return inputErrors.length > 0 ? 2 : 0;
+  // Bad input and engine failures outrank everything: the documented
+  // exit-2 error mode, even alongside healthy verdicts.
+  return inputErrors.length > 0 || result.failures.length > 0 ? 2 : 0;
 }
 
 function notTried(command: Command, patterns: string[]): number {
