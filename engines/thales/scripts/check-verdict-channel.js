@@ -50,6 +50,7 @@ const FIXTURES = [
       ['fetchTotal', 'Inappropriate', /AwaitExpression/],
       ['spin', 'Inappropriate', /WhileStatement/],
       ['sq', 'Theorem'],
+      ['dup', 'Theorem'],
     ],
   },
 ];

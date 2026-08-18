@@ -42,3 +42,15 @@ ts_def "sq" := ts.fn(ts.param["x"](ts.number)) : ts.number {
   ts.forall(ts.binder["x"](ts.int, ts.range(-5, 5))) {
     ts.istrue(ts.binop[">="](ts.call["sq"](ts.id["x"]), ts.num[0]))
   }
+
+-- An overload signature transcribes as a failed opaque ts_def alongside
+-- the implementation's real model; the model must win.
+ts_def "dup" := ts.opaque["FunctionDeclaration"](20, 1)
+ts_def "dup" := ts.fn(ts.param["x"](ts.number)) : ts.number {
+  ts.return(ts.id["x"])
+}
+
+#thales_prove "mixed.ts" "dup" "forall (x: int ∈ [0, 4)) { dup(x) === x }" :=
+  ts.forall(ts.binder["x"](ts.int, ts.range(0, 4))) {
+    ts.eq(ts.call["dup"](ts.id["x"]), ts.id["x"])
+  }
