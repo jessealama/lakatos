@@ -150,7 +150,7 @@ export function f(x: number): number { return x; }
       function: "Hidden.id",
       property: "p",
       szs: "InputError",
-      error: expect.stringContaining("not exported"),
+      error: expect.stringMatching(/^mixed\.ts:2: .*not exported/),
     });
     expect(env.annotations).toContainEqual({
       file: "mixed.ts",
@@ -158,6 +158,7 @@ export function f(x: number): number { return x; }
       property: "q",
       szs: "NotTried",
     });
+    expect(stderr.join("\n")).toContain("mixed.ts:2: ");
     expect(stderr.join("\n")).toContain("not exported");
   });
 
@@ -172,9 +173,11 @@ export function f(x: number): number { return x; }
       function: "f",
       property: "d",
       szs: "InputError",
-      error: expect.stringContaining("duplicate property name 'd'"),
+      error: expect.stringMatching(/^dup\.ts:2: duplicate property name 'd'/),
     });
-    expect(stderr.join("\n")).toContain("duplicate property name 'd'");
+    expect(stderr.join("\n")).toContain(
+      "dup.ts:2: duplicate property name 'd'",
+    );
   });
 });
 

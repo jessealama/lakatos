@@ -19,7 +19,8 @@ import {
 } from "./envelope.js";
 
 /** Envelope entries for extraction-level input errors, with their
- * diagnostics echoed to stderr. Any such entry makes the run exit 2. */
+ * diagnostics echoed to stderr. Any such entry makes the run exit 2.
+ * The `file:line:` prefix matches the compile-error diagnostic style. */
 function inputErrorResults(
   perFile: { file: string; invalid: InvalidAnnotation[] }[],
 ): AnnotationResult[] {
@@ -29,7 +30,7 @@ function inputErrorResults(
       function: qualifiedName(i.functionName, i.className, i.isStatic),
       property: i.propertyName,
       szs: "InputError" as const,
-      error: i.message,
+      error: `${file}:${i.line}: ${i.message}`,
     })),
   );
   for (const r of results) console.error(`error: ${r.error}`);
