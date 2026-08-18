@@ -23,8 +23,12 @@ def Verdict.toJson (v : Verdict) : Lean.Json :=
     ("reason", .str v.reason)
   ]
 
+/-- Frames each verdict line: stdout is also Lean's diagnostic stream, and
+the CLI treats only framed lines as part of the contract. -/
+def Verdict.sentinel : String := "thales-verdict:"
+
 /-- Verdicts must be one line each: `Json.compress` never emits newlines. -/
 def Verdict.emit (v : Verdict) : IO Unit :=
-  IO.println v.toJson.compress
+  IO.println (Verdict.sentinel ++ v.toJson.compress)
 
 end ThalesDsl

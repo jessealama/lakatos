@@ -16,6 +16,10 @@ const engineRoot = path.resolve(
 );
 const repoRoot = path.resolve(engineRoot, '..', '..');
 
+// Verdict lines are sentinel-framed; unframed stdout is diagnostics and
+// must not appear when running a clean fixture.
+const SENTINEL = 'thales-verdict:';
+
 // [function, szs, reasonPattern?] per annotation, in annotation order.
 const EXPECTED = [
   ['add', 'Theorem'],
@@ -61,7 +65,14 @@ check(
   `expected exit 0, got ${run.status}\nstderr:\n${run.stderr}`,
 );
 
-const lines = (run.stdout ?? '').split('\n').filter((l) => l.trim() !== '');
+const allLines = (run.stdout ?? '').split('\n').filter((l) => l.trim() !== '');
+const lines = allLines.filter((l) => l.startsWith(SENTINEL));
+check(
+  allLines.length === lines.length,
+  `unframed stdout line(s):\n${allLines
+    .filter((l) => !l.startsWith(SENTINEL))
+    .join('\n')}`,
+);
 check(
   lines.length === EXPECTED.length,
   `expected ${EXPECTED.length} verdict lines, got ${lines.length}:\n${run.stdout}`,
@@ -71,7 +82,7 @@ if (lines.length === EXPECTED.length) {
   for (const [i, [fn, szs, reasonPattern]] of EXPECTED.entries()) {
     let v;
     try {
-      v = JSON.parse(lines[i]);
+      v = JSON.parse(lines[i].slice(SENTINEL.length));
     } catch {
       check(false, `stdout line is not valid JSON: ${lines[i]}`);
       continue;

@@ -12,6 +12,10 @@ const engineRoot = path.resolve(
   '..',
 );
 
+// Verdict lines are sentinel-framed: stdout is also Lean's diagnostic
+// stream, and only framed lines are part of the contract.
+const SENTINEL = 'thales-verdict:';
+
 const SZS = new Set([
   'Theorem',
   'CounterSatisfiable',
@@ -69,7 +73,16 @@ for (const { file, expected } of FIXTURES) {
     `${file}: expected exit 0, got ${run.status}\nstderr:\n${run.stderr}`,
   );
 
-  const lines = (run.stdout ?? '').split('\n').filter((l) => l.trim() !== '');
+  const allLines = (run.stdout ?? '')
+    .split('\n')
+    .filter((l) => l.trim() !== '');
+  const lines = allLines.filter((l) => l.startsWith(SENTINEL));
+  check(
+    allLines.length === lines.length,
+    `${file}: unframed stdout line(s):\n${allLines
+      .filter((l) => !l.startsWith(SENTINEL))
+      .join('\n')}`,
+  );
   check(
     lines.length === expected.length,
     `${file}: expected ${expected.length} verdict lines, got ${lines.length}:\n${run.stdout}`,
@@ -79,7 +92,7 @@ for (const { file, expected } of FIXTURES) {
   for (const line of lines) {
     let v;
     try {
-      v = JSON.parse(line);
+      v = JSON.parse(line.slice(SENTINEL.length));
     } catch {
       check(false, `${file}: stdout line is not valid JSON: ${line}`);
       continue;
