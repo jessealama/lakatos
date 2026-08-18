@@ -18,7 +18,8 @@ const SZS = new Set([
   'Error',
 ]);
 
-// Expected [function, szs] sequence per fixture, in command order.
+// Expected [function, szs, reasonPattern?] sequence per fixture, in
+// command order; reasonPattern, when present, must match the reason.
 const FIXTURES = [
   {
     file: 'verdict-channel.lean',
@@ -26,12 +27,22 @@ const FIXTURES = [
       ['add', 'NotTried'],
       ['sub', 'NotTried'],
       ['bad', 'Error'],
+      ['opq', 'Error', /YieldExpression.*3:14/],
       ['tail', 'NotTried'],
     ],
   },
   {
     file: 'theorem-arith.lean',
     expected: Array.from({ length: 8 }, () => ['add', 'Theorem']),
+  },
+  {
+    file: 'theorem-inappropriate.lean',
+    expected: [
+      ['add', 'Theorem'],
+      ['fetchTotal', 'Inappropriate', /AwaitExpression/],
+      ['spin', 'Inappropriate', /WhileStatement/],
+      ['sq', 'Theorem'],
+    ],
   },
 ];
 
@@ -88,10 +99,19 @@ for (const { file, expected } of FIXTURES) {
 
   if (verdicts.length === expected.length) {
     const got = verdicts.map((v) => [v.identity[1], v.szs]);
+    const want = expected.map(([fn, szs]) => [fn, szs]);
     check(
-      JSON.stringify(got) === JSON.stringify(expected),
-      `${file}: expected verdicts ${JSON.stringify(expected)}, got ${JSON.stringify(got)}`,
+      JSON.stringify(got) === JSON.stringify(want),
+      `${file}: expected verdicts ${JSON.stringify(want)}, got ${JSON.stringify(got)}`,
     );
+    for (const [i, [, , reasonPattern]] of expected.entries()) {
+      if (reasonPattern !== undefined) {
+        check(
+          reasonPattern.test(verdicts[i].reason),
+          `${file}: verdict ${i} reason ${JSON.stringify(verdicts[i].reason)} does not match ${reasonPattern}`,
+        );
+      }
+    }
   }
 }
 

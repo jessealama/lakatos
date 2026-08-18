@@ -23,6 +23,40 @@ initialize modelExt : SimplePersistentEnvExtension ModelInfo (List ModelInfo) �
 def findModel? (env : Environment) (tsName : String) : Option ModelInfo :=
   (modelExt.getState env).find? (·.tsName == tsName)
 
+/-- A declaration whose `ts_def` failed to elaborate. `construct` is the
+unmapped TypeScript construct when the failure came from an opaque node;
+`none` means some other elaboration failure. -/
+structure FailedDecl where
+  tsName : String
+  construct : Option String
+  reason : String
+deriving Inhabited
+
+initialize failedExt : SimplePersistentEnvExtension FailedDecl (List FailedDecl) ←
+  registerSimplePersistentEnvExtension {
+    addEntryFn := fun s e => e :: s
+    addImportedFn := fun arrs => arrs.flatten.toList
+  }
+
+def findFailed? (env : Environment) (tsName : String) : Option FailedDecl :=
+  (failedExt.getState env).find? (·.tsName == tsName)
+
+/-- The construct name and `.ts` source position of an opaque node. -/
+def opaqueInfo? (stx : Syntax) : Option (String × String) :=
+  match stx with
+  | `(ts_expr| ts.opaque[$kind:str]($line:num, $col:num)) =>
+    some (kind.getString, s!"{line.getNat}:{col.getNat}")
+  | `(ts_stmt| ts.opaque[$kind:str]($line:num, $col:num)) =>
+    some (kind.getString, s!"{line.getNat}:{col.getNat}")
+  | _ => none
+
+/-- The first opaque node in `stx`, in tree order. -/
+partial def findOpaque? (stx : Syntax) : Option (String × String) :=
+  opaqueInfo? stx <|> stx.getArgs.findSome? findOpaque?
+
+def unmappedMsg (construct pos : String) : String :=
+  s!"unmapped TypeScript construct '{construct}' at {pos}"
+
 /-- The value types of the slice. Expression elaboration is type-directed:
 the operator decides its operand and result types. -/
 inductive ValTy where
@@ -81,9 +115,13 @@ partial def evalExpr (vars : List String) (expected : ValTy) :
     | "===" => cmp (← `(fun x y => x = y))
     | "!==" => cmp (← `(fun x y => x ≠ y))
     | other => throwErrorAt op "operator '{other}' has no model in this slice"
+  | `(ts_expr| ts.opaque[$kind:str]($line:num, $col:num)) =>
+    throwErrorAt kind (unmappedMsg kind.getString s!"{line.getNat}:{col.getNat}")
   | `(ts_expr| ts.call[$f:str]($args:ts_expr,*)) => do
     let some info := findModel? (← getEnv) f.getString
-      | throwErrorAt f "no model registered for '{f.getString}'"
+      | match findFailed? (← getEnv) f.getString with
+        | some failed => throwErrorAt f "'{f.getString}' has no model: {failed.reason}"
+        | none => throwErrorAt f "no model registered for '{f.getString}'"
     unless info.arity == args.getElems.size do
       throwErrorAt f
         "'{f.getString}' expects {info.arity} argument(s), got {args.getElems.size}"
@@ -112,22 +150,39 @@ def mkModelType (arity : Nat) : CommandElabM (TSyntax `term) := do
 
 elab_rules : command
   | `(ts_def $name:str := ts.fn($params:ts_param,*) : ts.number {$stmts:ts_stmt*}) => do
-    let paramNames ← params.getElems.mapM fun p => do
-      match p with
-      | `(ts_param| ts.param[$x:str](ts.number)) => pure x.getString
-      | _ => throwErrorAt p "unsupported parameter shape"
-    -- Slice: the body is exactly one return statement.
-    let #[stmt] := stmts.raw | throwErrorAt name "the body must be a single return statement"
-    let `(ts_stmt| ts.return($e:ts_expr)) := stmt
-      | throwErrorAt stmt "unsupported statement shape"
-    let bodyTerm ← evalExpr paramNames.toList .int e
-    let declName := modelNamespace ++ Name.mkSimple name.getString
-    let declId := mkIdent declName
-    let ty ← mkModelType paramNames.size
-    let fn ← paramNames.foldrM (init := bodyTerm) fun x acc =>
-      `(fun ($(mkIdent (Name.mkSimple x)) : Int) => $acc)
-    elabCommand (← `(def $declId : $ty := $fn))
-    modifyEnv fun env =>
-      modelExt.addEntry env ⟨name.getString, declName, paramNames.size⟩
+    let recordFailure (construct : Option String) (reason : String) : CommandElabM Unit :=
+      modifyEnv fun env => failedExt.addEntry env ⟨name.getString, construct, reason⟩
+    -- Lean prints diagnostics to stdout — the verdict channel — so per-
+    -- declaration containment must be silent: the failure is recorded and
+    -- surfaces in the verdicts of the annotations over this declaration.
+    if let some (construct, pos) := stmts.raw.findSome? findOpaque? then
+      return ← recordFailure (some construct) (unmappedMsg construct pos)
+    try
+      let paramNames ← params.getElems.mapM fun p => do
+        match p with
+        | `(ts_param| ts.param[$x:str](ts.number)) => pure x.getString
+        | _ => throwErrorAt p "unsupported parameter shape"
+      -- Slice: the body is exactly one return statement.
+      let #[stmt] := stmts.raw | throwErrorAt name "the body must be a single return statement"
+      let `(ts_stmt| ts.return($e:ts_expr)) := stmt
+        | throwErrorAt stmt "unsupported statement shape"
+      let bodyTerm ← evalExpr paramNames.toList .int e
+      let declName := modelNamespace ++ Name.mkSimple name.getString
+      let declId := mkIdent declName
+      let ty ← mkModelType paramNames.size
+      let fn ← paramNames.foldrM (init := bodyTerm) fun x acc =>
+        `(fun ($(mkIdent (Name.mkSimple x)) : Int) => $acc)
+      -- elabCommand logs failures instead of throwing; treat new errors as
+      -- this declaration's failure and swallow them.
+      let savedMsgs := (← get).messages
+      elabCommand (← `(def $declId : $ty := $fn))
+      if (← get).messages.hasErrors && !savedMsgs.hasErrors then
+        modify fun s => { s with messages := savedMsgs }
+        recordFailure none "the model definition did not elaborate"
+      else
+        modifyEnv fun env =>
+          modelExt.addEntry env ⟨name.getString, declName, paramNames.size⟩
+    catch ex =>
+      recordFailure none (← ex.toMessageData.toString)
 
 end ThalesDsl

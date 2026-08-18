@@ -61,6 +61,12 @@ def attemptDecide (identity : Identity) (thmName : Name) (propStx : TSyntax `ter
 elab_rules : command
   | `(#thales_prove $file:str $fn:str $prop:str $[:= $p:ts_prop]?) => do
     let identity : Identity := ⟨file.getString, fn.getString, prop.getString⟩
+    -- An annotation over a declaration whose ts_def failed cannot be
+    -- attempted: unmapped construct ⇒ Inappropriate, anything else ⇒ Error.
+    if let some failed := findFailed? (← getEnv) fn.getString then
+      let szs := if failed.construct.isSome then "Inappropriate" else "Error"
+      return ← Verdict.emit
+        ⟨identity, szs, s!"'{fn.getString}' could not be modeled: {failed.reason}"⟩
     let verdict : Verdict ←
       match p with
       | none => pure ⟨identity, "NotTried", "stub: no structured property provided"⟩

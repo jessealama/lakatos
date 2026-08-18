@@ -23,6 +23,14 @@ syntax "ts.call[" str "](" ts_expr,* ")" : ts_expr
 declare_syntax_cat ts_stmt
 syntax "ts.return(" ts_expr ")" : ts_stmt
 
+/-! Graceful degradation: a construct the front end cannot map arrives as an
+opaque node carrying the tsc SyntaxKind name and the construct's line and
+column in the original `.ts` source. Elaborating an opaque node always
+fails, so `ts_def` degrades the enclosing declaration alone. The rules are
+named so failure containment can locate opaque nodes by kind. -/
+syntax (name := tsOpaqueExpr) "ts.opaque[" str "](" num ", " num ")" : ts_expr
+syntax (name := tsOpaqueStmt) "ts.opaque[" str "](" num ", " num ")" : ts_stmt
+
 declare_syntax_cat ts_param
 syntax "ts.param[" str "](" ts_type ")" : ts_param
 
