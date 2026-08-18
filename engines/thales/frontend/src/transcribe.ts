@@ -3,6 +3,7 @@ import ts from 'typescript';
 import type { Binder } from '../../../../lemma/src/binder.js';
 import {
   extractFromSource,
+  type InvalidAnnotation,
   type RawAnnotation,
 } from '../../../../lemma/src/extract.js';
 import { parseBody } from '../../../../lemma/src/formula-parser.js';
@@ -321,6 +322,13 @@ function proveBlock(a: RawAnnotation, file: string): string[] {
   ];
 }
 
+/** One comment line per annotation extraction rejected: the artifact is the
+ * ground truth, so what was NOT transcribed must be visible in it. */
+function skippedComment(i: InvalidAnnotation, file: string): string {
+  const fn = qualifiedName(i.functionName, i.className, i.isStatic);
+  return `-- skipped @ensures{${i.propertyName}} on ${fn}: ${file}:${i.line}: ${i.message}`;
+}
+
 /** Comment out a statement's original source, line by line. */
 function sourceComments(stmt: ts.Statement, sf: ts.SourceFile): string[] {
   return stmt
@@ -329,11 +337,18 @@ function sourceComments(stmt: ts.Statement, sf: ts.SourceFile): string[] {
     .map((line) => (line === '' ? '--' : `-- ${line}`));
 }
 
+/** A transcribed program plus what extraction found (and rejected) in it. */
+export interface Transcription {
+  lean: string;
+  annotations: RawAnnotation[];
+  invalid: InvalidAnnotation[];
+}
+
 /**
  * Pretty-print a TypeScript program into a `.lean` file of core DSL
  * constructors. `file` is a label only; parsing is syntax-only.
  */
-export function transcribeSource(text: string, file: string): string {
+export function transcribe(text: string, file: string): Transcription {
   const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
   const blocks: string[][] = [['import ThalesDsl']];
   for (const stmt of sf.statements) {
@@ -342,10 +357,20 @@ export function transcribeSource(text: string, file: string): string {
       : transcribeOtherDecl(stmt, sf);
     blocks.push([...sourceComments(stmt, sf), ...defs]);
   }
-  for (const a of extractFromSource(text, file).annotations) {
-    blocks.push(proveBlock(a, file));
-  }
-  return blocks.map((b) => b.join('\n')).join('\n\n') + '\n';
+  const { annotations, invalid } = extractFromSource(text, file);
+  for (const a of annotations) blocks.push(proveBlock(a, file));
+  if (invalid.length > 0)
+    blocks.push(invalid.map((i) => skippedComment(i, file)));
+  return {
+    lean: blocks.map((b) => b.join('\n')).join('\n\n') + '\n',
+    annotations,
+    invalid,
+  };
+}
+
+/** The `.lean` text alone; see `transcribe` for the full result. */
+export function transcribeSource(text: string, file: string): string {
+  return transcribe(text, file).lean;
 }
 
 /** Read a `.ts` file from disk and transcribe it; the path (as given) is

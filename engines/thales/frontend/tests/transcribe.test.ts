@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'vitest';
-import { transcribeFile, transcribeSource } from '../src/transcribe.js';
+import {
+  transcribe,
+  transcribeFile,
+  transcribeSource,
+} from '../src/transcribe.js';
 
 describe('mappable function declarations', () => {
   test('a number-typed function becomes a ts_def with its source as comments', () => {
@@ -438,5 +442,40 @@ describe('the tracer fixture', () => {
     expect(out).toContain(
       '#thales_prove "engines/thales/tests/fixtures/tracer.ts" "Counter#bump" "bumps" :=',
     );
+  });
+});
+
+describe('invalid annotations', () => {
+  const hidden = [
+    'class Hidden {',
+    '  /** @ensures{p} forall (x: int ∈ [0, 5)) { id(x) === x } */',
+    '  static id(x: number): number { return x; }',
+    '}',
+    '',
+    '/** @ensures{q} forall (x: int ∈ [0, 5)) { ok(x) === x } */',
+    'export function ok(x: number): number { return x; }',
+    '',
+  ].join('\n');
+
+  test('skipped annotations become comments, not prove commands', () => {
+    const lean = transcribeSource(hidden, 'hidden.ts');
+    expect(lean).toMatch(
+      /^-- skipped @ensures\{p\} on Hidden\.id: hidden\.ts:2: /m,
+    );
+    expect(lean).not.toContain('#thales_prove "hidden.ts" "Hidden.id"');
+    expect(lean).toContain('#thales_prove "hidden.ts" "ok" "q"');
+  });
+
+  test('files with only valid annotations gain no skipped block', () => {
+    const src =
+      '/** @ensures{q} forall (x: int ∈ [0, 5)) { f(x) === x } */\nexport function f(x: number): number { return x; }\n';
+    expect(transcribeSource(src, 'f.ts')).not.toContain('-- skipped');
+  });
+
+  test('transcribe returns the annotations and invalid entries', () => {
+    const t = transcribe(hidden, 'hidden.ts');
+    expect(t.annotations.map((a) => a.propertyName)).toEqual(['q']);
+    expect(t.invalid.map((i) => i.propertyName)).toEqual(['p']);
+    expect(t.lean).toBe(transcribeSource(hidden, 'hidden.ts'));
   });
 });
