@@ -206,6 +206,8 @@ function refute(patterns: string[], seedArg: string | undefined): number {
   const envelope = buildEnvelope(meta, result.json, identities);
   envelope.annotations.push(...inputErrors);
   console.log(JSON.stringify(envelope, null, 2));
+  // Bad input outranks a refutation: exit 2 even when counterexamples were
+  // found, so malformed annotations are never mistaken for a clean 0/1 run.
   if (inputErrors.length > 0) return 2;
   return (envelope.failed ?? 0) > 0 ? 1 : 0;
 }

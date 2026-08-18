@@ -458,6 +458,32 @@ export function ok(x: number): number { return x; }
   );
 
   it(
+    "refute lets an input error take exit-code precedence over a refutation",
+    { timeout: 60000 },
+    () => {
+      const { code, stdout } = runMain([
+        "refute",
+        "inputerr/mixed.ts",
+        "bad.ts",
+      ]);
+      expect(code).toBe(2);
+      const env = JSON.parse(stdout[0]!);
+      expectValidEnvelope(env);
+      expect(env.failed).toBe(1);
+      const byProperty = Object.fromEntries(
+        env.annotations.map((a: { property: string; szs: string }) => [
+          a.property,
+          a.szs,
+        ]),
+      );
+      expect(byProperty).toMatchObject({
+        p: "InputError",
+        negative: "CounterSatisfiable",
+      });
+    },
+  );
+
+  it(
     "refute --seed echoes the given seed in the envelope",
     { timeout: 60000 },
     () => {
