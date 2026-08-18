@@ -70,5 +70,8 @@ jobs:
       - name: Build
         run: lake build
 
+      - name: Lean tests
+        run: lake build ThalesDslTest
+
       - name: Verdict channel
         run: npm run check:verdict-channel

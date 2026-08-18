@@ -10,3 +10,6 @@ package «thales» where
 @[default_target]
 lean_lib «ThalesDsl» where
   globs := #[.submodules `ThalesDsl, .one `ThalesDsl]
+
+lean_lib «ThalesDslTest» where
+  globs := #[.submodules `Test]
