@@ -92,6 +92,9 @@ describe("collectIssues", () => {
 
   it("ignores a failed assertion that carries no failure message", () => {
     expect(collectIssues(json([failed("")], 0, 1))).toEqual([]);
+    expect(
+      collectIssues(json([{ status: "failed", failureMessages: [] }], 0, 1)),
+    ).toEqual([]);
   });
 });
 

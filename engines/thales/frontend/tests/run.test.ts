@@ -159,7 +159,10 @@ describe('runLean', () => {
   test('malformed framed lines fail only their own file', () => {
     const malformed = [
       'thales-verdict:not json',
+      'thales-verdict:42',
+      'thales-verdict:null',
       'thales-verdict:{"identity":["a"],"szs":1}',
+      'thales-verdict:{"identity":[1,2,3],"szs":"Theorem","reason":"r"}',
       'thales-verdict:{"identity":["f.ts","f","p"],"szs":"Theorem"}',
     ];
     const res = runLean(
@@ -179,6 +182,20 @@ describe('runLean', () => {
     expect(r.verdicts).toHaveLength(1);
     expect(r.failures).toHaveLength(1);
     expect(r.failures[0]!.messages).toHaveLength(malformed.length);
+  });
+
+  test('a healthy run with no stdout at all yields no verdicts', () => {
+    const res = runLean(
+      ['a.lean'],
+      '/engine',
+      fakeSpawn([{ status: 0 }, { status: 0 }]).spawn,
+    );
+    expect(res).toEqual({
+      kind: 'completed',
+      verdicts: [],
+      failures: [],
+      diagnostics: [],
+    });
   });
 
   test('unframed stdout lines are diagnostics, not failures', () => {
