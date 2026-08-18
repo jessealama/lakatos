@@ -18,7 +18,13 @@ const SENTINEL = 'thales-verdict:';
 
 // Must match PROVE_STATUSES in src/envelope.ts; the root suite pins the
 // two together.
-const SZS = new Set(['Theorem', 'Inappropriate', 'GaveUp', 'NotTried', 'Error']);
+const SZS = new Set([
+  'Theorem',
+  'Inappropriate',
+  'GaveUp',
+  'NotTried',
+  'Error',
+]);
 
 // Expected [function, szs, reasonPattern?] sequence per fixture, in
 // command order; reasonPattern, when present, must match the reason.
