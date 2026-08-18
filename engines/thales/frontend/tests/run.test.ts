@@ -23,10 +23,11 @@ function fakeSpawn(
   const spawn = ((cmd: string, args: string[], opts: { cwd?: string }) => {
     calls.push({ cmd, args, cwd: String(opts.cwd) });
     const r = results[Math.min(i++, results.length - 1)]!;
+    // Omitted streams become null, as spawnSync yields on spawn failure.
     return {
       status: r.status ?? 0,
-      stdout: r.stdout ?? '',
-      stderr: r.stderr ?? '',
+      stdout: r.stdout ?? null,
+      stderr: r.stderr ?? null,
       error: r.error,
     };
   }) as never;
@@ -79,6 +80,18 @@ describe('runLean', () => {
     expect((res as { message: string }).message).toContain('elan');
   });
 
+  test('a spawn-level error on lake build that is not ENOENT is failed', () => {
+    const res = runLean(
+      ['a.lean'],
+      '/engine',
+      fakeSpawn([{ status: null, error: new Error('EACCES') }]).spawn,
+    );
+    expect(res).toMatchObject({
+      kind: 'failed',
+      stderr: expect.stringContaining('EACCES'),
+    });
+  });
+
   test('a failing lake build is failed with its output', () => {
     const res = runLean(
       ['a.lean'],
@@ -119,16 +132,26 @@ describe('runLean', () => {
   });
 
   test('unparseable or malformed stdout lines are bad-verdicts', () => {
+    const malformed = [
+      'not json',
+      '42',
+      'null',
+      '{"identity":["a"],"szs":1}',
+      '{"identity":[1,2,3],"szs":"Theorem","reason":"r"}',
+      '{"identity":["f.ts","f","p"],"szs":"Theorem"}',
+    ];
     const res = runLean(
       ['a.lean'],
       '/engine',
       fakeSpawn([
         { status: 0 },
-        { status: 0, stdout: 'not json\n{"identity":["a"],"szs":1}\n' },
+        { status: 0, stdout: malformed.join('\n') + '\n' },
       ]).spawn,
     );
     expect(res.kind).toBe('bad-verdicts');
-    expect((res as { messages: string[] }).messages).toHaveLength(2);
+    expect((res as { messages: string[] }).messages).toHaveLength(
+      malformed.length,
+    );
   });
 });
 
@@ -146,6 +169,12 @@ describe('findEngineRoot', () => {
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  test('is undefined when no lakefile exists anywhere up the tree', () => {
+    expect(
+      findEngineRoot(path.join(path.sep, 'no-such-lakatos-root', 'x.js')),
+    ).toBeUndefined();
   });
 
   test('resolves the real repository engine root by default', () => {
