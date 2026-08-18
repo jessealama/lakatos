@@ -53,7 +53,7 @@ describe("cli prove", () => {
     ]);
     expect(env.seed).toBeUndefined();
     expect(env.passed).toBeUndefined();
-    const artifact = path.join(".thales", "annotated.lean");
+    const artifact = path.join(".thales", "annotated.ts.lean");
     expect(runLeanMock.mock.calls[0]![0]).toEqual([artifact]);
     expect(fs.readFileSync(artifact, "utf8")).toContain("#thales_prove");
     expect(stderr.join("\n")).toContain("transcribed 1 annotation");

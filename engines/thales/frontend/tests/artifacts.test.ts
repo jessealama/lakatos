@@ -16,6 +16,8 @@ describe('writeArtifacts', () => {
     fs.mkdirSync(path.join(dir, 'sub'));
     fs.writeFileSync(path.join(dir, 'sub', 'a.ts'), ANNOTATED);
     fs.writeFileSync(path.join(dir, 'plain.ts'), 'export const x = 1;\n');
+    fs.writeFileSync(path.join(dir, 'x.ts'), ANNOTATED);
+    fs.writeFileSync(path.join(dir, 'x.tsx'), ANNOTATED);
     process.chdir(dir);
   });
   afterAll(() => {
@@ -25,7 +27,7 @@ describe('writeArtifacts', () => {
 
   test('mirrors the source path under the out root', () => {
     const [a] = writeArtifacts([path.join('sub', 'a.ts')]);
-    expect(a!.outFile).toBe(path.join('.thales', 'sub', 'a.lean'));
+    expect(a!.outFile).toBe(path.join('.thales', 'sub', 'a.ts.lean'));
     const lean = fs.readFileSync(a!.outFile!, 'utf8');
     expect(lean).toContain('import ThalesDsl');
     expect(lean).toContain('#thales_prove');
@@ -36,7 +38,16 @@ describe('writeArtifacts', () => {
   test('annotation-free files get an entry but no artifact', () => {
     const [p] = writeArtifacts(['plain.ts']);
     expect(p).toEqual({ sourceFile: 'plain.ts', annotations: [], invalid: [] });
-    expect(fs.existsSync(path.join('.thales', 'plain.lean'))).toBe(false);
+    expect(fs.existsSync(path.join('.thales', 'plain.ts.lean'))).toBe(false);
+  });
+
+  test('extension-only siblings get distinct artifacts', () => {
+    const arts = writeArtifacts(['x.ts', 'x.tsx']);
+    expect(arts.map((a) => a.outFile)).toEqual([
+      path.join('.thales', 'x.ts.lean'),
+      path.join('.thales', 'x.tsx.lean'),
+    ]);
+    for (const a of arts) expect(fs.existsSync(a.outFile!)).toBe(true);
   });
 
   test('refuses files outside the current directory', () => {
