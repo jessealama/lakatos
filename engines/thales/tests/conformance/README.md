@@ -1,0 +1,38 @@
+# Verdict-fixture corpus
+
+End-to-end fixtures for `lakatos prove`. Each `.ts` file is one fixture, and
+its directory is its entire test specification: every `@ensures` annotation
+in the file must receive the bucket's SZS status. There are no sidecar files
+and no inline expectation directives.
+
+The harness is the root `tests/verdict-corpus.test.ts`, gated on
+`LAKATOS_PROVE_E2E=1` like the prove e2e (it needs the Lean toolchain and is
+minutes-slow). It copies the corpus into a scratch project, runs
+`lakatos prove` once over every fixture, and diffs each annotation's status
+against its bucket. Only the SZS status is bucket-checked; reason text is
+the business of the e2e and unit suites.
+
+## Buckets
+
+- `theorem/` — every annotation proves (`Theorem`).
+- `gaveup/` — the proof ladder exhausts (`GaveUp`); today that includes
+  false bounded claims, which `decide` refutes.
+- `inappropriate/` — the function uses a construct the transcriber cannot
+  map (`Inappropriate`).
+
+Buckets are named after SZS statuses, lowercase. Buckets for statuses the
+prover cannot yet reach arrive with the issues that add those capabilities,
+so a capability upgrade shows up in the diff as a `git mv` between buckets
+(e.g. a refuting prover moves false-claim fixtures from `gaveup/` to
+`countersatisfiable/`).
+
+## Adding a fixture
+
+Author a `.ts` file with at least one `@ensures` annotation, run the harness
+locally, and place the file by its observed-and-intended verdict:
+
+    LAKATOS_PROVE_E2E=1 npx vitest run tests/verdict-corpus.test.ts
+
+A surprising verdict at authoring time is a finding to resolve, not an
+expectation to adjust silently. If a file's annotations would earn different
+verdicts, split it into one file per bucket.
