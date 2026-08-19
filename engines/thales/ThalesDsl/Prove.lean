@@ -53,6 +53,17 @@ def attemptDecide (identity : Identity) (thmName : Name) (propStx : TSyntax `ter
         s!"property elaboration failed: {← ex.toMessageData.toString}"⟩
   try
     let proof ← Meta.mkDecideProof p
+    -- mkDecideProof only builds the term; the kernel check validating it is
+    -- asynchronous, landing after the verdict ships. Reduce the Decidable
+    -- instance here so a false property is a verdict, not a late artifact
+    -- failure.
+    let inst := proof.appFn!.appArg!
+    let r ← Meta.withAtLeastTransparency .default <| Meta.whnf inst
+    if r.isAppOf ``Decidable.isFalse then
+      return ⟨identity, "GaveUp", "the property is false on its bounded domain"⟩
+    unless r.isAppOf ``Decidable.isTrue do
+      return ⟨identity, "GaveUp",
+        "the property did not evaluate to a truth value on its bounded domain"⟩
     addDecl (.thmDecl { name := thmName, levelParams := [], type := p, value := proof })
     return ⟨identity, "Theorem", s!"proved by decide, kernel-checked as {thmName}"⟩
   catch ex =>
