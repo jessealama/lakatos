@@ -1,0 +1,5 @@
+{
+  "annotation": "forall (x: int) (x: int) { x === x }",
+  "note": "binder names are pairwise distinct (semantics.md), whether repeated across groups or within one",
+  "stage": "prefix"
+}
