@@ -117,13 +117,16 @@ export type ProveJoin =
  * exactly this set — tests/verdict-contract.test.ts pins the two. */
 export const PROVE_STATUSES: ReadonlySet<string> = new Set([
   "Theorem",
+  "CounterSatisfiable",
   "Inappropriate",
   "GaveUp",
   "NotTried",
   "Error",
 ]);
 
-/** The Theorem reason (a run-internal kernel name) is dropped; Error
+/** The Theorem reason (a run-internal kernel name) is dropped, and so is
+ * the CounterSatisfiable one — its substance is the counterexample, which
+ * ships in the same falsified shape the refutation engine uses. Error
  * diagnostics travel in `error` like every other engine failure. */
 function verdictResult(
   id: PropertyIdentity,
@@ -131,6 +134,8 @@ function verdictResult(
 ): AnnotationResult {
   const szs = v.szs as SzsStatus;
   if (szs === "Theorem") return { ...id, szs };
+  if (szs === "CounterSatisfiable")
+    return { ...id, szs, kind: "falsified", counterexample: v.counterexample };
   if (szs === "Error") return { ...id, szs, error: v.reason };
   return { ...id, szs, reason: v.reason };
 }
@@ -156,6 +161,17 @@ export function joinProveVerdicts(
     if (!PROVE_STATUSES.has(v.szs)) {
       messages.push(
         `verdict status ${JSON.stringify(v.szs)} for ${key} is not representable in the envelope`,
+      );
+    }
+    // An empty counterexample object counts as none: the envelope schema
+    // requires at least one binder/value pair on a falsified annotation.
+    if (
+      v.szs === "CounterSatisfiable" &&
+      (v.counterexample === undefined ||
+        Object.keys(v.counterexample).length === 0)
+    ) {
+      messages.push(
+        `CounterSatisfiable verdict for ${key} carries no counterexample`,
       );
     }
     byKey.set(key, v);

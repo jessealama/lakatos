@@ -45,6 +45,15 @@ export function parsePrefix(formula: string): ParsedPrefix {
       `expected at least one binder group '(x: domain)' after forall`,
     );
   }
+  // A repeated name would make one binder shadow the other, so a reported
+  // counterexample could not carry a value for both.
+  const seen = new Set<string>();
+  for (const { varName } of binders) {
+    if (seen.has(varName)) {
+      throw new LemmaError(`duplicate binder variable name '${varName}'`);
+    }
+    seen.add(varName);
+  }
   const open = toks[i];
   if (open && open.text === ",") {
     throw new LemmaError(

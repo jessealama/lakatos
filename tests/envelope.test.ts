@@ -284,6 +284,53 @@ describe("joinProveVerdicts", () => {
     ).toBe("mismatched");
   });
 
+  it("a CounterSatisfiable verdict ships kind falsified and the counterexample", () => {
+    const join = joinProveVerdicts(
+      [id("a")],
+      [
+        {
+          ...verdict("a", "CounterSatisfiable", "false on its bounded domain"),
+          counterexample: { x: 0, y: "9007199254740992" },
+        },
+      ],
+    );
+    expect(join).toEqual({
+      kind: "joined",
+      annotations: [
+        {
+          ...id("a"),
+          szs: "CounterSatisfiable",
+          kind: "falsified",
+          counterexample: { x: 0, y: "9007199254740992" },
+        },
+      ],
+    });
+  });
+
+  it("a CounterSatisfiable verdict without a counterexample is a mismatch", () => {
+    const join = joinProveVerdicts(
+      [id("a")],
+      [verdict("a", "CounterSatisfiable")],
+    );
+    expect(join.kind).toBe("mismatched");
+    expect((join as { messages: string[] }).messages.join("\n")).toContain(
+      "counterexample",
+    );
+  });
+
+  it("a CounterSatisfiable verdict with an empty counterexample is a mismatch", () => {
+    // The envelope schema requires a non-empty counterexample object, so
+    // an empty one must not ship on a healthy run.
+    const join = joinProveVerdicts(
+      [id("a")],
+      [{ ...verdict("a", "CounterSatisfiable"), counterexample: {} }],
+    );
+    expect(join.kind).toBe("mismatched");
+    expect((join as { messages: string[] }).messages.join("\n")).toContain(
+      "counterexample",
+    );
+  });
+
   it("a status the envelope cannot represent is a mismatch", () => {
     expect(joinProveVerdicts([id("a")], [verdict("a", "Timeout")]).kind).toBe(
       "mismatched",

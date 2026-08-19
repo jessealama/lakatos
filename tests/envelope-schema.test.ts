@@ -78,6 +78,41 @@ describe("envelope schema", () => {
     ).toThrow();
   });
 
+  it("accepts a prove refutation in the same falsified shape refute uses", () => {
+    expect(() =>
+      expectValidEnvelope({
+        ...META,
+        annotations: [
+          {
+            file: "f.ts",
+            function: "f",
+            property: "p",
+            szs: "CounterSatisfiable",
+            kind: "falsified",
+            counterexample: { x: 0, y: "9007199254740992" },
+          },
+        ],
+      }),
+    ).not.toThrow();
+  });
+
+  it("rejects a CounterSatisfiable annotation without a counterexample", () => {
+    expect(() =>
+      expectValidEnvelope({
+        ...META,
+        annotations: [
+          {
+            file: "f.ts",
+            function: "f",
+            property: "p",
+            szs: "CounterSatisfiable",
+            kind: "falsified",
+          },
+        ],
+      }),
+    ).toThrow();
+  });
+
   it("accepts a Theorem annotation (property proven)", () => {
     const envelope: Envelope = {
       ...META,

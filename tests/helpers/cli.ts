@@ -38,12 +38,13 @@ export function runMain(argv: string[]): MainRun {
 }
 
 /**
- * Run main() and unwrap the single-envelope contract: exit 0, exactly one
+ * Run main() and unwrap the single-envelope contract: the expected exit
+ * code (0 unless the run is meant to find counterexamples), exactly one
  * stdout line, and that line a schema-valid envelope.
  */
-export function runForEnvelope(argv: string[]): Envelope {
+export function runForEnvelope(argv: string[], expectedCode = 0): Envelope {
   const run = runMain(argv);
-  expect(run.code, run.stderr.join("\n")).toBe(0);
+  expect(run.code, run.stderr.join("\n")).toBe(expectedCode);
   expect(run.stdout).toHaveLength(1);
   const env = JSON.parse(run.stdout[0]!) as Envelope;
   expectValidEnvelope(env);

@@ -305,7 +305,9 @@ function prove(patterns: string[]): number {
   emitEnvelope(envelope);
   // Bad input and engine failures outrank everything: the documented
   // exit-2 error mode, even alongside healthy verdicts.
-  return inputErrors.length > 0 || result.failures.length > 0 ? 2 : 0;
+  if (inputErrors.length > 0 || result.failures.length > 0) return 2;
+  // The documented exit 1: a counterexample found by the prover.
+  return join.annotations.some((a) => a.szs === "CounterSatisfiable") ? 1 : 0;
 }
 
 function notTried(command: Command, patterns: string[]): number {

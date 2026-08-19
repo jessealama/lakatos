@@ -15,16 +15,22 @@ the business of the e2e and unit suites.
 ## Buckets
 
 - `theorem/` — every annotation proves (`Theorem`).
-- `gaveup/` — the proof ladder exhausts (`GaveUp`); today that includes
-  false bounded claims, which `decide` refutes.
+- `countersatisfiable/` — a false bounded claim: decide establishes falsity
+  and the prover extracts a concrete witness (`CounterSatisfiable`).
+- `gaveup/` — the proof ladder exhausts (`GaveUp`). Currently empty: the
+  only exhaustion a TypeScript fixture can trigger today is a domain too
+  big to evaluate, which is minutes-slow — that path is pinned by the
+  hand-written verdict-channel fixtures instead.
+- `nottried/` — the property has no structured reading (an unbounded
+  domain, a connective), so the transcriber degrades it (`NotTried`).
 - `inappropriate/` — the function uses a construct the transcriber cannot
   map (`Inappropriate`).
 
 Buckets are named after SZS statuses, lowercase. Buckets for statuses the
 prover cannot yet reach arrive with the issues that add those capabilities,
 so a capability upgrade shows up in the diff as a `git mv` between buckets
-(e.g. a refuting prover moves false-claim fixtures from `gaveup/` to
-`countersatisfiable/`).
+(the refuting prover moved false-claim fixtures from `gaveup/` to
+`countersatisfiable/` exactly this way).
 
 ## Adding a fixture
 

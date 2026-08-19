@@ -42,7 +42,7 @@ _Avoid_: "output", "log lines" (framing is what makes it a contract)
 The `[file, function, property]` triple keying each annotation, shared with the refutation engine so both engines' results join into one envelope. Function names use the qualified form (`fn`, `Class#method`, `Class.method`).
 
 **SZS statuses (prove)**:
-`Theorem` (proved by `decide`, kernel-checked), `GaveUp` (elaborated but the proof attempt failed), `Inappropriate` (unmapped construct in the function or property), `Error` (any other elaboration failure), `NotTried` (no structured property provided). A false bounded property is `GaveUp`: the prove engine reports failure to prove, never refutation — falsity stays a give-up until a countersatisfiable capability exists. This five-status set must stay in sync with the CLI's `PROVE_STATUSES`; the root suite pins them.
+`Theorem` (proved by `decide`, kernel-checked), `CounterSatisfiable` (the property is false on its bounded domain and a concrete witness was extracted — carried in the verdict's `counterexample` field), `GaveUp` (elaborated but the proof attempt failed, including falsity with no witness to ship: zero binders, or witness extraction degraded), `Inappropriate` (unmapped construct in the function or property), `Error` (any other elaboration failure), `NotTried` (no structured property provided). This six-status set must stay in sync with the CLI's `PROVE_STATUSES`; the root suite pins them.
 _Avoid_: inventing statuses locally; `Unknown`/`Timeout` are not in the set
 
 **Failure containment**:

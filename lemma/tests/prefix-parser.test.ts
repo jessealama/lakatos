@@ -37,6 +37,20 @@ describe("parsePrefix — errors", () => {
       /invalid binder variable name/,
     );
   });
+
+  it("throws on a duplicate name within one binder group", () => {
+    expectLemmaError(
+      () => parsePrefix("forall (x x: int) { x === x }"),
+      /duplicate binder variable name 'x'/,
+    );
+  });
+
+  it("throws on a duplicate name across binder groups", () => {
+    expectLemmaError(
+      () => parsePrefix("forall (x: int) (x: string) { x === x }"),
+      /duplicate binder variable name 'x'/,
+    );
+  });
 });
 
 describe("parsePrefix", () => {

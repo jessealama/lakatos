@@ -6,26 +6,38 @@ namespace ThalesDsl
 
 open Lean Elab Command
 
-/-- Transcribes a `ts_prop` into a Lean `Prop` term: bounded binders become
+/-- Transcribes a `ts_prop` into a Lean `Prop` term — bounded binders become
 nested `ballIco`, `≡` equations compare `TsM Int` results, boolean islands
-must evaluate to `pure true`. -/
-partial def elabProp (vars : List String) : TSyntax `ts_prop → CommandElabM (TSyntax `term)
+must evaluate to `pure true` — plus a parallel witness-search term of type
+`Option (List Int)` (one `findCexIco` per binder, a decidable test at the
+leaf) and the binder names in binder order. -/
+partial def elabProp (vars : List String) :
+    TSyntax `ts_prop → CommandElabM (TSyntax `term × TSyntax `term × List String)
   | `(ts_prop| ts.eq($l:ts_expr, $r:ts_expr)) => do
     let lt ← evalExpr vars .int l
     let rt ← evalExpr vars .int r
-    `(($lt : TsM Int) = $rt)
+    let prop ← `(($lt : TsM Int) = $rt)
+    let search ← `(if ($lt : TsM Int) = $rt then (none : Option (List Int)) else some [])
+    return (prop, search, [])
   | `(ts_prop| ts.istrue($e:ts_expr)) => do
     let t ← evalExpr vars .bool e
-    `(($t : TsM Bool) = pure true)
+    let prop ← `(($t : TsM Bool) = pure true)
+    let search ← `(if ($t : TsM Bool) = pure true then (none : Option (List Int)) else some [])
+    return (prop, search, [])
   | `(ts_prop| ts.forall($binders:ts_binder,*) {$body:ts_prop}) => do
     let bs ← binders.getElems.mapM fun b => match b with
       | `(ts_binder| ts.binder[$x:str](ts.int, ts.range($lo:tsIntLit, $hi:tsIntLit))) =>
         pure (x.getString, lo, hi)
       | _ => throwErrorAt b "unsupported binder shape"
-    let inner ← elabProp (vars ++ (bs.map (·.1)).toList) body
-    bs.foldrM (init := inner) fun (x, lo, hi) acc => do
+    let (innerProp, innerSearch, innerNames) ←
+      elabProp (vars ++ (bs.map (·.1)).toList) body
+    let prop ← bs.foldrM (init := innerProp) fun (x, lo, hi) acc => do
       `(ballIco $(← tsIntLitToTerm lo) $(← tsIntLitToTerm hi)
           (fun $(mkIdent (Name.mkSimple x)) => $acc))
+    let search ← bs.foldrM (init := innerSearch) fun (x, lo, hi) acc => do
+      `(findCexIco $(← tsIntLitToTerm lo) $(← tsIntLitToTerm hi)
+          (fun $(mkIdent (Name.mkSimple x)) => $acc))
+    return (prop, search, (bs.map (·.1)).toList ++ innerNames)
   | stx => throwErrorAt stx "unsupported property shape"
 
 /-- Successful proofs are added to the environment so the kernel — not just
@@ -40,24 +52,70 @@ def freshTheoremName (env : Environment) (identity : Identity) : Name := Id.run 
     name := base.appendAfter s!"_{i}"
   return name
 
+/-- Reads back a fully reduced `Int` literal: a constructor applied to a
+raw `Nat` literal. -/
+def readInt (e : Expr) : Option Int :=
+  if e.isAppOfArity ``Int.ofNat 1 then (e.getArg! 0).rawNatLit?.map Int.ofNat
+  else if e.isAppOfArity ``Int.negSucc 1 then (e.getArg! 0).rawNatLit?.map Int.negSucc
+  else none
+
+/-- Reads back a fully reduced `List Int` literal. -/
+partial def readIntList (e : Expr) : Option (List Int) :=
+  if e.isAppOfArity ``List.nil 1 then some []
+  else if e.isAppOfArity ``List.cons 3 then do
+    let head ← readInt (e.getArg! 1)
+    let tail ← readIntList (e.getArg! 2)
+    return head :: tail
+  else none
+
+/-- Evaluates the witness-search term and pairs the values with the binder
+names. Best-effort: any failure — heartbeat exhaustion, a value the readback
+does not recognize — degrades to `none` instead of escaping. -/
+def extractWitness (names : List String) (searchStx : TSyntax `term) :
+    Term.TermElabM (Option (Array (String × Int))) :=
+  tryCatchRuntimeEx
+    (try
+      let s ← Term.withoutErrToSorry do
+        let s ← Term.elabTerm (← `(($searchStx : Option (List Int)))) none
+        Term.synthesizeSyntheticMVarsNoPostponing
+        instantiateMVars s
+      let r ← Meta.reduce s (explicitOnly := false) (skipTypes := true) (skipProofs := true)
+      if r.isAppOfArity ``Option.some 2 then
+        if let some vals := readIntList (r.getArg! 1) then
+          if vals.length == names.length then
+            return some (names.zip vals).toArray
+      return none
+    catch _ => return none)
+    (fun _ => return none)
+
 /-- After the kernel rejects a decide proof, reduce the `Decidable` instance
 to tell a false property from one the kernel could not evaluate. The instance
 is re-synthesized from the proposition so nothing depends on the proof term's
 internal shape; the reduction is best-effort — heartbeat exhaustion degrades
-to the stuck verdict instead of escaping. -/
-def diagnoseDecideFailure (identity : Identity) (p : Expr) : Term.TermElabM Verdict := do
+to the stuck verdict instead of escaping. A false property with binders gets
+its witness searched out and ships as `CounterSatisfiable`; without binders
+(or when extraction degrades) falsity stays a `GaveUp`. -/
+def diagnoseDecideFailure (identity : Identity) (p : Expr)
+    (names : List String) (searchStx : TSyntax `term) : Term.TermElabM Verdict := do
   let stuck : Verdict := ⟨identity, "GaveUp",
-    "the property did not evaluate to a truth value on its bounded domain"⟩
+    "the property did not evaluate to a truth value on its bounded domain", none⟩
+  let falseOnDomain : Verdict := ⟨identity, "GaveUp",
+    "the property is false on its bounded domain", none⟩
   tryCatchRuntimeEx
     (do
       let inst ← Meta.synthInstance (mkApp (mkConst ``Decidable) p)
       let r ← Meta.withAtLeastTransparency .default <| Meta.whnf inst
       if r.isAppOf ``Decidable.isFalse then
-        return ⟨identity, "GaveUp", "the property is false on its bounded domain"⟩
+        if names.isEmpty then return falseOnDomain
+        if let some cex ← extractWitness names searchStx then
+          return ⟨identity, "CounterSatisfiable",
+            "the property is false on its bounded domain", some cex⟩
+        return falseOnDomain
       return stuck)
     (fun _ => return stuck)
 
-def attemptDecide (identity : Identity) (thmName : Name) (propStx : TSyntax `term) :
+def attemptDecide (identity : Identity) (thmName : Name) (propStx : TSyntax `term)
+    (searchStx : TSyntax `term) (names : List String) :
     Term.TermElabM Verdict := do
   let p ←
     try
@@ -67,7 +125,7 @@ def attemptDecide (identity : Identity) (thmName : Name) (propStx : TSyntax `ter
         instantiateMVars p
     catch ex =>
       return ⟨identity, "Error",
-        s!"property elaboration failed: {← ex.toMessageData.toString}"⟩
+        s!"property elaboration failed: {← ex.toMessageData.toString}", none⟩
   try
     let proof ← Meta.mkDecideProof p
     -- addDecl's kernel check is asynchronous by default, landing after the
@@ -79,10 +137,10 @@ def attemptDecide (identity : Identity) (thmName : Name) (propStx : TSyntax `ter
       withOptions (Elab.async.set · false) do
         addDecl (.thmDecl { name := thmName, levelParams := [], type := p, value := proof })
     catch _ =>
-      return (← diagnoseDecideFailure identity p)
-    return ⟨identity, "Theorem", s!"proved by decide, kernel-checked as {thmName}"⟩
+      return (← diagnoseDecideFailure identity p names searchStx)
+    return ⟨identity, "Theorem", s!"proved by decide, kernel-checked as {thmName}", none⟩
   catch ex =>
-    return ⟨identity, "GaveUp", s!"decide failed: {← ex.toMessageData.toString}"⟩
+    return ⟨identity, "GaveUp", s!"decide failed: {← ex.toMessageData.toString}", none⟩
 
 elab_rules : command
   | `(#thales_prove $file:str $fn:str $prop:str $[:= $p:ts_prop]?) => do
@@ -94,21 +152,21 @@ elab_rules : command
       if let some failed := findFailed? (← getEnv) fn.getString then
         let szs := if failed.construct.isSome then "Inappropriate" else "Error"
         return ← Verdict.emit
-          ⟨identity, szs, s!"'{fn.getString}' could not be modeled: {failed.reason}"⟩
+          ⟨identity, szs, s!"'{fn.getString}' could not be modeled: {failed.reason}", none⟩
     let verdict : Verdict ←
       match p with
-      | none => pure ⟨identity, "NotTried", "stub: no structured property provided"⟩
+      | none => pure ⟨identity, "NotTried", "stub: no structured property provided", none⟩
       | some p =>
         if let some reason := propInappropriate? (← getEnv) p then
-          pure ⟨identity, "Inappropriate", reason⟩
+          pure ⟨identity, "Inappropriate", reason, none⟩
         else
           try
-            let propStx ← elabProp [] p
+            let (propStx, searchStx, names) ← elabProp [] p
             let thmName := freshTheoremName (← getEnv) identity
-            liftTermElabM (attemptDecide identity thmName propStx)
+            liftTermElabM (attemptDecide identity thmName propStx searchStx names)
           catch ex =>
             pure ⟨identity, "Error",
-              s!"property elaboration failed: {← ex.toMessageData.toString}"⟩
+              s!"property elaboration failed: {← ex.toMessageData.toString}", none⟩
     verdict.emit
 
 end ThalesDsl
