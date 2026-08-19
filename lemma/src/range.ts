@@ -110,7 +110,11 @@ function validateIntegerInterval(domain: Domain, range: Range, text: string) {
     }
     return;
   }
-  const { lo, hi, clamped } = intBounds(domain as "int" | "nat", range);
+  const { lo, hi, clampedLo, clampedHi } = intBounds(
+    domain as "int" | "nat",
+    range,
+  );
+  const clamped = clampedLo || clampedHi;
   if (lo > hi) {
     throw new LemmaError(
       `empty interval: no ${domain}${clamped ? " within the safe integer range (±9007199254740991)" : ""} satisfies ${text}`,

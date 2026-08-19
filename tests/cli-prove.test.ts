@@ -27,6 +27,14 @@ describe("cli prove", () => {
     "annotated.ts": ANNOTATED,
     "other.ts": `/** @ensures{pos} forall (n: int ∈ [0, 5)) { other(n) >= 0 } */\nexport function other(n: number): number { return n; }\n`,
     "plain.ts": "export const x = 1;\n",
+    "mixed.ts": [
+      "/** @ensures{big} forall (n: int ∈ [0, 1000000000000000000000000000000]) { huge(n) >= 0 } */",
+      "export function huge(n: number): number { return n; }",
+      "",
+      "/** @ensures{pos} forall (n: int ∈ [0, 5)) { small(n) >= 0 } */",
+      "export function small(n: number): number { return n; }",
+      "",
+    ].join("\n"),
     "invalid.ts": `class Hidden {\n  /** @ensures{p} forall (x: int) { id(x) === x } */\n  static id(x: number): number { return x; }\n}\n`,
   });
 
@@ -102,6 +110,41 @@ describe("cli prove", () => {
       kind: "falsified",
       counterexample: { n: 0 },
     });
+  });
+
+  it("an unsupported range ships NotTried with kind and reason; the rest still prove", () => {
+    runLeanMock.mockReturnValue({
+      kind: "completed",
+      verdicts: [
+        { identity: ["mixed.ts", "small", "pos"], szs: "Theorem", reason: "r" },
+      ],
+      failures: [],
+      diagnostics: [],
+    });
+    const { code, stdout } = runMain(["prove", "mixed.ts"]);
+    expect(code).toBe(0);
+    const env = JSON.parse(stdout[0]!);
+    expectValidEnvelope(env);
+    expect(env.annotations).toEqual(
+      expect.arrayContaining([
+        {
+          file: "mixed.ts",
+          function: "huge",
+          property: "big",
+          szs: "NotTried",
+          kind: "unsupported-range",
+          reason:
+            "endpoint 1000000000000000000000000000000 exceeds the safe integer range (±9007199254740991)",
+        },
+        {
+          file: "mixed.ts",
+          function: "small",
+          property: "pos",
+          szs: "Theorem",
+        },
+      ]),
+    );
+    expect(env.annotations).toHaveLength(2);
   });
 
   it("input errors join the envelope and force exit 2", () => {

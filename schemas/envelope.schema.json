@@ -46,6 +46,20 @@
           }
         },
         {
+          "title": "unsupported range",
+          "description": "The prover never attempted the property: a range endpoint exceeds the safe integer range, so the bounded domain cannot be represented faithfully. reason names the offending endpoint(s).",
+          "additionalProperties": false,
+          "required": ["file", "function", "property", "szs", "kind", "reason"],
+          "properties": {
+            "file": { "type": "string" },
+            "function": { "$ref": "#/definitions/functionName" },
+            "property": { "type": "string", "minLength": 1 },
+            "szs": { "const": "NotTried" },
+            "kind": { "const": "unsupported-range" },
+            "reason": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
           "title": "proven",
           "description": "The property is a kernel-checked theorem; no prover internals travel with it.",
           "additionalProperties": false,

@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import ts from 'typescript';
-import type { Binder } from '../../../../lemma/src/binder.js';
+import type { Binder, Range } from '../../../../lemma/src/binder.js';
+import { intBounds, MAX_SAFE } from '../../../../lemma/src/domains.js';
 import {
   extractFromSource,
   type InvalidAnnotation,
@@ -206,21 +207,48 @@ function transcribeOtherDecl(stmt: ts.Statement, sf: ts.SourceFile): string[] {
   return [];
 }
 
-/** A bounded ∀-binder constructor, or undefined when the binder's domain
- * or range has no `ts.range` reading (the range is `ballIco`-style:
- * inclusive lo, exclusive hi). */
-function binderConstructor(b: Binder): string | undefined {
-  if (b.domain !== 'int' && b.domain !== 'nat') return undefined;
+type BinderLowering =
+  /** The bounded ∀-binder constructor for this binder. */
+  | { kind: 'ctor'; ctor: string }
+  /** The range only fits after the safe-integer clamp; proving over the
+   * clamped domain would be a narrower statement than the user wrote. */
+  | { kind: 'unsupported-range'; reason: string }
+  /** No `ts.range` reading at all (non-integer domain, unbounded side). */
+  | { kind: 'bare' };
+
+function unsupportedRangeReason(
+  r: Range,
+  clampedLo: boolean,
+  clampedHi: boolean,
+): string {
+  const ends = [...(clampedLo ? [r.min!] : []), ...(clampedHi ? [r.max!] : [])];
+  const one = ends.length === 1;
+  return (
+    `endpoint${one ? '' : 's'} ${ends.join(' and ')} ` +
+    `exceed${one ? 's' : ''} the safe integer range (±${MAX_SAFE})`
+  );
+}
+
+/** The `ballIco`-style lowering of a binder: inclusive lo, exclusive hi. */
+function binderConstructor(b: Binder): BinderLowering {
+  if (b.domain !== 'int' && b.domain !== 'nat') return { kind: 'bare' };
   const r = b.range;
   if (r === undefined || r.min === undefined || r.max === undefined) {
-    return undefined;
+    return { kind: 'bare' };
   }
   // Lemma guarantees integer endpoint text for int/nat; a surprise still
   // cannot abort transcription — structuredProp's catch degrades it.
-  let lo = BigInt(r.min) + (r.minOpen ? 1n : 0n);
-  const hi = BigInt(r.max) + (r.maxOpen ? 0n : 1n);
-  if (b.domain === 'nat' && lo < 0n) lo = 0n;
-  return `ts.binder[${leanStr(b.varName)}](ts.int, ts.range(${lo}, ${hi}))`;
+  const { lo, hi, clampedLo, clampedHi } = intBounds(b.domain, r);
+  if (clampedLo || clampedHi) {
+    return {
+      kind: 'unsupported-range',
+      reason: unsupportedRangeReason(r, clampedLo, clampedHi),
+    };
+  }
+  return {
+    kind: 'ctor',
+    ctor: `ts.binder[${leanStr(b.varName)}](ts.int, ts.range(${lo}, ${hi + 1n}))`,
+  };
 }
 
 /** Parse a formula atom's JS expression with tsc. The wrapping parentheses
@@ -265,61 +293,85 @@ function equationSides(
   return [e.arguments[0]!, e.arguments[1]!];
 }
 
-interface StructuredProp {
-  binders: string[];
-  body: string;
-}
+type PropReading =
+  | { kind: 'structured'; binders: string[]; body: string }
+  | { kind: 'unsupported-range'; reason: string }
+  | { kind: 'bare' };
 
-/** The `ts_prop` reading of a Lemma formula, or undefined when this slice
- * cannot express it (non-integer domains, unbounded ranges, connectives,
- * or a formula the Lemma parser rejects). */
-function structuredProp(formula: string): StructuredProp | undefined {
+/** The `ts_prop` reading of a Lemma formula: bare when this slice cannot
+ * express it (non-integer domains, unbounded ranges, connectives, or a
+ * formula the Lemma parser rejects), unsupported-range when a binder's
+ * range only fits after the safe-integer clamp. */
+function structuredProp(formula: string): PropReading {
   try {
     const { binders, body } = parsePrefix(formula);
     const binderCtors: string[] = [];
     for (const b of binders) {
-      const ctor = binderConstructor(b);
-      if (ctor === undefined) return undefined;
-      binderCtors.push(ctor);
+      const lowered = binderConstructor(b);
+      if (lowered.kind !== 'ctor') return lowered;
+      binderCtors.push(lowered.ctor);
     }
     const ast = parseBody(body);
-    if (ast.kind !== 'atom') return undefined;
+    if (ast.kind !== 'atom') return { kind: 'bare' };
     const parsed = parseAtomExpr(ast.js);
-    if (parsed === undefined) return undefined;
+    if (parsed === undefined) return { kind: 'bare' };
     const expr = unwrapParens(parsed.expr);
     const sides = equationSides(expr);
     const bodyCtor =
       sides === undefined
         ? `ts.istrue(${transcribeExpr(expr, parsed.sf)})`
         : `ts.eq(${transcribeExpr(sides[0], parsed.sf)}, ${transcribeExpr(sides[1], parsed.sf)})`;
-    return { binders: binderCtors, body: bodyCtor };
+    return { kind: 'structured', binders: binderCtors, body: bodyCtor };
   } catch {
     // Transcription never aborts on a formula: anything the Lemma parsers
     // reject degrades to the bare (NotTried) form.
-    return undefined;
+    return { kind: 'bare' };
   }
+}
+
+/** An annotation the transcriber deliberately emitted no prove command
+ * for; the CLI reports it NotTried with this kind and reason. */
+export interface UntriedAnnotation {
+  annotation: RawAnnotation;
+  kind: 'unsupported-range';
+  reason: string;
 }
 
 /** One annotation's `#thales_prove` block: the formula as a comment, then
  * the command — bare (`NotTried`) when the property has no structured
- * reading. The identity triple matches pabst's: file, qualified function
- * name, property name. */
-function proveBlock(a: RawAnnotation, file: string): string[] {
+ * reading, and no command at all (an `untried` record instead) when the
+ * range is unsupported. The identity triple matches pabst's: file,
+ * qualified function name, property name. */
+function proveBlock(
+  a: RawAnnotation,
+  file: string,
+): { lines: string[]; untried?: UntriedAnnotation } {
   const fnName = qualifiedName(a.functionName, a.className, a.isStatic);
   const head =
     `#thales_prove ${leanStr(file)} ${leanStr(fnName)} ` +
     leanStr(a.propertyName);
   const comment =
     `-- @ensures{${a.propertyName}} ` + a.formula.replace(/\s+/g, ' ').trim();
-  const prop = structuredProp(a.formula);
-  if (prop === undefined) return [comment, head];
-  return [
-    comment,
-    `${head} :=`,
-    `  ts.forall(${prop.binders.join(', ')}) {`,
-    `    ${prop.body}`,
-    '  }',
-  ];
+  const reading = structuredProp(a.formula);
+  if (reading.kind === 'unsupported-range') {
+    return {
+      lines: [
+        comment,
+        `-- not tried @ensures{${a.propertyName}} on ${fnName}: ${reading.reason}`,
+      ],
+      untried: { annotation: a, ...reading },
+    };
+  }
+  if (reading.kind === 'bare') return { lines: [comment, head] };
+  return {
+    lines: [
+      comment,
+      `${head} :=`,
+      `  ts.forall(${reading.binders.join(', ')}) {`,
+      `    ${reading.body}`,
+      '  }',
+    ],
+  };
 }
 
 /** One comment line per annotation extraction rejected: the artifact is the
@@ -337,11 +389,14 @@ function sourceComments(stmt: ts.Statement, sf: ts.SourceFile): string[] {
     .map((line) => (line === '' ? '--' : `-- ${line}`));
 }
 
-/** A transcribed program plus what extraction found (and rejected) in it. */
+/** A transcribed program plus what extraction found (and rejected) in it.
+ * `untried` annotations appear in `annotations` too but got no prove
+ * command, so no verdict will come back for them. */
 export interface Transcription {
   lean: string;
   annotations: RawAnnotation[];
   invalid: InvalidAnnotation[];
+  untried: UntriedAnnotation[];
 }
 
 /**
@@ -358,13 +413,19 @@ export function transcribe(text: string, file: string): Transcription {
     blocks.push([...sourceComments(stmt, sf), ...defs]);
   }
   const { annotations, invalid } = extractFromSource(text, file);
-  for (const a of annotations) blocks.push(proveBlock(a, file));
+  const untried: UntriedAnnotation[] = [];
+  for (const a of annotations) {
+    const block = proveBlock(a, file);
+    blocks.push(block.lines);
+    if (block.untried !== undefined) untried.push(block.untried);
+  }
   if (invalid.length > 0)
     blocks.push(invalid.map((i) => skippedComment(i, file)));
   return {
     lean: blocks.map((b) => b.join('\n')).join('\n\n') + '\n',
     annotations,
     invalid,
+    untried,
   };
 }
 

@@ -14,10 +14,12 @@ export interface PropertyIdentity {
   property: string;
 }
 
-/** One annotation's outcome in a lakatos run. */
+/** One annotation's outcome in a lakatos run. Beyond the refutation
+ * kinds, `unsupported-range` marks a NotTried whose range only fits the
+ * prover's domain after the safe-integer clamp. */
 export interface AnnotationResult extends PropertyIdentity {
   szs: SzsStatus;
-  kind?: IssueKind;
+  kind?: IssueKind | "unsupported-range";
   counterexample?: Record<string, unknown>;
   error?: string;
   /** Prove pipeline: the construct outside the mappable subset
@@ -46,7 +48,7 @@ export interface Envelope {
   annotations: AnnotationResult[];
 }
 
-function identityKey(i: PropertyIdentity): string {
+export function identityKey(i: PropertyIdentity): string {
   return JSON.stringify([i.file, i.function, i.property]);
 }
 

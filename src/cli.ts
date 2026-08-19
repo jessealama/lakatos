@@ -15,6 +15,7 @@ import { qualifiedName } from "../lemma/src/qualified-name.js";
 import type { InvalidAnnotation } from "../lemma/src/extract.js";
 import {
   buildEnvelope,
+  identityKey,
   joinProveVerdicts,
   type AnnotationResult,
   type Envelope,
@@ -244,6 +245,24 @@ function prove(patterns: string[]): number {
   const inputErrors = inputErrorResults(
     artifacts.map((a) => ({ file: a.sourceFile, invalid: a.invalid })),
   );
+  // Annotations the transcriber deliberately emitted no prove command
+  // for: reported NotTried here, never expected in the verdict join.
+  const untriedResults: AnnotationResult[] = artifacts.flatMap((a) =>
+    a.untried.map((u) => ({
+      file: a.sourceFile,
+      function: qualifiedName(
+        u.annotation.functionName,
+        u.annotation.className,
+        u.annotation.isStatic,
+      ),
+      property: u.annotation.propertyName,
+      szs: "NotTried" as const,
+      kind: u.kind,
+      reason: u.reason,
+    })),
+  );
+  const untriedKeys = new Set(untriedResults.map(identityKey));
+  const tried = identities.filter((i) => !untriedKeys.has(identityKey(i)));
   const n = identities.length;
   console.error(
     `lakatos: transcribed ${n} annotation${n === 1 ? "" : "s"} across ${artifacts.length} file(s) into .thales/`,
@@ -284,7 +303,7 @@ function prove(patterns: string[]): number {
   const failedSources = new Set(
     result.failures.map((f) => sourceOf.get(f.file)),
   );
-  const failedResults: AnnotationResult[] = identities
+  const failedResults: AnnotationResult[] = tried
     .filter((i) => failedSources.has(i.file))
     .map((i) => ({
       ...i,
@@ -293,14 +312,19 @@ function prove(patterns: string[]): number {
         "the Lean run on this file's artifact failed before reporting its verdicts",
     }));
   const join = joinProveVerdicts(
-    identities.filter((i) => !failedSources.has(i.file)),
+    tried.filter((i) => !failedSources.has(i.file)),
     result.verdicts,
   );
   if (join.kind === "mismatched") return unhealthy(join.messages);
 
   const envelope: Envelope = {
     ...meta,
-    annotations: [...join.annotations, ...failedResults, ...inputErrors],
+    annotations: [
+      ...join.annotations,
+      ...failedResults,
+      ...untriedResults,
+      ...inputErrors,
+    ],
   };
   emitEnvelope(envelope);
   // Bad input and engine failures outrank everything: the documented

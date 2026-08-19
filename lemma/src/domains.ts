@@ -20,9 +20,11 @@ export const MAX_SAFE = 9007199254740991n;
 export interface IntBounds {
   lo: bigint;
   hi: bigint;
-  /** A finite endpoint fell outside the safe integer range, so the
-   * interval was intersected with it (possibly to emptiness: lo > hi). */
-  clamped: boolean;
+  /** The corresponding finite endpoint fell outside the safe integer
+   * range, so the interval was intersected with it (possibly to
+   * emptiness: lo > hi). The nat floor is not clamping. */
+  clampedLo: boolean;
+  clampedHi: boolean;
 }
 
 /** The inclusive fc.integer bounds an int/nat interval lowers to: open
@@ -41,11 +43,11 @@ export function intBounds(domain: "int" | "nat", range: Range): IntBounds {
       ? MAX_SAFE
       : BigInt(range.max) - (range.maxOpen ? 1n : 0n);
   if (domain === "nat" && lo < 0n) lo = 0n;
-  const clamped =
-    lo < -MAX_SAFE || lo > MAX_SAFE || hi < -MAX_SAFE || hi > MAX_SAFE;
+  const clampedLo = lo < -MAX_SAFE || lo > MAX_SAFE;
+  const clampedHi = hi < -MAX_SAFE || hi > MAX_SAFE;
   if (lo < -MAX_SAFE) lo = -MAX_SAFE;
   if (hi > MAX_SAFE) hi = MAX_SAFE;
-  return { lo, hi, clamped };
+  return { lo, hi, clampedLo, clampedHi };
 }
 
 /** The inclusive fc.bigInt bounds a bigint interval lowers to. An
