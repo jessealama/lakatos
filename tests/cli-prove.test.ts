@@ -81,6 +81,29 @@ describe("cli prove", () => {
     });
   });
 
+  it("a refuted property ships falsified and exits 1, like refute", () => {
+    runLeanMock.mockReturnValue({
+      kind: "completed",
+      verdicts: [
+        {
+          ...verdict("annotated", "CounterSatisfiable"),
+          counterexample: { n: 0 },
+        },
+      ],
+      failures: [],
+      diagnostics: [],
+    });
+    const { code, stdout } = runMain(["prove", "annotated.ts"]);
+    expect(code).toBe(1);
+    const env = JSON.parse(stdout[0]!);
+    expectValidEnvelope(env);
+    expect(env.annotations[0]).toMatchObject({
+      szs: "CounterSatisfiable",
+      kind: "falsified",
+      counterexample: { n: 0 },
+    });
+  });
+
   it("input errors join the envelope and force exit 2", () => {
     runLeanMock.mockReturnValue({
       kind: "completed",

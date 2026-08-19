@@ -79,7 +79,8 @@ describe.runIf(enabled)("verdict corpus", () => {
     "every annotation receives its bucket's SZS status",
     { timeout: proveTimeoutMs(fixtures.length) },
     () => {
-      const env = runForEnvelope(["prove", ...fixtures]);
+      // The countersatisfiable bucket guarantees refutations: exit 1.
+      const env = runForEnvelope(["prove", ...fixtures], 1);
 
       // Completeness: every fixture contributes at least one annotation.
       const covered = new Set(env.annotations.map((a) => a.file));

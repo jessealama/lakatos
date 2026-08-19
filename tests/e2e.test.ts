@@ -85,7 +85,8 @@ describe.runIf(enabled)("lakatos prove end-to-end (tracer)", () => {
     "false bounded claims ship witnesses that round-trip against the source",
     { timeout: proveTimeoutMs(2) },
     () => {
-      const env = runForEnvelope(["prove", "unique.ts", "comm.ts"]);
+      // Counterexamples found: the documented exit 1.
+      const env = runForEnvelope(["prove", "unique.ts", "comm.ts"], 1);
       const by = new Map(
         env.annotations.map((a) => [`${a.function}/${a.property}`, a]),
       );
