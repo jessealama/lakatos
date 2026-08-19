@@ -40,6 +40,23 @@ def freshTheoremName (env : Environment) (identity : Identity) : Name := Id.run 
     name := base.appendAfter s!"_{i}"
   return name
 
+/-- After the kernel rejects a decide proof, reduce the `Decidable` instance
+to tell a false property from one the kernel could not evaluate. The instance
+is re-synthesized from the proposition so nothing depends on the proof term's
+internal shape; the reduction is best-effort — heartbeat exhaustion degrades
+to the stuck verdict instead of escaping. -/
+def diagnoseDecideFailure (identity : Identity) (p : Expr) : Term.TermElabM Verdict := do
+  let stuck : Verdict := ⟨identity, "GaveUp",
+    "the property did not evaluate to a truth value on its bounded domain"⟩
+  tryCatchRuntimeEx
+    (do
+      let inst ← Meta.synthInstance (mkApp (mkConst ``Decidable) p)
+      let r ← Meta.withAtLeastTransparency .default <| Meta.whnf inst
+      if r.isAppOf ``Decidable.isFalse then
+        return ⟨identity, "GaveUp", "the property is false on its bounded domain"⟩
+      return stuck)
+    (fun _ => return stuck)
+
 def attemptDecide (identity : Identity) (thmName : Name) (propStx : TSyntax `term) :
     Term.TermElabM Verdict := do
   let p ←
@@ -53,18 +70,16 @@ def attemptDecide (identity : Identity) (thmName : Name) (propStx : TSyntax `ter
         s!"property elaboration failed: {← ex.toMessageData.toString}"⟩
   try
     let proof ← Meta.mkDecideProof p
-    -- mkDecideProof only builds the term; the kernel check validating it is
-    -- asynchronous, landing after the verdict ships. Reduce the Decidable
-    -- instance here so a false property is a verdict, not a late artifact
-    -- failure.
-    let inst := proof.appFn!.appArg!
-    let r ← Meta.withAtLeastTransparency .default <| Meta.whnf inst
-    if r.isAppOf ``Decidable.isFalse then
-      return ⟨identity, "GaveUp", "the property is false on its bounded domain"⟩
-    unless r.isAppOf ``Decidable.isTrue do
-      return ⟨identity, "GaveUp",
-        "the property did not evaluate to a truth value on its bounded domain"⟩
-    addDecl (.thmDecl { name := thmName, levelParams := [], type := p, value := proof })
+    -- addDecl's kernel check is asynchronous by default, landing after the
+    -- verdict ships. Disable async (as `decide +kernel` does) so the kernel
+    -- evaluates the proof here: a false property is a catchable failure,
+    -- not a late artifact failure, and the success path pays for exactly
+    -- one evaluation.
+    try
+      withOptions (Elab.async.set · false) do
+        addDecl (.thmDecl { name := thmName, levelParams := [], type := p, value := proof })
+    catch _ =>
+      return (← diagnoseDecideFailure identity p)
     return ⟨identity, "Theorem", s!"proved by decide, kernel-checked as {thmName}"⟩
   catch ex =>
     return ⟨identity, "GaveUp", s!"decide failed: {← ex.toMessageData.toString}"⟩
