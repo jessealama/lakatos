@@ -45,6 +45,13 @@ const FIXTURES = [
     expected: Array.from({ length: 8 }, () => ['add', 'Theorem']),
   },
   {
+    file: 'gaveup-false.lean',
+    expected: [
+      ['bump', 'GaveUp', /false/],
+      ['sq', 'GaveUp', /false/],
+    ],
+  },
+  {
     file: 'theorem-inappropriate.lean',
     expected: [
       ['add', 'Theorem'],

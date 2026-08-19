@@ -27,8 +27,9 @@ export type LeanRunResult =
   | { kind: 'no-project'; message: string }
   | { kind: 'failed'; stdout: string; stderr: string };
 
-const LEAN_TIMEOUT_MS = 300_000;
-const BUILD_TIMEOUT_MS = 600_000;
+// Exported so test timeouts can be sized from the containment budget.
+export const LEAN_TIMEOUT_MS = 300_000;
+export const BUILD_TIMEOUT_MS = 600_000;
 const SENTINEL = 'thales-verdict:';
 
 /** Locate the ThalesDsl lake project: walk up from this module looking for

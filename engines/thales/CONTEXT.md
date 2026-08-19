@@ -42,7 +42,7 @@ _Avoid_: "output", "log lines" (framing is what makes it a contract)
 The `[file, function, property]` triple keying each annotation, shared with the refutation engine so both engines' results join into one envelope. Function names use the qualified form (`fn`, `Class#method`, `Class.method`).
 
 **SZS statuses (prove)**:
-`Theorem` (proved by `decide`, kernel-checked), `GaveUp` (elaborated but the proof attempt failed), `Inappropriate` (unmapped construct in the function or property), `Error` (any other elaboration failure), `NotTried` (no structured property provided). This five-status set must stay in sync with the CLI's `PROVE_STATUSES`; the root suite pins them.
+`Theorem` (proved by `decide`, kernel-checked), `GaveUp` (elaborated but the proof attempt failed), `Inappropriate` (unmapped construct in the function or property), `Error` (any other elaboration failure), `NotTried` (no structured property provided). A false bounded property is `GaveUp`: the prove engine reports failure to prove, never refutation — falsity stays a give-up until a countersatisfiable capability exists. This five-status set must stay in sync with the CLI's `PROVE_STATUSES`; the root suite pins them.
 _Avoid_: inventing statuses locally; `Unknown`/`Timeout` are not in the set
 
 **Failure containment**:
@@ -52,8 +52,12 @@ _Avoid_: "error handling" (containment is the design property, not incidental re
 **Structured property**:
 A property the transcriber could express in constructor syntax (bounded int/nat binders, equation or boolean-island body). Anything else is emitted without a body and verdicts as `NotTried` — degradation, not rejection.
 
+**Verdict corpus**:
+The end-to-end fixture suite under `tests/conformance/`: `.ts` fixtures in buckets named for SZS statuses, where bucket membership is the entire specification — every annotation in a fixture must receive its bucket's status. A capability upgrade shows up as a `git mv` between buckets, never as an expectation edit.
+_Avoid_: "conformance harness" (the retired compiler's whole-file corpus)
+
 ### Flagged ambiguities
 
 - **"Compiler"** — colloquially still used for the engine. The old whole-file TS-to-Lean compiler is gone; today the closest thing is the _transcriber_, which is deliberately not a compiler (no checking, no lowering semantics — meaning lives in the Lean elab rules). When precision matters, say transcriber or elaborator.
-- **"Conformance"** — the old corpus under `tests/conformance/` defined the retired compiler's correctness and is currently orphaned, pending rebuild as verdict fixtures. The operative checks today are the verdict-channel and transcriber scripts plus the root prove e2e.
+- **"Conformance"** — `tests/conformance/` now holds the _verdict corpus_, which defines the prove pipeline's correctness by SZS bucket; in notes older than the rebuild, "conformance" means the retired compiler's whole-file corpus instead. The operative checks today are the verdict-channel and transcriber scripts, the root prove e2e, and the verdict corpus.
 - **"Verdict" vs "envelope entry"** — a verdict is the engine-side JSON line; the envelope entry is the CLI-side per-annotation record after joining (which adds `InputError` entries the engine never sees). The engine emits verdicts, never envelopes.
