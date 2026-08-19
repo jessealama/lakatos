@@ -16,7 +16,3 @@ test.js
 
 # Worktrees
 .worktrees/
-
-# Stray emit artifacts in the examples corpus (the harness emits to a
-# temp dir, but a manual `thales examples/foo.ts` writes alongside the input).
-examples/*.lean
