@@ -66,6 +66,29 @@ describe('runLean', () => {
     );
   });
 
+  test('a counterexample rides through, numbers and decimal strings alike', () => {
+    const line =
+      'thales-verdict:{"identity":["t.ts","f","p"],"szs":"CounterSatisfiable",' +
+      '"reason":"r","counterexample":{"x":0,"y":"9007199254740992"}}\n';
+    const res = runLean(
+      ['a.lean'],
+      '/engine',
+      fakeSpawn([{ status: 0 }, { status: 0, stdout: line }]).spawn,
+    );
+    expect(res).toMatchObject({
+      kind: 'completed',
+      verdicts: [
+        {
+          identity: ['t.ts', 'f', 'p'],
+          szs: 'CounterSatisfiable',
+          reason: 'r',
+          counterexample: { x: 0, y: '9007199254740992' },
+        },
+      ],
+      failures: [],
+    });
+  });
+
   test('missing engine root is no-project', () => {
     const res = runLean(['a.lean'], undefined, fakeSpawn([]).spawn);
     expect(res.kind).toBe('no-project');
@@ -164,6 +187,9 @@ describe('runLean', () => {
       'thales-verdict:{"identity":["a"],"szs":1}',
       'thales-verdict:{"identity":[1,2,3],"szs":"Theorem","reason":"r"}',
       'thales-verdict:{"identity":["f.ts","f","p"],"szs":"Theorem"}',
+      'thales-verdict:{"identity":["f.ts","f","p"],"szs":"CounterSatisfiable","reason":"r","counterexample":[]}',
+      'thales-verdict:{"identity":["f.ts","f","p"],"szs":"CounterSatisfiable","reason":"r","counterexample":{"x":true}}',
+      'thales-verdict:{"identity":["f.ts","f","p"],"szs":"CounterSatisfiable","reason":"r","counterexample":{"x":null}}',
     ];
     const res = runLean(
       ['a.lean', 'b.lean'],

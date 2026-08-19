@@ -3,11 +3,14 @@ import { existsSync } from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-/** One #thales_prove verdict line: the contract printed by ThalesDsl. */
+/** One #thales_prove verdict line: the contract printed by ThalesDsl.
+ * Counterexample values outside the JS safe-integer range travel as
+ * decimal strings. */
 export interface LeanVerdict {
   identity: [string, string, string];
   szs: string;
   reason: string;
+  counterexample?: Record<string, number | string>;
 }
 
 /** One artifact whose Lean run failed or broke the verdict contract;
@@ -63,6 +66,17 @@ type Spawn = (
   opts: { cwd: string; encoding: 'utf8'; timeout: number },
 ) => SpawnOutcome;
 
+function isCounterexample(c: unknown): c is Record<string, number | string> {
+  return (
+    typeof c === 'object' &&
+    c !== null &&
+    !Array.isArray(c) &&
+    Object.values(c).every(
+      (x) => typeof x === 'number' || typeof x === 'string',
+    )
+  );
+}
+
 function isVerdict(v: unknown): v is LeanVerdict {
   if (typeof v !== 'object' || v === null) return false;
   const o = v as Record<string, unknown>;
@@ -71,7 +85,8 @@ function isVerdict(v: unknown): v is LeanVerdict {
     o.identity.length === 3 &&
     o.identity.every((s) => typeof s === 'string') &&
     typeof o.szs === 'string' &&
-    typeof o.reason === 'string'
+    typeof o.reason === 'string' &&
+    (o.counterexample === undefined || isCounterexample(o.counterexample))
   );
 }
 

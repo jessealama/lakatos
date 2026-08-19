@@ -20,14 +20,17 @@ const SENTINEL = 'thales-verdict:';
 // two together.
 const SZS = new Set([
   'Theorem',
+  'CounterSatisfiable',
   'Inappropriate',
   'GaveUp',
   'NotTried',
   'Error',
 ]);
 
-// Expected [function, szs, reasonPattern?] sequence per fixture, in
-// command order; reasonPattern, when present, must match the reason.
+// Expected [function, szs, reasonPattern?, counterexample?] sequence per
+// fixture, in command order; reasonPattern, when present, must match the
+// reason; counterexample, when present, must deep-equal the verdict's
+// (and only expected entries may carry one).
 const FIXTURES = [
   {
     file: 'verdict-channel.lean',
@@ -45,11 +48,17 @@ const FIXTURES = [
     expected: Array.from({ length: 8 }, () => ['add', 'Theorem']),
   },
   {
-    file: 'gaveup-false.lean',
+    file: 'countersatisfiable.lean',
     expected: [
+      ['bump', 'CounterSatisfiable', /false/, { x: 0 }],
+      ['sq', 'CounterSatisfiable', /false/, { x: 0 }],
+      ['comm', 'CounterSatisfiable', /false/, { a: 0, b: 1 }],
       ['bump', 'GaveUp', /false/],
-      ['sq', 'GaveUp', /false/],
     ],
+  },
+  {
+    file: 'gaveup-stuck.lean',
+    expected: [['slow', 'GaveUp', /did not evaluate/]],
   },
   {
     file: 'theorem-inappropriate.lean',
@@ -130,13 +139,18 @@ for (const { file, expected } of FIXTURES) {
       JSON.stringify(got) === JSON.stringify(want),
       `${file}: expected verdicts ${JSON.stringify(want)}, got ${JSON.stringify(got)}`,
     );
-    for (const [i, [, , reasonPattern]] of expected.entries()) {
+    for (const [i, [, , reasonPattern, counterexample]] of expected.entries()) {
       if (reasonPattern !== undefined) {
         check(
           reasonPattern.test(verdicts[i].reason),
           `${file}: verdict ${i} reason ${JSON.stringify(verdicts[i].reason)} does not match ${reasonPattern}`,
         );
       }
+      check(
+        JSON.stringify(verdicts[i].counterexample) ===
+          JSON.stringify(counterexample),
+        `${file}: verdict ${i} counterexample ${JSON.stringify(verdicts[i].counterexample)}, expected ${JSON.stringify(counterexample)}`,
+      );
     }
   }
 }

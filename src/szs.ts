@@ -6,7 +6,10 @@ import type { IssueKind } from "../engines/pabst/src/contract.js";
  * stopped of its own accord — the `kind` field disambiguates. Theorem and
  * Inappropriate come from the prove pipeline: a property proven for all
  * inputs, and an annotation depending on code outside the mappable subset
- * (its `reason` names the offending construct). InputError marks an
+ * (its `reason` names the offending construct). CounterSatisfiable comes
+ * from either engine — a sampled counterexample from refute, or a witness
+ * searched out of a bounded domain that decide established false — in the
+ * same falsified shape either way. InputError marks an
  * annotation whose input is malformed at extraction (a duplicate property
  * name, an inaccessible subject); its `error` carries the diagnostic and
  * the run exits 2, the documented error mode.

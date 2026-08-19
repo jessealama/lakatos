@@ -26,7 +26,9 @@ const corpusRoot = path.join(
 // directory in the corpus fails loudly instead of being skipped.
 const BUCKET_STATUS: Record<string, string> = {
   theorem: "Theorem",
+  countersatisfiable: "CounterSatisfiable",
   gaveup: "GaveUp",
+  nottried: "NotTried",
   inappropriate: "Inappropriate",
 };
 

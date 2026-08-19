@@ -7,6 +7,8 @@ import {
   useRepoScratchDir,
 } from "./helpers/cli.js";
 import type { Envelope } from "../src/envelope.js";
+import { square } from "../engines/thales/tests/conformance/countersatisfiable/zero-edge.js";
+import { f } from "../engines/thales/tests/conformance/countersatisfiable/commutes.js";
 
 // Needs the Lean toolchain and is minutes-slow, so it only runs when asked:
 // thales.yml sets the variable; unit and coverage runs stay identical
@@ -43,6 +45,18 @@ describe.runIf(enabled)("lakatos prove end-to-end (tracer)", () => {
       ),
       path.join(dir, "parity.ts"),
     );
+    // The witness round-trip runs the corpus's false fixtures and then
+    // evaluates their functions (imported above) at the extracted witness.
+    const cs = path.join(
+      repoRoot,
+      "engines",
+      "thales",
+      "tests",
+      "conformance",
+      "countersatisfiable",
+    );
+    fs.copyFileSync(path.join(cs, "zero-edge.ts"), path.join(dir, "unique.ts"));
+    fs.copyFileSync(path.join(cs, "commutes.ts"), path.join(dir, "comm.ts"));
   });
 
   it(
@@ -64,6 +78,42 @@ describe.runIf(enabled)("lakatos prove end-to-end (tracer)", () => {
         reason: expect.stringContaining("ClassDeclaration"),
       });
       expect(env.annotations).toHaveLength(3);
+    },
+  );
+
+  it(
+    "false bounded claims ship witnesses that round-trip against the source",
+    { timeout: proveTimeoutMs(2) },
+    () => {
+      const env = runForEnvelope(["prove", "unique.ts", "comm.ts"]);
+      const by = new Map(
+        env.annotations.map((a) => [`${a.function}/${a.property}`, a]),
+      );
+
+      // square(x) > 0 over [0, 10) is false only at x = 0, so the witness
+      // is fully pinned — and evaluating the source at it falsifies.
+      expect(by.get("square/positive")).toMatchObject({
+        szs: "CounterSatisfiable",
+        kind: "falsified",
+        counterexample: { x: 0 },
+      });
+      expect(square(0) > 0).toBe(false);
+
+      // Commutativity fails at any a ≠ b, so assert shape and bounds, then
+      // round-trip the witness through the fixture's own function.
+      const comm = by.get("f/commutes")!;
+      expect(comm).toMatchObject({
+        szs: "CounterSatisfiable",
+        kind: "falsified",
+      });
+      const cex = comm.counterexample as Record<string, number>;
+      expect(Object.keys(cex).sort()).toEqual(["a", "b"]);
+      for (const v of Object.values(cex)) {
+        expect(Number.isInteger(v)).toBe(true);
+        expect(v).toBeGreaterThanOrEqual(0);
+        expect(v).toBeLessThan(10);
+      }
+      expect(f(cex.a!, cex.b!)).not.toBe(f(cex.b!, cex.a!));
     },
   );
 

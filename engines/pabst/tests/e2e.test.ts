@@ -12,6 +12,10 @@ import { META } from "./helpers/fixtures.js";
 const root = process.cwd();
 const passSrc = path.join(root, "engines/pabst/tests/fixtures/e2e/pass.ts");
 const failSrc = path.join(root, "engines/pabst/tests/fixtures/e2e/fail.ts");
+const commutesSrc = path.join(
+  root,
+  "engines/pabst/tests/fixtures/e2e/commutes.ts",
+);
 const classPassSrc = path.join(
   root,
   "engines/pabst/tests/fixtures/e2e/class-pass.ts",
@@ -134,6 +138,34 @@ describe("end-to-end", () => {
         kind: "falsified",
         counterexample: { x: 1 },
       });
+    },
+  );
+
+  it(
+    "a two-binder commutativity claim is falsified with both binders bound",
+    { timeout: 30000 },
+    () => {
+      const [r] = generate([commutesSrc]);
+      expect(r).toBeDefined();
+      const env = run(r!);
+      expect(issuesOf(env)).toHaveLength(1);
+      const issue = issuesOf(env)[0]!;
+      expectValidIssue(issue);
+      expect(issue).toMatchObject({
+        function: "f",
+        property: "commutes",
+        kind: "falsified",
+      });
+      // f(a, b) = 2a against f(b, a) = 2b: any a ≠ b in-bounds falsifies,
+      // so pin the shape and round-trip rather than exact shrunk values.
+      const cex = issue.counterexample as Record<string, number>;
+      expect(Object.keys(cex).sort()).toEqual(["a", "b"]);
+      for (const v of Object.values(cex)) {
+        expect(Number.isInteger(v)).toBe(true);
+        expect(v).toBeGreaterThanOrEqual(0);
+        expect(v).toBeLessThan(10);
+      }
+      expect(cex.a).not.toBe(cex.b);
     },
   );
 
