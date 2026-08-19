@@ -163,7 +163,13 @@ export function joinProveVerdicts(
         `verdict status ${JSON.stringify(v.szs)} for ${key} is not representable in the envelope`,
       );
     }
-    if (v.szs === "CounterSatisfiable" && v.counterexample === undefined) {
+    // An empty counterexample object counts as none: the envelope schema
+    // requires at least one binder/value pair on a falsified annotation.
+    if (
+      v.szs === "CounterSatisfiable" &&
+      (v.counterexample === undefined ||
+        Object.keys(v.counterexample).length === 0)
+    ) {
       messages.push(
         `CounterSatisfiable verdict for ${key} carries no counterexample`,
       );

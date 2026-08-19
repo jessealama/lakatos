@@ -318,6 +318,19 @@ describe("joinProveVerdicts", () => {
     );
   });
 
+  it("a CounterSatisfiable verdict with an empty counterexample is a mismatch", () => {
+    // The envelope schema requires a non-empty counterexample object, so
+    // an empty one must not ship on a healthy run.
+    const join = joinProveVerdicts(
+      [id("a")],
+      [{ ...verdict("a", "CounterSatisfiable"), counterexample: {} }],
+    );
+    expect(join.kind).toBe("mismatched");
+    expect((join as { messages: string[] }).messages.join("\n")).toContain(
+      "counterexample",
+    );
+  });
+
   it("a status the envelope cannot represent is a mismatch", () => {
     expect(joinProveVerdicts([id("a")], [verdict("a", "Timeout")]).kind).toBe(
       "mismatched",
