@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildSpecs } from "../src/build-spec.js";
-import { PabstError } from "../src/errors.js";
+import { LemmaError } from "../../../lemma/src/errors.js";
 
 const FIXTURE = new URL("./fixtures/e2e/readme-example.ts", import.meta.url)
   .pathname;
@@ -31,21 +31,21 @@ const BAD_PREFIX = new URL(
 ).pathname;
 
 describe("buildSpecs — per-annotation diagnostics", () => {
-  it("wraps a PabstError with file:line/@ensures{name} and keeps the original as cause", () => {
+  it("wraps a LemmaError with file:line/@ensures{name} and keeps the original as cause", () => {
     let err: unknown;
     try {
       buildSpecs(BAD_PREFIX);
     } catch (e) {
       err = e;
     }
-    expect(err).toBeInstanceOf(PabstError);
-    const wrapped = err as PabstError;
+    expect(err).toBeInstanceOf(LemmaError);
+    const wrapped = err as LemmaError;
     expect(wrapped.message).toMatch(
       /bad-prefix\.ts:1: @ensures\{shapely\}: expected 'forall'/,
     );
     // The rewrap must not lose the original error: its stack points at the
     // actual throw site, not at the rewrap line.
-    expect(wrapped.cause).toBeInstanceOf(PabstError);
+    expect(wrapped.cause).toBeInstanceOf(LemmaError);
     expect((wrapped.cause as Error).message).toMatch(/^expected 'forall'/);
   });
 });

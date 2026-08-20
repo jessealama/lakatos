@@ -225,7 +225,7 @@ describe("cli zero-argument discovery", () => {
 
 // User-facing compile errors (malformed formulas, unsupported constructs,
 // bad references) must exit 2 with a one-line diagnostic, not escape main()
-// as an uncaught exception. One case per PabstError-throwing module keeps
+// as an uncaught exception. One case per LemmaError-throwing module keeps
 // the whole compile front-end pinned to the contract: reverting any module's
 // throws to plain Error fails its case here. These use `lakatos refute` —
 // compilation fails before vitest is spawned, so no timeout is needed.

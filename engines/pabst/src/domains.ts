@@ -8,7 +8,7 @@ import {
   anchoredSource,
   regexGuardDomainError,
 } from "../../../lemma/src/regex-guard.js";
-import { PabstError } from "./errors.js";
+import { LemmaError } from "../../../lemma/src/errors.js";
 
 export const DOMAIN_TABLE: Record<Domain, string> = {
   int: "fc.integer()",
@@ -66,7 +66,7 @@ export function arbitraryFor(
     default:
       // Unreachable via the parser (parseRange rejects these), kept as a
       // backstop for direct callers.
-      throw new PabstError(
+      throw new LemmaError(
         `domain '${domain}' does not support interval constraints`,
       );
   }
