@@ -272,8 +272,8 @@ def attemptGeneric (identity : Identity) (p : Expr) :
     return .stuck mvar g residual
 
 /-- Rung 3: grind on the residual goal rung 2 left. Success certifies
-through the root metavariable like every rung; failure — its own window's
-exhaustion included — ships the residual-goal GaveUp. -/
+through the root metavariable like every rung; failure — either resource
+limit included — ships the residual-goal GaveUp. -/
 def attemptGrind (identity : Identity) (p root : Expr) (goal : MVarId)
     (residual : Expr) : Term.TermElabM Verdict := do
   let solved ← tryCatchRuntimeEx
@@ -282,7 +282,7 @@ def attemptGrind (identity : Identity) (p root : Expr) (goal : MVarId)
       let result ← Meta.Grind.main goal params
       pure !result.hasFailed
     catch _ => pure false)
-    (fun ex => if ex.isMaxHeartbeat then pure false else throw ex)
+    (fun ex => if ex.isRuntime then pure false else throw ex)
   if solved then return ← certifyRoot identity p root residual
   return ⟨identity, "GaveUp", s!"unsolved goal: {← Meta.ppExpr residual}", none⟩
 
@@ -290,18 +290,39 @@ def timeoutVerdict (identity : Identity) (budget : Nat) : Verdict :=
   ⟨identity, "Timeout",
     s!"the attempt exceeded the per-annotation heartbeat budget (thales.heartbeats = {budget})", none⟩
 
+/-- Runs one rung, turning either resource limit into a fall-through to the
+next. Budget exhaustion — heartbeats, or the kernel's own timeout — reports
+the rung starved, since a bigger budget might have closed the goal; a blown
+recursion limit does not, so it falls through as a plain rung failure. -/
+def runRung {α : Type} (x : Term.TermElabM α) :
+    Term.TermElabM (Option α × Bool) :=
+  tryCatchRuntimeEx (return (some (← x), false))
+    (fun ex => do
+      if ex.isMaxHeartbeat || (← isKernelTimeout ex) then return (none, true)
+      if ex.isMaxRecDepth then return (none, false)
+      throw ex)
+
 def attemptLadder (identity : Identity) (propStx : TSyntax `term)
     (searchStx : TSyntax `term) (names : List String) (allBounded : Bool)
     (budget : Nat) : Term.TermElabM Verdict := do
-  let p ←
-    try
-      withHeartbeats budget <| Term.withoutErrToSorry do
-        let p ← Term.elabTerm propStx (some (mkSort .zero))
-        Term.synthesizeSyntheticMVarsNoPostponing
-        instantiateMVars p
-    catch ex =>
-      return ⟨identity, "Error",
-        s!"property elaboration failed: {← ex.toMessageData.toString}", none⟩
+  -- A plain catch would let the recursion limit through to the caller,
+  -- which would read this phase's failure as proof search's; budget
+  -- exhaustion still propagates, as the annotation's Timeout.
+  let elaborated : Except Verdict Expr ←
+    tryCatchRuntimeEx
+      (do
+        let p ← withHeartbeats budget <| Term.withoutErrToSorry do
+          let p ← Term.elabTerm propStx (some (mkSort .zero))
+          Term.synthesizeSyntheticMVarsNoPostponing
+          instantiateMVars p
+        return .ok p)
+      (fun ex => do
+        if ex.isMaxHeartbeat || (← isKernelTimeout ex) then throw ex
+        return .error ⟨identity, "Error",
+          s!"property elaboration failed: {← ex.toMessageData.toString}", none⟩)
+  let p ← match elaborated with
+    | .ok p => pure p
+    | .error v => return v
   -- Each rung runs under its own fresh window: the kernel overshoots a
   -- shared window by a large factor before its own counter fires, which
   -- would let an early rung's blowout starve the ones after it. Bounded
@@ -311,26 +332,20 @@ def attemptLadder (identity : Identity) (propStx : TSyntax `term)
   let lateShare := if allBounded then max (budget / 4) 1 else half
   let mut starved := false
   if allBounded then
-    let outcome ← tryCatchRuntimeEx
-      (some <$> withHeartbeats half (attemptDecide identity p searchStx names))
-      (fun ex => do
-        if ex.isMaxHeartbeat || (← isKernelTimeout ex) then pure none else throw ex)
-    match outcome with
-    | some (some v) => return v
-    | some none => pure ()
-    | none => starved := true
-  let outcome ← tryCatchRuntimeEx
-    (some <$> withHeartbeats lateShare (attemptGeneric identity p))
-    (fun ex => do
-      if ex.isMaxHeartbeat || (← isKernelTimeout ex) then pure none else throw ex)
+    let (outcome, rungStarved) ←
+      runRung (withHeartbeats half (attemptDecide identity p searchStx names))
+    if rungStarved then starved := true
+    if let some (some v) := outcome then return v
+  let (outcome, rungStarved) ←
+    runRung (withHeartbeats lateShare (attemptGeneric identity p))
+  if rungStarved then starved := true
   let v ← match outcome with
     | some (.done v) => pure v
     | some (.stuck root goal residual) =>
       withHeartbeats lateShare (attemptGrind identity p root goal residual)
     | none => do
-      starved := true
-      -- Rung 2 blew its window without leaving a residual; grind starts
-      -- over from the original proposition.
+      -- Rung 2 blew a limit without leaving a residual; grind starts over
+      -- from the original proposition.
       let root ← Meta.mkFreshExprMVar p
       withHeartbeats lateShare (attemptGrind identity p root root.mvarId! p)
   -- A starved earlier rung might have closed the goal given budget, so
@@ -363,13 +378,17 @@ elab_rules : command
             -- The ladder caps each of its phases at the budget (or a split
             -- share of it); a blown cap anywhere in the attempt — the
             -- kernel's decide evaluation included — is this annotation's
-            -- Timeout, never the file's failure.
+            -- Timeout, never the file's failure. Whatever else escapes the
+            -- ladder is contained here too, named for the phase it came
+            -- from: this catch is past the point of elaborating anything.
             liftTermElabM <|
               tryCatchRuntimeEx
                 (attemptLadder identity ep.prop ep.search ep.names ep.allBounded budget)
                 fun ex => do
-                  unless ex.isMaxHeartbeat || (← isKernelTimeout ex) do throw ex
-                  pure (timeoutVerdict identity budget)
+                  if ex.isMaxHeartbeat || (← isKernelTimeout ex) then
+                    return timeoutVerdict identity budget
+                  return ⟨identity, "Error",
+                    s!"proof search failed: {← ex.toMessageData.toString}", none⟩
           catch ex =>
             pure ⟨identity, "Error",
               s!"property elaboration failed: {← ex.toMessageData.toString}", none⟩

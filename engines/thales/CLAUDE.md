@@ -67,9 +67,9 @@ Verdict meanings, as `Prove.lean` assigns them:
 
 - `Theorem` — a rung of the ladder succeeded (decide, simp/omega, or grind); the proof was added to the environment, so it is kernel-checked, not just elaborated.
 - `CounterSatisfiable` — `decide` established the property is false on its bounded domain, and the domain was searched for a concrete witness, shipped in the verdict's `counterexample` field (binder name → value; values outside the JS safe-integer range travel as decimal strings).
-- `GaveUp` — the ladder exhausted; the reason carries the pretty-printed residual goal that stumped the prover (or, in rung 1, the false-on-domain diagnosis with no witness to ship).
+- `GaveUp` — the ladder exhausted; the reason carries the pretty-printed residual goal that stumped the prover (or, in rung 1, the false-on-domain diagnosis with no witness to ship). A rung that blows the recursion limit (`maxRecDepth`) has failed, but the annotation has not: the ladder falls through to the next rung and the goal reported is whatever survived.
 - `Inappropriate` — the function could not be modeled because of an unmapped TypeScript construct (opaque node), or the property mentions such a declaration.
-- `Error` — elaboration failed for any other reason.
+- `Error` — the attempt failed for any other reason; the reason names the phase that failed — building the property, or searching for a proof — so neither is ever blamed for the other's failure.
 - `NotTried` — no structured property was provided (the transcriber's degradation path).
 - `Timeout` — the attempt exceeded the per-annotation heartbeat budget (`thales.heartbeats`, overridable per run via `LAKATOS_PROVE_HEARTBEATS` → `-Dweak.thales.heartbeats=N`); later annotations in the file still run, each with a fresh budget.
 
