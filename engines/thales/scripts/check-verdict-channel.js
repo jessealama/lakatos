@@ -80,6 +80,14 @@ const FIXTURES = [
     expected: [['bump', 'GaveUp', /unsolved goal:[\s\S]*x \+ 1 = x/]],
   },
   {
+    file: 'recdepth.lean',
+    expected: [
+      ['bump', 'GaveUp', /^unsolved goal:[\s\S]*bump/],
+      ['bump', 'Error', /^property elaboration failed/],
+      ['bump', 'Theorem'],
+    ],
+  },
+  {
     file: 'timeout.lean',
     expected: [
       ['slow', 'Timeout', /heartbeat budget/],
