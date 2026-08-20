@@ -11,6 +11,11 @@ elaboration failure, never a parse failure. -/
 /-- Integer literals in constructor arguments (interval endpoints, ts.num). -/
 syntax tsIntLit := ("-")? num
 
+/-- Float literals in binder bounds. Lean's decimal parsing is bit-identical
+to JavaScript's, so an endpoint transcribes verbatim and lands on the double
+the annotation meant. -/
+syntax tsFloatLit := ("-")? (scientific <|> num)
+
 declare_syntax_cat ts_type
 syntax "ts.number" : ts_type
 
@@ -52,6 +57,16 @@ declare_syntax_cat ts_binder
 syntax "ts.binder[" str "](" "ts.int" ", " "ts.range(" tsIntLit ", " tsIntLit ")" ")" : ts_binder
 syntax "ts.binder[" str "](" "ts.int" ")" : ts_binder
 syntax "ts.binder[" str "](" "ts.nat" ")" : ts_binder
+
+/-- One side of a `number` binder's guard, carrying its comparison. Either
+side may be absent: a half-bounded domain names only the bound it has. A
+`number` interval's openness cannot be normalized away the way an integer
+one's can, so each bound keeps its own comparison. -/
+declare_syntax_cat ts_bound
+syntax "ts.lower[" str "](" "ts.fnum[" tsFloatLit "]" ")" : ts_bound
+syntax "ts.upper[" str "](" "ts.fnum[" tsFloatLit "]" ")" : ts_bound
+
+syntax "ts.binder[" str "](" "ts.number" ("," ts_bound)* ")" : ts_binder
 
 declare_syntax_cat ts_prop
 syntax "ts.eq(" ts_expr ", " ts_expr ")" : ts_prop
