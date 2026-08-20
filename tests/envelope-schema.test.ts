@@ -211,6 +211,24 @@ describe("envelope schema", () => {
     ).not.toThrow();
   });
 
+  it("accepts a Timeout with its budget reason", () => {
+    expect(() =>
+      expectValidEnvelope({
+        ...META,
+        annotations: [
+          {
+            file: "f.ts",
+            function: "f",
+            property: "p",
+            szs: "Timeout",
+            reason:
+              "the attempt exceeded the per-annotation heartbeat budget (thales.heartbeats = 1)",
+          },
+        ],
+      }),
+    ).not.toThrow();
+  });
+
   it("accepts a NotTried with the unsupported-range kind and reason", () => {
     expect(() =>
       expectValidEnvelope({

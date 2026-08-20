@@ -23,6 +23,7 @@ const SZS = new Set([
   'CounterSatisfiable',
   'Inappropriate',
   'GaveUp',
+  'Timeout',
   'NotTried',
   'Error',
 ]);

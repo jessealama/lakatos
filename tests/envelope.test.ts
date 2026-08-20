@@ -332,8 +332,13 @@ describe("joinProveVerdicts", () => {
   });
 
   it("a status the envelope cannot represent is a mismatch", () => {
-    expect(joinProveVerdicts([id("a")], [verdict("a", "Timeout")]).kind).toBe(
+    expect(joinProveVerdicts([id("a")], [verdict("a", "Unknown")]).kind).toBe(
       "mismatched",
     );
+  });
+
+  it("a Timeout verdict joins with its reason", () => {
+    const join = joinProveVerdicts([id("a")], [verdict("a", "Timeout")]);
+    expect(join.kind).toBe("joined");
   });
 });

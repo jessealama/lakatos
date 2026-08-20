@@ -12,7 +12,9 @@ import type { IssueKind } from "../engines/pabst/src/contract.js";
  * same falsified shape either way. InputError marks an
  * annotation whose input is malformed at extraction (a duplicate property
  * name, an inaccessible subject); its `error` carries the diagnostic and
- * the run exits 2, the documented error mode.
+ * the run exits 2, the documented error mode. Timeout marks an annotation
+ * whose proof attempt exceeded its per-annotation budget; later
+ * annotations in the same file still run.
  */
 export type SzsStatus =
   | "Theorem"
@@ -21,7 +23,8 @@ export type SzsStatus =
   | "Error"
   | "NotTried"
   | "Inappropriate"
-  | "InputError";
+  | "InputError"
+  | "Timeout";
 
 /** Status for a property the refutation engine flagged. */
 export function szsForIssue(kind: IssueKind): SzsStatus {

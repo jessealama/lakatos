@@ -122,6 +122,7 @@ export const PROVE_STATUSES: ReadonlySet<string> = new Set([
   "CounterSatisfiable",
   "Inappropriate",
   "GaveUp",
+  "Timeout",
   "NotTried",
   "Error",
 ]);
