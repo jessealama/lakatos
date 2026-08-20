@@ -48,7 +48,7 @@ export interface Envelope {
   annotations: AnnotationResult[];
 }
 
-export function identityKey(i: PropertyIdentity): string {
+function identityKey(i: PropertyIdentity): string {
   return JSON.stringify([i.file, i.function, i.property]);
 }
 

@@ -1,7 +1,10 @@
 import * as fs from 'node:fs';
 import ts from 'typescript';
-import type { Binder, Range } from '../../../../lemma/src/binder.js';
-import { intBounds, MAX_SAFE } from '../../../../lemma/src/domains.js';
+import type { Binder } from '../../../../lemma/src/binder.js';
+import {
+  intBounds,
+  SAFE_INTEGER_RANGE,
+} from '../../../../lemma/src/domains.js';
 import {
   extractFromSource,
   type InvalidAnnotation,
@@ -211,21 +214,17 @@ type BinderLowering =
   /** The bounded ∀-binder constructor for this binder. */
   | { kind: 'ctor'; ctor: string }
   /** The range only fits after the safe-integer clamp; proving over the
-   * clamped domain would be a narrower statement than the user wrote. */
-  | { kind: 'unsupported-range'; reason: string }
+   * clamped domain would be a narrower statement than the user wrote.
+   * Carries the offending endpoint literals as the user wrote them. */
+  | { kind: 'clamped'; endpoints: string[] }
   /** No `ts.range` reading at all (non-integer domain, unbounded side). */
   | { kind: 'bare' };
 
-function unsupportedRangeReason(
-  r: Range,
-  clampedLo: boolean,
-  clampedHi: boolean,
-): string {
-  const ends = [...(clampedLo ? [r.min!] : []), ...(clampedHi ? [r.max!] : [])];
-  const one = ends.length === 1;
+function unsupportedRangeReason(endpoints: string[]): string {
+  const one = endpoints.length === 1;
   return (
-    `endpoint${one ? '' : 's'} ${ends.join(' and ')} ` +
-    `exceed${one ? 's' : ''} the safe integer range (±${MAX_SAFE})`
+    `endpoint${one ? '' : 's'} ${endpoints.join(' and ')} ` +
+    `exceed${one ? 's' : ''} ${SAFE_INTEGER_RANGE}`
   );
 }
 
@@ -241,8 +240,8 @@ function binderConstructor(b: Binder): BinderLowering {
   const { lo, hi, clampedLo, clampedHi } = intBounds(b.domain, r);
   if (clampedLo || clampedHi) {
     return {
-      kind: 'unsupported-range',
-      reason: unsupportedRangeReason(r, clampedLo, clampedHi),
+      kind: 'clamped',
+      endpoints: [...(clampedLo ? [r.min] : []), ...(clampedHi ? [r.max] : [])],
     };
   }
   return {
@@ -300,21 +299,31 @@ type PropReading =
 
 /** The `ts_prop` reading of a Lemma formula: bare when this slice cannot
  * express it (non-integer domains, unbounded ranges, connectives, or a
- * formula the Lemma parser rejects), unsupported-range when a binder's
- * range only fits after the safe-integer clamp. */
+ * formula the Lemma parser rejects), unsupported-range only when a
+ * safe-integer clamp is the SOLE blocker — an annotation this slice could
+ * not have structured anyway degrades to bare, whatever its ranges. */
 function structuredProp(formula: string): PropReading {
   try {
     const { binders, body } = parsePrefix(formula);
     const binderCtors: string[] = [];
+    const clampedEndpoints: string[] = [];
     for (const b of binders) {
       const lowered = binderConstructor(b);
-      if (lowered.kind !== 'ctor') return lowered;
-      binderCtors.push(lowered.ctor);
+      if (lowered.kind === 'bare') return { kind: 'bare' };
+      if (lowered.kind === 'clamped')
+        clampedEndpoints.push(...lowered.endpoints);
+      else binderCtors.push(lowered.ctor);
     }
     const ast = parseBody(body);
     if (ast.kind !== 'atom') return { kind: 'bare' };
     const parsed = parseAtomExpr(ast.js);
     if (parsed === undefined) return { kind: 'bare' };
+    if (clampedEndpoints.length > 0) {
+      return {
+        kind: 'unsupported-range',
+        reason: unsupportedRangeReason(clampedEndpoints),
+      };
+    }
     const expr = unwrapParens(parsed.expr);
     const sides = equationSides(expr);
     const bodyCtor =

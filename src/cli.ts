@@ -15,7 +15,6 @@ import { qualifiedName } from "../lemma/src/qualified-name.js";
 import type { InvalidAnnotation } from "../lemma/src/extract.js";
 import {
   buildEnvelope,
-  identityKey,
   joinProveVerdicts,
   type AnnotationResult,
   type Envelope,
@@ -74,11 +73,13 @@ function notTriedExit(
   meta: Omit<Envelope, "annotations">,
   identities: PropertyIdentity[],
   inputErrors: AnnotationResult[],
+  untried: AnnotationResult[] = [],
 ): number {
   emitEnvelope({
     ...meta,
     annotations: [
       ...identities.map((i) => ({ ...i, szs: "NotTried" as const })),
+      ...untried,
       ...inputErrors,
     ],
   });
@@ -235,54 +236,65 @@ function prove(patterns: string[]): number {
   const meta = captureMeta();
 
   const artifacts = writeArtifacts(files);
-  const identities: PropertyIdentity[] = artifacts.flatMap((a) =>
-    a.annotations.map((r) => ({
-      file: a.sourceFile,
-      function: qualifiedName(r.functionName, r.className, r.isStatic),
-      property: r.propertyName,
-    })),
-  );
   const inputErrors = inputErrorResults(
     artifacts.map((a) => ({ file: a.sourceFile, invalid: a.invalid })),
   );
-  // Annotations the transcriber deliberately emitted no prove command
-  // for: reported NotTried here, never expected in the verdict join.
-  const untriedResults: AnnotationResult[] = artifacts.flatMap((a) =>
-    a.untried.map((u) => ({
-      file: a.sourceFile,
-      function: qualifiedName(
-        u.annotation.functionName,
-        u.annotation.className,
-        u.annotation.isStatic,
-      ),
-      property: u.annotation.propertyName,
-      szs: "NotTried" as const,
-      kind: u.kind,
-      reason: u.reason,
-    })),
-  );
-  const untriedKeys = new Set(untriedResults.map(identityKey));
-  const tried = identities.filter((i) => !untriedKeys.has(identityKey(i)));
-  const n = identities.length;
+  // Partition each artifact's annotations once, by object identity:
+  // untried ones (the transcriber emitted no prove command) become
+  // NotTried entries here and are never expected in the verdict join;
+  // the rest are the identities the join must account for. An artifact
+  // with no prove command at all has nothing for Lean to report.
+  const tried: PropertyIdentity[] = [];
+  const untriedResults: AnnotationResult[] = [];
+  const proveFiles: string[] = [];
+  for (const a of artifacts) {
+    const untried = new Map(a.untried.map((u) => [u.annotation, u]));
+    for (const r of a.annotations) {
+      const identity = {
+        file: a.sourceFile,
+        function: qualifiedName(r.functionName, r.className, r.isStatic),
+        property: r.propertyName,
+      };
+      const u = untried.get(r);
+      if (u === undefined) tried.push(identity);
+      else
+        untriedResults.push({
+          ...identity,
+          szs: "NotTried",
+          kind: u.kind,
+          reason: u.reason,
+        });
+    }
+    if (a.outFile !== undefined && a.annotations.length > untried.size)
+      proveFiles.push(a.outFile);
+  }
+  const n = tried.length;
   console.error(
     `lakatos: transcribed ${n} annotation${n === 1 ? "" : "s"} across ${artifacts.length} file(s) into .thales/`,
   );
+  const m = untriedResults.length;
+  if (m > 0)
+    console.error(
+      `lakatos: ${m} annotation${m === 1 ? "" : "s"} not tried (unsupported range)`,
+    );
   // Unhealthy runs honor the output contract: diagnostics on stderr, a
-  // NotTried envelope on stdout, and the documented exit 2.
+  // NotTried envelope on stdout, and the documented exit 2. The untried
+  // entries keep their kind and reason — that classification was made at
+  // transcription time, before the run went unhealthy.
   const unhealthy = (messages: string[]): number => {
-    for (const m of messages) console.error(`error: ${m}`);
-    return notTriedExit(meta, identities, inputErrors);
+    for (const msg of messages) console.error(`error: ${msg}`);
+    return notTriedExit(meta, tried, inputErrors, untriedResults);
   };
 
-  const outFiles = artifacts.flatMap((a) =>
-    a.outFile !== undefined ? [a.outFile] : [],
-  );
-  if (outFiles.length === 0) {
-    emitEnvelope({ ...meta, annotations: inputErrors });
+  if (proveFiles.length === 0) {
+    emitEnvelope({
+      ...meta,
+      annotations: [...untriedResults, ...inputErrors],
+    });
     return inputErrors.length > 0 ? 2 : 0;
   }
 
-  const result = runLean(outFiles, findEngineRoot());
+  const result = runLean(proveFiles, findEngineRoot());
   if (result.kind === "no-project") return unhealthy([result.message]);
   if (result.kind === "failed") {
     process.stderr.write(result.stdout);

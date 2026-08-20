@@ -498,6 +498,42 @@ describe('clamped ranges', () => {
   test('an in-range annotation produces no untried records', () => {
     expect(transcribe(ADD, 'add.ts').untried).toEqual([]);
   });
+
+  test('a clamped range alongside an unmappable binder degrades to bare, either order', () => {
+    for (const binders of [
+      `(a: int ∈ [0, ${HUGE}]) (s: string)`,
+      `(s: string) (a: int ∈ [0, ${HUGE}])`,
+    ]) {
+      const src = [
+        `/** @ensures{p} forall ${binders} { f(a) >= 0 } */`,
+        'function f(a: number): number { return a; }',
+      ].join('\n');
+      const { lean, untried } = transcribe(src, 't.ts');
+      expect(untried).toEqual([]);
+      expect(lean).toContain('#thales_prove "t.ts" "f" "p"');
+    }
+  });
+
+  test('a clamped range with an unstructurable body degrades to bare', () => {
+    const src = [
+      `/** @ensures{p} forall (a: int ∈ [0, ${HUGE}]) { f(a) >= 0 ∧ f(a) < 9 } */`,
+      'function f(a: number): number { return a; }',
+    ].join('\n');
+    const { lean, untried } = transcribe(src, 't.ts');
+    expect(untried).toEqual([]);
+    expect(lean).toContain('#thales_prove "t.ts" "f" "p"');
+  });
+
+  test('clamped endpoints across two binders are named together', () => {
+    const src = [
+      `/** @ensures{p} forall (a: int ∈ [-${HUGE}, 5]) (b: int ∈ [0, ${HUGE}]) { f(a) >= b } */`,
+      'function f(a: number): number { return a; }',
+    ].join('\n');
+    const { untried } = transcribe(src, 't.ts');
+    expect(untried[0]!.reason).toBe(
+      `endpoints -${HUGE} and ${HUGE} exceed the safe integer range (±9007199254740991)`,
+    );
+  });
 });
 
 describe('the tracer fixture', () => {

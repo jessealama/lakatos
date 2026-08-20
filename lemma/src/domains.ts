@@ -17,6 +17,9 @@ export function isDomain(s: string): s is Domain {
 
 export const MAX_SAFE = 9007199254740991n;
 
+/** The one rendering of the ±MAX_SAFE limit diagnostics may use. */
+export const SAFE_INTEGER_RANGE = `the safe integer range (±${MAX_SAFE})`;
+
 export interface IntBounds {
   lo: bigint;
   hi: bigint;

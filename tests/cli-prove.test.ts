@@ -27,6 +27,7 @@ describe("cli prove", () => {
     "annotated.ts": ANNOTATED,
     "other.ts": `/** @ensures{pos} forall (n: int ∈ [0, 5)) { other(n) >= 0 } */\nexport function other(n: number): number { return n; }\n`,
     "plain.ts": "export const x = 1;\n",
+    "allhuge.ts": `/** @ensures{big} forall (n: int ∈ [0, 1000000000000000000000000000000]) { lone(n) >= 0 } */\nexport function lone(n: number): number { return n; }\n`,
     "mixed.ts": [
       "/** @ensures{big} forall (n: int ∈ [0, 1000000000000000000000000000000]) { huge(n) >= 0 } */",
       "export function huge(n: number): number { return n; }",
@@ -141,6 +142,63 @@ describe("cli prove", () => {
           function: "small",
           property: "pos",
           szs: "Theorem",
+        },
+      ]),
+    );
+    expect(env.annotations).toHaveLength(2);
+  });
+
+  it("a file whose only annotation is untried never reaches Lean", () => {
+    const { code, stdout } = runMain(["prove", "allhuge.ts"]);
+    expect(runLeanMock).not.toHaveBeenCalled();
+    expect(code).toBe(0);
+    const env = JSON.parse(stdout[0]!);
+    expectValidEnvelope(env);
+    expect(env.annotations).toEqual([
+      {
+        file: "allhuge.ts",
+        function: "lone",
+        property: "big",
+        szs: "NotTried",
+        kind: "unsupported-range",
+        reason:
+          "endpoint 1000000000000000000000000000000 exceeds the safe integer range (±9007199254740991)",
+      },
+    ]);
+    // The artifact is still written: it documents the skip as a comment.
+    const artifact = fs.readFileSync(
+      path.join(".thales", "allhuge.ts.lean"),
+      "utf8",
+    );
+    expect(artifact).toContain("-- not tried");
+  });
+
+  it("an unhealthy run keeps the unsupported-range metadata", () => {
+    runLeanMock.mockReturnValue({
+      kind: "failed",
+      stdout: "",
+      stderr: "",
+    });
+    const { code, stdout } = runMain(["prove", "mixed.ts"]);
+    expect(code).toBe(2);
+    const env = JSON.parse(stdout[0]!);
+    expectValidEnvelope(env);
+    expect(env.annotations).toEqual(
+      expect.arrayContaining([
+        {
+          file: "mixed.ts",
+          function: "huge",
+          property: "big",
+          szs: "NotTried",
+          kind: "unsupported-range",
+          reason:
+            "endpoint 1000000000000000000000000000000 exceeds the safe integer range (±9007199254740991)",
+        },
+        {
+          file: "mixed.ts",
+          function: "small",
+          property: "pos",
+          szs: "NotTried",
         },
       ]),
     );
