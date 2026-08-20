@@ -45,11 +45,13 @@ to `Inappropriate`. -/
 syntax "ts_def " str " := " "ts.opaque[" str "](" num ", " num ")" : command
 
 /-! Property constructors for the Lemma prefix/formula shapes this slice
-supports: bounded ∀-binders over int ranges, `≡` equations between value
-islands, and boolean islands. -/
+supports: bounded ∀-binders over int ranges and unbounded int/nat binders,
+`≡` equations between value islands, and boolean islands. -/
 
 declare_syntax_cat ts_binder
 syntax "ts.binder[" str "](" "ts.int" ", " "ts.range(" tsIntLit ", " tsIntLit ")" ")" : ts_binder
+syntax "ts.binder[" str "](" "ts.int" ")" : ts_binder
+syntax "ts.binder[" str "](" "ts.nat" ")" : ts_binder
 
 declare_syntax_cat ts_prop
 syntax "ts.eq(" ts_expr ", " ts_expr ")" : ts_prop

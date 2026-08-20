@@ -58,6 +58,18 @@ const FIXTURES = [
     ],
   },
   {
+    file: 'theorem-generic.lean',
+    expected: [
+      ['dbl', 'Theorem', /simp\/omega/],
+      ['dbl', 'Theorem', /simp\/omega/],
+      ['dbl', 'Theorem', /simp\/omega/],
+    ],
+  },
+  {
+    file: 'gaveup-goal.lean',
+    expected: [['bump', 'GaveUp', /unsolved goal:[\s\S]*x \+ 1 = x/]],
+  },
+  {
     file: 'timeout.lean',
     expected: [
       ['slow', 'Timeout', /heartbeat budget/],

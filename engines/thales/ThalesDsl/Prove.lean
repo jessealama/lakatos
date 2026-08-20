@@ -11,38 +11,79 @@ namespace ThalesDsl
 
 open Lean Elab Command
 
+/-- One parsed ∀-binder: its variable, plus the range when bounded. -/
+inductive BinderShape where
+  | ranged (x : String) (lo hi : TSyntax ``tsIntLit)
+  | unboundedInt (x : String)
+  | unboundedNat (x : String)
+
+def BinderShape.name : BinderShape → String
+  | .ranged x .. | .unboundedInt x | .unboundedNat x => x
+
+def BinderShape.isRanged : BinderShape → Bool
+  | .ranged .. => true
+  | _ => false
+
+/-- What elabProp builds from a ts_prop. `allBounded` gates the decide
+rung: without it no Decidable instance exists, and `search` is a stub —
+witness search never runs on unbounded domains. -/
+structure ElabProp where
+  prop : TSyntax `term
+  search : TSyntax `term
+  names : List String
+  allBounded : Bool
+
 /-- Transcribes a `ts_prop` into a Lean `Prop` term — bounded binders become
-nested `ballIco`, `≡` equations compare `TsM Int` results, boolean islands
-must evaluate to `pure true` — plus a parallel witness-search term of type
-`Option (List Int)` (one `findCexIco` per binder, a decidable test at the
-leaf) and the binder names in binder order. -/
+nested `ballIco`, unbounded int/nat binders plain `∀`s (nat carries its
+nonnegativity hypothesis), `≡` equations compare `TsM Int` results, boolean
+islands must evaluate to `pure true` — plus a parallel witness-search term
+of type `Option (List Int)` (one `findCexIco` per binder, a decidable test
+at the leaf) and the binder names in binder order. -/
 partial def elabProp (vars : List String) :
-    TSyntax `ts_prop → CommandElabM (TSyntax `term × TSyntax `term × List String)
+    TSyntax `ts_prop → CommandElabM ElabProp
   | `(ts_prop| ts.eq($l:ts_expr, $r:ts_expr)) => do
     let lt ← evalExpr vars .int l
     let rt ← evalExpr vars .int r
     let prop ← `(($lt : TsM Int) = $rt)
     let search ← `(if ($lt : TsM Int) = $rt then (none : Option (List Int)) else some [])
-    return (prop, search, [])
+    return ⟨prop, search, [], true⟩
   | `(ts_prop| ts.istrue($e:ts_expr)) => do
     let t ← evalExpr vars .bool e
     let prop ← `(($t : TsM Bool) = pure true)
     let search ← `(if ($t : TsM Bool) = pure true then (none : Option (List Int)) else some [])
-    return (prop, search, [])
+    return ⟨prop, search, [], true⟩
   | `(ts_prop| ts.forall($binders:ts_binder,*) {$body:ts_prop}) => do
     let bs ← binders.getElems.mapM fun b => match b with
       | `(ts_binder| ts.binder[$x:str](ts.int, ts.range($lo:tsIntLit, $hi:tsIntLit))) =>
-        pure (x.getString, lo, hi)
+        pure (BinderShape.ranged x.getString lo hi)
+      | `(ts_binder| ts.binder[$x:str](ts.int)) =>
+        pure (BinderShape.unboundedInt x.getString)
+      | `(ts_binder| ts.binder[$x:str](ts.nat)) =>
+        pure (BinderShape.unboundedNat x.getString)
       | _ => throwErrorAt b "unsupported binder shape"
-    let (innerProp, innerSearch, innerNames) ←
-      elabProp (vars ++ (bs.map (·.1)).toList) body
-    let prop ← bs.foldrM (init := innerProp) fun (x, lo, hi) acc => do
-      `(ballIco $(← tsIntLitToTerm lo) $(← tsIntLitToTerm hi)
-          (fun $(mkIdent (Name.mkSimple x)) => $acc))
-    let search ← bs.foldrM (init := innerSearch) fun (x, lo, hi) acc => do
-      `(findCexIco $(← tsIntLitToTerm lo) $(← tsIntLitToTerm hi)
-          (fun $(mkIdent (Name.mkSimple x)) => $acc))
-    return (prop, search, (bs.map (·.1)).toList ++ innerNames)
+    let inner ← elabProp (vars ++ (bs.map (·.name)).toList) body
+    let allBounded := inner.allBounded && bs.all (·.isRanged)
+    let prop ← bs.foldrM (init := inner.prop) fun b acc => do
+      match b with
+      | .ranged x lo hi =>
+        `(ballIco $(← tsIntLitToTerm lo) $(← tsIntLitToTerm hi)
+            (fun $(mkIdent (Name.mkSimple x)) => $acc))
+      | .unboundedInt x =>
+        `(∀ ($(mkIdent (Name.mkSimple x)) : Int), $acc)
+      | .unboundedNat x =>
+        `(∀ ($(mkIdent (Name.mkSimple x)) : Int),
+            0 ≤ $(mkIdent (Name.mkSimple x)) → $acc)
+    let search ←
+      if allBounded then
+        bs.foldrM (init := inner.search) fun b acc => do
+          match b with
+          | .ranged x lo hi =>
+            `(findCexIco $(← tsIntLitToTerm lo) $(← tsIntLitToTerm hi)
+                (fun $(mkIdent (Name.mkSimple x)) => $acc))
+          | _ => pure acc
+      else
+        `((none : Option (List Int)))
+    return ⟨prop, search, (bs.map (·.name)).toList ++ inner.names, allBounded⟩
   | stx => throwErrorAt stx "unsupported property shape"
 
 /-- Successful proofs are added to the environment so the kernel — not just
@@ -230,7 +271,7 @@ elab_rules : command
           pure ⟨identity, "Inappropriate", reason, none⟩
         else
           try
-            let (propStx, searchStx, names) ← elabProp [] p
+            let ep ← elabProp [] p
             let thmName := freshTheoremName (← getEnv) identity
             let budget := thales.heartbeats.get (← getOptions)
             -- One fresh, capped budget per annotation; a blown budget
@@ -240,7 +281,7 @@ elab_rules : command
             liftTermElabM <|
               withHeartbeats budget <|
                 tryCatchRuntimeEx
-                  (attemptLadder identity thmName propStx searchStx names true)
+                  (attemptLadder identity thmName ep.prop ep.search ep.names ep.allBounded)
                   fun ex => do
                     unless ex.isMaxHeartbeat do throw ex
                     pure ⟨identity, "Timeout",
