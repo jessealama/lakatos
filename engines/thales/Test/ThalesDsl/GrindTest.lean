@@ -27,5 +27,5 @@ ts_def "dblGrind" := ts.fn(ts.param["x"](ts.number)) : ts.number {
   ts.return(ts.binop["*"](ts.id["x"], ts.num[2]))
 }
 
-example (x : Int) : TsModel.dblGrind x = (pure (x * 2) : TsM Int) := by
+example (x : Float) : TsModel.dblGrind x = (pure (x * 2) : TsM Float) := by
   grind

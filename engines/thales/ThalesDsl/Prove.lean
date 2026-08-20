@@ -42,10 +42,12 @@ at the leaf) and the binder names in binder order. -/
 partial def elabProp (vars : List String) :
     TSyntax `ts_prop → CommandElabM ElabProp
   | `(ts_prop| ts.eq($l:ts_expr, $r:ts_expr)) => do
-    let lt ← evalExpr vars .int l
-    let rt ← evalExpr vars .int r
-    let prop ← `(($lt : TsM Int) = $rt)
-    let search ← `(if ($lt : TsM Int) = $rt then (none : Option (List Int)) else some [])
+    let lt ← evalExpr vars .num l
+    let rt ← evalExpr vars .num r
+    -- `≡` is SameValue, which is exactly Lean's propositional equality on
+    -- Float; `===` is IEEE and lives in evalExpr as Float.beq.
+    let prop ← `(($lt : TsM Float) = $rt)
+    let search ← `(if ($lt : TsM Float) = $rt then (none : Option (List Int)) else some [])
     return ⟨prop, search, [], true⟩
   | `(ts_prop| ts.istrue($e:ts_expr)) => do
     let t ← evalExpr vars .bool e
@@ -66,7 +68,7 @@ partial def elabProp (vars : List String) :
     let prop ← bs.foldrM (init := inner.prop) fun b acc => do
       match b with
       | .ranged x lo hi =>
-        `(ballIco $(← tsIntLitToTerm lo) $(← tsIntLitToTerm hi)
+        `(ballIco $(← tsIntLitToInt lo) $(← tsIntLitToInt hi)
             (fun $(mkIdent (Name.mkSimple x)) => $acc))
       | .unboundedInt x =>
         `(∀ ($(mkIdent (Name.mkSimple x)) : Int), $acc)
@@ -78,7 +80,7 @@ partial def elabProp (vars : List String) :
         bs.foldrM (init := inner.search) fun b acc => do
           match b with
           | .ranged x lo hi =>
-            `(findCexIco $(← tsIntLitToTerm lo) $(← tsIntLitToTerm hi)
+            `(findCexIco $(← tsIntLitToInt lo) $(← tsIntLitToInt hi)
                 (fun $(mkIdent (Name.mkSimple x)) => $acc))
           | _ => pure acc
       else
