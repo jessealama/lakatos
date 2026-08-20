@@ -335,6 +335,17 @@ describe('annotations', () => {
     expect(out).toContain('#thales_prove "f.ts" "f" "p" :=');
   });
 
+  test('transcribes a number binder as bounds, not a range', () => {
+    const src = [
+      '/** @ensures{id} forall (a: number ∈ (0, 1]) { f(a) ≡ a } */',
+      'export function f(a: number): number { return a; }',
+    ].join('\n');
+    const out = transcribeSource(src, 'n.ts');
+    expect(out).toContain('ts.binder["a"](ts.number');
+    expect(out).toContain('ts.lower["<"](ts.fnum[0])');
+    expect(out).toContain('ts.upper["<="](ts.fnum[1])');
+  });
+
   test('an unbounded nat binder lowers to ts.binder[..](ts.nat)', () => {
     const src = [
       '/** @ensures{p} forall (x: nat) { f(x) >= x } */',
@@ -451,9 +462,9 @@ describe('annotations', () => {
     expect(provesOf(src)).toEqual(['#thales_prove "t.ts" "f" "p"']);
   });
 
-  test('a non-integer domain falls back to the bare form', () => {
+  test('a domain the DSL has no binder shape for falls back to the bare form', () => {
     const src = [
-      '/** @ensures{p} forall (x: number ∈ [0, 1]) { f(x) >= 0 } */',
+      '/** @ensures{p} forall (x: bigint ∈ [0, 10]) { f(x) >= 0 } */',
       'function f(x: number): number { return x; }',
     ].join('\n');
     expect(provesOf(src)).toEqual(['#thales_prove "t.ts" "f" "p"']);

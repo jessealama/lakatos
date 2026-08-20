@@ -234,6 +234,26 @@ function unsupportedRangeReason(endpoints: string[]): string {
  * Lowering reads the domain the binder *denotes*, so `int ∈ [0, ∞)` and
  * `nat` — or `nat ∈ (-∞, 10]` and `nat ∈ [0, 10]` — cannot diverge. */
 function binderConstructor(b: Binder): BinderLowering {
+  if (b.domain === 'number') {
+    // A number interval's openness cannot be normalized away the way an
+    // integer one's can, so each side keeps its own comparison; an absent
+    // endpoint just means that side is unbounded.
+    const bounds: string[] = [];
+    if (b.range?.min !== undefined)
+      bounds.push(
+        `ts.lower[${leanStr(b.range.minOpen ? '<' : '<=')}](ts.fnum[${b.range.min}])`,
+      );
+    if (b.range?.max !== undefined)
+      bounds.push(
+        `ts.upper[${leanStr(b.range.maxOpen ? '<' : '<=')}](ts.fnum[${b.range.max}])`,
+      );
+    // No safe-integer clamp here: a number binder denotes binary64 values
+    // directly, so there is no representability question to answer.
+    return {
+      kind: 'ctor',
+      ctor: `ts.binder[${leanStr(b.varName)}](ts.number${bounds.map((x) => `, ${x}`).join('')})`,
+    };
+  }
   if (b.domain !== 'int' && b.domain !== 'nat') return { kind: 'bare' };
   const named = (ty: string) =>
     ({
