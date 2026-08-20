@@ -43,6 +43,16 @@ ts_def "add" := ts.fn(ts.param["a"](ts.number), ts.param["b"](ts.number)) : ts.n
     ts.istrue(ts.binop["!=="](ts.call["add"](ts.id["a"], ts.num[1]), ts.id["a"]))
   }
 
+-- Binder values coerce into a Float body. Doubling is exact for every
+-- representable integer, so this proves.
+ts_def "dbl" := ts.fn(ts.param["x"](ts.number)) : ts.number {
+  ts.return(ts.binop["+"](ts.id["x"], ts.id["x"]))
+}
+#thales_prove "coerce.ts" "dbl" "doubles" :=
+  ts.forall(ts.binder["x"](ts.int, ts.range(0, 40))) {
+    ts.eq(ts.call["dbl"](ts.id["x"]), ts.binop["*"](ts.id["x"], ts.num[2]))
+  }
+
 -- Nested ∀-properties (binders introduced by separate foralls).
 #thales_prove "arith.ts" "add" "forall (a: int ∈ [0, 5)) { forall (b: int ∈ [0, 5)) { add(a, b) ≡ add(b, a) } }" :=
   ts.forall(ts.binder["a"](ts.int, ts.range(0, 5))) {

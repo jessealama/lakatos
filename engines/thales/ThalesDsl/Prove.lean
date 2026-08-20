@@ -35,7 +35,8 @@ structure ElabProp where
 
 /-- Transcribes a `ts_prop` into a Lean `Prop` term — bounded binders become
 nested `ballIco`, unbounded int/nat binders plain `∀`s (nat carries its
-nonnegativity hypothesis), `≡` equations compare `TsM Int` results, boolean
+nonnegativity hypothesis) whose values coerce into the Float body at the
+call boundary, `≡` equations compare `TsM Float` results, boolean
 islands must evaluate to `pure true` — plus a parallel witness-search term
 of type `Option (List Int)` (one `findCexIco` per binder, a decidable test
 at the leaf) and the binder names in binder order. -/
@@ -44,8 +45,9 @@ partial def elabProp (vars : List String) :
   | `(ts_prop| ts.eq($l:ts_expr, $r:ts_expr)) => do
     let lt ← evalExpr vars .num l
     let rt ← evalExpr vars .num r
-    -- `≡` is SameValue, which is exactly Lean's propositional equality on
-    -- Float; `===` is IEEE and lives in evalExpr as Float.beq.
+    -- `≡` is SameValue — the relation the refuter runs as `Object.is` —
+    -- which is exactly Lean's propositional equality on Float. `===` is
+    -- IEEE and lives in evalExpr as Float.beq.
     let prop ← `(($lt : TsM Float) = $rt)
     let search ← `(if ($lt : TsM Float) = $rt then (none : Option (List Int)) else some [])
     return ⟨prop, search, [], true⟩
@@ -65,23 +67,31 @@ partial def elabProp (vars : List String) :
       | _ => throwErrorAt b "unsupported binder shape"
     let inner ← elabProp (vars ++ (bs.map (·.name)).toList) body
     let allBounded := inner.allBounded && bs.all (·.isRanged)
+    -- The enumeration variable is an Int; the body is Float-valued. The
+    -- coercion is a beta-redex rather than a `let` so every rung reduces it
+    -- the same way. `Float.ofInt` is injective on the clamped domain, which
+    -- is what makes the transcriber's safe-integer clamp load-bearing.
+    let coerced (x : String) (iv : Ident) (body : TSyntax `term) :
+        CommandElabM (TSyntax `term) :=
+      `((fun ($(mkIdent (Name.mkSimple x)) : Float) => $body) (Float.ofInt $iv))
     let prop ← bs.foldrM (init := inner.prop) fun b acc => do
+      let iv := mkIdent (Name.mkSimple s!"ts#int{b.name}")
       match b with
       | .ranged x lo hi =>
         `(ballIco $(← tsIntLitToInt lo) $(← tsIntLitToInt hi)
-            (fun $(mkIdent (Name.mkSimple x)) => $acc))
+            (fun ($iv : Int) => $(← coerced x iv acc)))
       | .unboundedInt x =>
-        `(∀ ($(mkIdent (Name.mkSimple x)) : Int), $acc)
+        `(∀ ($iv : Int), $(← coerced x iv acc))
       | .unboundedNat x =>
-        `(∀ ($(mkIdent (Name.mkSimple x)) : Int),
-            0 ≤ $(mkIdent (Name.mkSimple x)) → $acc)
+        `(∀ ($iv : Int), 0 ≤ $iv → $(← coerced x iv acc))
     let search ←
       if allBounded then
         bs.foldrM (init := inner.search) fun b acc => do
           match b with
           | .ranged x lo hi =>
+            let iv := mkIdent (Name.mkSimple s!"ts#int{x}")
             `(findCexIco $(← tsIntLitToInt lo) $(← tsIntLitToInt hi)
-                (fun $(mkIdent (Name.mkSimple x)) => $acc))
+                (fun ($iv : Int) => $(← coerced x iv acc)))
           | _ => pure acc
       else
         `((none : Option (List Int)))
