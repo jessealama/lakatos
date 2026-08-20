@@ -1,5 +1,6 @@
 import Lean
 import ThalesDsl.TsM
+import ThalesDsl.Norm
 import ThalesDsl.Syntax
 
 namespace ThalesDsl
@@ -205,7 +206,7 @@ elab_rules : command
       -- elabCommand logs failures instead of throwing; treat new errors as
       -- this declaration's failure and swallow them.
       let savedMsgs := (← get).messages
-      elabCommand (← `(def $declId : $ty := $fn))
+      elabCommand (← `(@[thales_norm] def $declId : $ty := $fn))
       if (← get).messages.hasErrors && !savedMsgs.hasErrors then
         modify fun s => { s with messages := savedMsgs }
         recordFailure none "the model definition did not elaborate"

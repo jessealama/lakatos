@@ -2,42 +2,88 @@ import Lean
 import ThalesDsl.Verdict
 import ThalesDsl.Model
 
+register_option thales.heartbeats : Nat := {
+  defValue := 200000
+  descr := "per-annotation heartbeat budget for #thales_prove, in the maxHeartbeats unit; an attempt that exceeds it reports a Timeout verdict"
+}
+
 namespace ThalesDsl
 
 open Lean Elab Command
 
+/-- One parsed ∀-binder: its variable, plus the range when bounded. -/
+inductive BinderShape where
+  | ranged (x : String) (lo hi : TSyntax ``tsIntLit)
+  | unboundedInt (x : String)
+  | unboundedNat (x : String)
+
+def BinderShape.name : BinderShape → String
+  | .ranged x .. | .unboundedInt x | .unboundedNat x => x
+
+def BinderShape.isRanged : BinderShape → Bool
+  | .ranged .. => true
+  | _ => false
+
+/-- What elabProp builds from a ts_prop. `allBounded` gates the decide
+rung: without it no Decidable instance exists, and `search` is a stub —
+witness search never runs on unbounded domains. -/
+structure ElabProp where
+  prop : TSyntax `term
+  search : TSyntax `term
+  names : List String
+  allBounded : Bool
+
 /-- Transcribes a `ts_prop` into a Lean `Prop` term — bounded binders become
-nested `ballIco`, `≡` equations compare `TsM Int` results, boolean islands
-must evaluate to `pure true` — plus a parallel witness-search term of type
-`Option (List Int)` (one `findCexIco` per binder, a decidable test at the
-leaf) and the binder names in binder order. -/
+nested `ballIco`, unbounded int/nat binders plain `∀`s (nat carries its
+nonnegativity hypothesis), `≡` equations compare `TsM Int` results, boolean
+islands must evaluate to `pure true` — plus a parallel witness-search term
+of type `Option (List Int)` (one `findCexIco` per binder, a decidable test
+at the leaf) and the binder names in binder order. -/
 partial def elabProp (vars : List String) :
-    TSyntax `ts_prop → CommandElabM (TSyntax `term × TSyntax `term × List String)
+    TSyntax `ts_prop → CommandElabM ElabProp
   | `(ts_prop| ts.eq($l:ts_expr, $r:ts_expr)) => do
     let lt ← evalExpr vars .int l
     let rt ← evalExpr vars .int r
     let prop ← `(($lt : TsM Int) = $rt)
     let search ← `(if ($lt : TsM Int) = $rt then (none : Option (List Int)) else some [])
-    return (prop, search, [])
+    return ⟨prop, search, [], true⟩
   | `(ts_prop| ts.istrue($e:ts_expr)) => do
     let t ← evalExpr vars .bool e
     let prop ← `(($t : TsM Bool) = pure true)
     let search ← `(if ($t : TsM Bool) = pure true then (none : Option (List Int)) else some [])
-    return (prop, search, [])
+    return ⟨prop, search, [], true⟩
   | `(ts_prop| ts.forall($binders:ts_binder,*) {$body:ts_prop}) => do
     let bs ← binders.getElems.mapM fun b => match b with
       | `(ts_binder| ts.binder[$x:str](ts.int, ts.range($lo:tsIntLit, $hi:tsIntLit))) =>
-        pure (x.getString, lo, hi)
+        pure (BinderShape.ranged x.getString lo hi)
+      | `(ts_binder| ts.binder[$x:str](ts.int)) =>
+        pure (BinderShape.unboundedInt x.getString)
+      | `(ts_binder| ts.binder[$x:str](ts.nat)) =>
+        pure (BinderShape.unboundedNat x.getString)
       | _ => throwErrorAt b "unsupported binder shape"
-    let (innerProp, innerSearch, innerNames) ←
-      elabProp (vars ++ (bs.map (·.1)).toList) body
-    let prop ← bs.foldrM (init := innerProp) fun (x, lo, hi) acc => do
-      `(ballIco $(← tsIntLitToTerm lo) $(← tsIntLitToTerm hi)
-          (fun $(mkIdent (Name.mkSimple x)) => $acc))
-    let search ← bs.foldrM (init := innerSearch) fun (x, lo, hi) acc => do
-      `(findCexIco $(← tsIntLitToTerm lo) $(← tsIntLitToTerm hi)
-          (fun $(mkIdent (Name.mkSimple x)) => $acc))
-    return (prop, search, (bs.map (·.1)).toList ++ innerNames)
+    let inner ← elabProp (vars ++ (bs.map (·.name)).toList) body
+    let allBounded := inner.allBounded && bs.all (·.isRanged)
+    let prop ← bs.foldrM (init := inner.prop) fun b acc => do
+      match b with
+      | .ranged x lo hi =>
+        `(ballIco $(← tsIntLitToTerm lo) $(← tsIntLitToTerm hi)
+            (fun $(mkIdent (Name.mkSimple x)) => $acc))
+      | .unboundedInt x =>
+        `(∀ ($(mkIdent (Name.mkSimple x)) : Int), $acc)
+      | .unboundedNat x =>
+        `(∀ ($(mkIdent (Name.mkSimple x)) : Int),
+            0 ≤ $(mkIdent (Name.mkSimple x)) → $acc)
+    let search ←
+      if allBounded then
+        bs.foldrM (init := inner.search) fun b acc => do
+          match b with
+          | .ranged x lo hi =>
+            `(findCexIco $(← tsIntLitToTerm lo) $(← tsIntLitToTerm hi)
+                (fun $(mkIdent (Name.mkSimple x)) => $acc))
+          | _ => pure acc
+      else
+        `((none : Option (List Int)))
+    return ⟨prop, search, (bs.map (·.name)).toList ++ inner.names, allBounded⟩
   | stx => throwErrorAt stx "unsupported property shape"
 
 /-- Successful proofs are added to the environment so the kernel — not just
@@ -69,8 +115,9 @@ partial def readIntList (e : Expr) : Option (List Int) :=
   else none
 
 /-- Evaluates the witness-search term and pairs the values with the binder
-names. Best-effort: any failure — heartbeat exhaustion, a value the readback
-does not recognize — degrades to `none` instead of escaping. -/
+names. Best-effort: any failure — a value the readback does not recognize —
+degrades to `none` instead of escaping; only a blown heartbeat budget
+propagates, as the annotation's Timeout. -/
 def extractWitness (names : List String) (searchStx : TSyntax `term) :
     Term.TermElabM (Option (Array (String × Int))) :=
   tryCatchRuntimeEx
@@ -86,19 +133,20 @@ def extractWitness (names : List String) (searchStx : TSyntax `term) :
             return some (names.zip vals).toArray
       return none
     catch _ => return none)
-    (fun _ => return none)
+    (fun ex => if ex.isMaxHeartbeat then throw ex else return none)
 
 /-- After the kernel rejects a decide proof, reduce the `Decidable` instance
 to tell a false property from one the kernel could not evaluate. The instance
 is re-synthesized from the proposition so nothing depends on the proof term's
-internal shape; the reduction is best-effort — heartbeat exhaustion degrades
-to the stuck verdict instead of escaping. A false property with binders gets
-its witness searched out and ships as `CounterSatisfiable`; without binders
-(or when extraction degrades) falsity stays a `GaveUp`. -/
+internal shape; the reduction is best-effort — failures degrade to `none`,
+except a blown heartbeat budget, which propagates as the annotation's
+Timeout. Established falsity is terminal: with binders and a searched-out
+witness it ships as `CounterSatisfiable`, otherwise as a false-on-domain
+`GaveUp`. `none` means the instance stayed stuck — the generic stage still
+gets its turn. -/
 def diagnoseDecideFailure (identity : Identity) (p : Expr)
-    (names : List String) (searchStx : TSyntax `term) : Term.TermElabM Verdict := do
-  let stuck : Verdict := ⟨identity, "GaveUp",
-    "the property did not evaluate to a truth value on its bounded domain", none⟩
+    (names : List String) (searchStx : TSyntax `term) :
+    Term.TermElabM (Option Verdict) := do
   let falseOnDomain : Verdict := ⟨identity, "GaveUp",
     "the property is false on its bounded domain", none⟩
   tryCatchRuntimeEx
@@ -106,41 +154,139 @@ def diagnoseDecideFailure (identity : Identity) (p : Expr)
       let inst ← Meta.synthInstance (mkApp (mkConst ``Decidable) p)
       let r ← Meta.withAtLeastTransparency .default <| Meta.whnf inst
       if r.isAppOf ``Decidable.isFalse then
-        if names.isEmpty then return falseOnDomain
+        if names.isEmpty then return some falseOnDomain
         if let some cex ← extractWitness names searchStx then
-          return ⟨identity, "CounterSatisfiable",
+          return some ⟨identity, "CounterSatisfiable",
             "the property is false on its bounded domain", some cex⟩
-        return falseOnDomain
-      return stuck)
-    (fun _ => return stuck)
+        return some falseOnDomain
+      return none)
+    (fun ex => if ex.isMaxHeartbeat then throw ex else return none)
 
-def attemptDecide (identity : Identity) (thmName : Name) (propStx : TSyntax `term)
+/-- Runs `x` under a fresh heartbeat budget (in the `maxHeartbeats` option's
+unit). The enforced limit is cached in the Core context at context creation,
+so the field must be set directly; the option is kept in sync for anything
+that reads it. -/
+def withHeartbeats {α : Type} (budget : Nat) (x : Term.TermElabM α) : Term.TermElabM α :=
+  controlAt CoreM fun runInBase => do
+    let start ← IO.getNumHeartbeats
+    withReader (fun ctx => { ctx with
+      initHeartbeats := start
+      maxHeartbeats := budget * 1000
+      options := maxHeartbeats.set ctx.options budget }) (runInBase x)
+
+/-- The kernel reports its own budget exhaustion as a plain error, not a
+runtime exception, so it needs classifying by message. -/
+def isKernelTimeout (ex : Exception) : CoreM Bool := do
+  match ex with
+  | .error _ msg =>
+    return ((← msg.toString).splitOn "(kernel) deterministic timeout").length > 1
+  | _ => return false
+
+/-- Adds a proof to the environment with async elaboration off (as
+`decide +kernel` does), so the kernel checks it here: a bad proof is a
+catchable failure, not a late artifact failure. The name is fresh per call —
+a failed `addDecl` can leave its name claimed in the environment, so a later
+rung must never reuse an earlier rung's. -/
+def addTheoremSync (identity : Identity) (p proof : Expr) : Term.TermElabM Name := do
+  let thmName := freshTheoremName (← getEnv) identity
+  withOptions (Elab.async.set · false) do
+    addDecl (.thmDecl { name := thmName, levelParams := [], type := p, value := proof })
+  return thmName
+
+def attemptDecide (identity : Identity) (p : Expr)
     (searchStx : TSyntax `term) (names : List String) :
+    Term.TermElabM (Option Verdict) := do
+  let some proof ← (try some <$> Meta.mkDecideProof p catch _ => pure none)
+    -- decide could not even build its proof; the generic stage still gets
+    -- its turn.
+    | return none
+  try
+    let thmName ← addTheoremSync identity p proof
+    return some ⟨identity, "Theorem", s!"proved by decide, kernel-checked as {thmName}", none⟩
+  catch ex =>
+    if ← isKernelTimeout ex then throw ex
+    return (← diagnoseDecideFailure identity p names searchStx)
+
+/-- Rung 2, the generic stage: normalize with the `thales_norm` simp set,
+then close with omega. Success is kernel-checked like the decide rung;
+failure reports the residual goal — what actually stumped the prover. -/
+def attemptGeneric (identity : Identity) (p : Expr) :
     Term.TermElabM Verdict := do
+  let mvar ← Meta.mkFreshExprMVar p
+  let some ext ← Meta.getSimpExtension? `thales_norm
+    | return ⟨identity, "Error", "the thales_norm simp set is not registered", none⟩
+  let ctx ← Meta.Simp.mkContext (config := {})
+    (simpTheorems := #[← ext.getTheorems])
+    (congrTheorems := ← Meta.getSimpCongrTheorems)
+  let gaveUp (residual : Expr) : Term.TermElabM Verdict := do
+    return ⟨identity, "GaveUp", s!"unsolved goal: {← Meta.ppExpr residual}", none⟩
+  -- Ships the assembled proof through the kernel; anything off about it
+  -- (kernel budget exhaustion aside) degrades to the residual-goal GaveUp
+  -- rather than escaping.
+  let certify (residual : Expr) : Term.TermElabM Verdict := do
+    let proof ← instantiateMVars mvar
+    if proof.hasExprMVar then return ← gaveUp residual
+    try
+      let thmName ← addTheoremSync identity p proof
+      return ⟨identity, "Theorem",
+        s!"proved by simp/omega, kernel-checked as {thmName}", none⟩
+    catch ex =>
+      if ← isKernelTimeout ex then throw ex
+      gaveUp residual
+  let simped ←
+    try Meta.simpGoal mvar.mvarId! ctx
+    catch _ => pure (some (#[], mvar.mvarId!), {})
+  match simped.1 with
+  | none => certify p
+  | some (_, g) =>
+    let residual ← instantiateMVars (← g.getType)
+    try
+      match ← g.falseOrByContra with
+      | none => certify residual
+      | some gFalse =>
+        gFalse.withContext do
+          Tactic.Omega.omega (← getLocalHyps).toList gFalse {}
+        certify residual
+    catch _ => gaveUp residual
+
+def timeoutVerdict (identity : Identity) (budget : Nat) : Verdict :=
+  ⟨identity, "Timeout",
+    s!"the attempt exceeded the per-annotation heartbeat budget (thales.heartbeats = {budget})", none⟩
+
+def attemptLadder (identity : Identity) (propStx : TSyntax `term)
+    (searchStx : TSyntax `term) (names : List String) (allBounded : Bool)
+    (budget : Nat) : Term.TermElabM Verdict := do
   let p ←
     try
-      Term.withoutErrToSorry do
+      withHeartbeats budget <| Term.withoutErrToSorry do
         let p ← Term.elabTerm propStx (some (mkSort .zero))
         Term.synthesizeSyntheticMVarsNoPostponing
         instantiateMVars p
     catch ex =>
       return ⟨identity, "Error",
         s!"property elaboration failed: {← ex.toMessageData.toString}", none⟩
-  try
-    let proof ← Meta.mkDecideProof p
-    -- addDecl's kernel check is asynchronous by default, landing after the
-    -- verdict ships. Disable async (as `decide +kernel` does) so the kernel
-    -- evaluates the proof here: a false property is a catchable failure,
-    -- not a late artifact failure, and the success path pays for exactly
-    -- one evaluation.
-    try
-      withOptions (Elab.async.set · false) do
-        addDecl (.thmDecl { name := thmName, levelParams := [], type := p, value := proof })
-    catch _ =>
-      return (← diagnoseDecideFailure identity p names searchStx)
-    return ⟨identity, "Theorem", s!"proved by decide, kernel-checked as {thmName}", none⟩
-  catch ex =>
-    return ⟨identity, "GaveUp", s!"decide failed: {← ex.toMessageData.toString}", none⟩
+  -- Each rung runs under its own fresh window: the kernel overshoots a
+  -- shared window by a large factor before its own counter fires, which
+  -- would let a rung-1 blowout starve rung 2. Bounded domains split the
+  -- budget across the rungs; unbounded ones have only the generic rung.
+  let half := max (budget / 2) 1
+  let mut rung1TimedOut := false
+  if allBounded then
+    let outcome ← tryCatchRuntimeEx
+      (some <$> withHeartbeats half (attemptDecide identity p searchStx names))
+      (fun ex => do
+        if ex.isMaxHeartbeat || (← isKernelTimeout ex) then pure none else throw ex)
+    match outcome with
+    | some (some v) => return v
+    | some none => pure ()
+    | none => rung1TimedOut := true
+  let v ← withHeartbeats (if allBounded then half else budget) (attemptGeneric identity p)
+  -- On an all-bounded domain a starved rung 1 would have decided the goal
+  -- given budget, so exhaustion plus a residual goal is budget exhaustion,
+  -- not a dead end.
+  if rung1TimedOut && v.szs == "GaveUp" then
+    return timeoutVerdict identity budget
+  return v
 
 elab_rules : command
   | `(#thales_prove $file:str $fn:str $prop:str $[:= $p:ts_prop]?) => do
@@ -161,9 +307,18 @@ elab_rules : command
           pure ⟨identity, "Inappropriate", reason, none⟩
         else
           try
-            let (propStx, searchStx, names) ← elabProp [] p
-            let thmName := freshTheoremName (← getEnv) identity
-            liftTermElabM (attemptDecide identity thmName propStx searchStx names)
+            let ep ← elabProp [] p
+            let budget := thales.heartbeats.get (← getOptions)
+            -- The ladder caps each of its phases at the budget (or a split
+            -- share of it); a blown cap anywhere in the attempt — the
+            -- kernel's decide evaluation included — is this annotation's
+            -- Timeout, never the file's failure.
+            liftTermElabM <|
+              tryCatchRuntimeEx
+                (attemptLadder identity ep.prop ep.search ep.names ep.allBounded budget)
+                fun ex => do
+                  unless ex.isMaxHeartbeat || (← isKernelTimeout ex) do throw ex
+                  pure (timeoutVerdict identity budget)
           catch ex =>
             pure ⟨identity, "Error",
               s!"property elaboration failed: {← ex.toMessageData.toString}", none⟩

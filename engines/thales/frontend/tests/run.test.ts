@@ -224,6 +224,31 @@ describe('runLean', () => {
     });
   });
 
+  test('forwards LAKATOS_PROVE_HEARTBEATS to lean as a weak option', () => {
+    const { spawn, calls } = fakeSpawn([{ status: 0 }, { status: 0 }]);
+    process.env.LAKATOS_PROVE_HEARTBEATS = '7';
+    try {
+      runLean(['a.lean'], '/engine', spawn);
+    } finally {
+      delete process.env.LAKATOS_PROVE_HEARTBEATS;
+    }
+    const leanCall = calls.find((c) => c.args[0] === 'env');
+    expect(leanCall?.args).toContain('-Dweak.thales.heartbeats=7');
+  });
+
+  test('ignores a non-numeric LAKATOS_PROVE_HEARTBEATS', () => {
+    const { spawn, calls } = fakeSpawn([{ status: 0 }, { status: 0 }]);
+    process.env.LAKATOS_PROVE_HEARTBEATS = 'lots';
+    try {
+      runLean(['a.lean'], '/engine', spawn);
+    } finally {
+      delete process.env.LAKATOS_PROVE_HEARTBEATS;
+    }
+    expect(calls.flatMap((c) => c.args).join(' ')).not.toContain(
+      'thales.heartbeats',
+    );
+  });
+
   test('unframed stdout lines are diagnostics, not failures', () => {
     const res = runLean(
       ['a.lean'],

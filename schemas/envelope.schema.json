@@ -34,14 +34,14 @@
       "oneOf": [
         {
           "title": "unattempted or unrefuted",
-          "description": "reason, when present, is the prover's account of why it stopped (GaveUp) or never started (NotTried).",
+          "description": "reason, when present, is the prover's account of why it stopped (GaveUp), never started (NotTried), or ran out of budget (Timeout).",
           "additionalProperties": false,
           "required": ["file", "function", "property", "szs"],
           "properties": {
             "file": { "type": "string" },
             "function": { "$ref": "#/definitions/functionName" },
             "property": { "type": "string", "minLength": 1 },
-            "szs": { "enum": ["GaveUp", "NotTried"] },
+            "szs": { "enum": ["GaveUp", "NotTried", "Timeout"] },
             "reason": { "type": "string", "minLength": 1 }
           }
         },

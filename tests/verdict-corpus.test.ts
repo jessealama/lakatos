@@ -30,6 +30,7 @@ const BUCKET_STATUS: Record<string, string> = {
   gaveup: "GaveUp",
   nottried: "NotTried",
   inappropriate: "Inappropriate",
+  timeout: "Timeout",
 };
 
 /** Every fixture in the corpus, as bucket-relative posix paths. */
@@ -61,6 +62,11 @@ function corpusFixtures(): string[] {
 // suite run, Lean or not, and the fixture count can size the test timeout.
 const fixtures = corpusFixtures();
 
+// The timeout bucket runs as its own prove invocation under a reduced
+// heartbeat budget; everything else runs at the default budget.
+const timeoutFixtures = fixtures.filter((f) => f.startsWith("timeout/"));
+const mainFixtures = fixtures.filter((f) => !f.startsWith("timeout/"));
+
 // The corpus runs in ONE prove invocation: one Lean build for the whole
 // corpus, with per-file containment already localizing artifact failures.
 describe.runIf(enabled)("verdict corpus", () => {
@@ -77,14 +83,14 @@ describe.runIf(enabled)("verdict corpus", () => {
 
   it(
     "every annotation receives its bucket's SZS status",
-    { timeout: proveTimeoutMs(fixtures.length) },
+    { timeout: proveTimeoutMs(mainFixtures.length) },
     () => {
       // The countersatisfiable bucket guarantees refutations: exit 1.
-      const env = runForEnvelope(["prove", ...fixtures], 1);
+      const env = runForEnvelope(["prove", ...mainFixtures], 1);
 
       // Completeness: every fixture contributes at least one annotation.
       const covered = new Set(env.annotations.map((a) => a.file));
-      expect(fixtures.filter((f) => !covered.has(f))).toEqual([]);
+      expect(mainFixtures.filter((f) => !covered.has(f))).toEqual([]);
 
       // One readable diff over ALL mismatches, not just the first.
       const mismatches = env.annotations.flatMap((a) => {
@@ -95,6 +101,28 @@ describe.runIf(enabled)("verdict corpus", () => {
         ];
       });
       expect(mismatches).toEqual([]);
+    },
+  );
+
+  it(
+    "timeout fixtures exceed a reduced heartbeat budget",
+    { timeout: proveTimeoutMs(timeoutFixtures.length) },
+    () => {
+      // The reduced budget is what makes Timeout deterministic: the
+      // fixtures are ordinary annotations, not CI-grinding pathologies.
+      process.env.LAKATOS_PROVE_HEARTBEATS = "1";
+      try {
+        const env = runForEnvelope(["prove", ...timeoutFixtures], 0);
+        const covered = new Set(env.annotations.map((a) => a.file));
+        expect(timeoutFixtures.filter((f) => !covered.has(f))).toEqual([]);
+        for (const a of env.annotations) {
+          expect(a.szs, `${a.file} ${a.function}/${a.property}`).toBe(
+            "Timeout",
+          );
+        }
+      } finally {
+        delete process.env.LAKATOS_PROVE_HEARTBEATS;
+      }
     },
   );
 });
