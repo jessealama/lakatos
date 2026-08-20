@@ -140,12 +140,9 @@ function validateIntegerInterval(domain: Domain, range: Range, text: string) {
   if (lo > hi) {
     const message = `empty interval: no ${domain}${clamped ? ` within ${SAFE_INTEGER_RANGE}` : ""} satisfies ${text}`;
     if (rawLo <= rawHi) {
-      // Nonempty as written: the clamp alone emptied it. A clamped side
-      // always has a finite written endpoint (∞ folds inside the range).
-      throw new EmptyAfterClampError(message, [
-        ...(clampedLo ? [range.min!] : []),
-        ...(clampedHi ? [range.max!] : []),
-      ]);
+      // Nonempty as written: the clamp alone emptied it, which forces
+      // both (necessarily finite) endpoints outside the safe range.
+      throw new EmptyAfterClampError(message, [range.min!, range.max!]);
     }
     throw new LemmaError(message);
   }
