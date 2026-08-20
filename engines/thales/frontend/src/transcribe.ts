@@ -13,6 +13,7 @@ import {
 import { parseBody } from '../../../../lemma/src/formula-parser.js';
 import { parsePrefix } from '../../../../lemma/src/prefix-parser.js';
 import { qualifiedName } from '../../../../lemma/src/qualified-name.js';
+import { EmptyAfterClampError } from '../../../../lemma/src/range.js';
 
 /** Escape a string for a Lean string literal. */
 function leanStr(s: string): string {
@@ -301,7 +302,9 @@ type PropReading =
  * express it (non-integer domains, unbounded ranges, connectives, or a
  * formula the Lemma parser rejects), unsupported-range only when a
  * safe-integer clamp is the SOLE blocker — an annotation this slice could
- * not have structured anyway degrades to bare, whatever its ranges. */
+ * not have structured anyway degrades to bare, whatever its ranges. The
+ * exception is an interval the clamp emptied: with no domain left there
+ * is nothing to attempt, so it is unsupported-range whatever the body. */
 function structuredProp(formula: string): PropReading {
   try {
     const { binders, body } = parsePrefix(formula);
@@ -331,9 +334,17 @@ function structuredProp(formula: string): PropReading {
         ? `ts.istrue(${transcribeExpr(expr, parsed.sf)})`
         : `ts.eq(${transcribeExpr(sides[0], parsed.sf)}, ${transcribeExpr(sides[1], parsed.sf)})`;
     return { kind: 'structured', binders: binderCtors, body: bodyCtor };
-  } catch {
-    // Transcription never aborts on a formula: anything the Lemma parsers
-    // reject degrades to the bare (NotTried) form.
+  } catch (e) {
+    // A clamp-emptied interval leaves no domain to prove over, whatever
+    // the body: unsupported-range, like its merely-clamped kin.
+    if (e instanceof EmptyAfterClampError) {
+      return {
+        kind: 'unsupported-range',
+        reason: unsupportedRangeReason(e.endpoints),
+      };
+    }
+    // Transcription never aborts on a formula: anything else the Lemma
+    // parsers reject degrades to the bare (NotTried) form.
     return { kind: 'bare' };
   }
 }

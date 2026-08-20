@@ -28,6 +28,11 @@ export interface IntBounds {
    * emptiness: lo > hi). The nat floor is not clamping. */
   clampedLo: boolean;
   clampedHi: boolean;
+  /** The bounds before the safe-range intersection (open endpoints folded,
+   * nat floored): rawLo <= rawHi with lo > hi means the clamp alone
+   * emptied the interval. */
+  rawLo: bigint;
+  rawHi: bigint;
 }
 
 /** The inclusive fc.integer bounds an int/nat interval lowers to: open
@@ -46,11 +51,13 @@ export function intBounds(domain: "int" | "nat", range: Range): IntBounds {
       ? MAX_SAFE
       : BigInt(range.max) - (range.maxOpen ? 1n : 0n);
   if (domain === "nat" && lo < 0n) lo = 0n;
+  const rawLo = lo;
+  const rawHi = hi;
   const clampedLo = lo < -MAX_SAFE || lo > MAX_SAFE;
   const clampedHi = hi < -MAX_SAFE || hi > MAX_SAFE;
   if (lo < -MAX_SAFE) lo = -MAX_SAFE;
   if (hi > MAX_SAFE) hi = MAX_SAFE;
-  return { lo, hi, clampedLo, clampedHi };
+  return { lo, hi, clampedLo, clampedHi, rawLo, rawHi };
 }
 
 /** The inclusive fc.bigInt bounds a bigint interval lowers to. An

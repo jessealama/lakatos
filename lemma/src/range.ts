@@ -9,6 +9,23 @@ import {
 import { LemmaError } from "./errors.js";
 import type { Domain, Range } from "./binder.js";
 
+/**
+ * An interval that is nonempty as written but empty once intersected with
+ * the safe integer range. A distinct class so consumers can classify the
+ * case as data instead of matching the message; the message (and so the
+ * CLI's exit-2 handling) is the same as any other empty interval's.
+ */
+export class EmptyAfterClampError extends LemmaError {
+  override name = "EmptyAfterClampError";
+  constructor(
+    message: string,
+    /** The offending endpoint literals, as written. */
+    readonly endpoints: string[],
+  ) {
+    super(message);
+  }
+}
+
 const INT_LITERAL = /^[+-]?\d+$/;
 const BIGINT_LITERAL = /^[+-]?\d+n?$/;
 const NUMBER_LITERAL = /^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/;
@@ -115,15 +132,22 @@ function validateIntegerInterval(domain: Domain, range: Range, text: string) {
     }
     return;
   }
-  const { lo, hi, clampedLo, clampedHi } = intBounds(
+  const { lo, hi, clampedLo, clampedHi, rawLo, rawHi } = intBounds(
     domain as "int" | "nat",
     range,
   );
   const clamped = clampedLo || clampedHi;
   if (lo > hi) {
-    throw new LemmaError(
-      `empty interval: no ${domain}${clamped ? ` within ${SAFE_INTEGER_RANGE}` : ""} satisfies ${text}`,
-    );
+    const message = `empty interval: no ${domain}${clamped ? ` within ${SAFE_INTEGER_RANGE}` : ""} satisfies ${text}`;
+    if (rawLo <= rawHi) {
+      // Nonempty as written: the clamp alone emptied it. A clamped side
+      // always has a finite written endpoint (∞ folds inside the range).
+      throw new EmptyAfterClampError(message, [
+        ...(clampedLo ? [range.min!] : []),
+        ...(clampedHi ? [range.max!] : []),
+      ]);
+    }
+    throw new LemmaError(message);
   }
   if (clamped) {
     console.error(

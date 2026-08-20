@@ -6,7 +6,14 @@ const HUGE = "1000000000000000000000000000000";
 describe("intBounds clamp reporting", () => {
   it("reports no clamping for an in-range interval", () => {
     const b = intBounds("int", { min: "0", max: "10" });
-    expect(b).toEqual({ lo: 0n, hi: 10n, clampedLo: false, clampedHi: false });
+    expect(b).toEqual({
+      lo: 0n,
+      hi: 10n,
+      clampedLo: false,
+      clampedHi: false,
+      rawLo: 0n,
+      rawHi: 10n,
+    });
   });
 
   it("flags an upper endpoint beyond the safe range and clamps it", () => {
@@ -38,6 +45,20 @@ describe("intBounds clamp reporting", () => {
 
   it("a huge negative nat lower endpoint floors at 0 without clamping", () => {
     const b = intBounds("nat", { min: `-${HUGE}`, max: "5" });
-    expect(b).toEqual({ lo: 0n, hi: 5n, clampedLo: false, clampedHi: false });
+    expect(b).toEqual({
+      lo: 0n,
+      hi: 5n,
+      clampedLo: false,
+      clampedHi: false,
+      rawLo: 0n,
+      rawHi: 5n,
+    });
+  });
+
+  it("keeps the pre-clamp bounds so emptiness can be attributed", () => {
+    const b = intBounds("int", { min: HUGE, max: `${HUGE}0` });
+    expect(b.rawLo).toBe(BigInt(HUGE));
+    expect(b.rawHi).toBe(BigInt(`${HUGE}0`));
+    expect(b.rawLo <= b.rawHi).toBe(true);
   });
 });
