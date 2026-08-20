@@ -97,15 +97,15 @@ def extractWitness (names : List String) (searchStx : TSyntax `term) :
 /-- After the kernel rejects a decide proof, reduce the `Decidable` instance
 to tell a false property from one the kernel could not evaluate. The instance
 is re-synthesized from the proposition so nothing depends on the proof term's
-internal shape; the reduction is best-effort — failures degrade to the stuck
-verdict, except a blown heartbeat budget, which propagates as the
-annotation's Timeout. A false property with binders gets
-its witness searched out and ships as `CounterSatisfiable`; without binders
-(or when extraction degrades) falsity stays a `GaveUp`. -/
+internal shape; the reduction is best-effort — failures degrade to `none`,
+except a blown heartbeat budget, which propagates as the annotation's
+Timeout. Established falsity is terminal: with binders and a searched-out
+witness it ships as `CounterSatisfiable`, otherwise as a false-on-domain
+`GaveUp`. `none` means the instance stayed stuck — the generic stage still
+gets its turn. -/
 def diagnoseDecideFailure (identity : Identity) (p : Expr)
-    (names : List String) (searchStx : TSyntax `term) : Term.TermElabM Verdict := do
-  let stuck : Verdict := ⟨identity, "GaveUp",
-    "the property did not evaluate to a truth value on its bounded domain", none⟩
+    (names : List String) (searchStx : TSyntax `term) :
+    Term.TermElabM (Option Verdict) := do
   let falseOnDomain : Verdict := ⟨identity, "GaveUp",
     "the property is false on its bounded domain", none⟩
   tryCatchRuntimeEx
@@ -113,13 +113,13 @@ def diagnoseDecideFailure (identity : Identity) (p : Expr)
       let inst ← Meta.synthInstance (mkApp (mkConst ``Decidable) p)
       let r ← Meta.withAtLeastTransparency .default <| Meta.whnf inst
       if r.isAppOf ``Decidable.isFalse then
-        if names.isEmpty then return falseOnDomain
+        if names.isEmpty then return some falseOnDomain
         if let some cex ← extractWitness names searchStx then
-          return ⟨identity, "CounterSatisfiable",
+          return some ⟨identity, "CounterSatisfiable",
             "the property is false on its bounded domain", some cex⟩
-        return falseOnDomain
-      return stuck)
-    (fun ex => if ex.isMaxHeartbeat then throw ex else return stuck)
+        return some falseOnDomain
+      return none)
+    (fun ex => if ex.isMaxHeartbeat then throw ex else return none)
 
 /-- Runs `x` under a fresh heartbeat budget (in the `maxHeartbeats` option's
 unit). The enforced limit is cached in the Core context at context creation,
@@ -133,18 +133,9 @@ def withHeartbeats {α : Type} (budget : Nat) (x : Term.TermElabM α) : Term.Ter
       maxHeartbeats := budget * 1000
       options := maxHeartbeats.set ctx.options budget }) (runInBase x)
 
-def attemptDecide (identity : Identity) (thmName : Name) (propStx : TSyntax `term)
+def attemptDecide (identity : Identity) (thmName : Name) (p : Expr)
     (searchStx : TSyntax `term) (names : List String) :
-    Term.TermElabM Verdict := do
-  let p ←
-    try
-      Term.withoutErrToSorry do
-        let p ← Term.elabTerm propStx (some (mkSort .zero))
-        Term.synthesizeSyntheticMVarsNoPostponing
-        instantiateMVars p
-    catch ex =>
-      return ⟨identity, "Error",
-        s!"property elaboration failed: {← ex.toMessageData.toString}", none⟩
+    Term.TermElabM (Option Verdict) := do
   try
     let proof ← Meta.mkDecideProof p
     -- addDecl's kernel check is asynchronous by default, landing after the
@@ -157,9 +148,68 @@ def attemptDecide (identity : Identity) (thmName : Name) (propStx : TSyntax `ter
         addDecl (.thmDecl { name := thmName, levelParams := [], type := p, value := proof })
     catch _ =>
       return (← diagnoseDecideFailure identity p names searchStx)
-    return ⟨identity, "Theorem", s!"proved by decide, kernel-checked as {thmName}", none⟩
-  catch ex =>
-    return ⟨identity, "GaveUp", s!"decide failed: {← ex.toMessageData.toString}", none⟩
+    return some ⟨identity, "Theorem", s!"proved by decide, kernel-checked as {thmName}", none⟩
+  catch _ =>
+    -- decide could not even build its proof; the generic stage still gets
+    -- its turn.
+    return none
+
+/-- Rung 2, the generic stage: normalize with the `thales_norm` simp set,
+then close with omega. Success is kernel-checked like the decide rung;
+failure reports the residual goal — what actually stumped the prover. -/
+def attemptGeneric (identity : Identity) (thmName : Name) (p : Expr) :
+    Term.TermElabM Verdict := do
+  let mvar ← Meta.mkFreshExprMVar p
+  let some ext ← Meta.getSimpExtension? `thales_norm
+    | return ⟨identity, "Error", "the thales_norm simp set is not registered", none⟩
+  let ctx ← Meta.Simp.mkContext (config := {})
+    (simpTheorems := #[← ext.getTheorems])
+    (congrTheorems := ← Meta.getSimpCongrTheorems)
+  let gaveUp (residual : Expr) : Term.TermElabM Verdict := do
+    return ⟨identity, "GaveUp", s!"unsolved goal: {← Meta.ppExpr residual}", none⟩
+  -- Ships the assembled proof through the kernel; anything off about it
+  -- degrades to the residual-goal GaveUp rather than escaping.
+  let certify (residual : Expr) : Term.TermElabM Verdict := do
+    let proof ← instantiateMVars mvar
+    if proof.hasExprMVar then return ← gaveUp residual
+    try
+      withOptions (Elab.async.set · false) do
+        addDecl (.thmDecl { name := thmName, levelParams := [], type := p, value := proof })
+      return ⟨identity, "Theorem",
+        s!"proved by simp/omega, kernel-checked as {thmName}", none⟩
+    catch _ => gaveUp residual
+  let simped ←
+    try Meta.simpGoal mvar.mvarId! ctx
+    catch _ => pure (some (#[], mvar.mvarId!), {})
+  match simped.1 with
+  | none => certify p
+  | some (_, g) =>
+    let residual ← instantiateMVars (← g.getType)
+    try
+      match ← g.falseOrByContra with
+      | none => certify residual
+      | some gFalse =>
+        gFalse.withContext do
+          Tactic.Omega.omega (← getLocalHyps).toList gFalse {}
+        certify residual
+    catch _ => gaveUp residual
+
+def attemptLadder (identity : Identity) (thmName : Name) (propStx : TSyntax `term)
+    (searchStx : TSyntax `term) (names : List String) (allBounded : Bool) :
+    Term.TermElabM Verdict := do
+  let p ←
+    try
+      Term.withoutErrToSorry do
+        let p ← Term.elabTerm propStx (some (mkSort .zero))
+        Term.synthesizeSyntheticMVarsNoPostponing
+        instantiateMVars p
+    catch ex =>
+      return ⟨identity, "Error",
+        s!"property elaboration failed: {← ex.toMessageData.toString}", none⟩
+  if allBounded then
+    if let some v ← attemptDecide identity thmName p searchStx names then
+      return v
+  attemptGeneric identity thmName p
 
 elab_rules : command
   | `(#thales_prove $file:str $fn:str $prop:str $[:= $p:ts_prop]?) => do
@@ -190,7 +240,7 @@ elab_rules : command
             liftTermElabM <|
               withHeartbeats budget <|
                 tryCatchRuntimeEx
-                  (attemptDecide identity thmName propStx searchStx names)
+                  (attemptLadder identity thmName propStx searchStx names true)
                   fun ex => do
                     unless ex.isMaxHeartbeat do throw ex
                     pure ⟨identity, "Timeout",
