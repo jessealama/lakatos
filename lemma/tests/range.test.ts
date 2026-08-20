@@ -1,6 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
-import { parseRange, isNumericDomain } from "../src/range.js";
+import {
+  parseRange,
+  isNumericDomain,
+  EmptyAfterClampError,
+} from "../src/range.js";
 import { expectLemmaError } from "./helpers/errors.js";
+import { LemmaError } from "../src/errors.js";
 
 describe("parseRange — accepted", () => {
   it("parses a closed int interval", () => {
@@ -161,6 +166,51 @@ describe("parseRange — rejected", () => {
   it("rejects text that is not an interval at all", () => {
     expectLemmaError(() => parseRange("hello", "int"), /expected interval/);
     expectLemmaError(() => parseRange("", "int"), /expected interval/);
+  });
+});
+
+describe("parseRange — empty only after the safe-integer clamp", () => {
+  const LO = "9007199254740992";
+  const HI = "99999999999999999999";
+
+  it("throws EmptyAfterClampError carrying the offending endpoints", () => {
+    const fn = () => parseRange(`[${LO}, ${HI}]`, "int");
+    expect(fn).toThrow(EmptyAfterClampError);
+    try {
+      fn();
+    } catch (e) {
+      expect((e as EmptyAfterClampError).endpoints).toEqual([LO, HI]);
+    }
+  });
+
+  it("carries the endpoints on the negative side too", () => {
+    const fn = () => parseRange(`[-${HI}, -${LO}]`, "int");
+    expect(fn).toThrow(EmptyAfterClampError);
+    try {
+      fn();
+    } catch (e) {
+      expect((e as EmptyAfterClampError).endpoints).toEqual([
+        `-${HI}`,
+        `-${LO}`,
+      ]);
+    }
+  });
+
+  it("keeps the established LemmaError message, preserving the exit-2 contract", () => {
+    expectLemmaError(
+      () => parseRange(`[${LO}, ${HI}]`, "int"),
+      /empty interval: no int within the safe integer range/,
+    );
+  });
+
+  it("keeps the plain LemmaError for an interval empty even before the clamp", () => {
+    const inverted = () => parseRange("[5, 3]", "int");
+    expect(inverted).toThrow(LemmaError);
+    expect(inverted).not.toThrow(EmptyAfterClampError);
+    // Empty as written (huge lo above small hi), not the clamp's doing.
+    const unclampedEmpty = () => parseRange(`[${HI}, 3]`, "int");
+    expect(unclampedEmpty).toThrow(LemmaError);
+    expect(unclampedEmpty).not.toThrow(EmptyAfterClampError);
   });
 });
 

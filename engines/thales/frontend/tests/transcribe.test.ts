@@ -470,6 +470,35 @@ describe('clamped ranges', () => {
     );
   });
 
+  test('an interval empty after the clamp is unsupported-range, naming both endpoints', () => {
+    const src = [
+      `/** @ensures{p} forall (a: int ∈ [${HUGE}, ${HUGE}0]) { f(a) >= 0 } */`,
+      'function f(a: number): number { return a; }',
+    ].join('\n');
+    const { lean, untried } = transcribe(src, 't.ts');
+    expect(lean).not.toContain('#thales_prove');
+    expect(untried).toEqual([
+      {
+        annotation: expect.objectContaining({
+          functionName: 'f',
+          propertyName: 'p',
+        }),
+        kind: 'unsupported-range',
+        reason: `endpoints ${HUGE} and ${HUGE}0 exceed the safe integer range (±9007199254740991)`,
+      },
+    ]);
+  });
+
+  test('an interval genuinely empty within the safe range keeps its bare command', () => {
+    const src = [
+      '/** @ensures{p} forall (a: int ∈ [5, 3]) { f(a) >= 0 } */',
+      'function f(a: number): number { return a; }',
+    ].join('\n');
+    const { lean, untried } = transcribe(src, 't.ts');
+    expect(untried).toEqual([]);
+    expect(lean).toContain('#thales_prove "t.ts" "f" "p"');
+  });
+
   test('the artifact records the untried annotation as a comment', () => {
     const src = [
       `/** @ensures{p} forall (a: int ∈ [0, ${HUGE}]) { f(a) >= 0 } */`,
