@@ -108,6 +108,15 @@ def tsIntLitToFloat : TSyntax ``tsIntLit → CommandElabM (TSyntax `term)
   | `(tsIntLit| -$n:num) => `((-$n : Float))
   | stx => throwErrorAt stx "malformed integer literal"
 
+/-- A decimal endpoint, transcribed verbatim. Lean rounds it exactly as
+JavaScript does, so no adjustment is needed here. -/
+def tsFloatLitToTerm : TSyntax ``tsFloatLit → CommandElabM (TSyntax `term)
+  | `(tsFloatLit| $n:scientific) => `(($n : Float))
+  | `(tsFloatLit| -$n:scientific) => `((-$n : Float))
+  | `(tsFloatLit| $n:num) => `(($n : Float))
+  | `(tsFloatLit| -$n:num) => `((-$n : Float))
+  | stx => throwErrorAt stx "malformed float literal"
+
 /-- `ts#argN`: cannot capture, since `#` never occurs in a TS identifier. -/
 def freshArg (i : Nat) : Ident := mkIdent (Name.mkSimple s!"ts#arg{i}")
 

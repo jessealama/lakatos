@@ -21,9 +21,14 @@ inductive BinderShape where
   | ranged (x : String) (lo hi : TSyntax ``tsIntLit)
   | unboundedInt (x : String)
   | unboundedNat (x : String)
+  /-- A `number` binder: no enumeration, only the bounds it carries as
+  hypotheses. Each bound is its comparison operator and its endpoint. -/
+  | number (x : String)
+      (lower : Option (String × TSyntax ``tsFloatLit))
+      (upper : Option (String × TSyntax ``tsFloatLit))
 
 def BinderShape.name : BinderShape → String
-  | .ranged x .. | .unboundedInt x | .unboundedNat x => x
+  | .ranged x .. | .unboundedInt x | .unboundedNat x | .number x .. => x
 
 def BinderShape.isRanged : BinderShape → Bool
   | .ranged .. => true
@@ -78,6 +83,19 @@ partial def elabProp (vars : List String) :
         pure (BinderShape.unboundedInt x.getString)
       | `(ts_binder| ts.binder[$x:str](ts.nat)) =>
         pure (BinderShape.unboundedNat x.getString)
+      | `(ts_binder| ts.binder[$x:str](ts.number $[, $bs:ts_bound]*)) => do
+        let mut lower : Option (String × TSyntax ``tsFloatLit) := none
+        let mut upper : Option (String × TSyntax ``tsFloatLit) := none
+        for b in bs do
+          match b with
+          | `(ts_bound| ts.lower[$op:str](ts.fnum[$lit:tsFloatLit])) =>
+            if lower.isSome then throwErrorAt b "duplicate lower bound"
+            lower := some (op.getString, lit)
+          | `(ts_bound| ts.upper[$op:str](ts.fnum[$lit:tsFloatLit])) =>
+            if upper.isSome then throwErrorAt b "duplicate upper bound"
+            upper := some (op.getString, lit)
+          | _ => throwErrorAt b "unsupported bound shape"
+        pure (BinderShape.number x.getString lower upper)
       | _ => throwErrorAt b "unsupported binder shape"
     let inner ← elabProp (vars ++ (bs.map (·.name)).toList) body
     let allBounded := inner.allBounded && bs.all (·.isRanged)
@@ -98,6 +116,26 @@ partial def elabProp (vars : List String) :
         `(∀ ($iv : Int), $(← coerced x iv acc))
       | .unboundedNat x =>
         `(∀ ($iv : Int), 0 ≤ $iv → $(← coerced x iv acc))
+      | .number x lower upper =>
+        -- Already a Float, so no coercion, and never enumerated: the binder
+        -- is its type plus whichever bounds it carries as hypotheses.
+        let v := mkIdent (Name.mkSimple x)
+        let mut body := acc
+        if let some (op, lit) := upper then
+          let e ← tsFloatLitToTerm lit
+          let hyp ← match op with
+            | "<" => `($v < $e)
+            | "<=" => `($v ≤ $e)
+            | other => throwErrorAt lit s!"unsupported upper bound '{other}'"
+          body ← `($hyp → $body)
+        if let some (op, lit) := lower then
+          let e ← tsFloatLitToTerm lit
+          let hyp ← match op with
+            | "<" => `($e < $v)
+            | "<=" => `($e ≤ $v)
+            | other => throwErrorAt lit s!"unsupported lower bound '{other}'"
+          body ← `($hyp → $body)
+        `(∀ ($v : Float), $body)
     let search ←
       if allBounded then
         bs.foldrM (init := inner.search) fun b acc => do
