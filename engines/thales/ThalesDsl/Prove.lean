@@ -211,21 +211,19 @@ def addTheoremSync (identity : Identity) (p proof : Expr) : Term.TermElabM Name 
 /-- The axioms every Lean proof may use without extending the trusted base. -/
 def standardAxioms : Array Name := #[``propext, ``Classical.choice, ``Quot.sound]
 
-/-- A proved annotation's reason, read off the theorem's actual trusted
-base rather than tracked by the rung that produced it. Any axiom beyond the
-standard three means the result rests on more than the kernel — today that
-is native evaluation, which trusts the compiler and the host's floating
-point unit. Deliberately names no tactic: dischargers change, and the trust
-level is what the reader needs. -/
-def proofReason (thmName : Name) : Term.TermElabM String := do
+/-- A proved annotation's reason. `method` names the rung's class — never a
+tactic, since dischargers change — but the trust level is read off the
+theorem's actual axioms rather than asserted by the rung, which could drift
+from what happened. Any axiom beyond the standard three means the result
+rests on more than the kernel; today that is native evaluation, which trusts
+the compiler and the host's floating point unit. -/
+def proofReason (method : String) (thmName : Name) : Term.TermElabM String := do
   let axioms ← collectAxioms thmName
   let extra := axioms.filter (!standardAxioms.contains ·)
   if extra.isEmpty then
-    return s!"proved by a decision procedure over the bounded domain, " ++
-      s!"kernel-checked as {thmName}"
-  return s!"proved by evaluating a decision procedure over the bounded " ++
-    s!"domain, admitted as {thmName}; the result is trusted from that " ++
-    s!"evaluation rather than checked by the kernel"
+    return s!"proved by {method}, kernel-checked as {thmName}"
+  return s!"proved by {method}, admitted as {thmName}; the result is " ++
+    s!"trusted from evaluation rather than checked by the kernel"
 
 def attemptDecide (identity : Identity) (p : Expr)
     (searchStx : TSyntax `term) (names : List String) :
@@ -236,10 +234,8 @@ def attemptDecide (identity : Identity) (p : Expr)
     | return none
   try
     let thmName ← addTheoremSync identity p proof
-    -- Reasons name the rung's class, never the tactic: dischargers may change.
     return some ⟨identity, .Theorem,
-      "proved by a decision procedure over the bounded domain, " ++
-        s!"kernel-checked as {thmName}", none⟩
+      ← proofReason "a decision procedure over the bounded domain" thmName, none⟩
   catch ex =>
     if ← isKernelTimeout ex then throw ex
     return (← diagnoseDecideFailure identity p names searchStx)
@@ -268,7 +264,8 @@ def attemptNativeDecide (identity : Identity) (p : Expr)
     let inst := d.appArg!
     let proof := mkApp3 (mkConst ``of_decide_eq_true) p inst prf
     let thmName ← addTheoremSync identity p proof
-    return some ⟨identity, .Theorem, ← proofReason thmName, none⟩
+    return some ⟨identity, .Theorem,
+      ← proofReason "a decision procedure over the bounded domain" thmName, none⟩
 
 /-- Rung 2's outcome: a verdict, or the state rung 3 continues from — the
 root metavariable still linked to the unsolved residual goal. -/
@@ -287,9 +284,7 @@ def certifyRoot (identity : Identity) (p root residual : Expr) :
   if proof.hasExprMVar then return gaveUp
   try
     let thmName ← addTheoremSync identity p proof
-    return ⟨identity, .Theorem,
-      "proved by generic proof search, " ++
-        s!"kernel-checked as {thmName}", none⟩
+    return ⟨identity, .Theorem, ← proofReason "generic proof search" thmName, none⟩
   catch ex =>
     if ← isKernelTimeout ex then throw ex
     return gaveUp
