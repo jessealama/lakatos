@@ -1,7 +1,9 @@
 import type { IssueKind } from "../engines/pabst/src/contract.js";
 
 /**
- * SZS statuses lakatos emits (https://tptp.org/UserDocs/SZSOntology/).
+ * SZS statuses lakatos emits (https://tptp.org/UserDocs/SZSOntology/), the
+ * single source of truth for the vocabulary: the union, the prove subset,
+ * and the engine-side allowlist all derive from this array.
  * A pass also maps to GaveUp: N clean runs refute nothing, and the engine
  * stopped of its own accord — the `kind` field disambiguates. Theorem and
  * Inappropriate come from the prove pipeline: a property proven for all
@@ -16,15 +18,39 @@ import type { IssueKind } from "../engines/pabst/src/contract.js";
  * whose proof attempt exceeded its per-annotation budget; later
  * annotations in the same file still run.
  */
-export type SzsStatus =
-  | "Theorem"
-  | "CounterSatisfiable"
-  | "GaveUp"
-  | "Error"
-  | "NotTried"
-  | "Inappropriate"
-  | "InputError"
-  | "Timeout";
+export const SZS_STATUSES = [
+  "Theorem",
+  "CounterSatisfiable",
+  "GaveUp",
+  "Error",
+  "NotTried",
+  "Inappropriate",
+  "InputError",
+  "Timeout",
+] as const;
+
+export type SzsStatus = (typeof SZS_STATUSES)[number];
+
+/** Statuses no prover verdict can carry: extraction happens on the CLI
+ * side, so the prove contract never has to represent them. */
+const REFUTE_ONLY_STATUSES = ["InputError"] as const;
+
+type RefuteOnlyStatus = (typeof REFUTE_ONLY_STATUSES)[number];
+
+/** The verdict statuses the prove contract carries. ThalesDsl's `Szs`
+ * enumerates exactly these — tests/verdict-contract.test.ts pins the two. */
+export type ProveStatus = Exclude<SzsStatus, RefuteOnlyStatus>;
+
+export const PROVE_STATUSES: ReadonlySet<ProveStatus> = new Set(
+  SZS_STATUSES.filter(
+    (s): s is ProveStatus =>
+      !(REFUTE_ONLY_STATUSES as readonly string[]).includes(s),
+  ),
+);
+
+export function isProveStatus(s: string): s is ProveStatus {
+  return (PROVE_STATUSES as ReadonlySet<string>).has(s);
+}
 
 /** Status for a property the refutation engine flagged. */
 export function szsForIssue(kind: IssueKind): SzsStatus {

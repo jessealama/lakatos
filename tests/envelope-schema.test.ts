@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { expectValidEnvelope } from "./helpers/envelope-schema.js";
 import type { Envelope } from "../src/envelope.js";
+import { SZS_STATUSES } from "../src/szs.js";
 
 const META = {
   version: "0.1.0",
@@ -363,6 +366,28 @@ describe("envelope schema", () => {
         ],
       } as unknown as Envelope),
     ).toThrow();
+  });
+
+  it("gives every status a shape, and no shape a status off the list", () => {
+    const schema = readFileSync(
+      fileURLToPath(
+        new URL("../schemas/envelope.schema.json", import.meta.url),
+      ),
+      "utf8",
+    );
+    const named = new Set<string>();
+    const collect = (node: unknown): void => {
+      if (Array.isArray(node)) return node.forEach(collect);
+      if (typeof node !== "object" || node === null) return;
+      const o = node as Record<string, unknown>;
+      const szs = (o.properties as Record<string, unknown> | undefined)?.szs as
+        { const?: string; enum?: string[] } | undefined;
+      if (szs?.const !== undefined) named.add(szs.const);
+      for (const v of szs?.enum ?? []) named.add(v);
+      Object.values(o).forEach(collect);
+    };
+    collect(JSON.parse(schema));
+    expect(named).toEqual(new Set(SZS_STATUSES));
   });
 
   it("rejects an unknown szs value", () => {

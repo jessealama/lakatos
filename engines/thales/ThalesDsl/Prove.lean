@@ -150,7 +150,7 @@ generic stage still gets its turn. -/
 def diagnoseDecideFailure (identity : Identity) (p : Expr)
     (names : List String) (searchStx : TSyntax `term) :
     Term.TermElabM (Option Verdict) := do
-  let falseOnDomain : Verdict := ⟨identity, "GaveUp",
+  let falseOnDomain : Verdict := ⟨identity, .GaveUp,
     "the property is false on its bounded domain", none⟩
   tryCatchRuntimeEx
     (do
@@ -159,7 +159,7 @@ def diagnoseDecideFailure (identity : Identity) (p : Expr)
       if r.isAppOf ``Decidable.isFalse then
         if names.isEmpty then return some falseOnDomain
         if let some cex ← extractWitness names searchStx then
-          return some ⟨identity, "CounterSatisfiable",
+          return some ⟨identity, .CounterSatisfiable,
             "the property is false on its bounded domain", some cex⟩
         return some falseOnDomain
       return none)
@@ -206,7 +206,7 @@ def attemptDecide (identity : Identity) (p : Expr)
   try
     let thmName ← addTheoremSync identity p proof
     -- Reasons name the rung's class, never the tactic: dischargers may change.
-    return some ⟨identity, "Theorem",
+    return some ⟨identity, .Theorem,
       "proved by a decision procedure over the bounded domain, " ++
         s!"kernel-checked as {thmName}", none⟩
   catch ex =>
@@ -225,12 +225,12 @@ residual-goal GaveUp rather than escaping. -/
 def certifyRoot (identity : Identity) (p root residual : Expr) :
     Term.TermElabM Verdict := do
   let gaveUp : Verdict :=
-    ⟨identity, "GaveUp", s!"unsolved goal: {← Meta.ppExpr residual}", none⟩
+    ⟨identity, .GaveUp, s!"unsolved goal: {← Meta.ppExpr residual}", none⟩
   let proof ← instantiateMVars root
   if proof.hasExprMVar then return gaveUp
   try
     let thmName ← addTheoremSync identity p proof
-    return ⟨identity, "Theorem",
+    return ⟨identity, .Theorem,
       "proved by generic proof search, " ++
         s!"kernel-checked as {thmName}", none⟩
   catch ex =>
@@ -245,7 +245,7 @@ def attemptGeneric (identity : Identity) (p : Expr) :
     Term.TermElabM GenericOutcome := do
   let mvar ← Meta.mkFreshExprMVar p
   let some ext ← Meta.getSimpExtension? `thales_norm
-    | return .done ⟨identity, "Error",
+    | return .done ⟨identity, .Error,
       "the prover's normalization rules are not registered", none⟩
   let ctx ← Meta.Simp.mkContext (config := {})
     (simpTheorems := #[← ext.getTheorems])
@@ -287,10 +287,10 @@ def attemptGrind (identity : Identity) (p root : Expr) (goal : MVarId)
     catch _ => pure false)
     (fun ex => if ex.isRuntime then pure false else throw ex)
   if solved then return ← certifyRoot identity p root residual
-  return ⟨identity, "GaveUp", s!"unsolved goal: {← Meta.ppExpr residual}", none⟩
+  return ⟨identity, .GaveUp, s!"unsolved goal: {← Meta.ppExpr residual}", none⟩
 
 def timeoutVerdict (identity : Identity) (budget : Nat) : Verdict :=
-  ⟨identity, "Timeout",
+  ⟨identity, .Timeout,
     s!"the attempt exceeded the per-annotation heartbeat budget (thales.heartbeats = {budget})", none⟩
 
 /-- Runs one rung, turning either resource limit into a fall-through to the
@@ -321,7 +321,7 @@ def attemptLadder (identity : Identity) (propStx : TSyntax `term)
         return .ok p)
       (fun ex => do
         if ex.isMaxHeartbeat || (← isKernelTimeout ex) then throw ex
-        return .error ⟨identity, "Error",
+        return .error ⟨identity, .Error,
           s!"property elaboration failed: {← ex.toMessageData.toString}", none⟩)
   let p ← match elaborated with
     | .ok p => pure p
@@ -353,7 +353,7 @@ def attemptLadder (identity : Identity) (propStx : TSyntax `term)
       withHeartbeats lateShare (attemptGrind identity p root root.mvarId! p)
   -- A starved earlier rung might have closed the goal given budget, so
   -- exhaustion plus a residual goal is budget exhaustion, not a dead end.
-  if starved && v.szs == "GaveUp" then
+  if starved && v.szs == .GaveUp then
     return timeoutVerdict identity budget
   return v
 
@@ -365,15 +365,15 @@ elab_rules : command
     -- Unmapped construct ⇒ Inappropriate, anything else ⇒ Error.
     if (findModel? (← getEnv) fn.getString).isNone then
       if let some failed := findFailed? (← getEnv) fn.getString then
-        let szs := if failed.construct.isSome then "Inappropriate" else "Error"
+        let szs : Szs := if failed.construct.isSome then .Inappropriate else .Error
         return ← Verdict.emit
           ⟨identity, szs, s!"'{fn.getString}' could not be modeled: {failed.reason}", none⟩
     let verdict : Verdict ←
       match p with
-      | none => pure ⟨identity, "NotTried", "stub: no structured property provided", none⟩
+      | none => pure ⟨identity, .NotTried, "stub: no structured property provided", none⟩
       | some p =>
         if let some reason := propInappropriate? (← getEnv) p then
-          pure ⟨identity, "Inappropriate", reason, none⟩
+          pure ⟨identity, .Inappropriate, reason, none⟩
         else
           try
             let ep ← elabProp [] p
@@ -392,10 +392,10 @@ elab_rules : command
                 fun ex => do
                   if ex.isMaxHeartbeat || (← isKernelTimeout ex) then
                     return timeoutVerdict identity budget
-                  return ⟨identity, "Error",
+                  return ⟨identity, .Error,
                     s!"proof search failed: {← ex.toMessageData.toString}", none⟩
           catch ex =>
-            pure ⟨identity, "Error",
+            pure ⟨identity, .Error,
               s!"property elaboration failed: {← ex.toMessageData.toString}", none⟩
     verdict.emit
 
