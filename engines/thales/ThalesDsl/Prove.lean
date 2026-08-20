@@ -202,7 +202,10 @@ def attemptDecide (identity : Identity) (p : Expr)
     | return none
   try
     let thmName ← addTheoremSync identity p proof
-    return some ⟨identity, "Theorem", s!"proved by decide, kernel-checked as {thmName}", none⟩
+    -- Reasons name the rung's class, never the tactic: dischargers may change.
+    return some ⟨identity, "Theorem",
+      "proved by a decision procedure over the bounded domain, " ++
+        s!"kernel-checked as {thmName}", none⟩
   catch ex =>
     if ← isKernelTimeout ex then throw ex
     return (← diagnoseDecideFailure identity p names searchStx)
@@ -214,7 +217,8 @@ def attemptGeneric (identity : Identity) (p : Expr) :
     Term.TermElabM Verdict := do
   let mvar ← Meta.mkFreshExprMVar p
   let some ext ← Meta.getSimpExtension? `thales_norm
-    | return ⟨identity, "Error", "the thales_norm simp set is not registered", none⟩
+    | return ⟨identity, "Error",
+      "the prover's normalization rules are not registered", none⟩
   let ctx ← Meta.Simp.mkContext (config := {})
     (simpTheorems := #[← ext.getTheorems])
     (congrTheorems := ← Meta.getSimpCongrTheorems)
@@ -229,7 +233,8 @@ def attemptGeneric (identity : Identity) (p : Expr) :
     try
       let thmName ← addTheoremSync identity p proof
       return ⟨identity, "Theorem",
-        s!"proved by simp/omega, kernel-checked as {thmName}", none⟩
+        "proved by generic proof search, " ++
+          s!"kernel-checked as {thmName}", none⟩
     catch ex =>
       if ← isKernelTimeout ex then throw ex
       gaveUp residual

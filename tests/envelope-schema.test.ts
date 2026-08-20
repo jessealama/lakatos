@@ -338,7 +338,8 @@ describe("envelope schema", () => {
             function: "f",
             property: "p",
             szs: "Theorem",
-            reason: "proved by decide, kernel-checked as TsProof.thm_1",
+            reason:
+              "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_1",
           },
         ],
       }),

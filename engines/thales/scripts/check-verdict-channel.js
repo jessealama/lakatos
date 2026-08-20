@@ -46,7 +46,11 @@ const FIXTURES = [
   },
   {
     file: 'theorem-arith.lean',
-    expected: Array.from({ length: 8 }, () => ['add', 'Theorem']),
+    expected: Array.from({ length: 8 }, () => [
+      'add',
+      'Theorem',
+      /proved by a decision procedure over the bounded domain, kernel-checked as/,
+    ]),
   },
   {
     file: 'countersatisfiable.lean',
@@ -60,9 +64,9 @@ const FIXTURES = [
   {
     file: 'theorem-generic.lean',
     expected: [
-      ['dbl', 'Theorem', /simp\/omega/],
-      ['dbl', 'Theorem', /simp\/omega/],
-      ['dbl', 'Theorem', /simp\/omega/],
+      ['dbl', 'Theorem', /proved by generic proof search, kernel-checked as/],
+      ['dbl', 'Theorem', /proved by generic proof search, kernel-checked as/],
+      ['dbl', 'Theorem', /proved by generic proof search, kernel-checked as/],
     ],
   },
   {
