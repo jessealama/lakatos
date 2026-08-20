@@ -223,7 +223,11 @@ describe("joinProveVerdicts", () => {
     const join = joinProveVerdicts(
       [id("a"), id("b"), id("c"), id("d"), id("e")],
       [
-        verdict("a", "Theorem", "proved by decide, kernel-checked as X"),
+        verdict(
+          "a",
+          "Theorem",
+          "proved by a decision procedure over the bounded domain, kernel-checked as X",
+        ),
         verdict("b", "Inappropriate", "await is unmapped"),
         verdict("c", "Error", "elaboration failed"),
         verdict("d", "GaveUp", "decide failed"),
