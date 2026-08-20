@@ -1,7 +1,9 @@
 import ThalesDsl
 
--- Goals past omega's reach: nonlinear arithmetic over unbounded domains.
--- The ladder's grind rung closes these after simp/omega gives up.
+-- Nonlinear arithmetic over an unbounded domain, so no rung can settle it:
+-- nothing to enumerate, and no binary64 multiplication theory to reason
+-- with. Commutativity of multiplication is the residual, and the first
+-- entry on the theory worklist.
 ts_def "mul" := ts.fn(ts.param["x"](ts.number), ts.param["y"](ts.number)) : ts.number {
   ts.return(ts.binop["*"](ts.id["x"], ts.id["y"]))
 }

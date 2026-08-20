@@ -7,6 +7,11 @@ register_option thales.heartbeats : Nat := {
   descr := "per-annotation heartbeat budget for #thales_prove, in the maxHeartbeats unit; an attempt that exceeds it reports a Timeout verdict. 0 is clamped to 1: the underlying limit reads 0 as unlimited, which would leave the attempt uncontained"
 }
 
+register_option thales.maxEvaluatedElements : Nat := {
+  defValue := 10000000
+  descr := "the largest bounded domain #thales_prove will settle by evaluating the property at every element. Evaluation runs compiled, so the heartbeat budget cannot interrupt it; this cap is what keeps a wide domain from spending an unbounded amount of wall clock. A larger domain falls through to symbolic reasoning instead"
+}
+
 namespace ThalesDsl
 
 open Lean Elab Command
@@ -24,14 +29,23 @@ def BinderShape.isRanged : BinderShape → Bool
   | .ranged .. => true
   | _ => false
 
+/-- The value of an endpoint literal, for sizing the enumeration. -/
+def tsIntLitValue : TSyntax ``tsIntLit → CommandElabM Int
+  | `(tsIntLit| $n:num) => pure (Int.ofNat n.getNat)
+  | `(tsIntLit| -$n:num) => pure (-(Int.ofNat n.getNat))
+  | stx => throwErrorAt stx "malformed integer literal"
+
 /-- What elabProp builds from a ts_prop. `allBounded` gates the decide
 rung: without it no Decidable instance exists, and `search` is a stub —
-witness search never runs on unbounded domains. -/
+witness search never runs on unbounded domains. `domainSize` is how many
+assignments that enumeration would visit, meaningful only when
+`allBounded`; it is what the evaluation tier is capped against. -/
 structure ElabProp where
   prop : TSyntax `term
   search : TSyntax `term
   names : List String
   allBounded : Bool
+  domainSize : Nat
 
 /-- Transcribes a `ts_prop` into a Lean `Prop` term — bounded binders become
 nested `ballIco`, unbounded int/nat binders plain `∀`s (nat carries its
@@ -50,12 +64,12 @@ partial def elabProp (vars : List String) :
     -- IEEE and lives in evalExpr as Float.beq.
     let prop ← `(($lt : TsM Float) = $rt)
     let search ← `(if ($lt : TsM Float) = $rt then (none : Option (List Int)) else some [])
-    return ⟨prop, search, [], true⟩
+    return ⟨prop, search, [], true, 1⟩
   | `(ts_prop| ts.istrue($e:ts_expr)) => do
     let t ← evalExpr vars .bool e
     let prop ← `(($t : TsM Bool) = pure true)
     let search ← `(if ($t : TsM Bool) = pure true then (none : Option (List Int)) else some [])
-    return ⟨prop, search, [], true⟩
+    return ⟨prop, search, [], true, 1⟩
   | `(ts_prop| ts.forall($binders:ts_binder,*) {$body:ts_prop}) => do
     let bs ← binders.getElems.mapM fun b => match b with
       | `(ts_binder| ts.binder[$x:str](ts.int, ts.range($lo:tsIntLit, $hi:tsIntLit))) =>
@@ -95,7 +109,14 @@ partial def elabProp (vars : List String) :
           | _ => pure acc
       else
         `((none : Option (List Int)))
-    return ⟨prop, search, (bs.map (·.name)).toList ++ inner.names, allBounded⟩
+    -- How many assignments the enumeration would visit. An empty range
+    -- contributes 0, which is exactly right: nothing to evaluate.
+    let mut domainSize := inner.domainSize
+    for b in bs do
+      if let .ranged _ lo hi := b then
+        domainSize := domainSize * ((← tsIntLitValue hi) - (← tsIntLitValue lo)).toNat
+    return ⟨prop, search, (bs.map (·.name)).toList ++ inner.names,
+      allBounded, domainSize⟩
   | stx => throwErrorAt stx "unsupported property shape"
 
 /-- Successful proofs are added to the environment so the kernel — not just
@@ -359,7 +380,8 @@ def runRung {α : Type} (x : Term.TermElabM α) :
 
 def attemptLadder (identity : Identity) (propStx : TSyntax `term)
     (searchStx : TSyntax `term) (names : List String) (allBounded : Bool)
-    (budget : Nat) : Term.TermElabM Verdict := do
+    (domainSize : Nat) (budget : Nat) (evalCap : Nat) :
+    Term.TermElabM Verdict := do
   -- A plain catch would let the recursion limit through to the caller,
   -- which would read this phase's failure as proof search's; budget
   -- exhaustion still propagates, as the annotation's Timeout.
@@ -380,21 +402,31 @@ def attemptLadder (identity : Identity) (propStx : TSyntax `term)
     | .error v => return v
   -- Each rung runs under its own fresh window: the kernel overshoots a
   -- shared window by a large factor before its own counter fires, which
-  -- would let an early rung's blowout starve the ones after it. Bounded
-  -- domains give decide half and each later rung a quarter; unbounded
-  -- ones split the budget between the generic and grind rungs.
+  -- would let an early rung's blowout starve the ones after it. Four rungs
+  -- now. A bounded run splits the budget evenly across the two decide tiers
+  -- and the two symbolic ones; an unbounded run has no decide tier to fund,
+  -- so the symbolic rungs take half each. Every share floors at 1, since a
+  -- zero budget reads as unlimited.
+  let quarter := max (budget / 4) 1
   let half := max (budget / 2) 1
-  let lateShare := if allBounded then max (budget / 4) 1 else half
+  let decideShare := quarter
+  let lateShare := if allBounded then quarter else half
   let mut starved := false
   if allBounded then
     let (outcome, rungStarved) ←
-      runRung (withHeartbeats half (attemptDecide identity p searchStx names))
+      runRung (withHeartbeats decideShare (attemptDecide identity p searchStx names))
     if let some (some v) := outcome then return v
-    -- Kernel starvation is no longer the annotation's Timeout: the native
-    -- tier gets the same goal, and it is orders of magnitude faster.
-    let (nOutcome, nStarved) ←
-      runRung (withHeartbeats lateShare (attemptNativeDecide identity p searchStx names))
-    if let some (some v) := nOutcome then return v
+    -- Kernel starvation is no longer the annotation's Timeout: the
+    -- evaluation tier gets the same goal, and it is orders of magnitude
+    -- faster. It runs compiled, though, so no budget can interrupt it once
+    -- started; a domain past the cap is left to the symbolic rungs, and the
+    -- starved kernel tier still reports the attempt as budget-bound.
+    let mut nStarved := false
+    if domainSize ≤ evalCap then
+      let (nOutcome, s) ←
+        runRung (withHeartbeats decideShare (attemptNativeDecide identity p searchStx names))
+      if let some (some v) := nOutcome then return v
+      nStarved := s
     if rungStarved || nStarved then starved := true
   let (outcome, rungStarved) ←
     runRung (withHeartbeats lateShare (attemptGeneric identity p))
@@ -437,6 +469,7 @@ elab_rules : command
             -- Floored at 1: maxHeartbeats 0 means unlimited, so a zero
             -- budget would leave the elaboration window uncontained.
             let budget := max (thales.heartbeats.get (← getOptions)) 1
+            let evalCap := thales.maxEvaluatedElements.get (← getOptions)
             -- The ladder caps each of its phases at the budget (or a split
             -- share of it); a blown cap anywhere in the attempt — the
             -- kernel's decide evaluation included — is this annotation's
@@ -445,7 +478,8 @@ elab_rules : command
             -- from: this catch is past the point of elaborating anything.
             liftTermElabM <|
               tryCatchRuntimeEx
-                (attemptLadder identity ep.prop ep.search ep.names ep.allBounded budget)
+                (attemptLadder identity ep.prop ep.search ep.names ep.allBounded
+                  ep.domainSize budget evalCap)
                 fun ex => do
                   if ex.isMaxHeartbeat || (← isKernelTimeout ex) then
                     return timeoutVerdict identity budget
