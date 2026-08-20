@@ -115,9 +115,10 @@ partial def readIntList (e : Expr) : Option (List Int) :=
   else none
 
 /-- Evaluates the witness-search term and pairs the values with the binder
-names. Best-effort: any failure — a value the readback does not recognize —
-degrades to `none` instead of escaping; only a blown heartbeat budget
-propagates, as the annotation's Timeout. -/
+names. Wholly best-effort: every failure degrades to `none` instead of
+escaping, a spent resource limit included. The sole caller runs this after
+falsity is already established, and an established verdict must not be lost
+to the cost of illustrating it. -/
 def extractWitness (names : List String) (searchStx : TSyntax `term) :
     Term.TermElabM (Option (Array (String × Int))) :=
   tryCatchRuntimeEx
@@ -133,17 +134,19 @@ def extractWitness (names : List String) (searchStx : TSyntax `term) :
             return some (names.zip vals).toArray
       return none
     catch _ => return none)
-    (fun ex => if ex.isMaxHeartbeat then throw ex else return none)
+    (fun _ => return none)
 
 /-- After the kernel rejects a decide proof, reduce the `Decidable` instance
 to tell a false property from one the kernel could not evaluate. The instance
 is re-synthesized from the proposition so nothing depends on the proof term's
 internal shape; the reduction is best-effort — failures degrade to `none`,
 except a blown heartbeat budget, which propagates as the annotation's
-Timeout. Established falsity is terminal: with binders and a searched-out
-witness it ships as `CounterSatisfiable`, otherwise as a false-on-domain
-`GaveUp`. `none` means the instance stayed stuck — the generic stage still
-gets its turn. -/
+Timeout: falsity was not established, so the rung really did starve.
+Established falsity is terminal, and nothing after it can take it back: with
+binders and a searched-out witness it ships as `CounterSatisfiable`,
+otherwise — no binders, or a witness search that came back empty — as a
+false-on-domain `GaveUp`. `none` means the instance stayed stuck — the
+generic stage still gets its turn. -/
 def diagnoseDecideFailure (identity : Identity) (p : Expr)
     (names : List String) (searchStx : TSyntax `term) :
     Term.TermElabM (Option Verdict) := do

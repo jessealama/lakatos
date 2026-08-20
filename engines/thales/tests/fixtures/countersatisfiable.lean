@@ -40,3 +40,14 @@ ts_def "comm" := ts.fn(ts.param["a"](ts.number), ts.param["b"](ts.number)) : ts.
   ts.forall() {
     ts.eq(ts.call["bump"](ts.num[0]), ts.num[0])
   }
+
+-- A witness the budget cannot afford is still the same GaveUp, never a
+-- Timeout: falsity is established by the second sweep of the domain and the
+-- search that would name x = 99 is a third. The budget is tuned to fit two
+-- sweeps and not three — heartbeats count allocations, not seconds, so the
+-- window is machine-independent, but a toolchain bump can shift it.
+set_option thales.heartbeats 3400 in
+#thales_prove "cs.ts" "bump" "forall (x: int ∈ [0, 100)) { bump(x) < 100 }" :=
+  ts.forall(ts.binder["x"](ts.int, ts.range(0, 100))) {
+    ts.istrue(ts.binop["<"](ts.call["bump"](ts.id["x"]), ts.num[100]))
+  }
