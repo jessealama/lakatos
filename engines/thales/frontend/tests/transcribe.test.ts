@@ -426,6 +426,116 @@ describe('annotations', () => {
   });
 });
 
+describe('clamped ranges', () => {
+  const HUGE = '1000000000000000000000000000000';
+
+  test('an endpoint beyond the safe range yields no prove command and an untried record', () => {
+    const src = [
+      `/** @ensures{p} forall (a: int ∈ [0, ${HUGE}]) { f(a) >= 0 } */`,
+      'function f(a: number): number { return a; }',
+    ].join('\n');
+    const { lean, untried } = transcribe(src, 't.ts');
+    expect(lean).not.toContain('#thales_prove');
+    expect(untried).toEqual([
+      {
+        annotation: expect.objectContaining({
+          functionName: 'f',
+          propertyName: 'p',
+        }),
+        kind: 'unsupported-range',
+        reason: `endpoint ${HUGE} exceeds the safe integer range (±9007199254740991)`,
+      },
+    ]);
+  });
+
+  test('a huge negative lower endpoint is the one named', () => {
+    const src = [
+      `/** @ensures{p} forall (a: int ∈ [-${HUGE}, 5]) { f(a) >= 0 } */`,
+      'function f(a: number): number { return a; }',
+    ].join('\n');
+    const { untried } = transcribe(src, 't.ts');
+    expect(untried[0]!.reason).toBe(
+      `endpoint -${HUGE} exceeds the safe integer range (±9007199254740991)`,
+    );
+  });
+
+  test('both clamped endpoints are named together', () => {
+    const src = [
+      `/** @ensures{p} forall (a: int ∈ [-${HUGE}, ${HUGE}]) { f(a) >= 0 } */`,
+      'function f(a: number): number { return a; }',
+    ].join('\n');
+    const { untried } = transcribe(src, 't.ts');
+    expect(untried[0]!.reason).toBe(
+      `endpoints -${HUGE} and ${HUGE} exceed the safe integer range (±9007199254740991)`,
+    );
+  });
+
+  test('the artifact records the untried annotation as a comment', () => {
+    const src = [
+      `/** @ensures{p} forall (a: int ∈ [0, ${HUGE}]) { f(a) >= 0 } */`,
+      'function f(a: number): number { return a; }',
+    ].join('\n');
+    const { lean } = transcribe(src, 't.ts');
+    expect(lean).toMatch(
+      /^-- not tried @ensures\{p\} on f: endpoint 1000000000000000000000000000000 exceeds the safe integer range/m,
+    );
+  });
+
+  test('other annotations in the same file still transcribe', () => {
+    const src = [
+      `/** @ensures{big} forall (a: int ∈ [0, ${HUGE}]) { f(a) >= 0 } */`,
+      'function f(a: number): number { return a; }',
+      '',
+      '/** @ensures{small} forall (x: int ∈ [0, 5)) { g(x) >= 0 } */',
+      'function g(x: number): number { return x; }',
+    ].join('\n');
+    const { lean, untried } = transcribe(src, 't.ts');
+    expect(lean).toContain('#thales_prove "t.ts" "g" "small" :=');
+    expect(lean).not.toContain('#thales_prove "t.ts" "f" "big"');
+    expect(untried).toHaveLength(1);
+  });
+
+  test('an in-range annotation produces no untried records', () => {
+    expect(transcribe(ADD, 'add.ts').untried).toEqual([]);
+  });
+
+  test('a clamped range alongside an unmappable binder degrades to bare, either order', () => {
+    for (const binders of [
+      `(a: int ∈ [0, ${HUGE}]) (s: string)`,
+      `(s: string) (a: int ∈ [0, ${HUGE}])`,
+    ]) {
+      const src = [
+        `/** @ensures{p} forall ${binders} { f(a) >= 0 } */`,
+        'function f(a: number): number { return a; }',
+      ].join('\n');
+      const { lean, untried } = transcribe(src, 't.ts');
+      expect(untried).toEqual([]);
+      expect(lean).toContain('#thales_prove "t.ts" "f" "p"');
+    }
+  });
+
+  test('a clamped range with an unstructurable body degrades to bare', () => {
+    const src = [
+      `/** @ensures{p} forall (a: int ∈ [0, ${HUGE}]) { f(a) >= 0 ∧ f(a) < 9 } */`,
+      'function f(a: number): number { return a; }',
+    ].join('\n');
+    const { lean, untried } = transcribe(src, 't.ts');
+    expect(untried).toEqual([]);
+    expect(lean).toContain('#thales_prove "t.ts" "f" "p"');
+  });
+
+  test('clamped endpoints across two binders are named together', () => {
+    const src = [
+      `/** @ensures{p} forall (a: int ∈ [-${HUGE}, 5]) (b: int ∈ [0, ${HUGE}]) { f(a) >= b } */`,
+      'function f(a: number): number { return a; }',
+    ].join('\n');
+    const { untried } = transcribe(src, 't.ts');
+    expect(untried[0]!.reason).toBe(
+      `endpoints -${HUGE} and ${HUGE} exceed the safe integer range (±9007199254740991)`,
+    );
+  });
+});
+
 describe('the tracer fixture', () => {
   test('transcribeFile reads the fixture and covers all three verdict paths', () => {
     const out = transcribeFile('engines/thales/tests/fixtures/tracer.ts');

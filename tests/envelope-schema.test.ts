@@ -211,6 +211,60 @@ describe("envelope schema", () => {
     ).not.toThrow();
   });
 
+  it("accepts a NotTried with the unsupported-range kind and reason", () => {
+    expect(() =>
+      expectValidEnvelope({
+        ...META,
+        annotations: [
+          {
+            file: "f.ts",
+            function: "f",
+            property: "p",
+            szs: "NotTried",
+            kind: "unsupported-range",
+            reason:
+              "endpoint 1000000000000000000000000000000 exceeds the safe integer range (±9007199254740991)",
+          },
+        ],
+      }),
+    ).not.toThrow();
+  });
+
+  it("rejects an unsupported-range entry without a reason", () => {
+    expect(() =>
+      expectValidEnvelope({
+        ...META,
+        annotations: [
+          {
+            file: "f.ts",
+            function: "f",
+            property: "p",
+            szs: "NotTried",
+            kind: "unsupported-range",
+          },
+        ],
+      } as unknown as Envelope),
+    ).toThrow();
+  });
+
+  it("rejects the unsupported-range kind on a GaveUp entry", () => {
+    expect(() =>
+      expectValidEnvelope({
+        ...META,
+        annotations: [
+          {
+            file: "f.ts",
+            function: "f",
+            property: "p",
+            szs: "GaveUp",
+            kind: "unsupported-range",
+            reason: "r",
+          },
+        ],
+      } as unknown as Envelope),
+    ).toThrow();
+  });
+
   it("accepts a prover Error carrying only its diagnostic", () => {
     expect(() =>
       expectValidEnvelope({

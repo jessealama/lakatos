@@ -21,8 +21,9 @@ the business of the e2e and unit suites.
   only exhaustion a TypeScript fixture can trigger today is a domain too
   big to evaluate, which is minutes-slow — that path is pinned by the
   hand-written verdict-channel fixtures instead.
-- `nottried/` — the property has no structured reading (an unbounded
-  domain, a connective), so the transcriber degrades it (`NotTried`).
+- `nottried/` — the transcriber degrades the property (`NotTried`): it has
+  no structured reading (an unbounded domain, a connective), or a range
+  endpoint exceeds the safe integer range.
 - `inappropriate/` — the function uses a construct the transcriber cannot
   map (`Inappropriate`).
 

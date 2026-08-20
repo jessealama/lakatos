@@ -18,6 +18,10 @@ describe('writeArtifacts', () => {
     fs.writeFileSync(path.join(dir, 'plain.ts'), 'export const x = 1;\n');
     fs.writeFileSync(path.join(dir, 'x.ts'), ANNOTATED);
     fs.writeFileSync(path.join(dir, 'x.tsx'), ANNOTATED);
+    fs.writeFileSync(
+      path.join(dir, 'huge.ts'),
+      '/** @ensures{p} forall (x: int ∈ [0, 1000000000000000000000000000000]) { f(x) >= 0 } */\nexport function f(x: number): number { return x; }\n',
+    );
     process.chdir(dir);
   });
   afterAll(() => {
@@ -37,7 +41,12 @@ describe('writeArtifacts', () => {
 
   test('annotation-free files get an entry but no artifact', () => {
     const [p] = writeArtifacts(['plain.ts']);
-    expect(p).toEqual({ sourceFile: 'plain.ts', annotations: [], invalid: [] });
+    expect(p).toEqual({
+      sourceFile: 'plain.ts',
+      annotations: [],
+      invalid: [],
+      untried: [],
+    });
     expect(fs.existsSync(path.join('.thales', 'plain.ts.lean'))).toBe(false);
   });
 
@@ -48,6 +57,15 @@ describe('writeArtifacts', () => {
       path.join('.thales', 'x.tsx.lean'),
     ]);
     for (const a of arts) expect(fs.existsSync(a.outFile!)).toBe(true);
+  });
+
+  test('untried annotations travel on the artifact entry', () => {
+    const [h] = writeArtifacts(['huge.ts']);
+    expect(h!.untried).toHaveLength(1);
+    expect(h!.untried[0]!.kind).toBe('unsupported-range');
+    expect(h!.untried[0]!.annotation.propertyName).toBe('p');
+    // The artifact is still written: it documents the skip as a comment.
+    expect(fs.readFileSync(h!.outFile!, 'utf8')).toContain('-- not tried');
   });
 
   test('refuses files outside the current directory', () => {

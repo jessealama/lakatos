@@ -1,6 +1,11 @@
 import fc from "fast-check";
 import type { DoubleConstraints } from "fast-check";
-import { bigintBounds, intBounds, numberConstraints } from "./domains.js";
+import {
+  bigintBounds,
+  intBounds,
+  numberConstraints,
+  SAFE_INTEGER_RANGE,
+} from "./domains.js";
 import { LemmaError } from "./errors.js";
 import type { Domain, Range } from "./binder.js";
 
@@ -110,10 +115,14 @@ function validateIntegerInterval(domain: Domain, range: Range, text: string) {
     }
     return;
   }
-  const { lo, hi, clamped } = intBounds(domain as "int" | "nat", range);
+  const { lo, hi, clampedLo, clampedHi } = intBounds(
+    domain as "int" | "nat",
+    range,
+  );
+  const clamped = clampedLo || clampedHi;
   if (lo > hi) {
     throw new LemmaError(
-      `empty interval: no ${domain}${clamped ? " within the safe integer range (±9007199254740991)" : ""} satisfies ${text}`,
+      `empty interval: no ${domain}${clamped ? ` within ${SAFE_INTEGER_RANGE}` : ""} satisfies ${text}`,
     );
   }
   if (clamped) {

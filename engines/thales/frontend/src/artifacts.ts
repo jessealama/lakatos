@@ -5,7 +5,7 @@ import type {
   RawAnnotation,
 } from '../../../../lemma/src/extract.js';
 import { mirrorPath } from '../../../../lemma/src/mirror.js';
-import { transcribe } from './transcribe.js';
+import { transcribe, type UntriedAnnotation } from './transcribe.js';
 
 export interface FileArtifact {
   sourceFile: string;
@@ -13,6 +13,7 @@ export interface FileArtifact {
   outFile?: string;
   annotations: RawAnnotation[];
   invalid: InvalidAnnotation[];
+  untried: UntriedAnnotation[];
 }
 
 /** Transcribe each source file into `outRoot`, via the mirroring shared
@@ -24,15 +25,15 @@ export function writeArtifacts(
 ): FileArtifact[] {
   return files.map((file) => {
     const outFile = mirrorPath(file, outRoot, '.lean');
-    const { lean, annotations, invalid } = transcribe(
+    const { lean, annotations, invalid, untried } = transcribe(
       fs.readFileSync(file, 'utf8'),
       file,
     );
     if (annotations.length === 0) {
-      return { sourceFile: file, annotations, invalid };
+      return { sourceFile: file, annotations, invalid, untried };
     }
     fs.mkdirSync(path.dirname(outFile), { recursive: true });
     fs.writeFileSync(outFile, lean, 'utf8');
-    return { sourceFile: file, outFile, annotations, invalid };
+    return { sourceFile: file, outFile, annotations, invalid, untried };
   });
 }
