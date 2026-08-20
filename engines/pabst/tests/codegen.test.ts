@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { generate } from "../src/codegen.js";
-import { PabstError } from "../src/errors.js";
+import { LemmaError } from "../../../lemma/src/errors.js";
 
 describe("generate", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pabst-codegen-"));
@@ -92,8 +92,8 @@ describe("generate: source outside the current directory", () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it("throws PabstError rather than writing outside the output root", () => {
-    expect(() => generate(["../evil.ts"], ".pabst", 7)).toThrow(PabstError);
+  it("throws LemmaError rather than writing outside the output root", () => {
+    expect(() => generate(["../evil.ts"], ".pabst", 7)).toThrow(LemmaError);
     expect(() => generate(["../evil.ts"], ".pabst", 7)).toThrow(
       /outside the current directory/,
     );

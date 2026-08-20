@@ -1,5 +1,5 @@
 import ts from "typescript";
-import { PabstError } from "./errors.js";
+import { LemmaError } from "../../../lemma/src/errors.js";
 
 export const GLOBALS = new Set<string>([
   "Math",
@@ -67,7 +67,7 @@ export function classify(
     }
     // The per-annotation wrapper in build-spec prefixes file, line, and
     // property name, so naming them here would state them twice.
-    throw new PabstError(`references '${id}', which is not exported`);
+    throw new LemmaError(`references '${id}', which is not exported`);
   }
   return { freeExports: [...new Set(freeExports)] };
 }

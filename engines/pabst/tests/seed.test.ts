@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { randomSeed, parseSeed } from "../src/seed.js";
-import { PabstError } from "../src/errors.js";
+import { expectLemmaError } from "../../../lemma/tests/helpers/errors.js";
 
 describe("randomSeed", () => {
   it("returns an integer in the 32-bit unsigned range", () => {
@@ -20,17 +20,15 @@ describe("parseSeed", () => {
     expect(parseSeed(String(2 ** 32 - 1))).toBe(2 ** 32 - 1);
   });
 
-  // A bad --seed is user input at fault, so it must be a PabstError: the CLI
+  // A bad --seed is user input at fault, so it must be a LemmaError: the CLI
   // maps those to exit 2 and rethrows anything else as an internal bug.
-  it("rejects non-integers with a user-facing PabstError", () => {
-    expect(() => parseSeed("4.2")).toThrow(PabstError);
-    expect(() => parseSeed("4.2")).toThrow(/invalid --seed/);
-    expect(() => parseSeed("abc")).toThrow(/invalid --seed/);
-    expect(() => parseSeed("-1")).toThrow(/invalid --seed/);
+  it("rejects non-integers with a user-facing LemmaError", () => {
+    expectLemmaError(() => parseSeed("4.2"), /invalid --seed/);
+    expectLemmaError(() => parseSeed("abc"), /invalid --seed/);
+    expectLemmaError(() => parseSeed("-1"), /invalid --seed/);
   });
 
-  it("rejects values at or above 2^32 with a user-facing PabstError", () => {
-    expect(() => parseSeed(String(2 ** 32))).toThrow(PabstError);
-    expect(() => parseSeed(String(2 ** 32))).toThrow(/out of range/);
+  it("rejects values at or above 2^32 with a user-facing LemmaError", () => {
+    expectLemmaError(() => parseSeed(String(2 ** 32)), /out of range/);
   });
 });

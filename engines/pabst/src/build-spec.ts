@@ -8,7 +8,7 @@ import { parseBody } from "../../../lemma/src/formula-parser.js";
 import { lowerTop } from "./lower.js";
 import { collectAtoms } from "../../../lemma/src/formula-ast.js";
 import { freeIdentifiers, classify } from "./free-idents.js";
-import { PabstError } from "./errors.js";
+import { LemmaError } from "../../../lemma/src/errors.js";
 import type { PropertySpec } from "./ir.js";
 
 export interface BuildResult {
@@ -24,8 +24,8 @@ export function buildSpecs(file: string): BuildResult {
     try {
       specs.push(buildSpec(a, exports, file));
     } catch (e) {
-      if (e instanceof PabstError) {
-        throw new PabstError(
+      if (e instanceof LemmaError) {
+        throw new LemmaError(
           `${file}:${a.line}: @ensures{${a.propertyName}}: ${e.message}`,
           { cause: e },
         );

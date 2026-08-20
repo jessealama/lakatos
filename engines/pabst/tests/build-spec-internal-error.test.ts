@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { runMain, useTempProject } from "../../../tests/helpers/cli.js";
 
-// The per-annotation catch in build-spec wraps only PabstError in the
+// The per-annotation catch in build-spec wraps only LemmaError in the
 // `file:line: @ensures{name}:` diagnostic; anything else must be rethrown
 // as-is so internal compile-pipeline bugs crash loudly instead of being
 // reported as user errors. The cli-internal-error suite mocks the generator
@@ -19,7 +19,7 @@ describe("build-spec internal errors", () => {
     "fine.ts": `/** @ensures{pos} forall (n: nat) { fine(n) >= 0 } */\nexport function fine(n: number): number { return n; }\n`,
   });
 
-  it("a non-PabstError thrown mid-annotation escapes main() unwrapped", () => {
+  it("a non-LemmaError thrown mid-annotation escapes main() unwrapped", () => {
     expect(() => runMain(["refute", "fine.ts"])).toThrow(TypeError);
     expect(() => runMain(["refute", "fine.ts"])).toThrow(
       /internal invariant violated in lowering/,
