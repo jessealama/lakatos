@@ -133,10 +133,12 @@ function failed(r: SpawnOutcome): LeanRunResult {
 }
 
 /** Heartbeat-budget override for the artifact runs; e2e suites shrink it
- * to exercise Timeout deterministically. */
+ * to exercise Timeout deterministically. A zero budget is ignored like any
+ * other unusable value: Lean reads maxHeartbeats 0 as unlimited, so
+ * forwarding it would widen the budget instead of shrinking it. */
 function heartbeatArgs(): string[] {
   const v = process.env.LAKATOS_PROVE_HEARTBEATS;
-  return v !== undefined && /^\d+$/.test(v)
+  return v !== undefined && /^\d+$/.test(v) && Number(v) > 0
     ? [`-Dweak.thales.heartbeats=${v}`]
     : [];
 }

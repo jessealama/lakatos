@@ -71,7 +71,7 @@ Verdict meanings, as `Prove.lean` assigns them:
 - `Inappropriate` — the function could not be modeled because of an unmapped TypeScript construct (opaque node), or the property mentions such a declaration.
 - `Error` — the attempt failed for any other reason; the reason names the phase that failed — building the property, or searching for a proof — so neither is ever blamed for the other's failure.
 - `NotTried` — no structured property was provided (the transcriber's degradation path).
-- `Timeout` — the attempt exceeded the per-annotation heartbeat budget (`thales.heartbeats`, overridable per run via `LAKATOS_PROVE_HEARTBEATS` → `-Dweak.thales.heartbeats=N`); later annotations in the file still run, each with a fresh budget.
+- `Timeout` — the attempt exceeded the per-annotation heartbeat budget (`thales.heartbeats`, overridable per run via `LAKATOS_PROVE_HEARTBEATS` → `-Dweak.thales.heartbeats=N`); later annotations in the file still run, each with a fresh budget. A budget of 0 is not a budget: `maxHeartbeats 0` means unlimited, so the option floors at 1 and the frontend ignores `LAKATOS_PROVE_HEARTBEATS=0` rather than forwarding it.
 
 This seven-status set must match `PROVE_STATUSES` in root `src/envelope.ts`; the root suite pins the check script's copy against it (`tests/verdict-contract.test.ts`). Don't add or rename a status in one place only.
 
