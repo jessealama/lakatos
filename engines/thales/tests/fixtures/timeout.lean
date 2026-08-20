@@ -30,3 +30,12 @@ set_option thales.heartbeats 50000 in
   ts.forall(ts.binder["x"](ts.int, ts.range(0, 1000000))) {
     ts.istrue(ts.binop[">="](ts.call["slow"](ts.id["x"]), ts.num[0]))
   }
+
+-- Lean reads maxHeartbeats 0 as "no limit", so a zero budget is clamped to
+-- the smallest real one rather than passed through; the reason names the
+-- budget that actually ran.
+set_option thales.heartbeats 0 in
+#thales_prove "stuck.ts" "slow" "forall (x: int ∈ [0, 1000000)) { slow(x) >= 0 }" :=
+  ts.forall(ts.binder["x"](ts.int, ts.range(0, 1000000))) {
+    ts.istrue(ts.binop[">="](ts.call["slow"](ts.id["x"]), ts.num[0]))
+  }

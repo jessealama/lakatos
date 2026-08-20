@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -224,26 +224,30 @@ describe('runLean', () => {
     });
   });
 
+  // stubEnv restores whatever the ambient environment held, so a value
+  // exported outside the suite survives these tests.
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   test('forwards LAKATOS_PROVE_HEARTBEATS to lean as a weak option', () => {
     const { spawn, calls } = fakeSpawn([{ status: 0 }, { status: 0 }]);
-    process.env.LAKATOS_PROVE_HEARTBEATS = '7';
-    try {
-      runLean(['a.lean'], '/engine', spawn);
-    } finally {
-      delete process.env.LAKATOS_PROVE_HEARTBEATS;
-    }
+    vi.stubEnv('LAKATOS_PROVE_HEARTBEATS', '7');
+    runLean(['a.lean'], '/engine', spawn);
     const leanCall = calls.find((c) => c.args[0] === 'env');
     expect(leanCall?.args).toContain('-Dweak.thales.heartbeats=7');
   });
 
-  test('ignores a non-numeric LAKATOS_PROVE_HEARTBEATS', () => {
+  test.each([
+    ['non-numeric', 'lots'],
+    // 0 reaches Lean as maxHeartbeats 0, which means unlimited — the
+    // opposite of the smallest budget someone setting it would expect.
+    ['zero', '0'],
+    ['zero-padded', '000'],
+  ])('ignores a %s LAKATOS_PROVE_HEARTBEATS', (_label, value) => {
     const { spawn, calls } = fakeSpawn([{ status: 0 }, { status: 0 }]);
-    process.env.LAKATOS_PROVE_HEARTBEATS = 'lots';
-    try {
-      runLean(['a.lean'], '/engine', spawn);
-    } finally {
-      delete process.env.LAKATOS_PROVE_HEARTBEATS;
-    }
+    vi.stubEnv('LAKATOS_PROVE_HEARTBEATS', value);
+    runLean(['a.lean'], '/engine', spawn);
     expect(calls.flatMap((c) => c.args).join(' ')).not.toContain(
       'thales.heartbeats',
     );

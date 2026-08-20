@@ -96,6 +96,7 @@ const FIXTURES = [
       ['slow', 'Timeout', /heartbeat budget/],
       ['add', 'Theorem'],
       ['slow', 'Timeout', /heartbeat budget/],
+      ['slow', 'Timeout', /thales\.heartbeats = 1\)$/],
     ],
   },
   {

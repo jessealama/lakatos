@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import {
@@ -70,6 +70,13 @@ const mainFixtures = fixtures.filter((f) => !f.startsWith("timeout/"));
 // The corpus runs in ONE prove invocation: one Lean build for the whole
 // corpus, with per-file containment already localizing artifact failures.
 describe.runIf(enabled)("verdict corpus", () => {
+  // The budget is per-test state, never ambient: an exported
+  // LAKATOS_PROVE_HEARTBEATS would otherwise flip theorem fixtures to
+  // Timeout and blame the fixtures. stubEnv restores what was there.
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   useRepoScratchDir(
     path.join(repoRoot, ".thales", "verdict-corpus-work"),
     (dir) => {
@@ -85,6 +92,9 @@ describe.runIf(enabled)("verdict corpus", () => {
     "every annotation receives its bucket's SZS status",
     { timeout: proveTimeoutMs(mainFixtures.length) },
     () => {
+      // These fixtures are graded at the default budget; only the timeout
+      // bucket reduces it.
+      vi.stubEnv("LAKATOS_PROVE_HEARTBEATS", undefined);
       // The countersatisfiable bucket guarantees refutations: exit 1.
       const env = runForEnvelope(["prove", ...mainFixtures], 1);
 
@@ -110,18 +120,12 @@ describe.runIf(enabled)("verdict corpus", () => {
     () => {
       // The reduced budget is what makes Timeout deterministic: the
       // fixtures are ordinary annotations, not CI-grinding pathologies.
-      process.env.LAKATOS_PROVE_HEARTBEATS = "1";
-      try {
-        const env = runForEnvelope(["prove", ...timeoutFixtures], 0);
-        const covered = new Set(env.annotations.map((a) => a.file));
-        expect(timeoutFixtures.filter((f) => !covered.has(f))).toEqual([]);
-        for (const a of env.annotations) {
-          expect(a.szs, `${a.file} ${a.function}/${a.property}`).toBe(
-            "Timeout",
-          );
-        }
-      } finally {
-        delete process.env.LAKATOS_PROVE_HEARTBEATS;
+      vi.stubEnv("LAKATOS_PROVE_HEARTBEATS", "1");
+      const env = runForEnvelope(["prove", ...timeoutFixtures], 0);
+      const covered = new Set(env.annotations.map((a) => a.file));
+      expect(timeoutFixtures.filter((f) => !covered.has(f))).toEqual([]);
+      for (const a of env.annotations) {
+        expect(a.szs, `${a.file} ${a.function}/${a.property}`).toBe("Timeout");
       }
     },
   );

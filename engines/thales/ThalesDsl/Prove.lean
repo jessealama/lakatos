@@ -4,7 +4,7 @@ import ThalesDsl.Model
 
 register_option thales.heartbeats : Nat := {
   defValue := 200000
-  descr := "per-annotation heartbeat budget for #thales_prove, in the maxHeartbeats unit; an attempt that exceeds it reports a Timeout verdict"
+  descr := "per-annotation heartbeat budget for #thales_prove, in the maxHeartbeats unit; an attempt that exceeds it reports a Timeout verdict. 0 is clamped to 1: the underlying limit reads 0 as unlimited, which would leave the attempt uncontained"
 }
 
 namespace ThalesDsl
@@ -377,7 +377,9 @@ elab_rules : command
         else
           try
             let ep ← elabProp [] p
-            let budget := thales.heartbeats.get (← getOptions)
+            -- Floored at 1: maxHeartbeats 0 means unlimited, so a zero
+            -- budget would leave the elaboration window uncontained.
+            let budget := max (thales.heartbeats.get (← getOptions)) 1
             -- The ladder caps each of its phases at the budget (or a split
             -- share of it); a blown cap anywhere in the attempt — the
             -- kernel's decide evaluation included — is this annotation's
