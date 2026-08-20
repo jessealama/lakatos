@@ -325,6 +325,34 @@ describe('annotations', () => {
     );
   });
 
+  test('an unbounded int binder lowers to ts.binder[..](ts.int)', () => {
+    const src = [
+      '/** @ensures{p} forall (x: int) { f(x) === x + x } */',
+      'export function f(x: number): number { return x * 2; }',
+    ].join('\n');
+    const out = transcribeSource(src, 'f.ts');
+    expect(out).toContain('ts.binder["x"](ts.int)');
+    expect(out).toContain('#thales_prove "f.ts" "f" "p" :=');
+  });
+
+  test('an unbounded nat binder lowers to ts.binder[..](ts.nat)', () => {
+    const src = [
+      '/** @ensures{p} forall (x: nat) { f(x) >= x } */',
+      'export function f(x: number): number { return x * 2; }',
+    ].join('\n');
+    expect(transcribeSource(src, 'f.ts')).toContain('ts.binder["x"](ts.nat)');
+  });
+
+  test('a half-bounded range still degrades to the bare command', () => {
+    const src = [
+      '/** @ensures{p} forall (x: int ∈ [0, ∞)) { f(x) >= 0 } */',
+      'export function f(x: number): number { return x * 2; }',
+    ].join('\n');
+    const out = transcribeSource(src, 'f.ts');
+    expect(out).not.toContain('ts.binder');
+    expect(out).toContain('#thales_prove "f.ts" "f" "p"');
+  });
+
   test('a connective body falls back to the bare NotTried form', () => {
     const src = [
       '/** @ensures{p} forall (a: int ∈ [0, 5)) { f(a) >= 0 ∧ f(a) < 9 } */',

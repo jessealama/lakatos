@@ -132,6 +132,15 @@ function failed(r: SpawnOutcome): LeanRunResult {
   };
 }
 
+/** Heartbeat-budget override for the artifact runs; e2e suites shrink it
+ * to exercise Timeout deterministically. */
+function heartbeatArgs(): string[] {
+  const v = process.env.LAKATOS_PROVE_HEARTBEATS;
+  return v !== undefined && /^\d+$/.test(v)
+    ? [`-Dweak.thales.heartbeats=${v}`]
+    : [];
+}
+
 /**
  * Run `lake env lean` over each artifact and collect the sentinel-framed
  * verdict lines. `engineRoot` is the caller's `findEngineRoot()` result —
@@ -170,10 +179,14 @@ export function runLean(
   const failures: FileFailure[] = [];
   const diagnostics: string[] = [];
   for (const file of leanFiles) {
-    const run = spawn('lake', ['env', 'lean', path.resolve(file)], {
-      ...opts,
-      timeout: LEAN_TIMEOUT_MS,
-    });
+    const run = spawn(
+      'lake',
+      ['env', 'lean', ...heartbeatArgs(), path.resolve(file)],
+      {
+        ...opts,
+        timeout: LEAN_TIMEOUT_MS,
+      },
+    );
     if (run.error !== undefined || run.status !== 0) {
       // A hung or crashed artifact degrades only its own annotations.
       failures.push({

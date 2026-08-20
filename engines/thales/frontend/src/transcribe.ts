@@ -233,9 +233,13 @@ function unsupportedRangeReason(endpoints: string[]): string {
 function binderConstructor(b: Binder): BinderLowering {
   if (b.domain !== 'int' && b.domain !== 'nat') return { kind: 'bare' };
   const r = b.range;
-  if (r === undefined || r.min === undefined || r.max === undefined) {
-    return { kind: 'bare' };
+  if (r === undefined) {
+    // No interval at all: the whole domain, which the generic proof
+    // stage can attempt — nat keeps its nonnegativity in the binder.
+    const ty = b.domain === 'nat' ? 'ts.nat' : 'ts.int';
+    return { kind: 'ctor', ctor: `ts.binder[${leanStr(b.varName)}](${ty})` };
   }
+  if (r.min === undefined || r.max === undefined) return { kind: 'bare' };
   // Lemma guarantees integer endpoint text for int/nat; a surprise still
   // cannot abort transcription — structuredProp's catch degrades it.
   const { lo, hi, clampedLo, clampedHi } = intBounds(b.domain, r);
@@ -298,8 +302,9 @@ type PropReading =
   | { kind: 'unsupported-range'; reason: string }
   | { kind: 'bare' };
 
-/** The `ts_prop` reading of a Lemma formula: bare when this slice cannot
- * express it (non-integer domains, unbounded ranges, connectives, or a
+/** The `ts_prop` reading of a Lemma formula: unbounded int/nat domains
+ * structure like bounded ones; bare when this slice cannot express it
+ * (non-integer domains, half-bounded ranges, connectives, or a
  * formula the Lemma parser rejects), unsupported-range only when a
  * safe-integer clamp is the SOLE blocker — an annotation this slice could
  * not have structured anyway degrades to bare, whatever its ranges. The
