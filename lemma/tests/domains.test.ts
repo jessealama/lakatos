@@ -1,7 +1,56 @@
 import { describe, it, expect } from "vitest";
-import { intBounds, MAX_SAFE } from "../src/domains.js";
+import { intBounds, intInterval, MAX_SAFE } from "../src/domains.js";
 
 const HUGE = "1000000000000000000000000000000";
+
+describe("intInterval", () => {
+  it("folds open endpoints into inclusive ones", () => {
+    expect(intInterval("int", { min: "0", max: "10", maxOpen: true })).toEqual({
+      lo: 0n,
+      hi: 9n,
+    });
+    expect(intInterval("int", { min: "0", minOpen: true, max: "10" })).toEqual({
+      lo: 1n,
+      hi: 10n,
+    });
+    expect(
+      intInterval("int", {
+        min: "0",
+        minOpen: true,
+        max: "10",
+        maxOpen: true,
+      }),
+    ).toEqual({ lo: 1n, hi: 9n });
+  });
+
+  it("leaves an unbounded int side unbounded", () => {
+    expect(intInterval("int", { min: "0" })).toEqual({ lo: 0n });
+    expect(intInterval("int", { max: "3" })).toEqual({ hi: 3n });
+    expect(intInterval("int", {})).toEqual({});
+  });
+
+  it("floors nat at 0 whether the written lower bound is negative or -∞", () => {
+    expect(intInterval("nat", { min: "-2", max: "5" })).toEqual({
+      lo: 0n,
+      hi: 5n,
+    });
+    expect(intInterval("nat", { max: "5" })).toEqual({ lo: 0n, hi: 5n });
+    expect(intInterval("nat", {})).toEqual({ lo: 0n });
+    // The open-endpoint fold lands exactly on the floor, which must not
+    // then shift it further.
+    expect(intInterval("nat", { min: "-1", minOpen: true, max: "5" })).toEqual({
+      lo: 0n,
+      hi: 5n,
+    });
+  });
+
+  it("keeps endpoints beyond the safe range exact", () => {
+    expect(intInterval("int", { min: "0", max: HUGE })).toEqual({
+      lo: 0n,
+      hi: BigInt(HUGE),
+    });
+  });
+});
 
 describe("intBounds clamp reporting", () => {
   it("reports no clamping for an in-range interval", () => {

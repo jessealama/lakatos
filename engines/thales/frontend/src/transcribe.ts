@@ -3,6 +3,7 @@ import ts from 'typescript';
 import type { Binder } from '../../../../lemma/src/binder.js';
 import {
   intBounds,
+  intInterval,
   SAFE_INTEGER_RANGE,
 } from '../../../../lemma/src/domains.js';
 import {
@@ -229,24 +230,40 @@ function unsupportedRangeReason(endpoints: string[]): string {
   );
 }
 
-/** The `ballIco`-style lowering of a binder: inclusive lo, exclusive hi. */
+/** The `ballIco`-style lowering of a binder: inclusive lo, exclusive hi.
+ * Lowering reads the domain the binder *denotes*, so `int ∈ [0, ∞)` and
+ * `nat` — or `nat ∈ (-∞, 10]` and `nat ∈ [0, 10]` — cannot diverge. */
 function binderConstructor(b: Binder): BinderLowering {
   if (b.domain !== 'int' && b.domain !== 'nat') return { kind: 'bare' };
+  const named = (ty: string) =>
+    ({
+      kind: 'ctor',
+      ctor: `ts.binder[${leanStr(b.varName)}](${ty})`,
+    }) as const;
   const r = b.range;
-  if (r === undefined) {
-    // No interval at all: the whole domain, which the generic proof
-    // stage can attempt — nat keeps its nonnegativity in the binder.
-    const ty = b.domain === 'nat' ? 'ts.nat' : 'ts.int';
-    return { kind: 'ctor', ctor: `ts.binder[${leanStr(b.varName)}](${ty})` };
-  }
-  if (r.min === undefined || r.max === undefined) return { kind: 'bare' };
+  // No interval at all: the whole domain, which the generic proof stage
+  // can attempt — nat keeps its nonnegativity in the binder.
+  if (r === undefined) return named(b.domain === 'nat' ? 'ts.nat' : 'ts.int');
   // Lemma guarantees integer endpoint text for int/nat; a surprise still
   // cannot abort transcription — structuredProp's catch degrades it.
-  const { lo, hi, clampedLo, clampedHi } = intBounds(b.domain, r);
+  const { lo, hi } = intInterval(b.domain, r);
+  if (hi === undefined) {
+    // Unbounded above: the DSL's only shapes are the whole int line and
+    // the naturals. Any other floor would need a one-sided binder.
+    if (lo === undefined) return named('ts.int');
+    return lo === 0n ? named('ts.nat') : { kind: 'bare' };
+  }
+  // Unbounded below with a finite ceiling: substituting the safe-range
+  // floor would prove a narrower statement than written.
+  if (lo === undefined) return { kind: 'bare' };
+  const { clampedLo, clampedHi } = intBounds(b.domain, r);
   if (clampedLo || clampedHi) {
     return {
       kind: 'clamped',
-      endpoints: [...(clampedLo ? [r.min] : []), ...(clampedHi ? [r.max] : [])],
+      endpoints: [
+        ...(clampedLo ? [r.min!] : []),
+        ...(clampedHi ? [r.max!] : []),
+      ],
     };
   }
   return {
@@ -304,10 +321,11 @@ type PropReading =
 
 /** The `ts_prop` reading of a Lemma formula: unbounded int/nat domains
  * structure like bounded ones; bare when this slice cannot express it
- * (non-integer domains, half-bounded ranges, connectives, or a
- * formula the Lemma parser rejects), unsupported-range only when a
- * safe-integer clamp is the SOLE blocker — an annotation this slice could
- * not have structured anyway degrades to bare, whatever its ranges. The
+ * (non-integer domains, half-bounded ranges with no DSL binder shape,
+ * connectives, or a formula the Lemma parser rejects), unsupported-range
+ * only when a safe-integer clamp is the SOLE blocker — an annotation this
+ * slice could not have structured anyway degrades to bare, whatever its
+ * ranges. The
  * exception is an interval the clamp emptied: with no domain left there
  * is nothing to attempt, so it is unsupported-range whatever the body. */
 function structuredProp(formula: string): PropReading {

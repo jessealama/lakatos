@@ -343,14 +343,63 @@ describe('annotations', () => {
     expect(transcribeSource(src, 'f.ts')).toContain('ts.binder["x"](ts.nat)');
   });
 
-  test('a half-bounded range still degrades to the bare command', () => {
-    const src = [
+  test('int ∈ [0, ∞) lowers exactly as the nat domain it denotes', () => {
+    const withRange = [
       '/** @ensures{p} forall (x: int ∈ [0, ∞)) { f(x) >= 0 } */',
       'export function f(x: number): number { return x * 2; }',
     ].join('\n');
+    const bareNat = [
+      '/** @ensures{p} forall (x: nat) { f(x) >= 0 } */',
+      'export function f(x: number): number { return x * 2; }',
+    ].join('\n');
+    expect(provesOf(withRange, 'f.ts')).toEqual(provesOf(bareNat, 'f.ts'));
+    expect(provesOf(withRange, 'f.ts')[1]).toBe(
+      '  ts.forall(ts.binder["x"](ts.nat)) {',
+    );
+  });
+
+  test('an open lower endpoint below 0 on int is the nat domain too', () => {
+    const src = [
+      '/** @ensures{p} forall (x: int ∈ (-1, ∞)) { f(x) >= 0 } */',
+      'export function f(x: number): number { return x * 2; }',
+    ].join('\n');
+    expect(provesOf(src)[1]).toBe('  ts.forall(ts.binder["x"](ts.nat)) {');
+  });
+
+  test('nat ∈ (-∞, 10] elaborates as the bounded domain it denotes', () => {
+    const src = [
+      '/** @ensures{p} forall (x: nat ∈ (-∞, 10]) { f(x) >= 0 } */',
+      'export function f(x: number): number { return x * 2; }',
+    ].join('\n');
+    expect(provesOf(src)[1]).toBe(
+      '  ts.forall(ts.binder["x"](ts.int, ts.range(0, 11))) {',
+    );
+  });
+
+  test('a doubly unbounded int range is the whole int domain', () => {
+    const src = [
+      '/** @ensures{p} forall (x: int ∈ (-∞, ∞)) { f(x) >= 0 } */',
+      'export function f(x: number): number { return x * 2; }',
+    ].join('\n');
+    expect(provesOf(src)[1]).toBe('  ts.forall(ts.binder["x"](ts.int)) {');
+  });
+
+  test('an int range unbounded above with a nonzero floor stays bare', () => {
+    const src = [
+      '/** @ensures{p} forall (x: int ∈ [5, ∞)) { f(x) >= 0 } */',
+      'export function f(x: number): number { return x * 2; }',
+    ].join('\n');
+    expect(provesOf(src, 'f.ts')).toEqual(['#thales_prove "f.ts" "f" "p"']);
+  });
+
+  test('an int range unbounded below is never clamped to the safe range', () => {
+    const src = [
+      '/** @ensures{p} forall (x: int ∈ (-∞, 3]) { f(x) >= 0 } */',
+      'export function f(x: number): number { return x * 2; }',
+    ].join('\n');
     const out = transcribeSource(src, 'f.ts');
-    expect(out).not.toContain('ts.binder');
-    expect(out).toContain('#thales_prove "f.ts" "f" "p"');
+    expect(out).not.toContain('ts.range');
+    expect(provesOf(src, 'f.ts')).toEqual(['#thales_prove "f.ts" "f" "p"']);
   });
 
   test('a connective body falls back to the bare NotTried form', () => {
@@ -410,9 +459,9 @@ describe('annotations', () => {
     expect(provesOf(src)).toEqual(['#thales_prove "t.ts" "f" "p"']);
   });
 
-  test('an unbounded range falls back to the bare form', () => {
+  test('a half-bounded range the DSL has no shape for falls back to the bare form', () => {
     const src = [
-      '/** @ensures{p} forall (a: int ∈ [0, ∞)) { f(a) >= 0 } */',
+      '/** @ensures{p} forall (a: int ∈ [3, ∞)) { f(a) >= 0 } */',
       'function f(a: number): number { return a; }',
     ].join('\n');
     expect(provesOf(src)).toEqual(['#thales_prove "t.ts" "f" "p"']);
@@ -515,6 +564,35 @@ describe('clamped ranges', () => {
         reason: `endpoints ${HUGE} and ${HUGE}0 exceed the safe integer range (±9007199254740991)`,
       },
     ]);
+  });
+
+  test('a nat interval unbounded below is bounded by the floor, so its huge ceiling clamps', () => {
+    const src = [
+      `/** @ensures{p} forall (a: nat ∈ (-∞, ${HUGE}]) { f(a) >= 0 } */`,
+      'function f(a: number): number { return a; }',
+    ].join('\n');
+    const { lean, untried } = transcribe(src, 't.ts');
+    expect(lean).not.toContain('#thales_prove');
+    expect(untried).toEqual([
+      {
+        annotation: expect.objectContaining({
+          functionName: 'f',
+          propertyName: 'p',
+        }),
+        kind: 'unsupported-range',
+        reason: `endpoint ${HUGE} exceeds the safe integer range (±9007199254740991)`,
+      },
+    ]);
+  });
+
+  test('an int interval unbounded below is bare, never clamp-reported', () => {
+    const src = [
+      `/** @ensures{p} forall (a: int ∈ (-∞, ${HUGE}]) { f(a) >= 0 } */`,
+      'function f(a: number): number { return a; }',
+    ].join('\n');
+    const { lean, untried } = transcribe(src, 't.ts');
+    expect(untried).toEqual([]);
+    expect(lean).toContain('#thales_prove "t.ts" "f" "p"');
   });
 
   test('an interval genuinely empty within the safe range keeps its bare command', () => {

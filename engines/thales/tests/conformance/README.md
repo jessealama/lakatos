@@ -21,8 +21,8 @@ the business of the e2e and unit suites.
   omega cannot close, and witness search is a bounded-domain affair, so
   falsity on an unbounded domain has no counterexample to ship.
 - `nottried/` — the transcriber degrades the property (`NotTried`): it has
-  no structured reading (a half-bounded range, a connective), or a range
-  endpoint exceeds the safe integer range.
+  no structured reading (a half-bounded range the DSL has no binder shape
+  for, a connective), or a range endpoint exceeds the safe integer range.
 - `inappropriate/` — the function uses a construct the transcriber cannot
   map (`Inappropriate`).
 - `timeout/` — every annotation must report `Timeout` under the reduced

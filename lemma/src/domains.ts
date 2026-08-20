@@ -35,22 +35,40 @@ export interface IntBounds {
   rawHi: bigint;
 }
 
-/** The inclusive fc.integer bounds an int/nat interval lowers to: open
- * endpoints fold into ±1 (fc.integer has no exclusion options), nat floors
- * at 0, and the result is intersected with the safe integer range. Both
- * sides are always concrete — fc.integer's implicit defaults are 32-bit,
- * so a far-out explicit bound with an omitted side would crash it — and an
+/** An int/nat interval as mathematics, not as any generator sees it: an
+ * absent side is genuinely unbounded, never a stand-in limit. */
+export interface IntInterval {
+  lo?: bigint;
+  hi?: bigint;
+}
+
+/** The exact set of integers an int/nat interval denotes: open endpoints
+ * fold into ±1 and nat floors at 0 (so nat's lower side is always
+ * bounded), with no safe-range intersection. The normalization every
+ * consumer shares, so equivalent domains cannot be treated differently. */
+export function intInterval(domain: "int" | "nat", range: Range): IntInterval {
+  const interval: IntInterval = {};
+  if (range.min !== undefined) {
+    interval.lo = BigInt(range.min) + (range.minOpen ? 1n : 0n);
+  }
+  if (range.max !== undefined) {
+    interval.hi = BigInt(range.max) - (range.maxOpen ? 1n : 0n);
+  }
+  if (domain === "nat" && (interval.lo === undefined || interval.lo < 0n)) {
+    interval.lo = 0n;
+  }
+  return interval;
+}
+
+/** The inclusive fc.integer bounds an int/nat interval lowers to: the
+ * denoted interval, intersected with the safe integer range. Both sides
+ * are always concrete — fc.integer's implicit defaults are 32-bit, so a
+ * far-out explicit bound with an omitted side would crash it — and an
  * unbounded (∞) side means the safe-range limit. */
 export function intBounds(domain: "int" | "nat", range: Range): IntBounds {
-  let lo =
-    range.min === undefined
-      ? -MAX_SAFE
-      : BigInt(range.min) + (range.minOpen ? 1n : 0n);
-  let hi =
-    range.max === undefined
-      ? MAX_SAFE
-      : BigInt(range.max) - (range.maxOpen ? 1n : 0n);
-  if (domain === "nat" && lo < 0n) lo = 0n;
+  const denoted = intInterval(domain, range);
+  let lo = denoted.lo ?? -MAX_SAFE;
+  let hi = denoted.hi ?? MAX_SAFE;
   const rawLo = lo;
   const rawHi = hi;
   const clampedLo = lo < -MAX_SAFE || lo > MAX_SAFE;
