@@ -58,8 +58,11 @@ const FIXTURES = [
     ],
   },
   {
-    file: 'gaveup-stuck.lean',
-    expected: [['slow', 'GaveUp', /did not evaluate/]],
+    file: 'timeout.lean',
+    expected: [
+      ['slow', 'Timeout', /heartbeat budget/],
+      ['add', 'Theorem'],
+    ],
   },
   {
     file: 'theorem-inappropriate.lean',

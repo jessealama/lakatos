@@ -2,6 +2,11 @@ import Lean
 import ThalesDsl.Verdict
 import ThalesDsl.Model
 
+register_option thales.heartbeats : Nat := {
+  defValue := 200000
+  descr := "per-annotation heartbeat budget for #thales_prove, in the maxHeartbeats unit; an attempt that exceeds it reports a Timeout verdict"
+}
+
 namespace ThalesDsl
 
 open Lean Elab Command
@@ -69,8 +74,9 @@ partial def readIntList (e : Expr) : Option (List Int) :=
   else none
 
 /-- Evaluates the witness-search term and pairs the values with the binder
-names. Best-effort: any failure — heartbeat exhaustion, a value the readback
-does not recognize — degrades to `none` instead of escaping. -/
+names. Best-effort: any failure — a value the readback does not recognize —
+degrades to `none` instead of escaping; only a blown heartbeat budget
+propagates, as the annotation's Timeout. -/
 def extractWitness (names : List String) (searchStx : TSyntax `term) :
     Term.TermElabM (Option (Array (String × Int))) :=
   tryCatchRuntimeEx
@@ -86,13 +92,14 @@ def extractWitness (names : List String) (searchStx : TSyntax `term) :
             return some (names.zip vals).toArray
       return none
     catch _ => return none)
-    (fun _ => return none)
+    (fun ex => if ex.isMaxHeartbeat then throw ex else return none)
 
 /-- After the kernel rejects a decide proof, reduce the `Decidable` instance
 to tell a false property from one the kernel could not evaluate. The instance
 is re-synthesized from the proposition so nothing depends on the proof term's
-internal shape; the reduction is best-effort — heartbeat exhaustion degrades
-to the stuck verdict instead of escaping. A false property with binders gets
+internal shape; the reduction is best-effort — failures degrade to the stuck
+verdict, except a blown heartbeat budget, which propagates as the
+annotation's Timeout. A false property with binders gets
 its witness searched out and ships as `CounterSatisfiable`; without binders
 (or when extraction degrades) falsity stays a `GaveUp`. -/
 def diagnoseDecideFailure (identity : Identity) (p : Expr)
@@ -112,7 +119,19 @@ def diagnoseDecideFailure (identity : Identity) (p : Expr)
             "the property is false on its bounded domain", some cex⟩
         return falseOnDomain
       return stuck)
-    (fun _ => return stuck)
+    (fun ex => if ex.isMaxHeartbeat then throw ex else return stuck)
+
+/-- Runs `x` under a fresh heartbeat budget (in the `maxHeartbeats` option's
+unit). The enforced limit is cached in the Core context at context creation,
+so the field must be set directly; the option is kept in sync for anything
+that reads it. -/
+def withHeartbeats {α : Type} (budget : Nat) (x : Term.TermElabM α) : Term.TermElabM α :=
+  controlAt CoreM fun runInBase => do
+    let start ← IO.getNumHeartbeats
+    withReader (fun ctx => { ctx with
+      initHeartbeats := start
+      maxHeartbeats := budget * 1000
+      options := maxHeartbeats.set ctx.options budget }) (runInBase x)
 
 def attemptDecide (identity : Identity) (thmName : Name) (propStx : TSyntax `term)
     (searchStx : TSyntax `term) (names : List String) :
@@ -163,7 +182,19 @@ elab_rules : command
           try
             let (propStx, searchStx, names) ← elabProp [] p
             let thmName := freshTheoremName (← getEnv) identity
-            liftTermElabM (attemptDecide identity thmName propStx searchStx names)
+            let budget := thales.heartbeats.get (← getOptions)
+            -- One fresh, capped budget per annotation; a blown budget
+            -- anywhere in the attempt — the kernel's decide evaluation
+            -- included — is this annotation's Timeout, never the file's
+            -- failure.
+            liftTermElabM <|
+              withHeartbeats budget <|
+                tryCatchRuntimeEx
+                  (attemptDecide identity thmName propStx searchStx names)
+                  fun ex => do
+                    unless ex.isMaxHeartbeat do throw ex
+                    pure ⟨identity, "Timeout",
+                      s!"the attempt exceeded the per-annotation heartbeat budget (thales.heartbeats = {budget})", none⟩
           catch ex =>
             pure ⟨identity, "Error",
               s!"property elaboration failed: {← ex.toMessageData.toString}", none⟩
