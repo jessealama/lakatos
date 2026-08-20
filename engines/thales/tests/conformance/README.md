@@ -17,15 +17,18 @@ the business of the e2e and unit suites.
 - `theorem/` — every annotation proves (`Theorem`).
 - `countersatisfiable/` — a false bounded claim: decide establishes falsity
   and the prover extracts a concrete witness (`CounterSatisfiable`).
-- `gaveup/` — the proof ladder exhausts (`GaveUp`). Currently empty: the
-  only exhaustion a TypeScript fixture can trigger today is a domain too
-  big to evaluate, which is minutes-slow — that path is pinned by the
-  hand-written verdict-channel fixtures instead.
+- `gaveup/` — the proof ladder exhausts (`GaveUp`): an unbounded claim
+  omega cannot close, and witness search is a bounded-domain affair, so
+  falsity on an unbounded domain has no counterexample to ship.
 - `nottried/` — the transcriber degrades the property (`NotTried`): it has
-  no structured reading (an unbounded domain, a connective), or a range
+  no structured reading (a half-bounded range, a connective), or a range
   endpoint exceeds the safe integer range.
 - `inappropriate/` — the function uses a construct the transcriber cannot
   map (`Inappropriate`).
+- `timeout/` — every annotation must report `Timeout` under the reduced
+  heartbeat budget the harness sets via `LAKATOS_PROVE_HEARTBEATS`; the
+  bucket runs as its own prove invocation so the rest of the corpus keeps
+  the default budget.
 
 Buckets are named after SZS statuses, lowercase. Buckets for statuses the
 prover cannot yet reach arrive with the issues that add those capabilities,
