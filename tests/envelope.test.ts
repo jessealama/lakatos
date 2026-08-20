@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { encodeIssue, type Issue } from "../engines/pabst/src/contract.js";
+import type { ProveStatus } from "../src/szs.js";
 import type {
   AssertionResult,
   VitestJson,
@@ -213,7 +214,11 @@ describe("joinProveVerdicts", () => {
     function: fn,
     property: "p",
   });
-  const verdict = (fn: string, szs: string, reason = "r"): ProveVerdict => ({
+  const verdict = (
+    fn: string,
+    szs: ProveStatus,
+    reason = "r",
+  ): ProveVerdict => ({
     identity: ["t.ts", fn, "p"],
     szs,
     reason,
@@ -336,9 +341,9 @@ describe("joinProveVerdicts", () => {
   });
 
   it("a status the envelope cannot represent is a mismatch", () => {
-    expect(joinProveVerdicts([id("a")], [verdict("a", "Unknown")]).kind).toBe(
-      "mismatched",
-    );
+    // Only a broken engine sends this, so the type has to be forced.
+    const bogus = verdict("a", "Unknown" as ProveStatus);
+    expect(joinProveVerdicts([id("a")], [bogus]).kind).toBe("mismatched");
   });
 
   it("a Timeout verdict joins with its reason", () => {

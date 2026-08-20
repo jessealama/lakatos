@@ -5,7 +5,7 @@ import {
 } from "../engines/pabst/src/contract.js";
 import type { LeanVerdict } from "../engines/thales/frontend/src/run.js";
 import type { VitestJson } from "../engines/pabst/src/vitest-json.js";
-import { szsForIssue, type SzsStatus } from "./szs.js";
+import { isProveStatus, szsForIssue, type SzsStatus } from "./szs.js";
 
 /** Identity of one scraped annotation: where it lives and what it claims. */
 export interface PropertyIdentity {
@@ -114,19 +114,6 @@ export type ProveJoin =
   | { kind: "joined"; annotations: AnnotationResult[] }
   | { kind: "mismatched"; messages: string[] };
 
-/** The verdict statuses the prove contract carries. The engine-side
- * check (engines/thales/scripts/check-verdict-channel.js) must allowlist
- * exactly this set — tests/verdict-contract.test.ts pins the two. */
-export const PROVE_STATUSES: ReadonlySet<string> = new Set([
-  "Theorem",
-  "CounterSatisfiable",
-  "Inappropriate",
-  "GaveUp",
-  "Timeout",
-  "NotTried",
-  "Error",
-]);
-
 /** The Theorem reason (a run-internal kernel name) is dropped, and so is
  * the CounterSatisfiable one — its substance is the counterexample, which
  * ships in the same falsified shape the refutation engine uses. Error
@@ -135,7 +122,7 @@ function verdictResult(
   id: PropertyIdentity,
   v: ProveVerdict,
 ): AnnotationResult {
-  const szs = v.szs as SzsStatus;
+  const szs = v.szs;
   if (szs === "Theorem") return { ...id, szs };
   if (szs === "CounterSatisfiable")
     return { ...id, szs, kind: "falsified", counterexample: v.counterexample };
@@ -161,7 +148,7 @@ export function joinProveVerdicts(
       property: v.identity[2],
     });
     if (byKey.has(key)) messages.push(`duplicate verdict for ${key}`);
-    if (!PROVE_STATUSES.has(v.szs)) {
+    if (!isProveStatus(v.szs)) {
       messages.push(
         `verdict status ${JSON.stringify(v.szs)} for ${key} is not representable in the envelope`,
       );

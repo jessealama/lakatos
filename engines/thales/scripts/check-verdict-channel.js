@@ -1,32 +1,15 @@
 #!/usr/bin/env node
 // Checks the JSON verdict-line contract between ThalesDsl's #thales_prove
 // command elaborator and the CLI: one parseable line per command on stdout,
-// in command order, failures contained per command, clean exit.
+// in command order, failures contained per command, clean exit. The channel
+// itself — the sentinel, the parse, the verdict validation, the lake
+// invocation and its timeout — comes from the built frontend, so this
+// checks production's reader rather than a second copy of it.
 
-import { spawnSync } from 'node:child_process';
 import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { checker, engineRoot, frontend } from './harness.js';
 
-const engineRoot = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  '..',
-);
-
-// Verdict lines are sentinel-framed: stdout is also Lean's diagnostic
-// stream, and only framed lines are part of the contract.
-const SENTINEL = 'thales-verdict:';
-
-// Must match PROVE_STATUSES in src/envelope.ts; the root suite pins the
-// two together.
-const SZS = new Set([
-  'Theorem',
-  'CounterSatisfiable',
-  'Inappropriate',
-  'GaveUp',
-  'Timeout',
-  'NotTried',
-  'Error',
-]);
+const { parseVerdicts, runArtifact } = await frontend('run');
 
 // Expected [function, szs, reasonPattern?, counterexample?] sequence per
 // fixture, in command order; reasonPattern, when present, must match the
@@ -115,18 +98,13 @@ const FIXTURES = [
   },
 ];
 
-const failures = [];
-function check(cond, message) {
-  if (!cond) failures.push(message);
-}
+const { check, done } = checker('verdict-channel');
 
 for (const { file, expected } of FIXTURES) {
-  const fixture = path.join('tests', 'fixtures', file);
-  const run = spawnSync('lake', ['env', 'lean', fixture], {
-    cwd: engineRoot,
-    encoding: 'utf8',
-    timeout: 300_000,
-  });
+  const run = runArtifact(
+    engineRoot,
+    path.join(engineRoot, 'tests', 'fixtures', file),
+  );
 
   check(run.error === undefined, `${file}: failed to run lake: ${run.error}`);
   check(
@@ -134,46 +112,16 @@ for (const { file, expected } of FIXTURES) {
     `${file}: expected exit 0, got ${run.status}\nstderr:\n${run.stderr}`,
   );
 
-  const allLines = (run.stdout ?? '')
-    .split('\n')
-    .filter((l) => l.trim() !== '');
-  const lines = allLines.filter((l) => l.startsWith(SENTINEL));
+  const { verdicts, diagnostics, messages } = parseVerdicts(run.stdout ?? '');
   check(
-    allLines.length === lines.length,
-    `${file}: unframed stdout line(s):\n${allLines
-      .filter((l) => !l.startsWith(SENTINEL))
-      .join('\n')}`,
+    diagnostics.length === 0,
+    `${file}: unframed stdout line(s):\n${diagnostics.join('\n')}`,
   );
+  for (const m of messages) check(false, `${file}: ${m}`);
   check(
-    lines.length === expected.length,
-    `${file}: expected ${expected.length} verdict lines, got ${lines.length}:\n${run.stdout}`,
+    verdicts.length === expected.length,
+    `${file}: expected ${expected.length} verdict lines, got ${verdicts.length}:\n${run.stdout}`,
   );
-
-  const verdicts = [];
-  for (const line of lines) {
-    let v;
-    try {
-      v = JSON.parse(line.slice(SENTINEL.length));
-    } catch {
-      check(false, `${file}: stdout line is not valid JSON: ${line}`);
-      continue;
-    }
-    check(
-      Array.isArray(v.identity) &&
-        v.identity.length === 3 &&
-        v.identity.every((s) => typeof s === 'string'),
-      `${file}: identity must be [file, function, property]: ${line}`,
-    );
-    check(
-      SZS.has(v.szs),
-      `${file}: unknown szs status ${JSON.stringify(v.szs)}: ${line}`,
-    );
-    check(
-      typeof v.reason === 'string' && v.reason.length > 0,
-      `${file}: reason must be a non-empty string: ${line}`,
-    );
-    verdicts.push(v);
-  }
 
   if (verdicts.length === expected.length) {
     const got = verdicts.map((v) => [v.identity[1], v.szs]);
@@ -198,9 +146,4 @@ for (const { file, expected } of FIXTURES) {
   }
 }
 
-if (failures.length > 0) {
-  console.error('verdict-channel check FAILED:');
-  for (const f of failures) console.error(`  - ${f}`);
-  process.exit(1);
-}
-console.log(`verdict-channel check passed (${FIXTURES.length} fixtures)`);
+done(`${FIXTURES.length} fixtures`);

@@ -5,6 +5,7 @@ import { runMain, useTempProject } from "./helpers/cli.js";
 import { expectValidEnvelope } from "./helpers/envelope-schema.js";
 import { runLean } from "../engines/thales/frontend/src/run.js";
 import type { ProveVerdict } from "../src/envelope.js";
+import type { ProveStatus } from "../src/szs.js";
 
 // The Lean toolchain never runs in unit tests: the runner is mocked at the
 // module seam, exactly as cli-unhealthy.test.ts mocks pabst's runTests.
@@ -16,7 +17,7 @@ const runLeanMock = vi.mocked(runLean);
 
 const ANNOTATED = `/** @ensures{pos} forall (n: int ∈ [0, 5)) { annotated(n) >= 0 } */\nexport function annotated(n: number): number { return n; }\n`;
 
-const verdict = (fn: string, szs: string, reason = "r"): ProveVerdict => ({
+const verdict = (fn: string, szs: ProveStatus, reason = "r"): ProveVerdict => ({
   identity: ["annotated.ts", fn, "pos"],
   szs,
   reason,

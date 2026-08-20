@@ -2,13 +2,14 @@ import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isProveStatus, type ProveStatus } from '../../../../src/szs.js';
 
 /** One #thales_prove verdict line: the contract printed by ThalesDsl.
  * Counterexample values outside the JS safe-integer range travel as
  * decimal strings. */
 export interface LeanVerdict {
   identity: [string, string, string];
-  szs: string;
+  szs: ProveStatus;
   reason: string;
   counterexample?: Record<string, number | string>;
 }
@@ -33,7 +34,11 @@ export type LeanRunResult =
 // Exported so test timeouts can be sized from the containment budget.
 export const LEAN_TIMEOUT_MS = 300_000;
 export const BUILD_TIMEOUT_MS = 600_000;
-const SENTINEL = 'thales-verdict:';
+
+/** Frames each verdict line: stdout is also Lean's diagnostic stream, so
+ * only framed lines are part of the contract. ThalesDsl's
+ * `Verdict.sentinel` prints it. */
+export const VERDICT_SENTINEL = 'thales-verdict:';
 
 /** Locate the ThalesDsl lake project: walk up from this module looking for
  * a lakefile here or under engines/thales — covers the source tree, the
@@ -53,7 +58,7 @@ export function findEngineRoot(
 }
 
 /** What runLean needs back from a spawn; a subset of spawnSync's return. */
-interface SpawnOutcome {
+export interface SpawnOutcome {
   status: number | null;
   stdout: string | null;
   stderr: string | null;
@@ -77,6 +82,9 @@ function isCounterexample(c: unknown): c is Record<string, number | string> {
   );
 }
 
+/** A verdict must explain itself: every status but Theorem and
+ * CounterSatisfiable carries its reason into the envelope, and the two that
+ * drop it are no cheaper for the engine to fill in. */
 function isVerdict(v: unknown): v is LeanVerdict {
   if (typeof v !== 'object' || v === null) return false;
   const o = v as Record<string, unknown>;
@@ -85,12 +93,17 @@ function isVerdict(v: unknown): v is LeanVerdict {
     o.identity.length === 3 &&
     o.identity.every((s) => typeof s === 'string') &&
     typeof o.szs === 'string' &&
+    isProveStatus(o.szs) &&
     typeof o.reason === 'string' &&
+    o.reason.length > 0 &&
     (o.counterexample === undefined || isCounterexample(o.counterexample))
   );
 }
 
-function parseVerdicts(stdout: string): {
+/** Split one artifact's stdout into verdicts, unframed diagnostic lines,
+ * and contract violations. Shared with the engine's check scripts so the
+ * channel is parsed and validated in exactly one place. */
+export function parseVerdicts(stdout: string): {
   verdicts: LeanVerdict[];
   diagnostics: string[];
   messages: string[];
@@ -100,13 +113,13 @@ function parseVerdicts(stdout: string): {
   const messages: string[] = [];
   for (const line of stdout.split('\n')) {
     if (line.trim() === '') continue;
-    if (!line.startsWith(SENTINEL)) {
+    if (!line.startsWith(VERDICT_SENTINEL)) {
       diagnostics.push(line);
       continue;
     }
     let v: unknown;
     try {
-      v = JSON.parse(line.slice(SENTINEL.length));
+      v = JSON.parse(line.slice(VERDICT_SENTINEL.length));
     } catch {
       messages.push(`unparseable verdict line: ${line}`);
       continue;
@@ -141,6 +154,21 @@ function heartbeatArgs(): string[] {
   return v !== undefined && /^\d+$/.test(v) && Number(v) > 0
     ? [`-Dweak.thales.heartbeats=${v}`]
     : [];
+}
+
+/** Run one artifact through `lake env lean` under the containment budget.
+ * Shared with the engine's check scripts so the argv, the heartbeat
+ * override, and the timeout are settled in one place. */
+export function runArtifact(
+  engineRoot: string,
+  file: string,
+  spawn: Spawn = spawnSync,
+): SpawnOutcome {
+  return spawn(
+    'lake',
+    ['env', 'lean', ...heartbeatArgs(), path.resolve(file)],
+    { cwd: engineRoot, encoding: 'utf8', timeout: LEAN_TIMEOUT_MS },
+  );
 }
 
 /**
@@ -181,14 +209,7 @@ export function runLean(
   const failures: FileFailure[] = [];
   const diagnostics: string[] = [];
   for (const file of leanFiles) {
-    const run = spawn(
-      'lake',
-      ['env', 'lean', ...heartbeatArgs(), path.resolve(file)],
-      {
-        ...opts,
-        timeout: LEAN_TIMEOUT_MS,
-      },
-    );
+    const run = runArtifact(engineRoot, file, spawn);
     if (run.error !== undefined || run.status !== 0) {
       // A hung or crashed artifact degrades only its own annotations.
       failures.push({

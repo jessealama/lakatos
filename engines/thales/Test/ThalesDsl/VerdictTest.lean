@@ -4,7 +4,7 @@ open ThalesDsl
 
 def sample (cex : Option (Array (String × Int))) : Verdict :=
   { identity := ⟨"f.ts", "fn", "prop"⟩
-    szs := "CounterSatisfiable"
+    szs := .CounterSatisfiable
     reason := "false on its bounded domain"
     counterexample := cex }
 

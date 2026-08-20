@@ -9,11 +9,34 @@ structure Identity where
   function : String
   property : String
 
+/-- The SZS statuses a verdict can carry, closed so a status cannot be
+invented or misspelled at an emission site. The CLI's `ProveStatus`
+(root `src/szs.ts`) enumerates exactly these; the root suite pins the two. -/
+inductive Szs where
+  | Theorem
+  | CounterSatisfiable
+  | Inappropriate
+  | GaveUp
+  | Timeout
+  | NotTried
+  | Error
+  deriving DecidableEq
+
+/-- The wire spelling: each constructor's own name. -/
+def Szs.toString : Szs → String
+  | .Theorem => "Theorem"
+  | .CounterSatisfiable => "CounterSatisfiable"
+  | .Inappropriate => "Inappropriate"
+  | .GaveUp => "GaveUp"
+  | .Timeout => "Timeout"
+  | .NotTried => "NotTried"
+  | .Error => "Error"
+
 /-- One per-annotation result, printed as a single JSON line on stdout.
 This is the contract between `#thales_prove` and the lakatos CLI. -/
 structure Verdict where
   identity : Identity
-  szs : String
+  szs : Szs
   reason : String
   /-- Binder-name/value pairs falsifying the property, in binder order. -/
   counterexample : Option (Array (String × Int)) := none
@@ -27,7 +50,7 @@ def Verdict.toJson (v : Verdict) : Lean.Json :=
   Lean.Json.mkObj <|
     [
       ("identity", Lean.Json.arr #[.str v.identity.file, .str v.identity.function, .str v.identity.property]),
-      ("szs", .str v.szs),
+      ("szs", .str v.szs.toString),
       ("reason", .str v.reason)
     ] ++
     match v.counterexample with

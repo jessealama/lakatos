@@ -190,6 +190,10 @@ describe('runLean', () => {
       'thales-verdict:{"identity":["f.ts","f","p"],"szs":"CounterSatisfiable","reason":"r","counterexample":[]}',
       'thales-verdict:{"identity":["f.ts","f","p"],"szs":"CounterSatisfiable","reason":"r","counterexample":{"x":true}}',
       'thales-verdict:{"identity":["f.ts","f","p"],"szs":"CounterSatisfiable","reason":"r","counterexample":{"x":null}}',
+      // A status off the prove contract — invented, or refute's alone.
+      'thales-verdict:{"identity":["f.ts","f","p"],"szs":"Proven","reason":"r"}',
+      'thales-verdict:{"identity":["f.ts","f","p"],"szs":"InputError","reason":"r"}',
+      'thales-verdict:{"identity":["f.ts","f","p"],"szs":"GaveUp","reason":""}',
     ];
     const res = runLean(
       ['a.lean', 'b.lean'],
@@ -208,6 +212,31 @@ describe('runLean', () => {
     expect(r.verdicts).toHaveLength(1);
     expect(r.failures).toHaveLength(1);
     expect(r.failures[0]!.messages).toHaveLength(malformed.length);
+  });
+
+  test('a verdict must explain itself: an empty reason is malformed', () => {
+    const res = runLean(
+      ['a.lean'],
+      '/engine',
+      fakeSpawn([
+        { status: 0 },
+        {
+          status: 0,
+          stdout:
+            'thales-verdict:{"identity":["t.ts","f","p"],"szs":"GaveUp","reason":""}\n',
+        },
+      ]).spawn,
+    );
+    expect(res).toMatchObject({
+      kind: 'completed',
+      verdicts: [],
+      failures: [
+        {
+          file: 'a.lean',
+          messages: [expect.stringContaining('malformed verdict line')],
+        },
+      ],
+    });
   });
 
   test('a healthy run with no stdout at all yields no verdicts', () => {
