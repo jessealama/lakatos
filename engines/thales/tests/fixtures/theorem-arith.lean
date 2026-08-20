@@ -53,6 +53,13 @@ ts_def "dbl" := ts.fn(ts.param["x"](ts.number)) : ts.number {
     ts.eq(ts.call["dbl"](ts.id["x"]), ts.binop["*"](ts.id["x"], ts.num[2]))
   }
 
+-- A domain far too large for the kernel tier to enumerate. The native tier
+-- closes it in well under a second.
+#thales_prove "coerce.ts" "dbl" "doublesWide" :=
+  ts.forall(ts.binder["x"](ts.int, ts.range(0, 20000))) {
+    ts.eq(ts.call["dbl"](ts.id["x"]), ts.binop["*"](ts.id["x"], ts.num[2]))
+  }
+
 -- Nested ∀-properties (binders introduced by separate foralls).
 #thales_prove "arith.ts" "add" "forall (a: int ∈ [0, 5)) { forall (b: int ∈ [0, 5)) { add(a, b) ≡ add(b, a) } }" :=
   ts.forall(ts.binder["a"](ts.int, ts.range(0, 5))) {

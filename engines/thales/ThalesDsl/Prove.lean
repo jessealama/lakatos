@@ -208,6 +208,25 @@ def addTheoremSync (identity : Identity) (p proof : Expr) : Term.TermElabM Name 
     addDecl (.thmDecl { name := thmName, levelParams := [], type := p, value := proof })
   return thmName
 
+/-- The axioms every Lean proof may use without extending the trusted base. -/
+def standardAxioms : Array Name := #[``propext, ``Classical.choice, ``Quot.sound]
+
+/-- A proved annotation's reason, read off the theorem's actual trusted
+base rather than tracked by the rung that produced it. Any axiom beyond the
+standard three means the result rests on more than the kernel — today that
+is native evaluation, which trusts the compiler and the host's floating
+point unit. Deliberately names no tactic: dischargers change, and the trust
+level is what the reader needs. -/
+def proofReason (thmName : Name) : Term.TermElabM String := do
+  let axioms ← collectAxioms thmName
+  let extra := axioms.filter (!standardAxioms.contains ·)
+  if extra.isEmpty then
+    return s!"proved by a decision procedure over the bounded domain, " ++
+      s!"kernel-checked as {thmName}"
+  return s!"proved by evaluating a decision procedure over the bounded " ++
+    s!"domain, admitted as {thmName}; the result is trusted from that " ++
+    s!"evaluation rather than checked by the kernel"
+
 def attemptDecide (identity : Identity) (p : Expr)
     (searchStx : TSyntax `term) (names : List String) :
     Term.TermElabM (Option Verdict) := do
@@ -224,6 +243,32 @@ def attemptDecide (identity : Identity) (p : Expr)
   catch ex =>
     if ← isKernelTimeout ex then throw ex
     return (← diagnoseDecideFailure identity p names searchStx)
+
+/-- Rung 1b: the same goal, evaluated by the compiler rather than the
+kernel. Vanilla Lean has no Float theory, so evaluation over the finite
+domain is the only route, and the kernel's is too slow past a few hundred
+elements. Falsity is reported directly here, so no instance reduction is
+needed to tell a false property from a stuck one. -/
+def attemptNativeDecide (identity : Identity) (p : Expr)
+    (searchStx : TSyntax `term) (names : List String) :
+    Term.TermElabM (Option Verdict) := do
+  let falseOnDomain : Verdict := ⟨identity, .GaveUp,
+    "the property is false on its bounded domain", none⟩
+  let some d ← (try some <$> Meta.mkDecide p catch _ => pure none)
+    | return none
+  match ← Meta.nativeEqTrue `native_decide d with
+  | .notTrue =>
+    -- Established falsity is terminal; only the illustration is optional.
+    if names.isEmpty then return some falseOnDomain
+    if let some cex ← extractWitness names searchStx then
+      return some ⟨identity, .CounterSatisfiable,
+        "the property is false on its bounded domain", some cex⟩
+    return some falseOnDomain
+  | .success prf =>
+    let inst := d.appArg!
+    let proof := mkApp3 (mkConst ``of_decide_eq_true) p inst prf
+    let thmName ← addTheoremSync identity p proof
+    return some ⟨identity, .Theorem, ← proofReason thmName, none⟩
 
 /-- Rung 2's outcome: a verdict, or the state rung 3 continues from — the
 root metavariable still linked to the unsolved residual goal. -/
@@ -349,8 +394,13 @@ def attemptLadder (identity : Identity) (propStx : TSyntax `term)
   if allBounded then
     let (outcome, rungStarved) ←
       runRung (withHeartbeats half (attemptDecide identity p searchStx names))
-    if rungStarved then starved := true
     if let some (some v) := outcome then return v
+    -- Kernel starvation is no longer the annotation's Timeout: the native
+    -- tier gets the same goal, and it is orders of magnitude faster.
+    let (nOutcome, nStarved) ←
+      runRung (withHeartbeats lateShare (attemptNativeDecide identity p searchStx names))
+    if let some (some v) := nOutcome then return v
+    if rungStarved || nStarved then starved := true
   let (outcome, rungStarved) ←
     runRung (withHeartbeats lateShare (attemptGeneric identity p))
   if rungStarved then starved := true
