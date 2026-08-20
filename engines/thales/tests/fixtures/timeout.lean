@@ -21,3 +21,12 @@ set_option thales.heartbeats 1 in
   ts.forall(ts.binder["x"](ts.int, ts.range(0, 10))) {
     ts.eq(ts.call["add"](ts.id["x"], ts.num[0]), ts.id["x"])
   }
+
+-- Kernel-side exhaustion is still budget exhaustion: the kernel's own
+-- deterministic timeout fires while the elaborator still has heartbeats,
+-- and the generic rung cannot rescue a nonlinear goal.
+set_option thales.heartbeats 50000 in
+#thales_prove "stuck.ts" "slow" "forall (x: int ∈ [0, 1000000)) { slow(x) >= 0 }" :=
+  ts.forall(ts.binder["x"](ts.int, ts.range(0, 1000000))) {
+    ts.istrue(ts.binop[">="](ts.call["slow"](ts.id["x"]), ts.num[0]))
+  }

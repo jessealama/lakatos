@@ -74,7 +74,12 @@ const FIXTURES = [
     expected: [
       ['slow', 'Timeout', /heartbeat budget/],
       ['add', 'Theorem'],
+      ['slow', 'Timeout', /heartbeat budget/],
     ],
+  },
+  {
+    file: 'theorem-rescue.lean',
+    expected: [['dbl', 'Theorem']],
   },
   {
     file: 'theorem-inappropriate.lean',
