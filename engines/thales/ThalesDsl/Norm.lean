@@ -21,8 +21,9 @@ namespace ThalesDsl
 -- Boolean islands: after tsm_pure_inj, `decide P = true` becomes `P`.
 attribute [thales_norm] decide_eq_true_eq
 
-/-- Open bounded ∀s so the closers see the inequalities. -/
-@[thales_norm] theorem ballIco_iff (lo hi : Int) (p : Int → Prop) :
+/-- Open bounded ∀s so the closers see the inequalities. Tagged for grind
+too: the grind rung shares the normalization knowledge. -/
+@[thales_norm, grind =] theorem ballIco_iff (lo hi : Int) (p : Int → Prop) :
     ballIco lo hi p ↔ ∀ x : Int, lo ≤ x → x < hi → p x :=
   Iff.rfl
 

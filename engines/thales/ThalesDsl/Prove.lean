@@ -210,49 +210,81 @@ def attemptDecide (identity : Identity) (p : Expr)
     if ← isKernelTimeout ex then throw ex
     return (← diagnoseDecideFailure identity p names searchStx)
 
-/-- Rung 2, the generic stage: normalize with the `thales_norm` simp set,
-then close with omega. Success is kernel-checked like the decide rung;
-failure reports the residual goal — what actually stumped the prover. -/
-def attemptGeneric (identity : Identity) (p : Expr) :
+/-- Rung 2's outcome: a verdict, or the state rung 3 continues from — the
+root metavariable still linked to the unsolved residual goal. -/
+inductive GenericOutcome where
+  | done (v : Verdict)
+  | stuck (root : Expr) (goal : MVarId) (residual : Expr)
+
+/-- Certifies a closed root metavariable through the kernel; anything off
+about the proof (kernel budget exhaustion aside) degrades to the
+residual-goal GaveUp rather than escaping. -/
+def certifyRoot (identity : Identity) (p root residual : Expr) :
     Term.TermElabM Verdict := do
+  let gaveUp : Verdict :=
+    ⟨identity, "GaveUp", s!"unsolved goal: {← Meta.ppExpr residual}", none⟩
+  let proof ← instantiateMVars root
+  if proof.hasExprMVar then return gaveUp
+  try
+    let thmName ← addTheoremSync identity p proof
+    return ⟨identity, "Theorem",
+      "proved by generic proof search, " ++
+        s!"kernel-checked as {thmName}", none⟩
+  catch ex =>
+    if ← isKernelTimeout ex then throw ex
+    return gaveUp
+
+/-- Rung 2, the generic stage: normalize with the `thales_norm` simp set,
+then close with omega. Success is kernel-checked like the decide rung; a
+closer that fails leaves the residual goal — rolled back to its
+pre-closer state — for the next rung. -/
+def attemptGeneric (identity : Identity) (p : Expr) :
+    Term.TermElabM GenericOutcome := do
   let mvar ← Meta.mkFreshExprMVar p
   let some ext ← Meta.getSimpExtension? `thales_norm
-    | return ⟨identity, "Error",
+    | return .done ⟨identity, "Error",
       "the prover's normalization rules are not registered", none⟩
   let ctx ← Meta.Simp.mkContext (config := {})
     (simpTheorems := #[← ext.getTheorems])
     (congrTheorems := ← Meta.getSimpCongrTheorems)
-  let gaveUp (residual : Expr) : Term.TermElabM Verdict := do
-    return ⟨identity, "GaveUp", s!"unsolved goal: {← Meta.ppExpr residual}", none⟩
-  -- Ships the assembled proof through the kernel; anything off about it
-  -- (kernel budget exhaustion aside) degrades to the residual-goal GaveUp
-  -- rather than escaping.
-  let certify (residual : Expr) : Term.TermElabM Verdict := do
-    let proof ← instantiateMVars mvar
-    if proof.hasExprMVar then return ← gaveUp residual
-    try
-      let thmName ← addTheoremSync identity p proof
-      return ⟨identity, "Theorem",
-        "proved by generic proof search, " ++
-          s!"kernel-checked as {thmName}", none⟩
-    catch ex =>
-      if ← isKernelTimeout ex then throw ex
-      gaveUp residual
   let simped ←
     try Meta.simpGoal mvar.mvarId! ctx
     catch _ => pure (some (#[], mvar.mvarId!), {})
   match simped.1 with
-  | none => certify p
+  | none => return .done (← certifyRoot identity p mvar p)
   | some (_, g) =>
     let residual ← instantiateMVars (← g.getType)
-    try
-      match ← g.falseOrByContra with
-      | none => certify residual
-      | some gFalse =>
-        gFalse.withContext do
-          Tactic.Omega.omega (← getLocalHyps).toList gFalse {}
-        certify residual
-    catch _ => gaveUp residual
+    let s ← saveState
+    let closed ←
+      try
+        match ← g.falseOrByContra with
+        | none => pure true
+        | some gFalse =>
+          gFalse.withContext do
+            Tactic.Omega.omega (← getLocalHyps).toList gFalse {}
+          pure true
+      catch _ =>
+        -- The failed closer may have half-assigned the goal; restore so
+        -- the next rung sees it untouched.
+        restoreState s
+        pure false
+    if closed then return .done (← certifyRoot identity p mvar residual)
+    return .stuck mvar g residual
+
+/-- Rung 3: grind on the residual goal rung 2 left. Success certifies
+through the root metavariable like every rung; failure — its own window's
+exhaustion included — ships the residual-goal GaveUp. -/
+def attemptGrind (identity : Identity) (p root : Expr) (goal : MVarId)
+    (residual : Expr) : Term.TermElabM Verdict := do
+  let solved ← tryCatchRuntimeEx
+    (try
+      let params ← Meta.Grind.mkDefaultParams {}
+      let result ← Meta.Grind.main goal params
+      pure !result.hasFailed
+    catch _ => pure false)
+    (fun ex => if ex.isMaxHeartbeat then pure false else throw ex)
+  if solved then return ← certifyRoot identity p root residual
+  return ⟨identity, "GaveUp", s!"unsolved goal: {← Meta.ppExpr residual}", none⟩
 
 def timeoutVerdict (identity : Identity) (budget : Nat) : Verdict :=
   ⟨identity, "Timeout",
@@ -272,10 +304,12 @@ def attemptLadder (identity : Identity) (propStx : TSyntax `term)
         s!"property elaboration failed: {← ex.toMessageData.toString}", none⟩
   -- Each rung runs under its own fresh window: the kernel overshoots a
   -- shared window by a large factor before its own counter fires, which
-  -- would let a rung-1 blowout starve rung 2. Bounded domains split the
-  -- budget across the rungs; unbounded ones have only the generic rung.
+  -- would let an early rung's blowout starve the ones after it. Bounded
+  -- domains give decide half and each later rung a quarter; unbounded
+  -- ones split the budget between the generic and grind rungs.
   let half := max (budget / 2) 1
-  let mut rung1TimedOut := false
+  let lateShare := if allBounded then max (budget / 4) 1 else half
+  let mut starved := false
   if allBounded then
     let outcome ← tryCatchRuntimeEx
       (some <$> withHeartbeats half (attemptDecide identity p searchStx names))
@@ -284,12 +318,24 @@ def attemptLadder (identity : Identity) (propStx : TSyntax `term)
     match outcome with
     | some (some v) => return v
     | some none => pure ()
-    | none => rung1TimedOut := true
-  let v ← withHeartbeats (if allBounded then half else budget) (attemptGeneric identity p)
-  -- On an all-bounded domain a starved rung 1 would have decided the goal
-  -- given budget, so exhaustion plus a residual goal is budget exhaustion,
-  -- not a dead end.
-  if rung1TimedOut && v.szs == "GaveUp" then
+    | none => starved := true
+  let outcome ← tryCatchRuntimeEx
+    (some <$> withHeartbeats lateShare (attemptGeneric identity p))
+    (fun ex => do
+      if ex.isMaxHeartbeat || (← isKernelTimeout ex) then pure none else throw ex)
+  let v ← match outcome with
+    | some (.done v) => pure v
+    | some (.stuck root goal residual) =>
+      withHeartbeats lateShare (attemptGrind identity p root goal residual)
+    | none => do
+      starved := true
+      -- Rung 2 blew its window without leaving a residual; grind starts
+      -- over from the original proposition.
+      let root ← Meta.mkFreshExprMVar p
+      withHeartbeats lateShare (attemptGrind identity p root root.mvarId! p)
+  -- A starved earlier rung might have closed the goal given budget, so
+  -- exhaustion plus a residual goal is budget exhaustion, not a dead end.
+  if starved && v.szs == "GaveUp" then
     return timeoutVerdict identity budget
   return v
 

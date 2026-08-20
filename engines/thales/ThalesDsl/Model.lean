@@ -206,7 +206,9 @@ elab_rules : command
       -- elabCommand logs failures instead of throwing; treat new errors as
       -- this declaration's failure and swallow them.
       let savedMsgs := (← get).messages
-      elabCommand (← `(@[thales_norm] def $declId : $ty := $fn))
+      -- Dual-tagged: the simp closers and the grind rung both unfold
+      -- models by their equations.
+      elabCommand (← `(@[thales_norm, grind] def $declId : $ty := $fn))
       if (← get).messages.hasErrors && !savedMsgs.hasErrors then
         modify fun s => { s with messages := savedMsgs }
         recordFailure none "the model definition did not elaborate"

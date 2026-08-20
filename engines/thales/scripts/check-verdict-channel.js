@@ -70,6 +70,12 @@ const FIXTURES = [
     ],
   },
   {
+    file: 'theorem-grind.lean',
+    expected: [
+      ['mul', 'Theorem', /proved by generic proof search, kernel-checked as/],
+    ],
+  },
+  {
     file: 'gaveup-goal.lean',
     expected: [['bump', 'GaveUp', /unsolved goal:[\s\S]*x \+ 1 = x/]],
   },
