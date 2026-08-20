@@ -41,3 +41,28 @@ ts_def "affine" := ts.fn(ts.param["x"](ts.number)) : ts.number {
   ts.return(ts.binop["+"](ts.binop["*"](ts.num[2], ts.id["x"]), ts.num[1]))
 }
 #guard decide (TsModel.affine 10.0 = (pure 21.0 : TsM Float))
+
+-- `≡` is SameValue and `===` is IEEE strict equality. They disagree on
+-- exactly two families of values, and both disagreements are pinned here
+-- so the two spellings can never silently re-converge.
+
+-- A body yields a number, so `===` cannot appear at the top of one; the
+-- SameValue side is pinned through models producing the contested values,
+-- and the IEEE side on the primitive `===` lowers to.
+
+-- `x * 0` is NaN at the infinities, +0 at positive x and -0 at negative x.
+ts_def "zeroOver" := ts.fn(ts.param["x"](ts.number)) : ts.number {
+  ts.return(ts.binop["*"](ts.id["x"], ts.num[0]))
+}
+
+-- SameValue, via Lean's `=` on TsM Float, which is what `ts.eq` (`≡`)
+-- elaborates to: NaN *is* the same value as itself.
+#guard decide (TsModel.zeroOver (1.0 / 0.0) = TsModel.zeroOver (1.0 / 0.0))
+-- SameValue: +0 and -0 are different values.
+#guard decide (¬ (TsModel.zeroOver 1.0 = TsModel.zeroOver (-1.0)))
+
+-- IEEE, via `Float.beq`, which is what evalExpr lowers `===` to: NaN is
+-- not strictly equal to itself, and +0 is strictly equal to -0. Both
+-- disagree with SameValue above, so the two spellings cannot re-converge.
+#guard decide (Float.beq (0.0 / 0.0) (0.0 / 0.0) = false)
+#guard decide (Float.beq 0.0 (-0.0) = true)
