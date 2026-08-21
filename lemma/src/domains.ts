@@ -1,3 +1,4 @@
+import type { DoubleConstraints } from "fast-check";
 import type { Domain, Range } from "./binder.js";
 
 // A Record rather than a list so adding a Domain member without updating
@@ -131,4 +132,20 @@ export function numberConstraints(range: Range): NumberConstraints {
     c.max = { lit: "Number.POSITIVE_INFINITY", val: Number.POSITIVE_INFINITY };
   }
   return c;
+}
+
+/** The fast-check constraints the refuter generates a `number` binder from.
+ * The one construction both the emitted `fc.double(...)` text and any direct
+ * caller derive from, so what the refuter samples cannot drift from what a
+ * consumer checks against. */
+export function numberDoubleConstraints(range: Range): DoubleConstraints {
+  const c = numberConstraints(range);
+  const opts: DoubleConstraints = {
+    noNaN: true,
+    minExcluded: c.minExcluded,
+    maxExcluded: c.maxExcluded,
+  };
+  if (c.min) opts.min = c.min.val;
+  if (c.max) opts.max = c.max.val;
+  return opts;
 }
