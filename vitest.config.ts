@@ -27,10 +27,10 @@ export default defineConfig({
         // upward in this file; if it drops below, the run fails. Seeded
         // from the baseline on 2026-08-17 — bump only happens via autoUpdate.
         autoUpdate: true,
-        statements: 99.26,
-        branches: 97.6,
+        statements: 99.27,
+        branches: 97.77,
         functions: 100,
-        lines: 99.47,
+        lines: 99.48,
       },
     },
   },
