@@ -1,9 +1,8 @@
 import fc from "fast-check";
-import type { DoubleConstraints } from "fast-check";
 import {
   bigintBounds,
   intBounds,
-  numberConstraints,
+  numberDoubleConstraints,
   SAFE_INTEGER_RANGE,
 } from "./domains.js";
 import { LemmaError } from "./errors.js";
@@ -162,16 +161,8 @@ function validateIntegerInterval(domain: Domain, range: Range, text: string) {
  * double, by adjacency rather than numeric equality (so [-1, 0) can
  * generate -0, and (0, 5e-324) is empty). */
 function validateNumberInterval(range: Range, text: string): void {
-  const c = numberConstraints(range);
-  const opts: DoubleConstraints = {
-    noNaN: true,
-    minExcluded: c.minExcluded,
-    maxExcluded: c.maxExcluded,
-  };
-  if (c.min) opts.min = c.min.val;
-  if (c.max) opts.max = c.max.val;
   try {
-    fc.double(opts);
+    fc.double(numberDoubleConstraints(range));
   } catch {
     throw new LemmaError(
       `empty interval: no number satisfies ${text} (fast-check treats every ` +

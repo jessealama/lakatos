@@ -247,6 +247,39 @@ function numberBoundOp(
   return relax ? '<=' : '<';
 }
 
+/** One side of the guard a `number` binder lowers to. */
+export interface GuardBound {
+  op: '<' | '<=';
+  /** The endpoint as a double, on the side the comparison reads it:
+   * `lo.op` compares `lo.val` against the bound variable, `hi.op` the
+   * variable against `hi.val`. */
+  val: number;
+}
+
+/** The guard a `number` binder's interval lowers to, as comparisons rather
+ * than as DSL text. An absent side is genuinely unbounded — an infinite
+ * endpoint reaches the prover as no bound at all, which the refuter instead
+ * treats as an excluded ±Infinity. Both divergences run in the safe
+ * direction, and reporting the guard this way is what lets a test sample the
+ * refuter's domain and check the prover's contains it. */
+export function numberGuard(range: Binder['range']): {
+  lo?: GuardBound;
+  hi?: GuardBound;
+} {
+  const guard: { lo?: GuardBound; hi?: GuardBound } = {};
+  if (range?.min !== undefined)
+    guard.lo = {
+      op: numberBoundOp(range.min, 'lower', range.minOpen),
+      val: Number(range.min),
+    };
+  if (range?.max !== undefined)
+    guard.hi = {
+      op: numberBoundOp(range.max, 'upper', range.maxOpen),
+      val: Number(range.max),
+    };
+  return guard;
+}
+
 /** The `ballIco`-style lowering of a binder: inclusive lo, exclusive hi.
  * Lowering reads the domain the binder *denotes*, so `int ∈ [0, ∞)` and
  * `nat` — or `nat ∈ (-∞, 10]` and `nat ∈ [0, 10]` — cannot diverge. */
@@ -254,15 +287,17 @@ function binderConstructor(b: Binder): BinderLowering {
   if (b.domain === 'number') {
     // A number interval's openness cannot be normalized away the way an
     // integer one's can, so each side keeps its own comparison; an absent
-    // endpoint just means that side is unbounded.
+    // endpoint just means that side is unbounded. The comparisons come from
+    // numberGuard so that what is emitted and what is checked cannot drift.
+    const guard = numberGuard(b.range);
     const bounds: string[] = [];
-    if (b.range?.min !== undefined)
+    if (guard.lo)
       bounds.push(
-        `ts.lower[${leanStr(numberBoundOp(b.range.min, 'lower', b.range.minOpen))}](ts.fnum[${b.range.min}])`,
+        `ts.lower[${leanStr(guard.lo.op)}](ts.fnum[${b.range?.min}])`,
       );
-    if (b.range?.max !== undefined)
+    if (guard.hi)
       bounds.push(
-        `ts.upper[${leanStr(numberBoundOp(b.range.max, 'upper', b.range.maxOpen))}](ts.fnum[${b.range.max}])`,
+        `ts.upper[${leanStr(guard.hi.op)}](ts.fnum[${b.range?.max}])`,
       );
     // No safe-integer clamp here: a number binder denotes binary64 values
     // directly, so there is no representability question to answer.
