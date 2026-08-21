@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import * as fs from "node:fs";
 import { runMain, useTempProject } from "./helpers/cli.js";
 import { expectValidEnvelope } from "./helpers/envelope-schema.js";
+import { main } from "../src/cli.js";
 import { runTests } from "../engines/pabst/src/run.js";
 import { runLean } from "../engines/thales/frontend/src/run.js";
 
@@ -107,6 +108,27 @@ describe("cli on an interrupted run", () => {
     ) as string[];
     expect(statuses.filter((s) => s === "User")).toHaveLength(2);
     expect(statuses).toContain("InputError");
+  });
+
+  it("refute: the envelope is printed while the guard still stands", () => {
+    // A user who presses Ctrl-C twice would otherwise kill lakatos in the
+    // gap between the engine's death and the report — the very failure the
+    // User status exists to prevent — so the guard must outlast the run.
+    runTestsMock.mockReturnValue({ kind: "interrupted", signal: "SIGINT" });
+    const outside = process.listenerCount("SIGINT");
+    let atPrint = outside;
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {
+      atPrint = process.listenerCount("SIGINT");
+    });
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(main(["refute", "annotated.ts"])).toBe(2);
+    } finally {
+      logSpy.mockRestore();
+      errSpy.mockRestore();
+    }
+    expect(atPrint).toBe(outside + 1);
+    expect(process.listenerCount("SIGINT")).toBe(outside);
   });
 
   it("prove: the same contract through the Lean runner", () => {

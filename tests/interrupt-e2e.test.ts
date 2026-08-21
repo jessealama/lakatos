@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { execFileSync, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { expectValidEnvelope } from "./helpers/envelope-schema.js";
@@ -8,6 +8,7 @@ import { expectValidEnvelope } from "./helpers/envelope-schema.js";
 // the built CLI leads its own process group, so the SIGINT sent here is
 // the one Ctrl-C sends at a terminal — it reaches the CLI and the vitest
 // it spawned alike.
+// The build behind dist/ is the suite-wide globalSetup's.
 const repoRoot = process.cwd();
 const cliJs = path.join(repoRoot, "dist", "src", "cli.js");
 // Inside the repo tree: the generated tests resolve "lakatos/runtime" by
@@ -49,7 +50,6 @@ async function waitFor(
 
 describe("lakatos refute interrupted by a real SIGINT", () => {
   beforeAll(() => {
-    execFileSync("npx", ["tsc", "-p", "tsconfig.json"], { cwd: repoRoot });
     fs.rmSync(workDir, { recursive: true, force: true });
     fs.mkdirSync(workDir, { recursive: true });
     fs.writeFileSync(path.join(workDir, "slow.ts"), SLOW, "utf8");

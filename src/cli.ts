@@ -173,40 +173,48 @@ function runCommand(spine: Spine, patterns: string[]): number {
     return plan.inputErrors.length > 0 ? 2 : plan.emptyExit;
   }
 
-  // The guard spans exactly the engine's run: the window where a
-  // termination signal would otherwise kill lakatos before it could
-  // report, and the only one in which it can still learn of the signal.
+  // The guard spans the engine's run and the report that follows. The run
+  // is the window in which lakatos can still learn of a signal — from the
+  // child's death — and the report is the one in which a second signal
+  // must not cut the envelope short: Ctrl-C is rarely pressed just once,
+  // and the first one lands while the engine is still dying.
   const run = spine.run;
-  const outcome = withInterruptGuard(() => run(plan));
-  if (outcome.kind === "interrupted") {
-    const n = plan.identities.length;
-    console.error(
-      `lakatos: interrupted by ${outcome.signal}; reporting ${n} annotation${n === 1 ? "" : "s"} as User`,
-    );
-    return stoppedExit(
-      meta,
-      plan,
-      interruptedResults(plan.identities, outcome.signal),
-    );
-  }
-  if (outcome.kind === "unhealthy") {
-    for (const m of outcome.messages) console.error(`error: ${m}`);
-    return stoppedExit(
-      meta,
-      plan,
-      plan.identities.map((i) => ({ ...i, szs: "NotTried" as const })),
-    );
-  }
+  return withInterruptGuard(() => {
+    const outcome = run(plan);
+    if (outcome.kind === "interrupted") {
+      const n = plan.identities.length;
+      console.error(
+        `lakatos: interrupted by ${outcome.signal}; reporting ${n} annotation${n === 1 ? "" : "s"} as User`,
+      );
+      return stoppedExit(
+        meta,
+        plan,
+        interruptedResults(plan.identities, outcome.signal),
+      );
+    }
+    if (outcome.kind === "unhealthy") {
+      for (const m of outcome.messages) console.error(`error: ${m}`);
+      return stoppedExit(
+        meta,
+        plan,
+        plan.identities.map((i) => ({ ...i, szs: "NotTried" as const })),
+      );
+    }
 
-  emitEnvelope({
-    ...meta,
-    ...outcome.meta,
-    annotations: [...outcome.annotations, ...plan.untried, ...plan.inputErrors],
+    emitEnvelope({
+      ...meta,
+      ...outcome.meta,
+      annotations: [
+        ...outcome.annotations,
+        ...plan.untried,
+        ...plan.inputErrors,
+      ],
+    });
+    // Bad input and engine failures outrank a refutation: the documented
+    // exit-2 error mode, even alongside healthy verdicts.
+    if (plan.inputErrors.length > 0 || outcome.degraded) return 2;
+    return outcome.refuted ? 1 : 0;
   });
-  // Bad input and engine failures outrank a refutation: the documented
-  // exit-2 error mode, even alongside healthy verdicts.
-  if (plan.inputErrors.length > 0 || outcome.degraded) return 2;
-  return outcome.refuted ? 1 : 0;
 }
 
 const USAGE =
