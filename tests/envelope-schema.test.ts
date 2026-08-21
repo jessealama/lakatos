@@ -369,6 +369,54 @@ describe("envelope schema", () => {
     ).toThrow();
   });
 
+  it("accepts a User annotation naming the signal that stopped the run", () => {
+    expect(() =>
+      expectValidEnvelope({
+        ...META,
+        seed: 7,
+        generated: 1,
+        annotations: [
+          {
+            file: "f.ts",
+            function: "clamp",
+            property: "hi",
+            szs: "User",
+            reason: "the run was interrupted (SIGINT)",
+          },
+        ],
+      }),
+    ).not.toThrow();
+  });
+
+  it("rejects a User annotation that does not say what stopped it", () => {
+    expect(() =>
+      expectValidEnvelope({
+        ...META,
+        annotations: [
+          { file: "f.ts", function: "clamp", property: "hi", szs: "User" },
+        ],
+      } as unknown as Envelope),
+    ).toThrow();
+  });
+
+  it("rejects a User annotation carrying a counterexample it never found", () => {
+    expect(() =>
+      expectValidEnvelope({
+        ...META,
+        annotations: [
+          {
+            file: "f.ts",
+            function: "clamp",
+            property: "hi",
+            szs: "User",
+            reason: "the run was interrupted (SIGINT)",
+            counterexample: { x: 1 },
+          },
+        ],
+      } as unknown as Envelope),
+    ).toThrow();
+  });
+
   it("gives every status a shape, and no shape a status off the list", () => {
     const schema = readFileSync(
       fileURLToPath(

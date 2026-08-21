@@ -136,6 +136,47 @@ describe("runTests", () => {
     },
   );
 
+  it("reports the signal when vitest was killed at the user's request", () => {
+    // Results the dying vitest managed to write are not this run's story:
+    // the interruption outranks whatever landed on disk.
+    const killed = () => {
+      fs.mkdirSync(path.dirname(RESULTS_FILE), { recursive: true });
+      fs.writeFileSync(
+        RESULTS_FILE,
+        JSON.stringify({
+          numPassedTests: 9,
+          numFailedTests: 0,
+          success: true,
+          testResults: [],
+        }),
+        "utf8",
+      );
+      return {
+        status: null,
+        signal: "SIGINT" as const,
+        stdout: null,
+        stderr: null,
+      };
+    };
+    const result = inDir(okDir, () => runTests(".", RESULTS_FILE, killed));
+    expect(result).toEqual({ kind: "interrupted", signal: "SIGINT" });
+  });
+
+  it("keeps the engine's own failures out of the interrupted path", () => {
+    // A vitest killed by a timeout carries ETIMEDOUT beside its SIGTERM.
+    const timedOut = () => ({
+      status: null,
+      signal: "SIGTERM" as const,
+      stdout: "",
+      stderr: "",
+      error: Object.assign(new Error("spawnSync npx ETIMEDOUT"), {
+        code: "ETIMEDOUT",
+      }),
+    });
+    const result = inDir(okDir, () => runTests(".", RESULTS_FILE, timedOut));
+    expect(result.kind).toBe("no-results");
+  });
+
   it(
     "reports no-results when vitest dies before writing results, ignoring a stale results file",
     { timeout: 60000 },

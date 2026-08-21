@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeAll } from "vitest";
-import { execFileSync, spawnSync } from "node:child_process";
+import { describe, it, expect } from "vitest";
+import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -11,12 +11,8 @@ const cliJs = path.join(root, "dist", "src", "cli.js");
 // dist/src/cli.js), so these tests run the *built* CLI the way an installed
 // copy runs: executed by node with argv[1] naming the symlink, not the real
 // file. Neither property is visible to the in-process suites that import
-// main().
+// main(). The build itself is the suite-wide globalSetup's.
 describe("dist/src/cli.js as an installed bin", () => {
-  beforeAll(() => {
-    execFileSync("npx", ["tsc", "-p", "tsconfig.json"], { cwd: root });
-  }, 60_000);
-
   it("starts with an env-node shebang", () => {
     const firstLine = fs.readFileSync(cliJs, "utf8").split("\n", 1)[0];
     expect(firstLine).toBe("#!/usr/bin/env node");

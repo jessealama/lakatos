@@ -74,6 +74,7 @@ status:
 | annotation depends on unmappable code   | `Inappropriate`      |
 | not attempted (stubs, unhealthy runs)   | `NotTried`           |
 | malformed annotation input              | `InputError`         |
+| run interrupted before evaluating it    | `User`               |
 
 The two `GaveUp` cases are distinguished by the `kind` field: present
 (`"exhausted"`) when generation gave up, absent when every run passed.
@@ -85,6 +86,16 @@ its verdict lines are malformed — no property was actually evaluated, so
 the run reports every scraped annotation `NotTried`, keeps the
 diagnostics on stderr, and exits 2. Stdout is one parseable envelope in
 every mode.
+
+`User` covers interrupted runs: Ctrl-C at the terminal, a supervisor's
+SIGTERM, a CI cancel. The run stops, every annotation it had not
+finished evaluating reports `User` with the signal in its `reason`,
+annotations already resolved keep the status they earned, and the run
+exits 2. This holds for a signal that arrives while an engine is running
+— the vitest of a refute, the lake or Lean of a prove — which is where a
+run spends nearly all of its time. Outside that window, and for SIGKILL
+anywhere, lakatos dies as any process does and prints nothing: not a
+contract lakatos can keep, so it does not claim to.
 
 `InputError` marks an annotation whose input is malformed at extraction
 — a duplicate property name (all claimants of the ambiguous identity
@@ -102,7 +113,8 @@ applies to refute only: passing a report's `seed` back reproduces its
 run.
 
 Exit codes: `0` — clean run; `1` — counterexamples found, or a stubbed
-command; `2` — usage or user error, including an unhealthy run.
+command; `2` — usage or user error, including an unhealthy or
+interrupted run.
 
 ## Layout
 

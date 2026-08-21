@@ -2,6 +2,10 @@ import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  interruptedBy,
+  type InterruptSignal,
+} from '../../../../src/interrupt.js';
 import { isProveStatus, type ProveStatus } from '../../../../src/szs.js';
 
 /** One #thales_prove verdict line: the contract printed by ThalesDsl.
@@ -29,7 +33,8 @@ export type LeanRunResult =
       diagnostics: string[];
     }
   | { kind: 'no-project'; message: string }
-  | { kind: 'failed'; stdout: string; stderr: string };
+  | { kind: 'failed'; stdout: string; stderr: string }
+  | { kind: 'interrupted'; signal: InterruptSignal };
 
 // Exported so test timeouts can be sized from the containment budget.
 export const LEAN_TIMEOUT_MS = 300_000;
@@ -60,6 +65,7 @@ export function findEngineRoot(
 /** What runLean needs back from a spawn; a subset of spawnSync's return. */
 export interface SpawnOutcome {
   status: number | null;
+  signal?: NodeJS.Signals | null;
   stdout: string | null;
   stderr: string | null;
   error?: Error;
@@ -178,7 +184,9 @@ export function runArtifact(
  * first: the DSL library must be compiled for the pinned toolchain, and a
  * cached build is a fast no-op. Only a build failure or a missing engine
  * aborts the run; a hung, crashed, or contract-breaking artifact is
- * contained in `failures`, and unframed stdout is `diagnostics`.
+ * contained in `failures`, and unframed stdout is `diagnostics`. A build
+ * or artifact killed by a termination signal stops the run there: the
+ * artifacts after it are never started.
  */
 export function runLean(
   leanFiles: string[],
@@ -204,12 +212,19 @@ export function runLean(
         'lake was not found on PATH; install the Lean toolchain via elan (https://leanprover-community.github.io/get_started/) and re-run',
     };
   }
+  const buildSignal = interruptedBy(build);
+  if (buildSignal !== undefined)
+    return { kind: 'interrupted', signal: buildSignal };
   if (build.error !== undefined || build.status !== 0) return failed(build);
   const verdicts: LeanVerdict[] = [];
   const failures: FileFailure[] = [];
   const diagnostics: string[] = [];
   for (const file of leanFiles) {
     const run = runArtifact(engineRoot, file, spawn);
+    // The signal that killed this artifact killed the run: stop here
+    // rather than starting artifacts nobody is waiting for any more.
+    const signal = interruptedBy(run);
+    if (signal !== undefined) return { kind: 'interrupted', signal };
     if (run.error !== undefined || run.status !== 0) {
       // A hung or crashed artifact degrades only its own annotations.
       failures.push({

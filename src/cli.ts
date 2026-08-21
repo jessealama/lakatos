@@ -18,12 +18,14 @@ import {
   resolveFiles,
 } from "../lemma/src/index.js";
 import {
+  interruptedResults,
   joinProveVerdicts,
   joinRefuteVerdicts,
   type AnnotationResult,
   type Envelope,
   type PropertyIdentity,
 } from "./envelope.js";
+import { withInterruptGuard, type InterruptSignal } from "./interrupt.js";
 
 /** Envelope entries for extraction-level input errors, with their
  * diagnostics echoed to stderr. Any such entry makes the run exit 2.
@@ -73,22 +75,20 @@ function emitEnvelope(envelope: Envelope): void {
   console.log(JSON.stringify(envelope, null, 2));
 }
 
-/** The unhealthy-run output contract shared by refute and prove: a
- * NotTried envelope on stdout (annotations were produced but never
- * evaluated) and the documented exit 2. */
-function notTriedExit(
+/** The output contract for a run that stopped before evaluating
+ * anything it planned to: `stopped` accounts for those annotations —
+ * NotTried when the engine never reported, User when the run was
+ * interrupted — beside the entries that were already resolved, and the
+ * documented exit 2. The run stats stay out: a run that did not finish
+ * knows no counts. */
+function stoppedExit(
   meta: EnvelopeMeta,
-  identities: PropertyIdentity[],
-  inputErrors: AnnotationResult[],
-  untried: AnnotationResult[] = [],
+  plan: Plan,
+  stopped: AnnotationResult[],
 ): number {
   emitEnvelope({
     ...meta,
-    annotations: [
-      ...identities.map((i) => ({ ...i, szs: "NotTried" as const })),
-      ...untried,
-      ...inputErrors,
-    ],
+    annotations: [...stopped, ...plan.untried, ...plan.inputErrors],
   });
   return 2;
 }
@@ -133,6 +133,11 @@ type Outcome =
       messages: string[];
     }
   | {
+      /** A termination signal stopped the engine mid-run. */
+      kind: "interrupted";
+      signal: InterruptSignal;
+    }
+  | {
       kind: "completed";
       annotations: AnnotationResult[];
       meta: Partial<EnvelopeMeta>;
@@ -168,21 +173,48 @@ function runCommand(spine: Spine, patterns: string[]): number {
     return plan.inputErrors.length > 0 ? 2 : plan.emptyExit;
   }
 
-  const outcome = spine.run(plan);
-  if (outcome.kind === "unhealthy") {
-    for (const m of outcome.messages) console.error(`error: ${m}`);
-    return notTriedExit(meta, plan.identities, plan.inputErrors, plan.untried);
-  }
+  // The guard spans the engine's run and the report that follows. The run
+  // is the window in which lakatos can still learn of a signal — from the
+  // child's death — and the report is the one in which a second signal
+  // must not cut the envelope short: Ctrl-C is rarely pressed just once,
+  // and the first one lands while the engine is still dying.
+  const run = spine.run;
+  return withInterruptGuard(() => {
+    const outcome = run(plan);
+    if (outcome.kind === "interrupted") {
+      const n = plan.identities.length;
+      console.error(
+        `lakatos: interrupted by ${outcome.signal}; reporting ${n} annotation${n === 1 ? "" : "s"} as User`,
+      );
+      return stoppedExit(
+        meta,
+        plan,
+        interruptedResults(plan.identities, outcome.signal),
+      );
+    }
+    if (outcome.kind === "unhealthy") {
+      for (const m of outcome.messages) console.error(`error: ${m}`);
+      return stoppedExit(
+        meta,
+        plan,
+        plan.identities.map((i) => ({ ...i, szs: "NotTried" as const })),
+      );
+    }
 
-  emitEnvelope({
-    ...meta,
-    ...outcome.meta,
-    annotations: [...outcome.annotations, ...plan.untried, ...plan.inputErrors],
+    emitEnvelope({
+      ...meta,
+      ...outcome.meta,
+      annotations: [
+        ...outcome.annotations,
+        ...plan.untried,
+        ...plan.inputErrors,
+      ],
+    });
+    // Bad input and engine failures outrank a refutation: the documented
+    // exit-2 error mode, even alongside healthy verdicts.
+    if (plan.inputErrors.length > 0 || outcome.degraded) return 2;
+    return outcome.refuted ? 1 : 0;
   });
-  // Bad input and engine failures outrank a refutation: the documented
-  // exit-2 error mode, even alongside healthy verdicts.
-  if (plan.inputErrors.length > 0 || outcome.degraded) return 2;
-  return outcome.refuted ? 1 : 0;
 }
 
 const USAGE =
@@ -355,6 +387,8 @@ function refuteSpine(seed: number): Spine {
 
     run(plan) {
       const result = runTests(plan.outFiles);
+      if (result.kind === "interrupted")
+        return { kind: "interrupted", signal: result.signal };
       // Unhealthy runs (vitest died before reporting, or the generated suite
       // failed to load) still honor the output contract: diagnostics on
       // stderr, a NotTried envelope on stdout, and the documented exit 2,
@@ -438,6 +472,8 @@ function proveSpine(): Spine {
 
     run(plan) {
       const result = runLean(plan.outFiles, findEngineRoot());
+      if (result.kind === "interrupted")
+        return { kind: "interrupted", signal: result.signal };
       if (result.kind === "no-project")
         return { kind: "unhealthy", messages: [result.message] };
       if (result.kind === "failed") {

@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
@@ -8,6 +9,12 @@ export default defineConfig({
       "engines/pabst/tests/**/*.test.ts",
       "engines/thales/frontend/tests/**/*.test.ts",
       ".pabst/**/*.test.ts",
+    ],
+    // Absolute: refute spawns vitest from a project directory that may sit
+    // inside this repo, and such a run inherits this config — a relative
+    // path would resolve against *its* root, where the file is not.
+    globalSetup: [
+      fileURLToPath(new URL("./tests/global-setup.ts", import.meta.url)),
     ],
     coverage: {
       provider: "v8",
@@ -27,10 +34,10 @@ export default defineConfig({
         // upward in this file; if it drops below, the run fails. Seeded
         // from the baseline on 2026-08-17 — bump only happens via autoUpdate.
         autoUpdate: true,
-        statements: 99.28,
-        branches: 97.78,
+        statements: 99.29,
+        branches: 97.82,
         functions: 100,
-        lines: 99.48,
+        lines: 99.49,
       },
     },
   },
