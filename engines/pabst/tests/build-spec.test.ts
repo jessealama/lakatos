@@ -68,3 +68,76 @@ describe("buildSpecs — class methods", () => {
     expect(bump.className).toBeUndefined();
   });
 });
+
+const fixture = (name: string) =>
+  new URL(`./fixtures/build-spec/${name}`, import.meta.url).pathname;
+
+const HUGE = "1000000000000000000000000000000";
+
+describe("buildSpecs — unrepresentable domains", () => {
+  it("refuses a clamped annotation and keeps its neighbours testable", () => {
+    const { specs, untried } = buildSpecs(fixture("clamped.ts"));
+    expect(specs.map((s) => s.name)).toEqual(["ordinary"]);
+    expect(untried.map((u) => u.name)).toEqual([
+      "hugeCeiling",
+      "hugeFloor",
+      "hugeBoth",
+    ]);
+  });
+
+  it("names the offending endpoints in the reason", () => {
+    const { untried } = buildSpecs(fixture("clamped.ts"));
+    const by = new Map(untried.map((u) => [u.name, u.reason]));
+    expect(by.get("hugeCeiling")).toBe(
+      `endpoint ${HUGE} exceeds the safe integer range (±9007199254740991)`,
+    );
+    expect(by.get("hugeFloor")).toBe(
+      `endpoint -${HUGE} exceeds the safe integer range (±9007199254740991)`,
+    );
+    expect(by.get("hugeBoth")).toBe(
+      `endpoints -${HUGE} and ${HUGE} exceed ` +
+        `the safe integer range (±9007199254740991)`,
+    );
+  });
+
+  it("carries the identity fields the envelope needs", () => {
+    const { untried } = buildSpecs(fixture("clamped.ts"));
+    const u = untried.find((u) => u.name === "hugeCeiling")!;
+    expect(u.functionName).toBe("nonneg");
+  });
+
+  it("refuses an interval the clamp empties rather than aborting the run", () => {
+    const { specs, untried } = buildSpecs(fixture("empty-after-clamp.ts"));
+    expect(specs).toEqual([]);
+    expect(untried).toHaveLength(1);
+    expect(untried[0]!.name).toBe("emptied");
+    expect(untried[0]!.reason).toBe(
+      `endpoints ${HUGE} and ${HUGE}0 exceed ` +
+        `the safe integer range (±9007199254740991)`,
+    );
+  });
+
+  it("still rejects an interval empty as written: that is bad input", () => {
+    expect(() => buildSpecs(fixture("empty-as-written.ts"))).toThrow(
+      LemmaError,
+    );
+    expect(() => buildSpecs(fixture("empty-as-written.ts"))).toThrow(
+      /empty interval: no int satisfies/,
+    );
+  });
+
+  it("refuses a half-bounded interval whose written endpoint is beyond", () => {
+    // The prover instead degrades this one to its bare command and proves
+    // over all of Int; both engines stay on the safe side of the written
+    // domain, so the divergence is deliberate.
+    const { specs, untried } = buildSpecs(fixture("half-bounded-huge.ts"));
+    expect(specs).toEqual([]);
+    expect(untried.map((u) => u.name)).toEqual(["ceiling"]);
+  });
+
+  it("lets a second blocker keep its own diagnostic", () => {
+    expect(() => buildSpecs(fixture("clamped-and-unresolvable.ts"))).toThrow(
+      /nowhere/,
+    );
+  });
+});

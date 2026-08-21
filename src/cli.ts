@@ -93,6 +93,16 @@ function notTriedExit(
   return 2;
 }
 
+/** Both engines refuse a domain they cannot represent as written; the stub
+ * commands untry everything, with no kind, and say so their own way. */
+function noteUnsupportedRanges(untried: AnnotationResult[]): void {
+  const n = untried.filter((u) => u.kind === "unsupported-range").length;
+  if (n > 0)
+    console.error(
+      `lakatos: ${n} annotation${n === 1 ? "" : "s"} not tried (unsupported range)`,
+    );
+}
+
 /** What one command's codegen produced, normalized across engines. */
 interface Plan {
   /** Annotations the engine will attempt; the verdict join accounts for each. */
@@ -146,6 +156,7 @@ function runCommand(spine: Spine, patterns: string[]): number {
   const files = resolve(patterns);
   const base = captureMeta();
   const plan = spine.plan(files);
+  noteUnsupportedRanges(plan.untried);
   const meta = { ...base, ...plan.meta };
 
   if (plan.outFiles.length === 0 || spine.run === undefined) {
@@ -322,7 +333,16 @@ function refuteSpine(seed: number): Spine {
       // would tell vitest to run everything, so the runner short-circuits.
       return {
         identities,
-        untried: [],
+        untried: results.flatMap((r) =>
+          r.untried.map((u) => ({
+            file: r.sourceFile,
+            function: u.function,
+            property: u.property,
+            szs: "NotTried" as const,
+            kind: "unsupported-range" as const,
+            reason: u.reason,
+          })),
+        ),
         inputErrors,
         outFiles: results.flatMap((r) =>
           r.outFile !== undefined ? [r.outFile] : [],
@@ -405,11 +425,6 @@ function proveSpine(): Spine {
       console.error(
         `lakatos: transcribed ${n} annotation${n === 1 ? "" : "s"} across ${artifacts.length} file(s) into .thales/`,
       );
-      const m = untriedResults.length;
-      if (m > 0)
-        console.error(
-          `lakatos: ${m} annotation${m === 1 ? "" : "s"} not tried (unsupported range)`,
-        );
       return {
         identities: tried,
         untried: untriedResults,

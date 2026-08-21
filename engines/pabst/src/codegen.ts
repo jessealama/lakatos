@@ -14,13 +14,21 @@ export interface GeneratedProperty {
   property: string;
 }
 
+/** An annotation no test was generated for, and why. */
+export interface UntriedProperty extends GeneratedProperty {
+  reason: string;
+}
+
 export interface GenResult {
   sourceFile: string;
-  /** Absent when the file yielded no runnable specs (only input errors). */
+  /** Absent when the file yielded no runnable specs (only input errors
+   * or refusals). */
   outFile?: string;
   properties: GeneratedProperty[];
   /** Extraction-level input errors, reported per annotation (InputError). */
   invalid: InvalidAnnotation[];
+  /** Annotations refused for an unrepresentable domain (NotTried). */
+  untried: UntriedProperty[];
 }
 
 export function generate(
@@ -33,10 +41,23 @@ export function generate(
     // Mirroring shared with thales; the outside-cwd guard fires here even
     // for files that turn out to have nothing to generate.
     const outFile = mirrorPath(file, outRoot, ".pabst.test.ts");
-    const { specs, invalid } = buildSpecs(file);
-    if (specs.length === 0 && invalid.length === 0) continue;
+    const { specs, invalid, untried } = buildSpecs(file);
+    const refused = untried.map((u) => ({
+      function: qualifiedName(u.functionName, u.className, u.isStatic),
+      property: u.name,
+      reason: u.reason,
+    }));
+    if (specs.length === 0 && invalid.length === 0 && refused.length === 0)
+      continue;
+    // Nothing runnable: the file still reports, but no artifact is written
+    // and the run never touches it.
     if (specs.length === 0) {
-      results.push({ sourceFile: file, properties: [], invalid });
+      results.push({
+        sourceFile: file,
+        properties: [],
+        invalid,
+        untried: refused,
+      });
       continue;
     }
     fs.mkdirSync(path.dirname(outFile), { recursive: true });
@@ -49,6 +70,7 @@ export function generate(
         property: s.name,
       })),
       invalid,
+      untried: refused,
     });
   }
   return results;

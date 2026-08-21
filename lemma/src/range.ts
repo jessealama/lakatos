@@ -120,9 +120,11 @@ function parseBound(
  * bigintBounds fold open endpoints into ±1, floor nat at 0, and intersect
  * int/nat with the safe integer range), so validation and generation can
  * never disagree. A nat interval reaching below 0 clamps — `(-2, 5]` and
- * `(-∞, 5]` denote the same naturals — and an int/nat endpoint beyond the
- * safe range clamps with a warning; either is an error only when nothing
- * satisfiable remains. */
+ * `(-∞, 5]` denote the same naturals — and so does an int/nat endpoint
+ * beyond the safe range; either is an error only when nothing satisfiable
+ * remains. Neither is reported here: an endpoint beyond the safe range is a
+ * representability question each engine asks via `clampedEndpoints`, not a
+ * parse-time diagnostic. */
 function validateIntegerInterval(domain: Domain, range: Range, text: string) {
   if (domain === "bigint") {
     const { lo, hi } = bigintBounds(range);
@@ -144,12 +146,6 @@ function validateIntegerInterval(domain: Domain, range: Range, text: string) {
       throw new EmptyAfterClampError(message, [range.min!, range.max!]);
     }
     throw new LemmaError(message);
-  }
-  if (clamped) {
-    console.error(
-      `warning: interval ${text} extends beyond the safe integer range; ` +
-        `${domain} generation is clamped to [${lo}, ${hi}]`,
-    );
   }
 }
 

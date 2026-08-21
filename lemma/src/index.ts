@@ -35,12 +35,14 @@ export { parseBody } from "./formula-parser.js";
 
 export {
   bigintBounds,
+  clampedEndpoints,
   intBounds,
   intInterval,
   isDomain,
   numberConstraints,
   numberDoubleConstraints,
   SAFE_INTEGER_RANGE,
+  unsupportedRangeReason,
 } from "./domains.js";
 export type {
   IntBounds,
