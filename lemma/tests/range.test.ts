@@ -45,6 +45,37 @@ describe("parseRange — accepted", () => {
     expect(parseRange("[+0.5, 1]", "number")).toEqual({ min: "0.5", max: "1" });
   });
 
+  it("gives a leading-dot endpoint its zero, which stricter grammars demand", () => {
+    expect(parseRange("[.5, 1]", "number")).toEqual({ min: "0.5", max: "1" });
+    expect(parseRange("[-.5, 0]", "number")).toEqual({ min: "-0.5", max: "0" });
+    expect(parseRange("[.5e1, 1e2]", "number")).toEqual({
+      min: "0.5e1",
+      max: "1e2",
+    });
+  });
+
+  it("drops a trailing bare dot, keeping the sign of -0.", () => {
+    expect(parseRange("[1., 2]", "number")).toEqual({ min: "1", max: "2" });
+    expect(parseRange("[-1., 0]", "number")).toEqual({ min: "-1", max: "0" });
+    expect(parseRange("[-0., 0]", "number")).toEqual({ min: "-0", max: "0" });
+    expect(parseRange("[1, 1.e5]", "number")).toEqual({ min: "1", max: "1e5" });
+    expect(parseRange("[010., 20]", "number")).toEqual({
+      min: "10",
+      max: "20",
+    });
+  });
+
+  it("leaves well-formed decimal and exponent spellings alone", () => {
+    expect(parseRange("[1.0, 2.50]", "number")).toEqual({
+      min: "1.0",
+      max: "2.50",
+    });
+    expect(parseRange("[1E-3, 2e+3]", "number")).toEqual({
+      min: "1E-3",
+      max: "2e+3",
+    });
+  });
+
   it("parses a degenerate single-point interval", () => {
     expect(parseRange("[5, 5]", "int")).toEqual({ min: "5", max: "5" });
   });
