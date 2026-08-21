@@ -1,7 +1,6 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { numberDoubleConstraints } from "../lemma/src/domains.js";
-import { parseRange } from "../lemma/src/range.js";
+import { numberDoubleConstraints, parseRange } from "../lemma/src/index.js";
 import { numberGuard } from "../engines/thales/frontend/src/transcribe.js";
 
 /**

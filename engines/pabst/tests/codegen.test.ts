@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { generate } from "../src/codegen.js";
-import { LemmaError } from "../../../lemma/src/errors.js";
+import { LemmaError } from "../../../lemma/src/index.js";
 
 describe("generate", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pabst-codegen-"));

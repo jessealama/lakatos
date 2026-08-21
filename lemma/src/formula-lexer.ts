@@ -130,7 +130,7 @@ export function sliceText(
 }
 
 /** A `/` can begin a regex unless the previous token ends a value (then it's division). */
-export function regexCanFollow(prev: ts.SyntaxKind | null): boolean {
+function regexCanFollow(prev: ts.SyntaxKind | null): boolean {
   if (prev === null) return true;
   switch (prev) {
     case ts.SyntaxKind.Identifier:

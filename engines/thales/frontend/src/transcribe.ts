@@ -1,20 +1,18 @@
 import * as fs from 'node:fs';
 import ts from 'typescript';
-import type { Binder } from '../../../../lemma/src/binder.js';
 import {
+  type Binder,
+  EmptyAfterClampError,
+  extractFromSource,
   intBounds,
   intInterval,
-  SAFE_INTEGER_RANGE,
-} from '../../../../lemma/src/domains.js';
-import {
-  extractFromSource,
   type InvalidAnnotation,
+  parseBody,
+  parsePrefix,
+  qualifiedName,
   type RawAnnotation,
-} from '../../../../lemma/src/extract.js';
-import { parseBody } from '../../../../lemma/src/formula-parser.js';
-import { parsePrefix } from '../../../../lemma/src/prefix-parser.js';
-import { qualifiedName } from '../../../../lemma/src/qualified-name.js';
-import { EmptyAfterClampError } from '../../../../lemma/src/range.js';
+  SAFE_INTEGER_RANGE,
+} from '../../../../lemma/src/index.js';
 
 /** Escape a string for a Lean string literal. */
 function leanStr(s: string): string {

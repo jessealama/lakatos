@@ -1,14 +1,14 @@
 import {
+  collectAtoms,
   extract,
   type InvalidAnnotation,
+  LemmaError,
+  parseBody,
+  parsePrefix,
   type RawAnnotation,
-} from "../../../lemma/src/extract.js";
-import { parsePrefix } from "../../../lemma/src/prefix-parser.js";
-import { parseBody } from "../../../lemma/src/formula-parser.js";
+} from "../../../lemma/src/index.js";
 import { lowerTop } from "./lower.js";
-import { collectAtoms } from "../../../lemma/src/formula-ast.js";
 import { freeIdentifiers, classify } from "./free-idents.js";
-import { LemmaError } from "../../../lemma/src/errors.js";
 import type { PropertySpec } from "./ir.js";
 
 export interface BuildResult {

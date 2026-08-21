@@ -1,11 +1,11 @@
-import type { Binder } from "../../../lemma/src/binder.js";
+import type { Binder } from "../../../lemma/src/index.js";
 
 export type {
   Binder,
   Domain,
   Range,
   StringPattern,
-} from "../../../lemma/src/binder.js";
+} from "../../../lemma/src/index.js";
 
 export interface PropertySpec {
   name: string;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseBody } from "../../../lemma/src/formula-parser.js";
+import { parseBody } from "../../../lemma/src/index.js";
 import { lowerTop } from "../src/lower.js";
 
 // Lower the parsed AST to a string so assertions read clearly.

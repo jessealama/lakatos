@@ -1,5 +1,5 @@
 import ts from "typescript";
-import { LemmaError } from "../../../lemma/src/errors.js";
+import { LemmaError } from "../../../lemma/src/index.js";
 
 export const GLOBALS = new Set<string>([
   "Math",

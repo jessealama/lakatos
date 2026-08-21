@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { LemmaError } from '../../../../lemma/src/errors.js';
+import { LemmaError } from '../../../../lemma/src/index.js';
 import { writeArtifacts } from '../src/artifacts.js';
 
 const ANNOTATED =
