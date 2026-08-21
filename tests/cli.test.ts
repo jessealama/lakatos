@@ -93,6 +93,8 @@ describe("cli main", () => {
 describe("check stub", () => {
   useTempProject("lakatos-cli-stub-", {
     "annotated.ts": `/** @ensures{pos} forall (n: nat) { annotated(n) >= 0 } */\nexport function annotated(n: number): number { return n; }\n`,
+    "unexported.ts": `/** @ensures{agrees} forall (n: nat) { unexported(n) === helper(n) } */\nexport function unexported(n: number): number { return n; }\nfunction helper(n: number): number { return n; }\n`,
+    "malformed.ts": `/** @ensures{shapely} for every (n: nat), malformed(n) >= 0 */\nexport function malformed(n: number): number { return n; }\n`,
   });
 
   it("lists every annotation as NotTried and exits 1", () => {
@@ -112,6 +114,32 @@ describe("check stub", () => {
     expect(env.passed).toBeUndefined();
     expect(env.failed).toBeUndefined();
     expect(stderr.join("\n")).toContain("check is not implemented yet");
+  });
+
+  // The stub enumerates through lemma, so only lemma can condemn a formula.
+  // A reference the refuter cannot lower is not a verdict on the annotation:
+  // the prover has no such restriction, and check answers for both.
+  it("reports an annotation only the refuter rejects as NotTried", () => {
+    const { code, stdout } = runMain(["check", "unexported.ts"]);
+    expect(code).toBe(1);
+    const env = JSON.parse(stdout[0]!);
+    expectValidEnvelope(env);
+    expect(env.annotations).toEqual([
+      {
+        file: "unexported.ts",
+        function: "unexported",
+        property: "agrees",
+        szs: "NotTried",
+      },
+    ]);
+  });
+
+  it("still exits 2 on a formula lemma itself cannot parse", () => {
+    const { code, stderr } = runMain(["check", "malformed.ts"]);
+    expect(code).toBe(2);
+    expect(stderr).toHaveLength(1);
+    expect(stderr[0]).toContain("malformed.ts:1: @ensures{shapely}:");
+    expect(stderr[0]).toContain("expected 'forall'");
   });
 });
 

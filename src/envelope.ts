@@ -70,18 +70,17 @@ export function collectIssues(json: VitestJson): Issue[] {
  * identity gets an entry — flagged ones carry the issue's kind and detail,
  * the rest ran without a counterexample and report GaveUp.
  */
-export function buildEnvelope(
-  meta: RunMeta,
-  json: VitestJson,
+export function joinRefuteVerdicts(
   identities: PropertyIdentity[],
-): Envelope {
+  json: VitestJson,
+): AnnotationResult[] {
   const flagged = new Map(
     collectIssues(json).map((i) => [
       identityKey({ file: i.file, function: i.function, property: i.property }),
       i,
     ]),
   );
-  const annotations: AnnotationResult[] = identities.map((id) => {
+  return identities.map((id) => {
     const issue = flagged.get(identityKey(id));
     if (!issue) return { ...id, szs: "GaveUp" };
     const result: AnnotationResult = {
@@ -94,6 +93,14 @@ export function buildEnvelope(
     if (issue.error !== undefined) result.error = issue.error;
     return result;
   });
+}
+
+/** The whole envelope for a completed refutation run. */
+export function buildEnvelope(
+  meta: RunMeta,
+  json: VitestJson,
+  identities: PropertyIdentity[],
+): Envelope {
   return {
     version: meta.version,
     startedAt: meta.startedAt,
@@ -102,7 +109,7 @@ export function buildEnvelope(
     generated: meta.generated,
     passed: json.numPassedTests,
     failed: json.numFailedTests,
-    annotations,
+    annotations: joinRefuteVerdicts(identities, json),
   };
 }
 

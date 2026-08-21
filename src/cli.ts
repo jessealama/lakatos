@@ -3,7 +3,6 @@ import { parseArgs } from "node:util";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { buildSpecs } from "../engines/pabst/src/build-spec.js";
 import { writeArtifacts } from "../engines/thales/frontend/src/artifacts.js";
 import { findEngineRoot, runLean } from "../engines/thales/frontend/src/run.js";
 import { generate } from "../engines/pabst/src/codegen.js";
@@ -12,10 +11,12 @@ import { parseSeed, randomSeed } from "../engines/pabst/src/seed.js";
 import { resolveFiles } from "../lemma/src/discover.js";
 import { LemmaError } from "../lemma/src/errors.js";
 import { qualifiedName } from "../lemma/src/qualified-name.js";
-import type { InvalidAnnotation } from "../lemma/src/extract.js";
+import { extract, type InvalidAnnotation } from "../lemma/src/extract.js";
+import { parsePrefix } from "../lemma/src/prefix-parser.js";
+import { parseBody } from "../lemma/src/formula-parser.js";
 import {
-  buildEnvelope,
   joinProveVerdicts,
+  joinRefuteVerdicts,
   type AnnotationResult,
   type Envelope,
   type PropertyIdentity,
@@ -53,6 +54,9 @@ function readVersion(): string {
     .version as string;
 }
 
+/** Envelope fields outside the per-annotation list. */
+type EnvelopeMeta = Omit<Envelope, "annotations">;
+
 /** Run metadata every command captures before doing anything. */
 function captureMeta(): { version: string; startedAt: string; cwd: string } {
   return {
@@ -70,7 +74,7 @@ function emitEnvelope(envelope: Envelope): void {
  * NotTried envelope on stdout (annotations were produced but never
  * evaluated) and the documented exit 2. */
 function notTriedExit(
-  meta: Omit<Envelope, "annotations">,
+  meta: EnvelopeMeta,
   identities: PropertyIdentity[],
   inputErrors: AnnotationResult[],
   untried: AnnotationResult[] = [],
@@ -84,6 +88,87 @@ function notTriedExit(
     ],
   });
   return 2;
+}
+
+/** What one command's codegen produced, normalized across engines. */
+interface Plan {
+  /** Annotations the engine will attempt; the verdict join accounts for each. */
+  identities: PropertyIdentity[];
+  /** Annotations already resolved at codegen time, in envelope form. */
+  untried: AnnotationResult[];
+  /** Extraction-level input errors, already echoed to stderr. */
+  inputErrors: AnnotationResult[];
+  /** Artifacts this invocation generated — the only ones the run may touch. */
+  outFiles: string[];
+  /** Envelope fields only this command carries (refute's seed and count). */
+  meta: Partial<EnvelopeMeta>;
+  /** Envelope fields that hold only when there was nothing to run: refute
+   * reports zero tests passed and failed, which an interrupted run cannot. */
+  emptyMeta: Partial<EnvelopeMeta>;
+  /** Exit code when there is nothing to run and no input errors. Zero for a
+   * real engine — nothing to disprove is a clean run — but the stub commands
+   * report 1: they never attempted the work they were asked for. */
+  emptyExit: number;
+}
+
+/** One engine's run, normalized. Diagnostics reach stderr inside the
+ * adapter; the runner owns the envelope and the exit code. */
+type Outcome =
+  | {
+      /** The engine never reported: annotations were produced but not evaluated. */
+      kind: "unhealthy";
+      messages: string[];
+    }
+  | {
+      kind: "completed";
+      annotations: AnnotationResult[];
+      meta: Partial<EnvelopeMeta>;
+      /** The engine failed on part of the run: exit 2 beside the verdicts. */
+      degraded: boolean;
+      /** The engine refuted something: the documented exit 1. */
+      refuted: boolean;
+    };
+
+interface Spine {
+  plan(files: string[]): Plan;
+  /** Absent for a command with no engine — its plan yields no artifacts. */
+  run?(plan: Plan): Outcome;
+}
+
+/** The pipeline every command shares: resolve files, capture run meta, run
+ * the engine's codegen, and turn its outcome into one envelope and one exit
+ * code. Only the codegen, the run, the verdict join, and the two exit-code
+ * contributions are engine-specific. */
+function runCommand(spine: Spine, patterns: string[]): number {
+  const files = resolve(patterns);
+  const base = captureMeta();
+  const plan = spine.plan(files);
+  const meta = { ...base, ...plan.meta };
+
+  if (plan.outFiles.length === 0 || spine.run === undefined) {
+    emitEnvelope({
+      ...meta,
+      ...plan.emptyMeta,
+      annotations: [...plan.untried, ...plan.inputErrors],
+    });
+    return plan.inputErrors.length > 0 ? 2 : plan.emptyExit;
+  }
+
+  const outcome = spine.run(plan);
+  if (outcome.kind === "unhealthy") {
+    for (const m of outcome.messages) console.error(`error: ${m}`);
+    return notTriedExit(meta, plan.identities, plan.inputErrors, plan.untried);
+  }
+
+  emitEnvelope({
+    ...meta,
+    ...outcome.meta,
+    annotations: [...outcome.annotations, ...plan.untried, ...plan.inputErrors],
+  });
+  // Bad input and engine failures outrank a refutation: the documented
+  // exit-2 error mode, even alongside healthy verdicts.
+  if (plan.inputErrors.length > 0 || outcome.degraded) return 2;
+  return outcome.refuted ? 1 : 0;
 }
 
 const USAGE =
@@ -150,11 +235,17 @@ export function main(argv: string[] = process.argv.slice(2)): number {
   // to the documented exit-2 error mode; anything else is an internal bug
   // and crashes loudly.
   try {
-    return command === "refute"
-      ? refute(patterns, values.seed)
-      : command === "prove"
-        ? prove(patterns)
-        : notTried("check", patterns);
+    // The seed is parsed before anything else so a bad one is reported
+    // without first resolving files.
+    const spine =
+      command === "refute"
+        ? refuteSpine(
+            values.seed !== undefined ? parseSeed(values.seed) : randomSeed(),
+          )
+        : command === "prove"
+          ? proveSpine()
+          : stubSpine(command as Command);
+    return runCommand(spine, patterns);
   } catch (e) {
     if (e instanceof LemmaError) {
       console.error(`error: ${e.message}`);
@@ -174,199 +265,225 @@ function resolve(patterns: string[]): string[] {
   return files;
 }
 
-function refute(patterns: string[], seedArg: string | undefined): number {
-  const seed = seedArg !== undefined ? parseSeed(seedArg) : randomSeed();
-  const files = resolve(patterns);
-  const base = captureMeta();
-
-  const results = generate(files, ".pabst", seed);
-  const identities: PropertyIdentity[] = results.flatMap((r) =>
-    r.properties.map((p) => ({ file: r.sourceFile, ...p })),
-  );
-  const inputErrors = inputErrorResults(
-    results.map((r) => ({ file: r.sourceFile, invalid: r.invalid })),
-  );
-  const generated = identities.length;
-  console.error(
-    `lakatos: generated ${generated} propert${generated === 1 ? "y" : "ies"} across ${results.length} file(s) into .pabst/`,
-  );
-
-  const meta = { ...base, seed, generated };
-
-  // Scope the run to the out-files generated by THIS invocation: .pabst/
-  // accumulates mirrors from earlier runs, and running the whole directory
-  // would re-execute them and mix their issues into this envelope. With
-  // nothing generated there is nothing to run — and an empty file list
-  // would tell vitest to run everything, so short-circuit instead.
-  const outFiles = results.flatMap((r) =>
-    r.outFile !== undefined ? [r.outFile] : [],
-  );
-  if (outFiles.length === 0) {
-    emitEnvelope({ ...meta, passed: 0, failed: 0, annotations: inputErrors });
-    return inputErrors.length > 0 ? 2 : 0;
-  }
-
-  const result = runTests(outFiles);
-
-  // Unhealthy runs (vitest died before reporting, or the generated suite
-  // failed to load) still honor the output contract: diagnostics on stderr,
-  // a NotTried envelope on stdout — the annotations were generated but
-  // never evaluated — and the documented exit 2, not vitest's raw status.
-  if (result.kind !== "completed") {
-    if (result.kind === "no-results") {
-      process.stderr.write(result.stdout);
-      process.stderr.write(result.stderr);
-    } else {
-      for (const m of result.messages) console.error(`error: ${m}`);
+/** The engine-independent enumeration: every annotation lemma can extract
+ * and parse, plus the extraction-level input errors beside it. A formula
+ * lemma itself cannot read is a compile error whichever command asked. */
+function enumerate(files: string[]): {
+  identities: PropertyIdentity[];
+  invalid: { file: string; invalid: InvalidAnnotation[] }[];
+} {
+  const identities: PropertyIdentity[] = [];
+  const invalid: { file: string; invalid: InvalidAnnotation[] }[] = [];
+  for (const file of files) {
+    const extracted = extract(file);
+    invalid.push({ file, invalid: extracted.invalid });
+    for (const a of extracted.annotations) {
+      try {
+        parseBody(parsePrefix(a.formula).body);
+      } catch (e) {
+        if (e instanceof LemmaError)
+          throw new LemmaError(
+            `${file}:${a.line}: @ensures{${a.propertyName}}: ${e.message}`,
+            { cause: e },
+          );
+        throw e;
+      }
+      identities.push({
+        file,
+        function: qualifiedName(a.functionName, a.className, a.isStatic),
+        property: a.propertyName,
+      });
     }
-    return notTriedExit(meta, identities, inputErrors);
   }
-
-  const envelope = buildEnvelope(meta, result.json, identities);
-  envelope.annotations.push(...inputErrors);
-  emitEnvelope(envelope);
-  // Bad input outranks a refutation: exit 2 even when counterexamples were
-  // found, so malformed annotations are never mistaken for a clean 0/1 run.
-  if (inputErrors.length > 0) return 2;
-  return (envelope.failed ?? 0) > 0 ? 1 : 0;
+  return { identities, invalid };
 }
 
-function prove(patterns: string[]): number {
-  const files = resolve(patterns);
-  const meta = captureMeta();
-
-  const artifacts = writeArtifacts(files);
-  const inputErrors = inputErrorResults(
-    artifacts.map((a) => ({ file: a.sourceFile, invalid: a.invalid })),
-  );
-  // Partition each artifact's annotations once, by object identity:
-  // untried ones (the transcriber emitted no prove command) become
-  // NotTried entries here and are never expected in the verdict join;
-  // the rest are the identities the join must account for. An artifact
-  // with no prove command at all has nothing for Lean to report.
-  const tried: PropertyIdentity[] = [];
-  const untriedResults: AnnotationResult[] = [];
-  const proveFiles: string[] = [];
-  for (const a of artifacts) {
-    const untried = new Map(a.untried.map((u) => [u.annotation, u]));
-    for (const r of a.annotations) {
-      const identity = {
-        file: a.sourceFile,
-        function: qualifiedName(r.functionName, r.className, r.isStatic),
-        property: r.propertyName,
+function refuteSpine(seed: number): Spine {
+  return {
+    plan(files) {
+      const results = generate(files, ".pabst", seed);
+      const identities: PropertyIdentity[] = results.flatMap((r) =>
+        r.properties.map((p) => ({ file: r.sourceFile, ...p })),
+      );
+      const inputErrors = inputErrorResults(
+        results.map((r) => ({ file: r.sourceFile, invalid: r.invalid })),
+      );
+      const generated = identities.length;
+      console.error(
+        `lakatos: generated ${generated} propert${generated === 1 ? "y" : "ies"} across ${results.length} file(s) into .pabst/`,
+      );
+      // Scope the run to the out-files generated by THIS invocation: .pabst/
+      // accumulates mirrors from earlier runs, and running the whole directory
+      // would re-execute them and mix their issues into this envelope. With
+      // nothing generated there is nothing to run — and an empty file list
+      // would tell vitest to run everything, so the runner short-circuits.
+      return {
+        identities,
+        untried: [],
+        inputErrors,
+        outFiles: results.flatMap((r) =>
+          r.outFile !== undefined ? [r.outFile] : [],
+        ),
+        meta: { seed, generated },
+        emptyMeta: { passed: 0, failed: 0 },
+        emptyExit: 0,
       };
-      const u = untried.get(r);
-      if (u === undefined) tried.push(identity);
-      else
-        untriedResults.push({
-          ...identity,
-          szs: "NotTried",
-          kind: u.kind,
-          reason: u.reason,
-        });
-    }
-    if (a.outFile !== undefined && a.annotations.length > untried.size)
-      proveFiles.push(a.outFile);
-  }
-  const n = tried.length;
-  console.error(
-    `lakatos: transcribed ${n} annotation${n === 1 ? "" : "s"} across ${artifacts.length} file(s) into .thales/`,
-  );
-  const m = untriedResults.length;
-  if (m > 0)
-    console.error(
-      `lakatos: ${m} annotation${m === 1 ? "" : "s"} not tried (unsupported range)`,
-    );
-  // Unhealthy runs honor the output contract: diagnostics on stderr, a
-  // NotTried envelope on stdout, and the documented exit 2. The untried
-  // entries keep their kind and reason — that classification was made at
-  // transcription time, before the run went unhealthy.
-  const unhealthy = (messages: string[]): number => {
-    for (const msg of messages) console.error(`error: ${msg}`);
-    return notTriedExit(meta, tried, inputErrors, untriedResults);
+    },
+
+    run(plan) {
+      const result = runTests(plan.outFiles);
+      // Unhealthy runs (vitest died before reporting, or the generated suite
+      // failed to load) still honor the output contract: diagnostics on
+      // stderr, a NotTried envelope on stdout, and the documented exit 2,
+      // not vitest's raw status.
+      if (result.kind !== "completed") {
+        if (result.kind === "no-results") {
+          process.stderr.write(result.stdout);
+          process.stderr.write(result.stderr);
+          return { kind: "unhealthy", messages: [] };
+        }
+        return { kind: "unhealthy", messages: result.messages };
+      }
+      const failed = result.json.numFailedTests;
+      return {
+        kind: "completed",
+        annotations: joinRefuteVerdicts(plan.identities, result.json),
+        meta: { passed: result.json.numPassedTests, failed },
+        degraded: false,
+        // A failing test is a refutation whatever kind of issue it carried:
+        // the count, not the SZS status, is what the exit code reports.
+        refuted: failed > 0,
+      };
+    },
   };
-
-  if (proveFiles.length === 0) {
-    emitEnvelope({
-      ...meta,
-      annotations: [...untriedResults, ...inputErrors],
-    });
-    return inputErrors.length > 0 ? 2 : 0;
-  }
-
-  const result = runLean(proveFiles, findEngineRoot());
-  if (result.kind === "no-project") return unhealthy([result.message]);
-  if (result.kind === "failed") {
-    process.stderr.write(result.stdout);
-    process.stderr.write(result.stderr);
-    return unhealthy(["the Lean run failed before reporting verdicts"]);
-  }
-  for (const d of result.diagnostics) console.error(d);
-  for (const f of result.failures)
-    for (const m of f.messages) console.error(`error: ${m}`);
-
-  // A contained per-artifact failure degrades only that file's
-  // annotations; every healthy verdict still reaches the envelope.
-  const sourceOf = new Map(
-    artifacts.flatMap((a) =>
-      a.outFile !== undefined ? [[a.outFile, a.sourceFile] as const] : [],
-    ),
-  );
-  const failedSources = new Set(
-    result.failures.map((f) => sourceOf.get(f.file)),
-  );
-  const failedResults: AnnotationResult[] = tried
-    .filter((i) => failedSources.has(i.file))
-    .map((i) => ({
-      ...i,
-      szs: "Error" as const,
-      error:
-        "the Lean run on this file's artifact failed before reporting its verdicts",
-    }));
-  const join = joinProveVerdicts(
-    tried.filter((i) => !failedSources.has(i.file)),
-    result.verdicts,
-  );
-  if (join.kind === "mismatched") return unhealthy(join.messages);
-
-  const envelope: Envelope = {
-    ...meta,
-    annotations: [
-      ...join.annotations,
-      ...failedResults,
-      ...untriedResults,
-      ...inputErrors,
-    ],
-  };
-  emitEnvelope(envelope);
-  // Bad input and engine failures outrank everything: the documented
-  // exit-2 error mode, even alongside healthy verdicts.
-  if (inputErrors.length > 0 || result.failures.length > 0) return 2;
-  // The documented exit 1: a counterexample found by the prover.
-  return join.annotations.some((a) => a.szs === "CounterSatisfiable") ? 1 : 0;
 }
 
-function notTried(command: Command, patterns: string[]): number {
-  const files = resolve(patterns);
-  const meta = captureMeta();
-  const perFile = files.map((file) => ({ file, ...buildSpecs(file) }));
-  const identities: PropertyIdentity[] = perFile.flatMap(({ file, specs }) =>
-    specs.map((s) => ({
-      file,
-      function: qualifiedName(s.functionName, s.className, s.isStatic),
-      property: s.name,
-    })),
-  );
-  const inputErrors = inputErrorResults(perFile);
-  console.error(`lakatos: ${command} is not implemented yet`);
-  emitEnvelope({
-    ...meta,
-    annotations: [
-      ...identities.map((i) => ({ ...i, szs: "NotTried" as const })),
-      ...inputErrors,
-    ],
-  });
-  return inputErrors.length > 0 ? 2 : 1;
+function proveSpine(): Spine {
+  // The transcriber's per-artifact source mapping, needed by the run to
+  // attribute a failed artifact back to the file its annotations came from.
+  const sourceOf = new Map<string, string>();
+  return {
+    plan(files) {
+      const artifacts = writeArtifacts(files);
+      const inputErrors = inputErrorResults(
+        artifacts.map((a) => ({ file: a.sourceFile, invalid: a.invalid })),
+      );
+      // Partition each artifact's annotations once, by object identity:
+      // untried ones (the transcriber emitted no prove command) become
+      // NotTried entries here and are never expected in the verdict join;
+      // the rest are the identities the join must account for. An artifact
+      // with no prove command at all has nothing for Lean to report.
+      const tried: PropertyIdentity[] = [];
+      const untriedResults: AnnotationResult[] = [];
+      const proveFiles: string[] = [];
+      for (const a of artifacts) {
+        const untried = new Map(a.untried.map((u) => [u.annotation, u]));
+        for (const r of a.annotations) {
+          const identity = {
+            file: a.sourceFile,
+            function: qualifiedName(r.functionName, r.className, r.isStatic),
+            property: r.propertyName,
+          };
+          const u = untried.get(r);
+          if (u === undefined) tried.push(identity);
+          else
+            untriedResults.push({
+              ...identity,
+              szs: "NotTried",
+              kind: u.kind,
+              reason: u.reason,
+            });
+        }
+        if (a.outFile !== undefined) sourceOf.set(a.outFile, a.sourceFile);
+        if (a.outFile !== undefined && a.annotations.length > untried.size)
+          proveFiles.push(a.outFile);
+      }
+      const n = tried.length;
+      console.error(
+        `lakatos: transcribed ${n} annotation${n === 1 ? "" : "s"} across ${artifacts.length} file(s) into .thales/`,
+      );
+      const m = untriedResults.length;
+      if (m > 0)
+        console.error(
+          `lakatos: ${m} annotation${m === 1 ? "" : "s"} not tried (unsupported range)`,
+        );
+      return {
+        identities: tried,
+        untried: untriedResults,
+        inputErrors,
+        outFiles: proveFiles,
+        meta: {},
+        emptyMeta: {},
+        emptyExit: 0,
+      };
+    },
+
+    run(plan) {
+      const result = runLean(plan.outFiles, findEngineRoot());
+      if (result.kind === "no-project")
+        return { kind: "unhealthy", messages: [result.message] };
+      if (result.kind === "failed") {
+        process.stderr.write(result.stdout);
+        process.stderr.write(result.stderr);
+        return {
+          kind: "unhealthy",
+          messages: ["the Lean run failed before reporting verdicts"],
+        };
+      }
+      for (const d of result.diagnostics) console.error(d);
+      for (const f of result.failures)
+        for (const m of f.messages) console.error(`error: ${m}`);
+
+      // A contained per-artifact failure degrades only that file's
+      // annotations; every healthy verdict still reaches the envelope.
+      const failedSources = new Set(
+        result.failures.map((f) => sourceOf.get(f.file)),
+      );
+      const failedResults: AnnotationResult[] = plan.identities
+        .filter((i) => failedSources.has(i.file))
+        .map((i) => ({
+          ...i,
+          szs: "Error" as const,
+          error:
+            "the Lean run on this file's artifact failed before reporting its verdicts",
+        }));
+      const join = joinProveVerdicts(
+        plan.identities.filter((i) => !failedSources.has(i.file)),
+        result.verdicts,
+      );
+      if (join.kind === "mismatched")
+        return { kind: "unhealthy", messages: join.messages };
+
+      return {
+        kind: "completed",
+        annotations: [...join.annotations, ...failedResults],
+        meta: {},
+        degraded: result.failures.length > 0,
+        refuted: join.annotations.some((a) => a.szs === "CounterSatisfiable"),
+      };
+    },
+  };
+}
+
+/** A command with no engine yet: it enumerates what it would have attempted
+ * and reports every annotation NotTried. */
+function stubSpine(command: Command): Spine {
+  return {
+    plan(files) {
+      const { identities, invalid } = enumerate(files);
+      const inputErrors = inputErrorResults(invalid);
+      console.error(`lakatos: ${command} is not implemented yet`);
+      return {
+        identities: [],
+        untried: identities.map((i) => ({ ...i, szs: "NotTried" as const })),
+        inputErrors,
+        outFiles: [],
+        meta: {},
+        emptyMeta: {},
+        emptyExit: 1,
+      };
+    },
+  };
 }
 
 // npm installs the bin as a symlink (node_modules/.bin/lakatos -> this
