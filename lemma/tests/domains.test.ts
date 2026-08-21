@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { intBounds, intInterval, MAX_SAFE } from "../src/domains.js";
+import {
+  clampedEndpoints,
+  intBounds,
+  intInterval,
+  MAX_SAFE,
+  unsupportedRangeReason,
+} from "../src/domains.js";
 
 const HUGE = "1000000000000000000000000000000";
 
@@ -109,5 +115,103 @@ describe("intBounds clamp reporting", () => {
     expect(b.rawLo).toBe(BigInt(HUGE));
     expect(b.rawHi).toBe(BigInt(`${HUGE}0`));
     expect(b.rawLo <= b.rawHi).toBe(true);
+  });
+});
+
+describe("clampedEndpoints", () => {
+  it("reports nothing for a binder with no interval", () => {
+    expect(clampedEndpoints({ varName: "n", domain: "int" })).toEqual([]);
+  });
+
+  it("reports nothing for a domain the clamp does not apply to", () => {
+    for (const domain of ["number", "bigint"] as const) {
+      expect(
+        clampedEndpoints({ varName: "x", domain, range: { max: HUGE } }),
+      ).toEqual([]);
+    }
+  });
+
+  it("reports nothing for an interval inside the safe range", () => {
+    expect(
+      clampedEndpoints({
+        varName: "n",
+        domain: "int",
+        range: { min: "0", max: "10" },
+      }),
+    ).toEqual([]);
+  });
+
+  it("names the ceiling when only it is beyond the safe range", () => {
+    expect(
+      clampedEndpoints({
+        varName: "n",
+        domain: "int",
+        range: { min: "0", max: HUGE },
+      }),
+    ).toEqual([HUGE]);
+  });
+
+  it("names the floor when only it is beyond the safe range", () => {
+    expect(
+      clampedEndpoints({
+        varName: "n",
+        domain: "int",
+        range: { min: `-${HUGE}`, max: "0" },
+      }),
+    ).toEqual([`-${HUGE}`]);
+  });
+
+  it("names both endpoints, floor first", () => {
+    expect(
+      clampedEndpoints({
+        varName: "n",
+        domain: "int",
+        range: { min: `-${HUGE}`, max: HUGE },
+      }),
+    ).toEqual([`-${HUGE}`, HUGE]);
+  });
+
+  it("names both endpoints of an interval the clamp empties", () => {
+    expect(
+      clampedEndpoints({
+        varName: "n",
+        domain: "int",
+        range: { min: HUGE, max: `${HUGE}0` },
+      }),
+    ).toEqual([HUGE, `${HUGE}0`]);
+  });
+
+  it("does not report an unbounded side: no endpoint was written", () => {
+    expect(
+      clampedEndpoints({ varName: "n", domain: "int", range: { min: "0" } }),
+    ).toEqual([]);
+    expect(
+      clampedEndpoints({ varName: "n", domain: "int", range: { max: "0" } }),
+    ).toEqual([]);
+  });
+
+  it("does not report nat's floor: flooring at 0 is not clamping", () => {
+    expect(
+      clampedEndpoints({
+        varName: "n",
+        domain: "nat",
+        range: { min: `-${HUGE}`, max: "10" },
+      }),
+    ).toEqual([]);
+  });
+});
+
+describe("unsupportedRangeReason", () => {
+  it("agrees in number with one endpoint", () => {
+    expect(unsupportedRangeReason([HUGE])).toBe(
+      `endpoint ${HUGE} exceeds the safe integer range (±${MAX_SAFE})`,
+    );
+  });
+
+  it("agrees in number with two", () => {
+    expect(unsupportedRangeReason([`-${HUGE}`, HUGE])).toBe(
+      `endpoints -${HUGE} and ${HUGE} exceed ` +
+        `the safe integer range (±${MAX_SAFE})`,
+    );
   });
 });

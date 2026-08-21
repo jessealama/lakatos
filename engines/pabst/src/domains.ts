@@ -40,6 +40,8 @@ export function arbitraryFor(
     case "int":
     case "nat": {
       // A ranged nat is just a bounded integer; fc.nat has no `min`.
+      // Every spec reaching here has a representable domain — build-spec
+      // refuses the rest — so the clamp these bounds apply is a no-op.
       const { lo, hi } = intBounds(domain, range);
       return `fc.integer({ min: ${lo}, max: ${hi} })`;
     }

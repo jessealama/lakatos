@@ -138,7 +138,9 @@ describe("parseRange — rejected", () => {
     );
   });
 
-  it("clamps unsafe integer endpoints to the safe range with a warning", () => {
+  it("accepts unsafe integer endpoints without diagnosing them", () => {
+    // Representability is each engine's question to ask (clampedEndpoints),
+    // not a parse-time warning promising a domain neither engine uses.
     const warnings: string[] = [];
     const spy = vi
       .spyOn(console, "error")
@@ -148,7 +150,7 @@ describe("parseRange — rejected", () => {
         min: "0",
         max: "99999999999999999999",
       });
-      expect(warnings.join("\n")).toMatch(/warning:.*safe integer/);
+      expect(warnings).toEqual([]);
     } finally {
       spy.mockRestore();
     }

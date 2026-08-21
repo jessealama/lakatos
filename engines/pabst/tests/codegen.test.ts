@@ -102,3 +102,59 @@ describe("generate: source outside the current directory", () => {
     expect(fs.existsSync(path.join(dir, "pkg", ".pabst"))).toBe(false);
   });
 });
+
+describe("generate — unrepresentable domains", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pabst-untried-"));
+  const prevCwd = process.cwd();
+
+  beforeAll(() => {
+    fs.writeFileSync(
+      path.join(dir, "allhuge.ts"),
+      `/** @ensures{huge} forall (n: int ∈ [0, 1000000000000000000000000000000]) { one(n) >= 0 } */\nexport function one(n: number): number { return n; }\n`,
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(dir, "mixedhuge.ts"),
+      `/** @ensures{huge} forall (n: int ∈ [0, 1000000000000000000000000000000]) { two(n) >= 0 }
+ * @ensures{small} forall (n: int ∈ [0, 10]) { two(n) >= 0 } */
+export function two(n: number): number { return n; }
+`,
+      "utf8",
+    );
+    process.chdir(dir);
+  });
+  afterAll(() => {
+    process.chdir(prevCwd);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("reports a wholly untried file without writing an artifact", () => {
+    const results = generate(["allhuge.ts"], ".pabst", 7);
+    expect(results).toHaveLength(1);
+    expect(results[0]!.outFile).toBeUndefined();
+    expect(results[0]!.properties).toEqual([]);
+    expect(results[0]!.untried).toEqual([
+      {
+        function: "one",
+        property: "huge",
+        reason:
+          "endpoint 1000000000000000000000000000000 exceeds " +
+          "the safe integer range (±9007199254740991)",
+      },
+    ]);
+    expect(fs.existsSync(path.join(".pabst", "allhuge.ts.pabst.test.ts"))).toBe(
+      false,
+    );
+  });
+
+  it("generates only the testable properties of a mixed file", () => {
+    const results = generate(["mixedhuge.ts"], ".pabst", 7);
+    expect(results[0]!.properties).toEqual([
+      { function: "two", property: "small" },
+    ]);
+    expect(results[0]!.untried.map((u) => u.property)).toEqual(["huge"]);
+    const code = fs.readFileSync(results[0]!.outFile!, "utf8");
+    expect(code).toContain('"small"');
+    expect(code).not.toContain('"huge"');
+  });
+});

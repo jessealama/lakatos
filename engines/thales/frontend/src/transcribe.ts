@@ -2,16 +2,16 @@ import * as fs from 'node:fs';
 import ts from 'typescript';
 import {
   type Binder,
+  clampedEndpoints,
   EmptyAfterClampError,
   extractFromSource,
-  intBounds,
   intInterval,
   type InvalidAnnotation,
   parseBody,
   parsePrefix,
   qualifiedName,
   type RawAnnotation,
-  SAFE_INTEGER_RANGE,
+  unsupportedRangeReason,
 } from '../../../../lemma/src/index.js';
 
 /** Escape a string for a Lean string literal. */
@@ -220,14 +220,6 @@ type BinderLowering =
   /** No `ts.range` reading at all (non-integer domain, unbounded side). */
   | { kind: 'bare' };
 
-function unsupportedRangeReason(endpoints: string[]): string {
-  const one = endpoints.length === 1;
-  return (
-    `endpoint${one ? '' : 's'} ${endpoints.join(' and ')} ` +
-    `exceed${one ? 's' : ''} ${SAFE_INTEGER_RANGE}`
-  );
-}
-
 /** The comparison a `number` bound lowers to. An interval excludes an endpoint
  * by adjacency in an ordering where -0 sits below 0, which IEEE comparison
  * cannot express: a strict bound at the zero the interval still admits would
@@ -326,16 +318,8 @@ function binderConstructor(b: Binder): BinderLowering {
   // Unbounded below with a finite ceiling: substituting the safe-range
   // floor would prove a narrower statement than written.
   if (lo === undefined) return { kind: 'bare' };
-  const { clampedLo, clampedHi } = intBounds(b.domain, r);
-  if (clampedLo || clampedHi) {
-    return {
-      kind: 'clamped',
-      endpoints: [
-        ...(clampedLo ? [r.min!] : []),
-        ...(clampedHi ? [r.max!] : []),
-      ],
-    };
-  }
+  const clamped = clampedEndpoints(b);
+  if (clamped.length > 0) return { kind: 'clamped', endpoints: clamped };
   return {
     kind: 'ctor',
     ctor: `ts.binder[${leanStr(b.varName)}](ts.int, ts.range(${lo}, ${hi + 1n}))`,
@@ -402,22 +386,21 @@ function structuredProp(formula: string): PropReading {
   try {
     const { binders, body } = parsePrefix(formula);
     const binderCtors: string[] = [];
-    const clampedEndpoints: string[] = [];
+    const clamped: string[] = [];
     for (const b of binders) {
       const lowered = binderConstructor(b);
       if (lowered.kind === 'bare') return { kind: 'bare' };
-      if (lowered.kind === 'clamped')
-        clampedEndpoints.push(...lowered.endpoints);
+      if (lowered.kind === 'clamped') clamped.push(...lowered.endpoints);
       else binderCtors.push(lowered.ctor);
     }
     const ast = parseBody(body);
     if (ast.kind !== 'atom') return { kind: 'bare' };
     const parsed = parseAtomExpr(ast.js);
     if (parsed === undefined) return { kind: 'bare' };
-    if (clampedEndpoints.length > 0) {
+    if (clamped.length > 0) {
       return {
         kind: 'unsupported-range',
-        reason: unsupportedRangeReason(clampedEndpoints),
+        reason: unsupportedRangeReason(clamped),
       };
     }
     const expr = unwrapParens(parsed.expr);

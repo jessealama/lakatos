@@ -1,29 +1,65 @@
 import {
+  clampedEndpoints,
   collectAtoms,
+  EmptyAfterClampError,
   extract,
   type InvalidAnnotation,
   LemmaError,
   parseBody,
   parsePrefix,
   type RawAnnotation,
+  unsupportedRangeReason,
 } from "../../../lemma/src/index.js";
 import { lowerTop } from "./lower.js";
 import { freeIdentifiers, classify } from "./free-idents.js";
 import type { PropertySpec } from "./ir.js";
 
+/** An annotation the refuter will not test: a binder's domain is not
+ * representable as written, so generating over the clamped one would
+ * silently test a narrower statement. */
+export interface UntriedProperty {
+  functionName: string;
+  className?: string;
+  isStatic?: boolean;
+  name: string;
+  reason: string;
+}
+
 export interface BuildResult {
   specs: PropertySpec[];
   /** Extraction-level input errors, reported per annotation (InputError). */
   invalid: InvalidAnnotation[];
+  /** Annotations refused before codegen, reported per annotation (NotTried). */
+  untried: UntriedProperty[];
 }
 
 export function buildSpecs(file: string): BuildResult {
   const { exports, annotations, invalid } = extract(file);
   const specs: PropertySpec[] = [];
+  const untried: UntriedProperty[] = [];
+  const refuse = (a: RawAnnotation, endpoints: string[]) =>
+    untried.push({
+      functionName: a.functionName,
+      className: a.className,
+      isStatic: a.isStatic,
+      name: a.propertyName,
+      reason: unsupportedRangeReason(endpoints),
+    });
   for (const a of annotations) {
     try {
-      specs.push(buildSpec(a, exports, file));
+      const spec = buildSpec(a, exports, file);
+      // Asked after the spec is built, so an annotation this engine could
+      // not have tested anyway keeps its own diagnostic: the clamp is
+      // reported only when it is the sole blocker.
+      const clamped = spec.binders.flatMap(clampedEndpoints);
+      if (clamped.length > 0) refuse(a, clamped);
+      else specs.push(spec);
     } catch (e) {
+      // Before the LemmaError arm: EmptyAfterClampError extends it.
+      if (e instanceof EmptyAfterClampError) {
+        refuse(a, e.endpoints);
+        continue;
+      }
       if (e instanceof LemmaError) {
         throw new LemmaError(
           `${file}:${a.line}: @ensures{${a.propertyName}}: ${e.message}`,
@@ -33,7 +69,7 @@ export function buildSpecs(file: string): BuildResult {
       throw e;
     }
   }
-  return { specs, invalid };
+  return { specs, invalid, untried };
 }
 
 function buildSpec(

@@ -1,5 +1,5 @@
 import type { DoubleConstraints } from "fast-check";
-import type { Domain, Range } from "./binder.js";
+import type { Binder, Domain, Range } from "./binder.js";
 
 // A Record rather than a list so adding a Domain member without updating
 // this table is a type error.
@@ -77,6 +77,30 @@ export function intBounds(domain: "int" | "nat", range: Range): IntBounds {
   if (lo < -MAX_SAFE) lo = -MAX_SAFE;
   if (hi > MAX_SAFE) hi = MAX_SAFE;
   return { lo, hi, clampedLo, clampedHi, rawLo, rawHi };
+}
+
+/** The finite endpoints of a binder's interval that fall outside the safe
+ * integer range, as the user wrote them; empty when the domain is
+ * representable as written. Both engines refuse on this one answer rather
+ * than substituting the clamped domain, which denotes a narrower statement. */
+export function clampedEndpoints(binder: Binder): string[] {
+  const { domain, range } = binder;
+  if (range === undefined) return [];
+  if (domain !== "int" && domain !== "nat") return [];
+  const { clampedLo, clampedHi } = intBounds(domain, range);
+  return [
+    ...(clampedLo ? [range.min!] : []),
+    ...(clampedHi ? [range.max!] : []),
+  ];
+}
+
+/** The one rendering of why a clamped domain was not attempted. */
+export function unsupportedRangeReason(endpoints: string[]): string {
+  const one = endpoints.length === 1;
+  return (
+    `endpoint${one ? "" : "s"} ${endpoints.join(" and ")} ` +
+    `exceed${one ? "s" : ""} ${SAFE_INTEGER_RANGE}`
+  );
 }
 
 /** The inclusive fc.bigInt bounds a bigint interval lowers to. An
