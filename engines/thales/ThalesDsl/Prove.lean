@@ -284,6 +284,19 @@ def proofReason (method : String) (thmName : Name) : Term.TermElabM String := do
   return s!"proved by {method}, admitted as {thmName}; the result is " ++
     s!"trusted from evaluation rather than checked by the kernel"
 
+/-- Degrades a rung's plain failure to a fall-through, so the rungs after it
+still get their turn. Lean's own `catch` already re-raises runtime exceptions
+(heartbeats, recursion depth) for `runRung` to classify, but the kernel
+reports its budget exhaustion as an ordinary error, and that is starvation
+rather than a rung that simply had nothing to say. -/
+def orFallThrough {α : Type} (x : Term.TermElabM α) :
+    Term.TermElabM (Option α) := do
+  try
+    return some (← x)
+  catch ex =>
+    if ← isKernelTimeout ex then throw ex
+    return none
+
 def attemptDecide (identity : Identity) (p : Expr)
     (searchStx : TSyntax `term) (names : List String) :
     Term.TermElabM (Option Verdict) := do
@@ -311,7 +324,12 @@ def attemptNativeDecide (identity : Identity) (p : Expr)
     "the property is false on its bounded domain", none⟩
   let some d ← (try some <$> Meta.mkDecide p catch _ => pure none)
     | return none
-  match ← Meta.nativeEqTrue `native_decide d with
+  -- Codegen and evaluation failures surface as ordinary elaboration errors,
+  -- not runtime exceptions, so nothing above would catch them: uncontained,
+  -- they escape the whole ladder as the annotation's Error.
+  let some result ← orFallThrough (Meta.nativeEqTrue `native_decide d)
+    | return none
+  match result with
   | .notTrue =>
     -- Established falsity is terminal; only the illustration is optional.
     if names.isEmpty then return some falseOnDomain
@@ -322,7 +340,8 @@ def attemptNativeDecide (identity : Identity) (p : Expr)
   | .success prf =>
     let inst := d.appArg!
     let proof := mkApp3 (mkConst ``of_decide_eq_true) p inst prf
-    let thmName ← addTheoremSync identity p proof
+    let some thmName ← orFallThrough (addTheoremSync identity p proof)
+      | return none
     return some ⟨identity, .Theorem,
       ← proofReason "a decision procedure over the bounded domain" thmName, none⟩
 
