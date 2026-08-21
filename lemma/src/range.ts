@@ -208,10 +208,16 @@ function parseEndpoint(lit: string, domain: Domain): string {
   }
 }
 
-/** Strip a leading '+' and redundant leading zeros: endpoints are emitted
- * verbatim into an ES module, where '010' is a SyntaxError. The lookahead
- * keeps a lone (possibly signed) zero intact, so '-0' survives. */
+/** Strip a leading '+', supply the digit a leading dot omits, drop a bare
+ * trailing dot, and strip redundant leading zeros: endpoints are emitted
+ * verbatim, and a consumer whose literal grammar is stricter than
+ * JavaScript's rejects '.5' the same way an ES module rejects '010'. The
+ * leading-zero lookahead keeps a lone (possibly signed) zero intact, so
+ * '-0' and '-0.' both survive as '-0'. */
 function normalizeLiteral(lit: string): string {
   const unsigned = lit.startsWith("+") ? lit.slice(1) : lit;
-  return unsigned.replace(/^(-?)0+(?=\d)/, "$1");
+  return unsigned
+    .replace(/^(-?)\./, "$10.")
+    .replace(/\.(?=[eE]|$)/, "")
+    .replace(/^(-?)0+(?=\d)/, "$1");
 }
