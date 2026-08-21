@@ -17,9 +17,11 @@ the business of the e2e and unit suites.
 - `theorem/` — every annotation proves (`Theorem`).
 - `countersatisfiable/` — a false bounded claim: decide establishes falsity
   and the prover extracts a concrete witness (`CounterSatisfiable`).
-- `gaveup/` — the proof ladder exhausts (`GaveUp`): an unbounded claim
-  omega cannot close, and witness search is a bounded-domain affair, so
-  falsity on an unbounded domain has no counterexample to ship.
+- `gaveup/` — the proof ladder exhausts (`GaveUp`): an unbounded claim, for
+  which there is no finite domain to evaluate and no arithmetic theory to
+  reason with, so falsity on an unbounded domain has no counterexample to
+  ship either. Also a bounded claim shown false whose witness the prover
+  could not read back, which ships the falsity without the illustration.
 - `nottried/` — the transcriber degrades the property (`NotTried`): it has
   no structured reading (a half-bounded range the DSL has no binder shape
   for, a connective), or a range endpoint exceeds the safe integer range.

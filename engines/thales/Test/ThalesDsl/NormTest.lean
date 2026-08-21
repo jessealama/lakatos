@@ -34,5 +34,5 @@ ts_def "dblNorm" := ts.fn(ts.param["x"](ts.number)) : ts.number {
   ts.return(ts.binop["*"](ts.id["x"], ts.num[2]))
 }
 
-example (x : Int) : TsModel.dblNorm x = (pure (x * 2) : TsM Int) := by
+example (x : Float) : TsModel.dblNorm x = (pure (x * 2) : TsM Float) := by
   simp only [TsModel.dblNorm, tsm_pure_bind]

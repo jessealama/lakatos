@@ -7,6 +7,11 @@ register_option thales.heartbeats : Nat := {
   descr := "per-annotation heartbeat budget for #thales_prove, in the maxHeartbeats unit; an attempt that exceeds it reports a Timeout verdict. 0 is clamped to 1: the underlying limit reads 0 as unlimited, which would leave the attempt uncontained"
 }
 
+register_option thales.maxEvaluatedElements : Nat := {
+  defValue := 10000000
+  descr := "the largest bounded domain #thales_prove will settle by evaluating the property at every element. Evaluation runs compiled, so the heartbeat budget cannot interrupt it; this cap is what keeps a wide domain from spending an unbounded amount of wall clock. A larger domain falls through to symbolic reasoning instead"
+}
+
 namespace ThalesDsl
 
 open Lean Elab Command
@@ -16,42 +21,60 @@ inductive BinderShape where
   | ranged (x : String) (lo hi : TSyntax ``tsIntLit)
   | unboundedInt (x : String)
   | unboundedNat (x : String)
+  /-- A `number` binder: no enumeration, only the bounds it carries as
+  hypotheses. Each bound is its comparison operator and its endpoint. -/
+  | number (x : String)
+      (lower : Option (String × TSyntax ``tsFloatLit))
+      (upper : Option (String × TSyntax ``tsFloatLit))
 
 def BinderShape.name : BinderShape → String
-  | .ranged x .. | .unboundedInt x | .unboundedNat x => x
+  | .ranged x .. | .unboundedInt x | .unboundedNat x | .number x .. => x
 
 def BinderShape.isRanged : BinderShape → Bool
   | .ranged .. => true
   | _ => false
 
+/-- The value of an endpoint literal, for sizing the enumeration. -/
+def tsIntLitValue : TSyntax ``tsIntLit → CommandElabM Int
+  | `(tsIntLit| $n:num) => pure (Int.ofNat n.getNat)
+  | `(tsIntLit| -$n:num) => pure (-(Int.ofNat n.getNat))
+  | stx => throwErrorAt stx "malformed integer literal"
+
 /-- What elabProp builds from a ts_prop. `allBounded` gates the decide
 rung: without it no Decidable instance exists, and `search` is a stub —
-witness search never runs on unbounded domains. -/
+witness search never runs on unbounded domains. `domainSize` is how many
+assignments that enumeration would visit, meaningful only when
+`allBounded`; it is what the evaluation tier is capped against. -/
 structure ElabProp where
   prop : TSyntax `term
   search : TSyntax `term
   names : List String
   allBounded : Bool
+  domainSize : Nat
 
 /-- Transcribes a `ts_prop` into a Lean `Prop` term — bounded binders become
 nested `ballIco`, unbounded int/nat binders plain `∀`s (nat carries its
-nonnegativity hypothesis), `≡` equations compare `TsM Int` results, boolean
+nonnegativity hypothesis) whose values coerce into the Float body at the
+call boundary, `≡` equations compare `TsM Float` results, boolean
 islands must evaluate to `pure true` — plus a parallel witness-search term
 of type `Option (List Int)` (one `findCexIco` per binder, a decidable test
 at the leaf) and the binder names in binder order. -/
 partial def elabProp (vars : List String) :
     TSyntax `ts_prop → CommandElabM ElabProp
   | `(ts_prop| ts.eq($l:ts_expr, $r:ts_expr)) => do
-    let lt ← evalExpr vars .int l
-    let rt ← evalExpr vars .int r
-    let prop ← `(($lt : TsM Int) = $rt)
-    let search ← `(if ($lt : TsM Int) = $rt then (none : Option (List Int)) else some [])
-    return ⟨prop, search, [], true⟩
+    let lt ← evalExpr vars .num l
+    let rt ← evalExpr vars .num r
+    -- `≡` is SameValue — the relation the refuter runs as `Object.is` —
+    -- which is exactly Lean's propositional equality on Float. `===` is
+    -- IEEE and lives in evalExpr as Float.beq.
+    let prop ← `(($lt : TsM Float) = $rt)
+    let search ← `(if ($lt : TsM Float) = $rt then (none : Option (List Int)) else some [])
+    return ⟨prop, search, [], true, 1⟩
   | `(ts_prop| ts.istrue($e:ts_expr)) => do
     let t ← evalExpr vars .bool e
     let prop ← `(($t : TsM Bool) = pure true)
     let search ← `(if ($t : TsM Bool) = pure true then (none : Option (List Int)) else some [])
-    return ⟨prop, search, [], true⟩
+    return ⟨prop, search, [], true, 1⟩
   | `(ts_prop| ts.forall($binders:ts_binder,*) {$body:ts_prop}) => do
     let bs ← binders.getElems.mapM fun b => match b with
       | `(ts_binder| ts.binder[$x:str](ts.int, ts.range($lo:tsIntLit, $hi:tsIntLit))) =>
@@ -60,30 +83,78 @@ partial def elabProp (vars : List String) :
         pure (BinderShape.unboundedInt x.getString)
       | `(ts_binder| ts.binder[$x:str](ts.nat)) =>
         pure (BinderShape.unboundedNat x.getString)
+      | `(ts_binder| ts.binder[$x:str](ts.number $[, $bs:ts_bound]*)) => do
+        let mut lower : Option (String × TSyntax ``tsFloatLit) := none
+        let mut upper : Option (String × TSyntax ``tsFloatLit) := none
+        for b in bs do
+          match b with
+          | `(ts_bound| ts.lower[$op:str](ts.fnum[$lit:tsFloatLit])) =>
+            if lower.isSome then throwErrorAt b "duplicate lower bound"
+            lower := some (op.getString, lit)
+          | `(ts_bound| ts.upper[$op:str](ts.fnum[$lit:tsFloatLit])) =>
+            if upper.isSome then throwErrorAt b "duplicate upper bound"
+            upper := some (op.getString, lit)
+          | _ => throwErrorAt b "unsupported bound shape"
+        pure (BinderShape.number x.getString lower upper)
       | _ => throwErrorAt b "unsupported binder shape"
     let inner ← elabProp (vars ++ (bs.map (·.name)).toList) body
     let allBounded := inner.allBounded && bs.all (·.isRanged)
+    -- The enumeration variable is an Int; the body is Float-valued. The
+    -- coercion is a beta-redex rather than a `let` so every rung reduces it
+    -- the same way. `Float.ofInt` is injective on the clamped domain, which
+    -- is what makes the transcriber's safe-integer clamp load-bearing.
+    let coerced (x : String) (iv : Ident) (body : TSyntax `term) :
+        CommandElabM (TSyntax `term) :=
+      `((fun ($(mkIdent (Name.mkSimple x)) : Float) => $body) (Float.ofInt $iv))
     let prop ← bs.foldrM (init := inner.prop) fun b acc => do
+      let iv := mkIdent (Name.mkSimple s!"ts#int{b.name}")
       match b with
       | .ranged x lo hi =>
-        `(ballIco $(← tsIntLitToTerm lo) $(← tsIntLitToTerm hi)
-            (fun $(mkIdent (Name.mkSimple x)) => $acc))
+        `(ballIco $(← tsIntLitToInt lo) $(← tsIntLitToInt hi)
+            (fun ($iv : Int) => $(← coerced x iv acc)))
       | .unboundedInt x =>
-        `(∀ ($(mkIdent (Name.mkSimple x)) : Int), $acc)
+        `(∀ ($iv : Int), $(← coerced x iv acc))
       | .unboundedNat x =>
-        `(∀ ($(mkIdent (Name.mkSimple x)) : Int),
-            0 ≤ $(mkIdent (Name.mkSimple x)) → $acc)
+        `(∀ ($iv : Int), 0 ≤ $iv → $(← coerced x iv acc))
+      | .number x lower upper =>
+        -- Already a Float, so no coercion, and never enumerated: the binder
+        -- is its type plus whichever bounds it carries as hypotheses.
+        let v := mkIdent (Name.mkSimple x)
+        let mut body := acc
+        if let some (op, lit) := upper then
+          let e ← tsFloatLitToTerm lit
+          let hyp ← match op with
+            | "<" => `($v < $e)
+            | "<=" => `($v ≤ $e)
+            | other => throwErrorAt lit s!"unsupported upper bound '{other}'"
+          body ← `($hyp → $body)
+        if let some (op, lit) := lower then
+          let e ← tsFloatLitToTerm lit
+          let hyp ← match op with
+            | "<" => `($e < $v)
+            | "<=" => `($e ≤ $v)
+            | other => throwErrorAt lit s!"unsupported lower bound '{other}'"
+          body ← `($hyp → $body)
+        `(∀ ($v : Float), $body)
     let search ←
       if allBounded then
         bs.foldrM (init := inner.search) fun b acc => do
           match b with
           | .ranged x lo hi =>
-            `(findCexIco $(← tsIntLitToTerm lo) $(← tsIntLitToTerm hi)
-                (fun $(mkIdent (Name.mkSimple x)) => $acc))
+            let iv := mkIdent (Name.mkSimple s!"ts#int{x}")
+            `(findCexIco $(← tsIntLitToInt lo) $(← tsIntLitToInt hi)
+                (fun ($iv : Int) => $(← coerced x iv acc)))
           | _ => pure acc
       else
         `((none : Option (List Int)))
-    return ⟨prop, search, (bs.map (·.name)).toList ++ inner.names, allBounded⟩
+    -- How many assignments the enumeration would visit. An empty range
+    -- contributes 0, which is exactly right: nothing to evaluate.
+    let mut domainSize := inner.domainSize
+    for b in bs do
+      if let .ranged _ lo hi := b then
+        domainSize := domainSize * ((← tsIntLitValue hi) - (← tsIntLitValue lo)).toNat
+    return ⟨prop, search, (bs.map (·.name)).toList ++ inner.names,
+      allBounded, domainSize⟩
   | stx => throwErrorAt stx "unsupported property shape"
 
 /-- Successful proofs are added to the environment so the kernel — not just
@@ -196,6 +267,36 @@ def addTheoremSync (identity : Identity) (p proof : Expr) : Term.TermElabM Name 
     addDecl (.thmDecl { name := thmName, levelParams := [], type := p, value := proof })
   return thmName
 
+/-- The axioms every Lean proof may use without extending the trusted base. -/
+def standardAxioms : Array Name := #[``propext, ``Classical.choice, ``Quot.sound]
+
+/-- A proved annotation's reason. `method` names the rung's class — never a
+tactic, since dischargers change — but the trust level is read off the
+theorem's actual axioms rather than asserted by the rung, which could drift
+from what happened. Any axiom beyond the standard three means the result
+rests on more than the kernel; today that is native evaluation, which trusts
+the compiler and the host's floating point unit. -/
+def proofReason (method : String) (thmName : Name) : Term.TermElabM String := do
+  let axioms ← collectAxioms thmName
+  let extra := axioms.filter (!standardAxioms.contains ·)
+  if extra.isEmpty then
+    return s!"proved by {method}, kernel-checked as {thmName}"
+  return s!"proved by {method}, admitted as {thmName}; the result is " ++
+    s!"trusted from evaluation rather than checked by the kernel"
+
+/-- Degrades a rung's plain failure to a fall-through, so the rungs after it
+still get their turn. Lean's own `catch` already re-raises runtime exceptions
+(heartbeats, recursion depth) for `runRung` to classify, but the kernel
+reports its budget exhaustion as an ordinary error, and that is starvation
+rather than a rung that simply had nothing to say. -/
+def orFallThrough {α : Type} (x : Term.TermElabM α) :
+    Term.TermElabM (Option α) := do
+  try
+    return some (← x)
+  catch ex =>
+    if ← isKernelTimeout ex then throw ex
+    return none
+
 def attemptDecide (identity : Identity) (p : Expr)
     (searchStx : TSyntax `term) (names : List String) :
     Term.TermElabM (Option Verdict) := do
@@ -205,13 +306,44 @@ def attemptDecide (identity : Identity) (p : Expr)
     | return none
   try
     let thmName ← addTheoremSync identity p proof
-    -- Reasons name the rung's class, never the tactic: dischargers may change.
     return some ⟨identity, .Theorem,
-      "proved by a decision procedure over the bounded domain, " ++
-        s!"kernel-checked as {thmName}", none⟩
+      ← proofReason "a decision procedure over the bounded domain" thmName, none⟩
   catch ex =>
     if ← isKernelTimeout ex then throw ex
     return (← diagnoseDecideFailure identity p names searchStx)
+
+/-- Rung 1b: the same goal, evaluated by the compiler rather than the
+kernel. Vanilla Lean has no Float theory, so evaluation over the finite
+domain is the only route, and the kernel's is too slow past a few hundred
+elements. Falsity is reported directly here, so no instance reduction is
+needed to tell a false property from a stuck one. -/
+def attemptNativeDecide (identity : Identity) (p : Expr)
+    (searchStx : TSyntax `term) (names : List String) :
+    Term.TermElabM (Option Verdict) := do
+  let falseOnDomain : Verdict := ⟨identity, .GaveUp,
+    "the property is false on its bounded domain", none⟩
+  let some d ← (try some <$> Meta.mkDecide p catch _ => pure none)
+    | return none
+  -- Codegen and evaluation failures surface as ordinary elaboration errors,
+  -- not runtime exceptions, so nothing above would catch them: uncontained,
+  -- they escape the whole ladder as the annotation's Error.
+  let some result ← orFallThrough (Meta.nativeEqTrue `native_decide d)
+    | return none
+  match result with
+  | .notTrue =>
+    -- Established falsity is terminal; only the illustration is optional.
+    if names.isEmpty then return some falseOnDomain
+    if let some cex ← extractWitness names searchStx then
+      return some ⟨identity, .CounterSatisfiable,
+        "the property is false on its bounded domain", some cex⟩
+    return some falseOnDomain
+  | .success prf =>
+    let inst := d.appArg!
+    let proof := mkApp3 (mkConst ``of_decide_eq_true) p inst prf
+    let some thmName ← orFallThrough (addTheoremSync identity p proof)
+      | return none
+    return some ⟨identity, .Theorem,
+      ← proofReason "a decision procedure over the bounded domain" thmName, none⟩
 
 /-- Rung 2's outcome: a verdict, or the state rung 3 continues from — the
 root metavariable still linked to the unsolved residual goal. -/
@@ -230,9 +362,7 @@ def certifyRoot (identity : Identity) (p root residual : Expr) :
   if proof.hasExprMVar then return gaveUp
   try
     let thmName ← addTheoremSync identity p proof
-    return ⟨identity, .Theorem,
-      "proved by generic proof search, " ++
-        s!"kernel-checked as {thmName}", none⟩
+    return ⟨identity, .Theorem, ← proofReason "generic proof search" thmName, none⟩
   catch ex =>
     if ← isKernelTimeout ex then throw ex
     return gaveUp
@@ -307,7 +437,8 @@ def runRung {α : Type} (x : Term.TermElabM α) :
 
 def attemptLadder (identity : Identity) (propStx : TSyntax `term)
     (searchStx : TSyntax `term) (names : List String) (allBounded : Bool)
-    (budget : Nat) : Term.TermElabM Verdict := do
+    (domainSize : Nat) (budget : Nat) (evalCap : Nat) :
+    Term.TermElabM Verdict := do
   -- A plain catch would let the recursion limit through to the caller,
   -- which would read this phase's failure as proof search's; budget
   -- exhaustion still propagates, as the annotation's Timeout.
@@ -328,17 +459,32 @@ def attemptLadder (identity : Identity) (propStx : TSyntax `term)
     | .error v => return v
   -- Each rung runs under its own fresh window: the kernel overshoots a
   -- shared window by a large factor before its own counter fires, which
-  -- would let an early rung's blowout starve the ones after it. Bounded
-  -- domains give decide half and each later rung a quarter; unbounded
-  -- ones split the budget between the generic and grind rungs.
+  -- would let an early rung's blowout starve the ones after it. Four rungs
+  -- now. A bounded run splits the budget evenly across the two decide tiers
+  -- and the two symbolic ones; an unbounded run has no decide tier to fund,
+  -- so the symbolic rungs take half each. Every share floors at 1, since a
+  -- zero budget reads as unlimited.
+  let quarter := max (budget / 4) 1
   let half := max (budget / 2) 1
-  let lateShare := if allBounded then max (budget / 4) 1 else half
+  let decideShare := quarter
+  let lateShare := if allBounded then quarter else half
   let mut starved := false
   if allBounded then
     let (outcome, rungStarved) ←
-      runRung (withHeartbeats half (attemptDecide identity p searchStx names))
-    if rungStarved then starved := true
+      runRung (withHeartbeats decideShare (attemptDecide identity p searchStx names))
     if let some (some v) := outcome then return v
+    -- Kernel starvation is no longer the annotation's Timeout: the
+    -- evaluation tier gets the same goal, and it is orders of magnitude
+    -- faster. It runs compiled, though, so no budget can interrupt it once
+    -- started; a domain past the cap is left to the symbolic rungs, and the
+    -- starved kernel tier still reports the attempt as budget-bound.
+    let mut nStarved := false
+    if domainSize ≤ evalCap then
+      let (nOutcome, s) ←
+        runRung (withHeartbeats decideShare (attemptNativeDecide identity p searchStx names))
+      if let some (some v) := nOutcome then return v
+      nStarved := s
+    if rungStarved || nStarved then starved := true
   let (outcome, rungStarved) ←
     runRung (withHeartbeats lateShare (attemptGeneric identity p))
   if rungStarved then starved := true
@@ -380,6 +526,7 @@ elab_rules : command
             -- Floored at 1: maxHeartbeats 0 means unlimited, so a zero
             -- budget would leave the elaboration window uncontained.
             let budget := max (thales.heartbeats.get (← getOptions)) 1
+            let evalCap := thales.maxEvaluatedElements.get (← getOptions)
             -- The ladder caps each of its phases at the budget (or a split
             -- share of it); a blown cap anywhere in the attempt — the
             -- kernel's decide evaluation included — is this annotation's
@@ -388,7 +535,8 @@ elab_rules : command
             -- from: this catch is past the point of elaborating anything.
             liftTermElabM <|
               tryCatchRuntimeEx
-                (attemptLadder identity ep.prop ep.search ep.names ep.allBounded budget)
+                (attemptLadder identity ep.prop ep.search ep.names ep.allBounded
+                  ep.domainSize budget evalCap)
                 fun ex => do
                   if ex.isMaxHeartbeat || (← isKernelTimeout ex) then
                     return timeoutVerdict identity budget

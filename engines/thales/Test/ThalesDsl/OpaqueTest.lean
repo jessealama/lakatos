@@ -26,7 +26,7 @@ ts_def "Point#norm" := ts.opaque["ClassDeclaration"](4, 1)
 
 -- Later declarations elaborate normally.
 ts_def "after" := ts.fn() : ts.number { ts.return(ts.num[5]) }
-#guard decide (TsModel.after = (pure 5 : TsM Int))
+#guard decide (TsModel.after = (pure 5.0 : TsM Float))
 
 #eval show CoreM Unit from do
   let env ← getEnv

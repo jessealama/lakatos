@@ -40,19 +40,23 @@ Every construct is specified in three parts:
   the bound variables drawn from their (guarded) domains.
 - **Engine obligations**: the refuter samples assignments and evaluates;
   the prover quantifies universally over the (guarded) domain's
-  translation. TODO: each engine documents its domain coverage (e.g.
-  `number` sampling vs. `Float` translation).
+  translation. The prover's coverage is bounded `int`/`nat` binders: it
+  establishes a property by evaluating it over the whole domain, so a
+  domain it cannot enumerate is reported unproven rather than assumed.
 
 ### Binder domains
 
 `int`, `nat`, `number`, `boolean`, `string`, `bigint`.
 
-- **Truth conditions**: TODO per domain — notably `int`/`nat` denote the
-  mathematical (unbounded) integers/naturals as represented in the host
-  domain, `number` denotes IEEE-754 binary64 including the values a
-  TypeScript `number` can take. TODO: does `number` range over `NaN`,
-  signed zeros, infinities? (The refuter's current answer and the prover's
-  translation must agree; this is the first thing to nail down here.)
+- **Truth conditions**: `int`/`nat` denote the mathematical (unbounded)
+  integers/naturals; `number` denotes IEEE-754 binary64 and ranges over
+  every value a TypeScript `number` can take, `NaN`, `±∞` and `±0`
+  included. An interval guard on a `number` binder excludes `NaN` — which
+  satisfies no interval — and clips the infinities to the interval.
+  Because a binder's value is passed to a `number`-typed parameter, an
+  `int`/`nat` binder's values must be exactly representable as binary64;
+  values outside `±(2^53 − 1)` are not, which is why an interval reaching
+  beyond that range is refused rather than narrowed.
 
 ### Guards (`∈` constraints)
 
@@ -61,7 +65,13 @@ Every construct is specified in three parts:
   the whole-string language of the pattern (auto-anchored `^(?:…)$`).
 - **Engine obligations**: TODO — the refuter must sample only guarded
   values (not sample-and-discard); the prover carries the guard as a
-  hypothesis.
+  hypothesis. Where the two cannot denote the same set, the prover's must
+  be the larger: it may then fail to prove what the refuter cannot falsify,
+  but it can never establish a property the refuter can refute. A `number`
+  interval excludes an endpoint by adjacency, in an ordering where -0 sits
+  strictly below 0; IEEE comparison cannot separate the two zeros, so a
+  bound excluding one of them is carried in its closed form rather than
+  silently excluding the other as well.
 
 ### Connectives
 
@@ -82,8 +92,13 @@ Every construct is specified in three parts:
 - **Truth conditions**: `A ≡ B` holds iff `A` and `B` are the same value
   in the sense of SameValue (`Object.is`): no coercion, `NaN ≡ NaN`,
   `+0 ≢ -0`.
-- **Engine obligations**: TODO — the prover's translation must preserve
-  SameValue semantics per domain (in particular for `number`).
+- **Engine obligations**: `≡` is SameValue and `≢` its negation. The
+  refuter compares with `Object.is`. The prover compares binary64 values
+  for bit-level identity, which coincides with SameValue except that it
+  distinguishes `NaN` payloads where `Object.is` does not — so the prover
+  may decline to prove a true claim about distinct `NaN` payloads, but it
+  can never prove a false one. Strict equality (`===`) is a distinct
+  relation: IEEE, in which `NaN` differs from itself and `+0` equals `-0`.
 
 ### Islands (host expressions)
 

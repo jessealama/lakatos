@@ -11,3 +11,15 @@ ts_def "bump" := ts.fn(ts.param["x"](ts.number)) : ts.number {
   ts.forall(ts.binder["x"](ts.int)) {
     ts.eq(ts.call["bump"](ts.id["x"]), ts.id["x"])
   }
+
+-- A bounded domain far too large for either decide tier. Both starve, and
+-- ballIco_iff then hands the symbolic rungs the same property in hypothesis
+-- form, so the annotation reports an unsolved goal rather than a bare
+-- timeout. The residual names the Float fact that would have closed it.
+ts_def "wide" := ts.fn(ts.param["x"](ts.number)) : ts.number {
+  ts.return(ts.binop["*"](ts.id["x"], ts.id["x"]))
+}
+#thales_prove "wide.ts" "wide" "nonneg" :=
+  ts.forall(ts.binder["x"](ts.int, ts.range(0, 100000000))) {
+    ts.istrue(ts.binop[">="](ts.call["wide"](ts.id["x"]), ts.num[0]))
+  }

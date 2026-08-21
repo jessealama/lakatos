@@ -29,11 +29,31 @@ const FIXTURES = [
   },
   {
     file: 'theorem-arith.lean',
-    expected: Array.from({ length: 8 }, () => [
-      'add',
-      'Theorem',
-      /proved by a decision procedure over the bounded domain, kernel-checked as/,
-    ]),
+    expected: [
+      ...Array.from({ length: 7 }, () => [
+        'add',
+        'Theorem',
+        /proved by a decision procedure over the bounded domain, kernel-checked as/,
+      ]),
+      // Integer binder values coerced into a binary64 body: narrow enough
+      // for the kernel to enumerate, then wide enough that only evaluation
+      // can. The trust wording is read off each proof's axioms.
+      [
+        'dbl',
+        'Theorem',
+        /proved by a decision procedure over the bounded domain, kernel-checked as/,
+      ],
+      [
+        'dbl',
+        'Theorem',
+        /trusted from evaluation rather than checked by the kernel/,
+      ],
+      [
+        'add',
+        'Theorem',
+        /proved by a decision procedure over the bounded domain, kernel-checked as/,
+      ],
+    ],
   },
   {
     file: 'countersatisfiable.lean',
@@ -47,23 +67,29 @@ const FIXTURES = [
       ['bump', 'GaveUp', /^the property is false on its bounded domain$/],
     ],
   },
+  // The symbolic rungs have no binary64 theory to work with yet, so an
+  // unbounded binder leaves a residual goal rather than a proof. The
+  // residual is the point: it names the fact the theory worklist needs.
   {
-    file: 'theorem-generic.lean',
+    file: 'gaveup-generic.lean',
     expected: [
-      ['dbl', 'Theorem', /proved by generic proof search, kernel-checked as/],
-      ['dbl', 'Theorem', /proved by generic proof search, kernel-checked as/],
-      ['dbl', 'Theorem', /proved by generic proof search, kernel-checked as/],
+      ['dbl', 'GaveUp', /unsolved goal:[\s\S]*Float\.ofInt/],
+      ['dbl', 'GaveUp', /unsolved goal:[\s\S]*Float\.ofInt/],
+      ['dbl', 'GaveUp', /unsolved goal:[\s\S]*Float\.ofInt/],
     ],
   },
   {
-    file: 'theorem-grind.lean',
-    expected: [
-      ['mul', 'Theorem', /proved by generic proof search, kernel-checked as/],
-    ],
+    file: 'gaveup-grind.lean',
+    expected: [['mul', 'GaveUp', /unsolved goal:[\s\S]*Float\.ofInt/]],
   },
   {
     file: 'gaveup-goal.lean',
-    expected: [['bump', 'GaveUp', /unsolved goal:[\s\S]*x \+ 1 = x/]],
+    expected: [
+      ['bump', 'GaveUp', /unsolved goal:[\s\S]*\+ 1 = /],
+      // Bounded, but past the evaluation cap: no tier can settle it inside
+      // the annotation's budget, so the attempt reports as budget-bound.
+      ['wide', 'Timeout', /heartbeat budget/],
+    ],
   },
   {
     file: 'recdepth.lean',

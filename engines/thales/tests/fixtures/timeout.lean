@@ -24,7 +24,10 @@ set_option thales.heartbeats 1 in
 
 -- Kernel-side exhaustion is still budget exhaustion: the kernel's own
 -- deterministic timeout fires while the elaborator still has heartbeats,
--- and the generic rung cannot rescue a nonlinear goal.
+-- and the generic rung cannot rescue a nonlinear goal. The domain is put
+-- past the evaluation cap so the tier that would otherwise settle it — and
+-- that no budget can interrupt — stands down.
+set_option thales.maxEvaluatedElements 1000 in
 set_option thales.heartbeats 50000 in
 #thales_prove "stuck.ts" "slow" "forall (x: int ∈ [0, 1000000)) { slow(x) >= 0 }" :=
   ts.forall(ts.binder["x"](ts.int, ts.range(0, 1000000))) {
