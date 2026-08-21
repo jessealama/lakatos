@@ -12,6 +12,7 @@ function fakeSpawn(
   results: Array<
     Partial<{
       status: number | null;
+      signal: NodeJS.Signals;
       stdout: string;
       stderr: string;
       error: Error;
@@ -26,6 +27,7 @@ function fakeSpawn(
     // Omitted streams become null, as spawnSync yields on spawn failure.
     return {
       status: r.status ?? 0,
+      signal: r.signal ?? null,
       stdout: r.stdout ?? null,
       stderr: r.stderr ?? null,
       error: r.error,
@@ -177,6 +179,34 @@ describe('runLean', () => {
       ],
     });
     expect((res as { verdicts: unknown[] }).verdicts).toHaveLength(1);
+  });
+
+  test('an interrupted build stops the run before any artifact', () => {
+    const { spawn, calls } = fakeSpawn([
+      { status: null, signal: 'SIGINT' },
+      { status: 0, stdout: verdictLine('f', 'Theorem') },
+    ]);
+    const res = runLean(['a.lean'], '/engine', spawn);
+    expect(res).toEqual({ kind: 'interrupted', signal: 'SIGINT' });
+    expect(calls).toHaveLength(1);
+  });
+
+  test('an interrupted artifact stops the run: later files are not started', () => {
+    const { spawn, calls } = fakeSpawn([
+      { status: 0 }, // lake build
+      { status: 0, stdout: verdictLine('f', 'Theorem') },
+      { status: null, signal: 'SIGTERM' },
+      { status: 0, stdout: verdictLine('h', 'Theorem') },
+    ]);
+    const res = runLean(['a.lean', 'b.lean', 'c.lean'], '/engine', spawn);
+    // Verdicts a completed artifact already reported go down with the run:
+    // the CLI reports every annotation it planned to attempt as User.
+    expect(res).toEqual({ kind: 'interrupted', signal: 'SIGTERM' });
+    expect(calls.map((c) => c.args.at(-1))).toEqual([
+      'build',
+      path.resolve('a.lean'),
+      path.resolve('b.lean'),
+    ]);
   });
 
   test('malformed framed lines fail only their own file', () => {

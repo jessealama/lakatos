@@ -28,9 +28,9 @@ export default defineConfig({
         // from the baseline on 2026-08-17 — bump only happens via autoUpdate.
         autoUpdate: true,
         statements: 99.28,
-        branches: 97.78,
+        branches: 97.81,
         functions: 100,
-        lines: 99.48,
+        lines: 99.49,
       },
     },
   },

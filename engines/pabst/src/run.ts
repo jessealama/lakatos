@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync, rmSync } from "node:fs";
+import { interruptedBy, type InterruptSignal } from "../../../src/interrupt.js";
 import type { FileResult, VitestJson } from "./vitest-json.js";
 
 /** Where the spawned vitest writes its JSON results, relative to cwd. */
@@ -8,7 +9,23 @@ export const RESULTS_FILE = ".pabst/.last-run.json";
 export type RunResult =
   | { kind: "completed"; json: VitestJson }
   | { kind: "no-results"; status: number; stdout: string; stderr: string }
-  | { kind: "broken-run"; status: number; messages: string[] };
+  | { kind: "broken-run"; status: number; messages: string[] }
+  | { kind: "interrupted"; signal: InterruptSignal };
+
+/** What runTests needs back from a spawn; a subset of spawnSync's return. */
+export interface SpawnOutcome {
+  status: number | null;
+  signal?: NodeJS.Signals | null;
+  stdout: string | null;
+  stderr: string | null;
+  error?: Error;
+}
+
+type Spawn = (
+  cmd: string,
+  args: string[],
+  opts: { encoding: "utf8" },
+) => SpawnOutcome;
 
 /**
  * Run vitest over `target` (the generated out-files of one invocation, or a
@@ -21,6 +38,7 @@ export type RunResult =
 export function runTests(
   target: string | string[],
   resultsFile: string = RESULTS_FILE,
+  spawn: Spawn = spawnSync,
 ): RunResult {
   // A stale results file from a previous run must not be mistaken for this
   // run's output when vitest dies before writing one.
@@ -35,7 +53,7 @@ export function runTests(
     };
   }
   const targets = Array.isArray(target) ? target : [target];
-  const res = spawnSync(
+  const res = spawn(
     "npx",
     [
       "vitest",
@@ -46,6 +64,11 @@ export function runTests(
     ],
     { encoding: "utf8" },
   );
+  // A vitest killed by a termination signal took the whole run with it:
+  // whatever it left on disk is partial, so the interruption is reported
+  // before any results file is read.
+  const signal = interruptedBy(res);
+  if (signal !== undefined) return { kind: "interrupted", signal };
   let json;
   try {
     json = JSON.parse(readFileSync(resultsFile, "utf8"));

@@ -46,6 +46,19 @@
           }
         },
         {
+          "title": "interrupted",
+          "description": "Processing stopped at the user's request: a termination signal reached the run before this annotation was evaluated. reason names the signal.",
+          "additionalProperties": false,
+          "required": ["file", "function", "property", "szs", "reason"],
+          "properties": {
+            "file": { "type": "string" },
+            "function": { "$ref": "#/definitions/functionName" },
+            "property": { "type": "string", "minLength": 1 },
+            "szs": { "const": "User" },
+            "reason": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
           "title": "unsupported range",
           "description": "The prover never attempted the property: a range endpoint exceeds the safe integer range, so the bounded domain cannot be represented faithfully. reason names the offending endpoint(s).",
           "additionalProperties": false,

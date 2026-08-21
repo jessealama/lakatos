@@ -16,7 +16,9 @@ import type { IssueKind } from "../engines/pabst/src/contract.js";
  * name, an inaccessible subject); its `error` carries the diagnostic and
  * the run exits 2, the documented error mode. Timeout marks an annotation
  * whose proof attempt exceeded its per-annotation budget; later
- * annotations in the same file still run.
+ * annotations in the same file still run. User marks an annotation an
+ * interrupted run never finished evaluating: processing stopped at the
+ * user's request.
  */
 export const SZS_STATUSES = [
   "Theorem",
@@ -27,24 +29,26 @@ export const SZS_STATUSES = [
   "Inappropriate",
   "InputError",
   "Timeout",
+  "User",
 ] as const;
 
 export type SzsStatus = (typeof SZS_STATUSES)[number];
 
-/** Statuses no prover verdict can carry: extraction happens on the CLI
- * side, so the prove contract never has to represent them. */
-const REFUTE_ONLY_STATUSES = ["InputError"] as const;
+/** Statuses the CLI synthesizes, which no prover verdict can carry:
+ * extraction happens on the CLI side, and an interrupted engine reports
+ * nothing at all, so the prove contract never has to represent them. */
+const CLI_ONLY_STATUSES = ["InputError", "User"] as const;
 
-type RefuteOnlyStatus = (typeof REFUTE_ONLY_STATUSES)[number];
+type CliOnlyStatus = (typeof CLI_ONLY_STATUSES)[number];
 
 /** The verdict statuses the prove contract carries. ThalesDsl's `Szs`
  * enumerates exactly these — tests/verdict-contract.test.ts pins the two. */
-export type ProveStatus = Exclude<SzsStatus, RefuteOnlyStatus>;
+export type ProveStatus = Exclude<SzsStatus, CliOnlyStatus>;
 
 export const PROVE_STATUSES: ReadonlySet<ProveStatus> = new Set(
   SZS_STATUSES.filter(
     (s): s is ProveStatus =>
-      !(REFUTE_ONLY_STATUSES as readonly string[]).includes(s),
+      !(CLI_ONLY_STATUSES as readonly string[]).includes(s),
   ),
 );
 

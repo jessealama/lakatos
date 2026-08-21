@@ -95,6 +95,21 @@ export function joinRefuteVerdicts(
   });
 }
 
+/** Every annotation an interrupted run never finished evaluating, in
+ * envelope form: processing stopped at the user's request, and the
+ * reason names the signal that asked. Annotations already resolved
+ * before the engine ran keep the status they earned. */
+export function interruptedResults(
+  identities: PropertyIdentity[],
+  signal: string,
+): AnnotationResult[] {
+  return identities.map((id) => ({
+    ...id,
+    szs: "User" as const,
+    reason: `the run was interrupted (${signal})`,
+  }));
+}
+
 /** The whole envelope for a completed refutation run. */
 export function buildEnvelope(
   meta: RunMeta,
