@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { expectValidEnvelope } from "./helpers/envelope-schema.js";
 import type { Envelope } from "../src/envelope.js";
 import { SZS_STATUSES } from "../src/szs.js";
+import { QUALIFIED_NAME_PATTERN } from "../lemma/src/qualified-name.js";
 
 const META = {
   version: "0.1.0",
@@ -388,6 +389,20 @@ describe("envelope schema", () => {
     };
     collect(JSON.parse(schema));
     expect(named).toEqual(new Set(SZS_STATUSES));
+  });
+
+  it("keeps the schema's functionName pattern in sync with the builder's", () => {
+    const schema = JSON.parse(
+      readFileSync(
+        fileURLToPath(
+          new URL("../schemas/envelope.schema.json", import.meta.url),
+        ),
+        "utf8",
+      ),
+    );
+    expect(schema.definitions.functionName.pattern).toBe(
+      QUALIFIED_NAME_PATTERN.source,
+    );
   });
 
   it("rejects an unknown szs value", () => {

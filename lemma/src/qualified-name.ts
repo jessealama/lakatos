@@ -18,8 +18,9 @@ export function qualifiedName(
  * identifiers joined by `#` (instance) / `.` (static). Segments are ASCII
  * TypeScript identifiers; unicode identifiers (e.g. `précis`) are legal
  * TypeScript but not matched — a known gap, kept so the pattern stays within
- * JSON Schema's ECMA-regex subset (schemas/issue.schema.json embeds it; a
- * sync test keeps the two spellings identical).
+ * JSON Schema's ECMA-regex subset (schemas/envelope.schema.json and
+ * engines/pabst/schemas/issue.schema.json each embed it; a sync test keeps
+ * every spelling identical).
  */
 export const QUALIFIED_NAME_PATTERN =
   /^[$A-Za-z_][$A-Za-z0-9_]*([#.][$A-Za-z_][$A-Za-z0-9_]*)?$/;
