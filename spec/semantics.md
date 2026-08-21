@@ -65,7 +65,13 @@ Every construct is specified in three parts:
   the whole-string language of the pattern (auto-anchored `^(?:…)$`).
 - **Engine obligations**: TODO — the refuter must sample only guarded
   values (not sample-and-discard); the prover carries the guard as a
-  hypothesis.
+  hypothesis. Where the two cannot denote the same set, the prover's must
+  be the larger: it may then fail to prove what the refuter cannot falsify,
+  but it can never establish a property the refuter can refute. A `number`
+  interval excludes an endpoint by adjacency, in an ordering where -0 sits
+  strictly below 0; IEEE comparison cannot separate the two zeros, so a
+  bound excluding one of them is carried in its closed form rather than
+  silently excluding the other as well.
 
 ### Connectives
 

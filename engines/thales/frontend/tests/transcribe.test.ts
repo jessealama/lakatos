@@ -346,6 +346,40 @@ describe('annotations', () => {
     expect(out).toContain('ts.upper["<="](ts.fnum[1])');
   });
 
+  /** IEEE comparison cannot separate -0 from 0, so an open bound at the zero
+   * the interval still admits has to relax: the prover's domain must stay a
+   * superset of the refuter's, never a subset. */
+  describe('a number bound at a signed zero', () => {
+    const boundsOf = (interval: string) => {
+      const src = [
+        `/** @ensures{id} forall (a: number ∈ ${interval}) { f(a) ≡ a } */`,
+        'export function f(a: number): number { return a; }',
+      ].join('\n');
+      return transcribeSource(src, 'z.ts');
+    };
+
+    test('an open lower bound at -0 relaxes, since 0 is in the domain', () => {
+      expect(boundsOf('(-0, 1]')).toContain('ts.lower["<="](ts.fnum[-0])');
+    });
+
+    test('an open upper bound at 0 relaxes, since -0 is in the domain', () => {
+      expect(boundsOf('[-1, 0)')).toContain('ts.upper["<="](ts.fnum[0])');
+    });
+
+    test('an open lower bound at 0 stays strict: it excludes both zeros', () => {
+      expect(boundsOf('(0, 1]')).toContain('ts.lower["<"](ts.fnum[0])');
+    });
+
+    test('an open upper bound at -0 stays strict: it excludes both zeros', () => {
+      expect(boundsOf('[-1, -0)')).toContain('ts.upper["<"](ts.fnum[-0])');
+    });
+
+    test('a closed bound at either zero is unaffected', () => {
+      expect(boundsOf('[-0, 1]')).toContain('ts.lower["<="](ts.fnum[-0])');
+      expect(boundsOf('[-1, 0]')).toContain('ts.upper["<="](ts.fnum[0])');
+    });
+  });
+
   test('an unbounded nat binder lowers to ts.binder[..](ts.nat)', () => {
     const src = [
       '/** @ensures{p} forall (x: nat) { f(x) >= x } */',

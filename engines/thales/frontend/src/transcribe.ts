@@ -230,6 +230,23 @@ function unsupportedRangeReason(endpoints: string[]): string {
   );
 }
 
+/** The comparison a `number` bound lowers to. An interval excludes an endpoint
+ * by adjacency in an ordering where -0 sits below 0, which IEEE comparison
+ * cannot express: a strict bound at the zero the interval still admits would
+ * drop it. Relaxing just those two spellings keeps the prover's domain a
+ * superset of the refuter's, which is the safe direction to diverge in. */
+function numberBoundOp(
+  endpoint: string,
+  side: 'lower' | 'upper',
+  open: boolean | undefined,
+): '<' | '<=' {
+  if (!open) return '<=';
+  const v = Number(endpoint);
+  // Object.is separates the zeros where === does not.
+  const relax = side === 'lower' ? Object.is(v, -0) : Object.is(v, 0);
+  return relax ? '<=' : '<';
+}
+
 /** The `ballIco`-style lowering of a binder: inclusive lo, exclusive hi.
  * Lowering reads the domain the binder *denotes*, so `int ∈ [0, ∞)` and
  * `nat` — or `nat ∈ (-∞, 10]` and `nat ∈ [0, 10]` — cannot diverge. */
@@ -241,11 +258,11 @@ function binderConstructor(b: Binder): BinderLowering {
     const bounds: string[] = [];
     if (b.range?.min !== undefined)
       bounds.push(
-        `ts.lower[${leanStr(b.range.minOpen ? '<' : '<=')}](ts.fnum[${b.range.min}])`,
+        `ts.lower[${leanStr(numberBoundOp(b.range.min, 'lower', b.range.minOpen))}](ts.fnum[${b.range.min}])`,
       );
     if (b.range?.max !== undefined)
       bounds.push(
-        `ts.upper[${leanStr(b.range.maxOpen ? '<' : '<=')}](ts.fnum[${b.range.max}])`,
+        `ts.upper[${leanStr(numberBoundOp(b.range.max, 'upper', b.range.maxOpen))}](ts.fnum[${b.range.max}])`,
       );
     // No safe-integer clamp here: a number binder denotes binary64 values
     // directly, so there is no representability question to answer.
