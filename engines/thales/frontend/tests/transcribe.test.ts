@@ -346,6 +346,31 @@ describe('annotations', () => {
     expect(out).toContain('ts.upper["<="](ts.fnum[1])');
   });
 
+  describe('a number binder that is not fully bounded', () => {
+    const loweringOf = (binder: string) => {
+      const src = [
+        `/** @ensures{id} forall (${binder}) { f(a) ≡ a } */`,
+        'export function f(a: number): number { return a; }',
+      ].join('\n');
+      return transcribeSource(src, 'u.ts');
+    };
+
+    test('no interval at all carries no bounds', () => {
+      expect(loweringOf('a: number')).toContain('ts.binder["a"](ts.number)');
+    });
+
+    test('a half-bounded interval carries only the side it has', () => {
+      const lower = loweringOf('a: number ∈ [0, ∞)');
+      expect(lower).toContain(
+        'ts.binder["a"](ts.number, ts.lower["<="](ts.fnum[0]))',
+      );
+      const upper = loweringOf('a: number ∈ (-∞, 1]');
+      expect(upper).toContain(
+        'ts.binder["a"](ts.number, ts.upper["<="](ts.fnum[1]))',
+      );
+    });
+  });
+
   /** IEEE comparison cannot separate -0 from 0, so an open bound at the zero
    * the interval still admits has to relax: the prover's domain must stay a
    * superset of the refuter's, never a subset. */
