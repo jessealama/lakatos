@@ -43,7 +43,11 @@ const FIXTURES = [
         'Theorem',
         /proved by a decision procedure over the bounded domain, kernel-checked as/,
       ],
-      ['dbl', 'Theorem', /trusted from evaluation rather than checked by the kernel/],
+      [
+        'dbl',
+        'Theorem',
+        /trusted from evaluation rather than checked by the kernel/,
+      ],
       [
         'add',
         'Theorem',
