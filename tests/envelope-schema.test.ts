@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { expectValidEnvelope } from "./helpers/envelope-schema.js";
 import type { Envelope } from "../src/envelope.js";
 import { SZS_STATUSES } from "../src/szs.js";
-import { QUALIFIED_NAME_PATTERN } from "../lemma/src/qualified-name.js";
+import { QUALIFIED_NAME_PATTERN } from "../lemma/src/index.js";
 
 const META = {
   version: "0.1.0",

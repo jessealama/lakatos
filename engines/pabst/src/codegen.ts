@@ -1,10 +1,12 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { buildSpecs } from "./build-spec.js";
-import type { InvalidAnnotation } from "../../../lemma/src/extract.js";
+import {
+  type InvalidAnnotation,
+  mirrorPath,
+  qualifiedName,
+} from "../../../lemma/src/index.js";
 import { emit } from "./emit.js";
-import { mirrorPath } from "../../../lemma/src/mirror.js";
-import { qualifiedName } from "../../../lemma/src/qualified-name.js";
 import { randomSeed } from "./seed.js";
 
 export interface GeneratedProperty {

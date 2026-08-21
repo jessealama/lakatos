@@ -1,14 +1,13 @@
-import type { Binder, Domain } from "../../../lemma/src/binder.js";
-import {
-  bigintBounds,
-  intBounds,
-  numberConstraints,
-} from "../../../lemma/src/domains.js";
 import {
   anchoredSource,
+  bigintBounds,
+  type Binder,
+  type Domain,
+  intBounds,
+  LemmaError,
+  numberConstraints,
   regexGuardDomainError,
-} from "../../../lemma/src/regex-guard.js";
-import { LemmaError } from "../../../lemma/src/errors.js";
+} from "../../../lemma/src/index.js";
 
 export const DOMAIN_TABLE: Record<Domain, string> = {
   int: "fc.integer()",

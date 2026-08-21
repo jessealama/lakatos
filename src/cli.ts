@@ -8,12 +8,15 @@ import { findEngineRoot, runLean } from "../engines/thales/frontend/src/run.js";
 import { generate } from "../engines/pabst/src/codegen.js";
 import { runTests } from "../engines/pabst/src/run.js";
 import { parseSeed, randomSeed } from "../engines/pabst/src/seed.js";
-import { resolveFiles } from "../lemma/src/discover.js";
-import { LemmaError } from "../lemma/src/errors.js";
-import { qualifiedName } from "../lemma/src/qualified-name.js";
-import { extract, type InvalidAnnotation } from "../lemma/src/extract.js";
-import { parsePrefix } from "../lemma/src/prefix-parser.js";
-import { parseBody } from "../lemma/src/formula-parser.js";
+import {
+  extract,
+  type InvalidAnnotation,
+  LemmaError,
+  parseBody,
+  parsePrefix,
+  qualifiedName,
+  resolveFiles,
+} from "../lemma/src/index.js";
 import {
   joinProveVerdicts,
   joinRefuteVerdicts,

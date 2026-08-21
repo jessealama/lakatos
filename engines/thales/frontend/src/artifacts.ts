@@ -1,10 +1,10 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type {
-  InvalidAnnotation,
-  RawAnnotation,
-} from '../../../../lemma/src/extract.js';
-import { mirrorPath } from '../../../../lemma/src/mirror.js';
+import {
+  type InvalidAnnotation,
+  mirrorPath,
+  type RawAnnotation,
+} from '../../../../lemma/src/index.js';
 import { transcribe, type UntriedAnnotation } from './transcribe.js';
 
 export interface FileArtifact {

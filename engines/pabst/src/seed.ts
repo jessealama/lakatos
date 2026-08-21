@@ -1,5 +1,5 @@
 import { randomInt } from "node:crypto";
-import { LemmaError } from "../../../lemma/src/errors.js";
+import { LemmaError } from "../../../lemma/src/index.js";
 
 /** A fresh 32-bit unsigned integer, suitable as a fast-check seed. */
 export function randomSeed(): number {

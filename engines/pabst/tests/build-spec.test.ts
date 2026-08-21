@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildSpecs } from "../src/build-spec.js";
-import { LemmaError } from "../../../lemma/src/errors.js";
+import { LemmaError } from "../../../lemma/src/index.js";
 
 const FIXTURE = new URL("./fixtures/e2e/readme-example.ts", import.meta.url)
   .pathname;
