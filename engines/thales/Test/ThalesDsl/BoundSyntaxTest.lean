@@ -25,6 +25,48 @@ ts_def "idf" := ts.fn(ts.param["a"](ts.number)) : ts.number {
     ts.eq(ts.call["idf"](ts.id["a"]), ts.id["a"])
   }
 
+-- Infinite endpoints bound against the literal infinity: strict for an open
+-- side, non-strict for a closed one.
+
+-- `(0, ∞)`: strict on both sides.
+#thales_prove "b.ts" "idf" "posOpen" :=
+  ts.forall(ts.binder["a"](ts.number,
+      ts.lower["<"](ts.fnum[0]), ts.upper["<"](ts.fnum[Infinity]))) {
+    ts.eq(ts.call["idf"](ts.id["a"]), ts.id["a"])
+  }
+
+-- `(-∞, 1]`: a strict -∞ floor.
+#thales_prove "b.ts" "idf" "negOpen" :=
+  ts.forall(ts.binder["a"](ts.number,
+      ts.lower["<"](ts.fnum[-Infinity]), ts.upper["<="](ts.fnum[1]))) {
+    ts.eq(ts.call["idf"](ts.id["a"]), ts.id["a"])
+  }
+
+-- `[-∞, ∞]`: closed infinities, so the guards exclude only NaN.
+#thales_prove "b.ts" "idf" "closedInf" :=
+  ts.forall(ts.binder["a"](ts.number,
+      ts.lower["<="](ts.fnum[-Infinity]), ts.upper["<="](ts.fnum[Infinity]))) {
+    ts.eq(ts.call["idf"](ts.id["a"]), ts.id["a"])
+  }
+
+-- What the infinity guards admit, decided on the comparisons the
+-- hypotheses use: a strict bound rejects its own infinity and NaN; a
+-- closed bound admits its infinity and still rejects NaN. Core names
+-- neither special value, so NaN is constructed the way floatInf is.
+private def floatNaN : Float := 0.0 / 0.0
+
+example : ¬ (floatInf < floatInf) := by decide
+example : ¬ (floatNaN < floatInf) := by decide
+example : floatInf ≤ floatInf := by decide
+example : ¬ (floatNaN ≤ floatInf) := by decide
+example : ¬ (-floatInf < -floatInf) := by decide
+example : ¬ (-floatInf < floatNaN) := by decide
+example : -floatInf ≤ -floatInf := by decide
+example : ¬ (-floatInf ≤ floatNaN) := by decide
+-- A strict infinity bound still admits finite doubles.
+example : (12345.0 : Float) < floatInf := by decide
+example : -floatInf < (-12345.0 : Float) := by decide
+
 -- Signed zeros. An interval excludes an endpoint by adjacency in an ordering
 -- where -0 sits below 0, which IEEE comparison cannot express; these pin what
 -- each spelling's guard must admit, so it stays a superset of the refuter's

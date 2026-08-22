@@ -115,6 +115,8 @@ def tsFloatLitToTerm : TSyntax ``tsFloatLit → CommandElabM (TSyntax `term)
   | `(tsFloatLit| -$n:scientific) => `((-$n : Float))
   | `(tsFloatLit| $n:num) => `(($n : Float))
   | `(tsFloatLit| -$n:num) => `((-$n : Float))
+  | `(tsFloatLit| Infinity) => `(floatInf)
+  | `(tsFloatLit| -Infinity) => `((-floatInf))
   | stx => throwErrorAt stx "malformed float literal"
 
 /-- `ts#argN`: cannot capture, since `#` never occurs in a TS identifier. -/

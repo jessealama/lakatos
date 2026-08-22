@@ -16,6 +16,10 @@ def TsM.throw {α : Type} (e : JsError) : TsM α := .error e
 
 deriving instance DecidableEq for Except
 
+/-- IEEE positive infinity, the endpoint an infinite `number` bound compares
+against (core has `Float.isInf` but no constant). -/
+def floatInf : Float := 1.0 / 0.0
+
 /-- Bounded ∀ over the half-open interval `[lo, hi)` of `Int` — the shape
 Lemma binder guards elaborate to. Carries its own `Decidable` instance so
 `decide` works on bounded properties. -/

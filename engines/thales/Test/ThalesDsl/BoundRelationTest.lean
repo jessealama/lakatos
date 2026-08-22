@@ -84,9 +84,42 @@ private def isVar (s : TSyntax `term) : Bool :=
       return isVar loVar && !isVar lo && isVar hiVar && !isVar hi
   | _ => return false
 
--- An unbounded `number` binder carries no hypothesis at all — which is how
--- an infinite endpoint reaches the prover, and why it quantifies over more
--- than the refuter generates rather than less.
+-- An infinite endpoint's hypothesis compares against the literal infinity:
+-- `ts.fnum[Infinity]` is `floatInf` itself, `ts.fnum[-Infinity]` its
+-- negation, never a substituted finite stand-in.
+private def isFloatInf (s : TSyntax `term) : Bool :=
+  s.raw.isIdent && s.raw.getId.eraseMacroScopes == `floatInf
+
+private def isNegFloatInf (s : TSyntax `term) : Bool :=
+  match s with
+  | `((-$x)) => isFloatInf x
+  | _ => false
+
+/-- info: true -/
+#guard_msgs in
+#eval show Elab.Command.CommandElabM Bool from do
+  let p ← `(ts_prop| ts.forall(ts.binder["a"](ts.number,
+      ts.upper["<"](ts.fnum[Infinity]))) {
+    ts.eq(ts.call["idf"](ts.id["a"]), ts.id["a"])
+  })
+  match (← elabProp [] p).prop with
+  | `(∀ ($_ : Float), $v < $hi → $_) => return isVar v && isFloatInf hi
+  | _ => return false
+
+/-- info: true -/
+#guard_msgs in
+#eval show Elab.Command.CommandElabM Bool from do
+  let p ← `(ts_prop| ts.forall(ts.binder["a"](ts.number,
+      ts.lower["<"](ts.fnum[-Infinity]))) {
+    ts.eq(ts.call["idf"](ts.id["a"]), ts.id["a"])
+  })
+  match (← elabProp [] p).prop with
+  | `(∀ ($_ : Float), $lo < $v → $_) => return isVar v && isNegFloatInf lo
+  | _ => return false
+
+-- A binder with no interval at all carries no hypothesis: the whole of
+-- binary64, NaN included. Every interval guards both of its sides, so this
+-- is the only unguarded shape.
 /-- info: true -/
 #guard_msgs in
 #eval show Elab.Command.CommandElabM Bool from do

@@ -52,7 +52,9 @@ Every construct is specified in three parts:
   integers/naturals; `number` denotes IEEE-754 binary64 and ranges over
   every value a TypeScript `number` can take, `NaN`, `±∞` and `±0`
   included. An interval guard on a `number` binder excludes `NaN` — which
-  satisfies no interval — and clips the infinities to the interval.
+  satisfies no interval — and clips the infinities to the interval: an
+  infinite endpoint written open (`(-∞,` or `, ∞)`) excludes the infinity
+  of that sign, while one written closed (`[-∞,` or `, ∞]`) includes it.
   Because a binder's value is passed to a `number`-typed parameter, an
   `int`/`nat` binder's values must be exactly representable as binary64;
   values outside `±(2^53 − 1)` are not, which is why an interval reaching
@@ -71,7 +73,13 @@ Every construct is specified in three parts:
   interval excludes an endpoint by adjacency, in an ordering where -0 sits
   strictly below 0; IEEE comparison cannot separate the two zeros, so a
   bound excluding one of them is carried in its closed form rather than
-  silently excluding the other as well.
+  silently excluding the other as well. On the special values the engines
+  must agree exactly, since a property can hold on every finite double yet
+  fail at an infinity or `NaN`: an infinite endpoint is carried as a
+  comparison against that literal infinity — strict when open, non-strict
+  when closed, either of which IEEE comparison refuses for `NaN` — so any
+  interval denotes a `NaN`-free set to both engines, and only a binder
+  with no interval at all ranges over the whole domain, `NaN` included.
 
 ### Connectives
 
