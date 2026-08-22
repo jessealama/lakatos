@@ -496,6 +496,90 @@ describe('annotations', () => {
     expect(provesOf(src, 'f.ts')).toEqual(['#thales_prove "f.ts" "f" "p"']);
   });
 
+  describe('guard-chain implications structure as nested ts.imp', () => {
+    test('a single guard wraps the conclusion', () => {
+      const src = [
+        '/** @ensures{mono} forall (x: int ∈ [0, 10)) (y: int ∈ [0, 10)) { x <= y → f(x) <= f(y) } */',
+        'function f(a: number): number { return a; }',
+      ].join('\n');
+      expect(provesOf(src)).toEqual([
+        '#thales_prove "t.ts" "f" "mono" :=',
+        '  ts.forall(ts.binder["x"](ts.int, ts.range(0, 10)), ts.binder["y"](ts.int, ts.range(0, 10))) {',
+        '    ts.imp(ts.binop["<="](ts.id["x"], ts.id["y"])) { ts.istrue(ts.binop["<="](ts.call["f"](ts.id["x"]), ts.call["f"](ts.id["y"]))) }',
+        '  }',
+      ]);
+    });
+
+    test('a two-guard chain nests right, in guard order', () => {
+      const src = [
+        '/** @ensures{p} forall (x: int ∈ [0, 10)) { x >= 1 → x >= 2 → f(x) >= 2 } */',
+        'function f(a: number): number { return a; }',
+      ].join('\n');
+      expect(provesOf(src)).toEqual([
+        '#thales_prove "t.ts" "f" "p" :=',
+        '  ts.forall(ts.binder["x"](ts.int, ts.range(0, 10))) {',
+        '    ts.imp(ts.binop[">="](ts.id["x"], ts.num[1])) { ts.imp(ts.binop[">="](ts.id["x"], ts.num[2])) { ts.istrue(ts.binop[">="](ts.call["f"](ts.id["x"]), ts.num[2])) } }',
+        '  }',
+      ]);
+    });
+
+    test('an equation conclusion keeps its ts.eq shape under the guard', () => {
+      const src = [
+        '/** @ensures{p} forall (x: int ∈ [0, 10)) { x >= 1 → f(x) ≡ x } */',
+        'function f(a: number): number { return a; }',
+      ].join('\n');
+      expect(provesOf(src)).toEqual([
+        '#thales_prove "t.ts" "f" "p" :=',
+        '  ts.forall(ts.binder["x"](ts.int, ts.range(0, 10))) {',
+        '    ts.imp(ts.binop[">="](ts.id["x"], ts.num[1])) { ts.eq(ts.call["f"](ts.id["x"]), ts.id["x"]) }',
+        '  }',
+      ]);
+    });
+
+    test('an antecedent that is not valid JavaScript falls back to the bare form', () => {
+      const src = [
+        '/** @ensures{p} forall (x: int ∈ [0, 10)) { x is wonderful → f(x) >= 0 } */',
+        'function f(a: number): number { return a; }',
+      ].join('\n');
+      expect(provesOf(src)).toEqual(['#thales_prove "t.ts" "f" "p"']);
+    });
+
+    test('an equation antecedent falls back to the bare form', () => {
+      // `x ≡ 0` desugars to Object.is, which has no boolean-expression
+      // node in the DSL; emitting it opaquely would misreport an in-spec
+      // formula as Inappropriate, so the property stays NotTried.
+      const src = [
+        '/** @ensures{p} forall (x: int ∈ [0, 10)) { x ≡ 0 → f(x) ≡ 0 } */',
+        'function f(a: number): number { return a; }',
+      ].join('\n');
+      expect(provesOf(src)).toEqual(['#thales_prove "t.ts" "f" "p"']);
+    });
+
+    test('a negated-equation antecedent falls back to the bare form', () => {
+      const src = [
+        '/** @ensures{p} forall (x: int ∈ [0, 10)) { x ≢ 0 → f(x) ≡ x } */',
+        'function f(a: number): number { return a; }',
+      ].join('\n');
+      expect(provesOf(src)).toEqual(['#thales_prove "t.ts" "f" "p"']);
+    });
+
+    test('a connective antecedent falls back to the bare form', () => {
+      const src = [
+        '/** @ensures{p} forall (x: int ∈ [0, 10)) { x >= 1 ∧ x >= 2 → f(x) >= 2 } */',
+        'function f(a: number): number { return a; }',
+      ].join('\n');
+      expect(provesOf(src)).toEqual(['#thales_prove "t.ts" "f" "p"']);
+    });
+
+    test('a connective conclusion falls back to the bare form', () => {
+      const src = [
+        '/** @ensures{p} forall (x: int ∈ [0, 10)) { x >= 1 → f(x) >= 0 ∨ f(x) < 0 } */',
+        'function f(a: number): number { return a; }',
+      ].join('\n');
+      expect(provesOf(src)).toEqual(['#thales_prove "t.ts" "f" "p"']);
+    });
+  });
+
   test('a connective body falls back to the bare NotTried form', () => {
     const src = [
       '/** @ensures{p} forall (a: int ∈ [0, 5)) { f(a) >= 0 ∧ f(a) < 9 } */',
