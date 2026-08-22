@@ -67,6 +67,20 @@ const FIXTURES = [
       ['bump', 'GaveUp', /^the property is false on its bounded domain$/],
     ],
   },
+  {
+    file: 'guard-chain.lean',
+    expected: [
+      ['idg', 'Theorem', /decision procedure over the bounded domain/],
+      ['idg', 'Theorem', /decision procedure over the bounded domain/],
+      // A constant-false guard: vacuous truth, still a Theorem.
+      ['idg', 'Theorem', /decision procedure over the bounded domain/],
+      // A guard under a number binder reaches the symbolic rungs, which
+      // close the identity case from the guard hypothesis.
+      ['idg', 'Theorem', /generic proof search/],
+      // The witness respects the guard: never x = 0.
+      ['idg', 'CounterSatisfiable', /false/, { x: 5 }],
+    ],
+  },
   // The symbolic rungs have no binary64 theory to work with yet, so an
   // unbounded binder leaves a residual goal rather than a proof. The
   // residual is the point: it names the fact the theory worklist needs.

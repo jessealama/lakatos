@@ -56,7 +56,9 @@ structure ElabProp where
 nested `ballIco`, unbounded int/nat binders plain `∀`s (nat carries its
 nonnegativity hypothesis) whose values coerce into the Float body at the
 call boundary, `≡` equations compare `TsM Float` results, boolean
-islands must evaluate to `pure true` — plus a parallel witness-search term
+islands must evaluate to `pure true`, `ts.imp` guards thread the same
+`= pure true` shape as hypotheses in front of the conclusion — plus a
+parallel witness-search term
 of type `Option (List Int)` (one `findCexIco` per binder, a decidable test
 at the leaf) and the binder names in binder order. -/
 partial def elabProp (vars : List String) :
@@ -75,6 +77,19 @@ partial def elabProp (vars : List String) :
     let prop ← `(($t : TsM Bool) = pure true)
     let search ← `(if ($t : TsM Bool) = pure true then (none : Option (List Int)) else some [])
     return ⟨prop, search, [], true, 1⟩
+  | `(ts_prop| ts.imp($g:ts_expr) {$body:ts_prop}) => do
+    let gt ← evalExpr vars .bool g
+    let inner ← elabProp vars body
+    -- The guard is a hypothesis, not a connective: it must evaluate to
+    -- `pure true`, so a guard that returns false OR throws excludes the
+    -- assignment (the refuter instead surfaces a thrown guard as a
+    -- `threw` issue — a documented divergence, Error never contradicting
+    -- a Theorem). A witness must satisfy the guard the same way.
+    let prop ← `((($gt : TsM Bool) = pure true) → $(inner.prop))
+    let search ←
+      `(if ($gt : TsM Bool) = pure true then $(inner.search)
+        else (none : Option (List Int)))
+    return ⟨prop, search, inner.names, inner.allBounded, inner.domainSize⟩
   | `(ts_prop| ts.forall($binders:ts_binder,*) {$body:ts_prop}) => do
     let bs ← binders.getElems.mapM fun b => match b with
       | `(ts_binder| ts.binder[$x:str](ts.int, ts.range($lo:tsIntLit, $hi:tsIntLit))) =>

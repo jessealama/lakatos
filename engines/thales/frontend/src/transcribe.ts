@@ -6,6 +6,7 @@ import {
   EmptyAfterClampError,
   extractFromSource,
   intInterval,
+  type Formula,
   type InvalidAnnotation,
   parseBody,
   parsePrefix,
@@ -387,15 +388,50 @@ function equationSides(
   return [e.arguments[0]!, e.arguments[1]!];
 }
 
+/** Whether a guard atom is a desugared equation (`Object.is`, possibly
+ * negated). The DSL's guard slot is a boolean expression with IEEE
+ * semantics only — SameValue has no node there — and emitting the call
+ * opaquely would misreport an in-spec formula as Inappropriate, so an
+ * equation guard degrades the property to bare instead. */
+function isEquationGuard(e: ts.Expression): boolean {
+  const inner = unwrapParens(e);
+  if (
+    ts.isPrefixUnaryExpression(inner) &&
+    inner.operator === ts.SyntaxKind.ExclamationToken
+  ) {
+    return equationSides(unwrapParens(inner.operand)) !== undefined;
+  }
+  return equationSides(inner) !== undefined;
+}
+
 type PropReading =
   | { kind: 'structured'; binders: string[]; body: string }
   | { kind: 'unsupported-range'; reason: string }
   | { kind: 'bare' };
 
+/** The body shapes this slice can structure, as guard atoms around a
+ * conclusion atom: a bare atom, or a top-level implication chain whose
+ * antecedents and conclusion are all atoms — exactly the shape the refuter
+ * lowers to fc.pre discards. Any other connective is undefined (bare). */
+function chainReading(
+  ast: Formula,
+): { guards: string[]; conclusion: string } | undefined {
+  if (ast.kind === 'atom') return { guards: [], conclusion: ast.js };
+  if (ast.kind !== 'implication') return undefined;
+  if (ast.consequent.kind !== 'atom') return undefined;
+  const guards: string[] = [];
+  for (const a of ast.antecedents) {
+    if (a.kind !== 'atom') return undefined;
+    guards.push(a.js);
+  }
+  return { guards, conclusion: ast.consequent.js };
+}
+
 /** The `ts_prop` reading of a Lemma formula: unbounded int/nat domains
  * structure like bounded ones; bare when this slice cannot express it
  * (non-integer domains, half-bounded ranges with no DSL binder shape,
- * connectives, or a formula the Lemma parser rejects), unsupported-range
+ * connectives beyond a top-level implication chain of atoms, equation
+ * guards, or a formula the Lemma parser rejects), unsupported-range
  * only when a safe-integer clamp is the SOLE blocker — an annotation this
  * slice could not have structured anyway degrades to bare, whatever its
  * ranges. The
@@ -412,10 +448,17 @@ function structuredProp(formula: string): PropReading {
       if (lowered.kind === 'clamped') clamped.push(...lowered.endpoints);
       else binderCtors.push(lowered.ctor);
     }
-    const ast = parseBody(body);
-    if (ast.kind !== 'atom') return { kind: 'bare' };
-    const parsed = parseAtomExpr(ast.js);
+    const chain = chainReading(parseBody(body));
+    if (chain === undefined) return { kind: 'bare' };
+    const parsed = parseAtomExpr(chain.conclusion);
     if (parsed === undefined) return { kind: 'bare' };
+    const guardCtors: string[] = [];
+    for (const g of chain.guards) {
+      const gp = parseAtomExpr(g);
+      if (gp === undefined) return { kind: 'bare' };
+      if (isEquationGuard(gp.expr)) return { kind: 'bare' };
+      guardCtors.push(transcribeExpr(unwrapParens(gp.expr), gp.sf));
+    }
     if (clamped.length > 0) {
       return {
         kind: 'unsupported-range',
@@ -424,10 +467,14 @@ function structuredProp(formula: string): PropReading {
     }
     const expr = unwrapParens(parsed.expr);
     const sides = equationSides(expr);
-    const bodyCtor =
+    const conclusionCtor =
       sides === undefined
         ? `ts.istrue(${transcribeExpr(expr, parsed.sf)})`
         : `ts.eq(${transcribeExpr(sides[0], parsed.sf)}, ${transcribeExpr(sides[1], parsed.sf)})`;
+    const bodyCtor = guardCtors.reduceRight(
+      (acc, g) => `ts.imp(${g}) { ${acc} }`,
+      conclusionCtor,
+    );
     return { kind: 'structured', binders: binderCtors, body: bodyCtor };
   } catch (e) {
     // A clamp-emptied interval leaves no domain to prove over, whatever
