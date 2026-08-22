@@ -36,3 +36,11 @@ ts_def "dblNorm" := ts.fn(ts.param["x"](ts.number)) : ts.number {
 
 example (x : Float) : TsModel.dblNorm x = (pure (x * 2) : TsM Float) := by
   simp only [TsModel.dblNorm, tsm_pure_bind]
+
+-- Division sheds its monadic wrapping like the other arithmetic operators.
+ts_def "halveNorm" := ts.fn(ts.param["x"](ts.number)) : ts.number {
+  ts.return(ts.binop["/"](ts.id["x"], ts.num[2]))
+}
+
+example (x : Float) : TsModel.halveNorm x = (pure (x / 2) : TsM Float) := by
+  simp only [TsModel.halveNorm, tsm_pure_bind]

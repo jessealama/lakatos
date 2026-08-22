@@ -156,6 +156,7 @@ partial def evalExpr (vars : List String) (expected : ValTy) :
     | "+" => arith (← `(fun x y => x + y))
     | "-" => arith (← `(fun x y => x - y))
     | "*" => arith (← `(fun x y => x * y))
+    | "/" => arith (← `(fun x y => x / y))
     | "<" => cmp (← `(fun x y => Float.lt x y))
     | "<=" => cmp (← `(fun x y => Float.le x y))
     | ">" => cmp (← `(fun x y => Float.lt y x))
