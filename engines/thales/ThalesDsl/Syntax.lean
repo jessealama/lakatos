@@ -74,6 +74,8 @@ declare_syntax_cat ts_prop
 syntax "ts.eq(" ts_expr ", " ts_expr ")" : ts_prop
 syntax "ts.istrue(" ts_expr ")" : ts_prop
 syntax "ts.forall(" ts_binder,* ")" " {" ts_prop "}" : ts_prop
+-- A guard in front of a conclusion; a chain g1 → g2 → concl nests right.
+syntax "ts.imp(" ts_expr ")" " {" ts_prop "}" : ts_prop
 
 /-- States a per-annotation proof obligation and reports its verdict as one
 JSON line on stdout. Without a structured property the command is a stub

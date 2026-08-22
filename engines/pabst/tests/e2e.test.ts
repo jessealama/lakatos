@@ -68,6 +68,10 @@ const exhaustedSrc = path.join(
   root,
   "engines/pabst/tests/fixtures/e2e/precondition-exhausted.ts",
 );
+const throwingGuardSrc = path.join(
+  root,
+  "engines/pabst/tests/fixtures/e2e/throwing-guard.ts",
+);
 const connectivesSrc = path.join(
   root,
   "engines/pabst/tests/fixtures/e2e/connectives.ts",
@@ -331,6 +335,26 @@ describe("end-to-end", () => {
       expect(Object.keys(issuesOf(env)[0]!.counterexample ?? {})).toEqual([
         "x",
       ]);
+    },
+  );
+
+  it(
+    "a guard that throws is reported as kind 'threw', not discarded",
+    { timeout: 30000 },
+    () => {
+      // The prover reads the same thrown guard as a failed `= pure true`
+      // hypothesis — vacuous truth. Divergence documented on both sides.
+      const [r] = generate([throwingGuardSrc], ".pabst", 3);
+      expect(r).toBeDefined();
+      const env = run(r!);
+      expect(env.failed).toBeGreaterThan(0);
+      expect(issuesOf(env)).toHaveLength(1);
+      expectValidIssue(issuesOf(env)[0]);
+      expect(issuesOf(env)[0]).toMatchObject({
+        property: "guardThrows",
+        kind: "threw",
+      });
+      expect(issuesOf(env)[0]!.error).toContain("negative");
     },
   );
 

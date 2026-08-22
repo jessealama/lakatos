@@ -24,7 +24,8 @@ the business of the e2e and unit suites.
   could not read back, which ships the falsity without the illustration.
 - `nottried/` — the transcriber degrades the property (`NotTried`): it has
   no structured reading (a half-bounded range the DSL has no binder shape
-  for, a connective), or a range endpoint exceeds the safe integer range.
+  for, a connective other than a top-level implication chain of atoms), or
+  a range endpoint exceeds the safe integer range.
 - `inappropriate/` — the function uses a construct the transcriber cannot
   map (`Inappropriate`).
 - `timeout/` — every annotation must report `Timeout` under the reduced
