@@ -30,6 +30,16 @@ ts_def "sq" := ts.fn(ts.param["x"](ts.number)) : ts.number {
 }
 #guard decide (TsModel.sq (-4.0) = (pure 16.0 : TsM Float))
 
+-- ts.binop "/" — total IEEE division: finite quotients, signed infinities
+-- at zero divisors, NaN at 0/0.
+ts_def "ratio" := ts.fn(ts.param["a"](ts.number), ts.param["b"](ts.number)) : ts.number {
+  ts.return(ts.binop["/"](ts.id["a"], ts.id["b"]))
+}
+#guard decide (TsModel.ratio 7.0 2.0 = (pure 3.5 : TsM Float))
+#guard decide (TsModel.ratio 1.0 0.0 = (pure (1.0 / 0.0) : TsM Float))
+#guard decide (TsModel.ratio (-1.0) 0.0 = (pure (-(1.0 / 0.0)) : TsM Float))
+#guard decide (TsModel.ratio 0.0 0.0 = (pure (0.0 / 0.0) : TsM Float))
+
 -- ts.call: models call previously registered models.
 ts_def "twice" := ts.fn(ts.param["x"](ts.number)) : ts.number {
   ts.return(ts.call["add"](ts.id["x"], ts.id["x"]))
