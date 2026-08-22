@@ -346,7 +346,12 @@ describe('annotations', () => {
     expect(out).toContain('ts.upper["<="](ts.fnum[1])');
   });
 
-  describe('a number binder that is not fully bounded', () => {
+  /** An interval always guards both sides: an ∞ endpoint bounds against the
+   * literal infinity, strictly when open (excluding that infinity and NaN)
+   * and non-strictly when closed (excluding only NaN, which no comparison
+   * admits). Only a binder with no interval at all leaves the whole Float
+   * line — NaN included — matching the refuter's bare fc.double(). */
+  describe('a number binder with infinite endpoints', () => {
     const loweringOf = (binder: string) => {
       const src = [
         `/** @ensures{id} forall (${binder}) { f(a) ≡ a } */`,
@@ -359,14 +364,33 @@ describe('annotations', () => {
       expect(loweringOf('a: number')).toContain('ts.binder["a"](ts.number)');
     });
 
-    test('a half-bounded interval carries only the side it has', () => {
-      const lower = loweringOf('a: number ∈ [0, ∞)');
-      expect(lower).toContain(
-        'ts.binder["a"](ts.number, ts.lower["<="](ts.fnum[0]))',
+    test('an open ∞ side bounds strictly against that infinity', () => {
+      expect(loweringOf('a: number ∈ [0, ∞)')).toContain(
+        'ts.binder["a"](ts.number, ts.lower["<="](ts.fnum[0]), ts.upper["<"](ts.fnum[Infinity]))',
       );
-      const upper = loweringOf('a: number ∈ (-∞, 1]');
-      expect(upper).toContain(
-        'ts.binder["a"](ts.number, ts.upper["<="](ts.fnum[1]))',
+      expect(loweringOf('a: number ∈ (-∞, 1]')).toContain(
+        'ts.binder["a"](ts.number, ts.lower["<"](ts.fnum[-Infinity]), ts.upper["<="](ts.fnum[1]))',
+      );
+    });
+
+    test('(0, ∞) is the epic shape: strict on both sides', () => {
+      expect(loweringOf('a: number ∈ (0, ∞)')).toContain(
+        'ts.binder["a"](ts.number, ts.lower["<"](ts.fnum[0]), ts.upper["<"](ts.fnum[Infinity]))',
+      );
+    });
+
+    test('(-∞, ∞) bounds strictly against both infinities', () => {
+      expect(loweringOf('a: number ∈ (-∞, ∞)')).toContain(
+        'ts.binder["a"](ts.number, ts.lower["<"](ts.fnum[-Infinity]), ts.upper["<"](ts.fnum[Infinity]))',
+      );
+    });
+
+    test('a closed ∞ side bounds non-strictly, excluding only NaN', () => {
+      expect(loweringOf('a: number ∈ [-∞, ∞]')).toContain(
+        'ts.binder["a"](ts.number, ts.lower["<="](ts.fnum[-Infinity]), ts.upper["<="](ts.fnum[Infinity]))',
+      );
+      expect(loweringOf('a: number ∈ (-∞, ∞]')).toContain(
+        'ts.binder["a"](ts.number, ts.lower["<"](ts.fnum[-Infinity]), ts.upper["<="](ts.fnum[Infinity]))',
       );
     });
   });

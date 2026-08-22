@@ -244,30 +244,48 @@ export interface GuardBound {
    * `lo.op` compares `lo.val` against the bound variable, `hi.op` the
    * variable against `hi.val`. */
   val: number;
+  /** The endpoint as the DSL literal the emitted bound carries. */
+  lit: string;
 }
 
 /** The guard a `number` binder's interval lowers to, as comparisons rather
- * than as DSL text. An absent side is genuinely unbounded — an infinite
- * endpoint reaches the prover as no bound at all, which the refuter instead
- * treats as an excluded ±Infinity. Both divergences run in the safe
- * direction, and reporting the guard this way is what lets a test sample the
- * refuter's domain and check the prover's contains it. */
+ * than as DSL text. An interval guards both of its sides: an ∞ endpoint
+ * bounds against the literal infinity — strictly when open, so that sign's
+ * infinity is excluded, non-strictly when closed, which IEEE comparison
+ * still refuses for NaN. That makes any interval NaN-free, matching the
+ * refuter's unconditional noNaN, and reporting the guard this way is what
+ * lets a test pin the two engines' domains against each other. Only a
+ * binder with no interval at all is unguarded. */
 export function numberGuard(range: Binder['range']): {
   lo?: GuardBound;
   hi?: GuardBound;
 } {
-  const guard: { lo?: GuardBound; hi?: GuardBound } = {};
-  if (range?.min !== undefined)
-    guard.lo = {
-      op: numberBoundOp(range.min, 'lower', range.minOpen),
-      val: Number(range.min),
-    };
-  if (range?.max !== undefined)
-    guard.hi = {
-      op: numberBoundOp(range.max, 'upper', range.maxOpen),
-      val: Number(range.max),
-    };
-  return guard;
+  if (range === undefined) return {};
+  const lo =
+    range.min !== undefined
+      ? {
+          op: numberBoundOp(range.min, 'lower', range.minOpen),
+          val: Number(range.min),
+          lit: range.min,
+        }
+      : {
+          op: range.minOpen ? ('<' as const) : ('<=' as const),
+          val: Number.NEGATIVE_INFINITY,
+          lit: '-Infinity',
+        };
+  const hi =
+    range.max !== undefined
+      ? {
+          op: numberBoundOp(range.max, 'upper', range.maxOpen),
+          val: Number(range.max),
+          lit: range.max,
+        }
+      : {
+          op: range.maxOpen ? ('<' as const) : ('<=' as const),
+          val: Number.POSITIVE_INFINITY,
+          lit: 'Infinity',
+        };
+  return { lo, hi };
 }
 
 /** The `ballIco`-style lowering of a binder: inclusive lo, exclusive hi.
@@ -277,17 +295,18 @@ function binderConstructor(b: Binder): BinderLowering {
   if (b.domain === 'number') {
     // A number interval's openness cannot be normalized away the way an
     // integer one's can, so each side keeps its own comparison; an absent
-    // endpoint just means that side is unbounded. The comparisons come from
-    // numberGuard so that what is emitted and what is checked cannot drift.
+    // endpoint bounds against the literal infinity, and only an absent
+    // interval is unguarded. The comparisons come from numberGuard so that
+    // what is emitted and what is checked cannot drift.
     const guard = numberGuard(b.range);
     const bounds: string[] = [];
     if (guard.lo)
       bounds.push(
-        `ts.lower[${leanStr(guard.lo.op)}](ts.fnum[${b.range?.min}])`,
+        `ts.lower[${leanStr(guard.lo.op)}](ts.fnum[${guard.lo.lit}])`,
       );
     if (guard.hi)
       bounds.push(
-        `ts.upper[${leanStr(guard.hi.op)}](ts.fnum[${b.range?.max}])`,
+        `ts.upper[${leanStr(guard.hi.op)}](ts.fnum[${guard.hi.lit}])`,
       );
     // No safe-integer clamp here: a number binder denotes binary64 values
     // directly, so there is no representability question to answer.

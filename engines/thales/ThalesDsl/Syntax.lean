@@ -13,8 +13,10 @@ syntax tsIntLit := ("-")? num
 
 /-- Float literals in binder bounds. Lean's decimal parsing is bit-identical
 to JavaScript's, so an endpoint transcribes verbatim and lands on the double
-the annotation meant. -/
-syntax tsFloatLit := ("-")? (scientific <|> num)
+the annotation meant. `Infinity` is JavaScript's spelling; an infinite
+endpoint bounds against the literal infinity, never a substituted finite
+stand-in. -/
+syntax tsFloatLit := ("-")? (scientific <|> num <|> "Infinity")
 
 declare_syntax_cat ts_type
 syntax "ts.number" : ts_type
