@@ -62,6 +62,7 @@ describe("cli prove", () => {
         function: "annotated",
         property: "pos",
         szs: "Theorem",
+        axioms: [],
       },
     ]);
     expect(env.seed).toBeUndefined();
@@ -143,6 +144,7 @@ describe("cli prove", () => {
           function: "small",
           property: "pos",
           szs: "Theorem",
+          axioms: [],
         },
       ]),
     );
@@ -338,6 +340,7 @@ describe("cli prove", () => {
           function: "annotated",
           property: "pos",
           szs: "Theorem",
+          axioms: [],
         },
         {
           file: "other.ts",

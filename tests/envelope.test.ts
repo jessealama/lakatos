@@ -242,7 +242,7 @@ describe("joinProveVerdicts", () => {
     expect(join).toEqual({
       kind: "joined",
       annotations: [
-        { ...id("a"), szs: "Theorem" },
+        { ...id("a"), szs: "Theorem", axioms: [] },
         { ...id("b"), szs: "Inappropriate", reason: "await is unmapped" },
         { ...id("c"), szs: "Error", error: "elaboration failed" },
         { ...id("d"), szs: "GaveUp", reason: "decide failed" },
@@ -291,6 +291,19 @@ describe("joinProveVerdicts", () => {
         [verdict("a", "Theorem"), verdict("a", "GaveUp")],
       ).kind,
     ).toBe("mismatched");
+  });
+
+  it("a Theorem verdict ships the axioms its proof rests on", () => {
+    const join = joinProveVerdicts(
+      [id("a")],
+      [{ ...verdict("a", "Theorem"), axioms: ["Lean.ofReduceBool"] }],
+    );
+    expect(join).toEqual({
+      kind: "joined",
+      annotations: [
+        { ...id("a"), szs: "Theorem", axioms: ["Lean.ofReduceBool"] },
+      ],
+    });
   });
 
   it("a CounterSatisfiable verdict ships kind falsified and the counterexample", () => {

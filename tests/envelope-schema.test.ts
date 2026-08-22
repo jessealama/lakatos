@@ -121,10 +121,77 @@ describe("envelope schema", () => {
     const envelope: Envelope = {
       ...META,
       annotations: [
-        { file: "f.ts", function: "f", property: "p", szs: "Theorem" },
+        {
+          file: "f.ts",
+          function: "f",
+          property: "p",
+          szs: "Theorem",
+          axioms: [],
+        },
       ],
     };
     expect(() => expectValidEnvelope(envelope)).not.toThrow();
+  });
+
+  it("accepts a Theorem annotation naming the axioms it rests on", () => {
+    const envelope: Envelope = {
+      ...META,
+      annotations: [
+        {
+          file: "f.ts",
+          function: "f",
+          property: "p",
+          szs: "Theorem",
+          axioms: ["Lean.ofReduceBool"],
+        },
+      ],
+    };
+    expect(() => expectValidEnvelope(envelope)).not.toThrow();
+  });
+
+  it("rejects a Theorem annotation that does not say what it rests on", () => {
+    expect(() =>
+      expectValidEnvelope({
+        ...META,
+        annotations: [
+          { file: "f.ts", function: "f", property: "p", szs: "Theorem" },
+        ],
+      } as unknown as Envelope),
+    ).toThrow();
+  });
+
+  it("rejects an empty axiom name", () => {
+    expect(() =>
+      expectValidEnvelope({
+        ...META,
+        annotations: [
+          {
+            file: "f.ts",
+            function: "f",
+            property: "p",
+            szs: "Theorem",
+            axioms: [""],
+          },
+        ],
+      } as unknown as Envelope),
+    ).toThrow();
+  });
+
+  it("rejects axioms on a non-Theorem entry", () => {
+    expect(() =>
+      expectValidEnvelope({
+        ...META,
+        annotations: [
+          {
+            file: "f.ts",
+            function: "f",
+            property: "p",
+            szs: "GaveUp",
+            axioms: [],
+          },
+        ],
+      } as unknown as Envelope),
+    ).toThrow();
   });
 
   it("accepts an Inappropriate annotation carrying its reason", () => {

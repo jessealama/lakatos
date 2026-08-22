@@ -237,7 +237,7 @@ def diagnoseDecideFailure (identity : Identity) (p : Expr)
     (names : List String) (searchStx : TSyntax `term) :
     Term.TermElabM (Option Verdict) := do
   let falseOnDomain : Verdict := ⟨identity, .GaveUp,
-    "the property is false on its bounded domain", none⟩
+    "the property is false on its bounded domain", none, none⟩
   tryCatchRuntimeEx
     (do
       let inst ← Meta.synthInstance (mkApp (mkConst ``Decidable) p)
@@ -246,7 +246,7 @@ def diagnoseDecideFailure (identity : Identity) (p : Expr)
         if names.isEmpty then return some falseOnDomain
         if let some cex ← extractWitness names searchStx then
           return some ⟨identity, .CounterSatisfiable,
-            "the property is false on its bounded domain", some cex⟩
+            "the property is false on its bounded domain", some cex, none⟩
         return some falseOnDomain
       return none)
     (fun ex => if ex.isMaxHeartbeat then throw ex else return none)
@@ -285,19 +285,25 @@ def addTheoremSync (identity : Identity) (p proof : Expr) : Term.TermElabM Name 
 /-- The axioms every Lean proof may use without extending the trusted base. -/
 def standardAxioms : Array Name := #[``propext, ``Classical.choice, ``Quot.sound]
 
-/-- A proved annotation's reason. `method` names the rung's class — never a
-tactic, since dischargers change — but the trust level is read off the
-theorem's actual axioms rather than asserted by the rung, which could drift
-from what happened. Any axiom beyond the standard three means the result
-rests on more than the kernel; today that is native evaluation, which trusts
-the compiler and the host's floating point unit. -/
-def proofReason (method : String) (thmName : Name) : Term.TermElabM String := do
+/-- A proved annotation's verdict. `method` names the rung's class — never a
+tactic, since dischargers change — but the trust level and the reported
+axiom list are read off the theorem's actual axioms rather than asserted by
+the rung, which could drift from what happened. Any axiom beyond the
+standard three means the result rests on more than the kernel; today that
+is native evaluation, which trusts the compiler and the host's floating
+point unit. -/
+def provedVerdict (identity : Identity) (method : String) (thmName : Name) :
+    CoreM Verdict := do
   let axioms ← collectAxioms thmName
-  let extra := axioms.filter (!standardAxioms.contains ·)
-  if extra.isEmpty then
-    return s!"proved by {method}, kernel-checked as {thmName}"
-  return s!"proved by {method}, admitted as {thmName}; the result is " ++
-    s!"trusted from evaluation rather than checked by the kernel"
+  let extra := (axioms.filter (!standardAxioms.contains ·)).qsort
+    (fun a b => a.toString < b.toString)
+  let reason :=
+    if extra.isEmpty then
+      s!"proved by {method}, kernel-checked as {thmName}"
+    else
+      s!"proved by {method}, admitted as {thmName}; the result is " ++
+      s!"trusted from evaluation rather than checked by the kernel"
+  return ⟨identity, .Theorem, reason, none, some extra⟩
 
 /-- Degrades a rung's plain failure to a fall-through, so the rungs after it
 still get their turn. Lean's own `catch` already re-raises runtime exceptions
@@ -321,8 +327,8 @@ def attemptDecide (identity : Identity) (p : Expr)
     | return none
   try
     let thmName ← addTheoremSync identity p proof
-    return some ⟨identity, .Theorem,
-      ← proofReason "a decision procedure over the bounded domain" thmName, none⟩
+    return some (← provedVerdict identity
+      "a decision procedure over the bounded domain" thmName)
   catch ex =>
     if ← isKernelTimeout ex then throw ex
     return (← diagnoseDecideFailure identity p names searchStx)
@@ -336,7 +342,7 @@ def attemptNativeDecide (identity : Identity) (p : Expr)
     (searchStx : TSyntax `term) (names : List String) :
     Term.TermElabM (Option Verdict) := do
   let falseOnDomain : Verdict := ⟨identity, .GaveUp,
-    "the property is false on its bounded domain", none⟩
+    "the property is false on its bounded domain", none, none⟩
   let some d ← (try some <$> Meta.mkDecide p catch _ => pure none)
     | return none
   -- Codegen and evaluation failures surface as ordinary elaboration errors,
@@ -350,15 +356,15 @@ def attemptNativeDecide (identity : Identity) (p : Expr)
     if names.isEmpty then return some falseOnDomain
     if let some cex ← extractWitness names searchStx then
       return some ⟨identity, .CounterSatisfiable,
-        "the property is false on its bounded domain", some cex⟩
+        "the property is false on its bounded domain", some cex, none⟩
     return some falseOnDomain
   | .success prf =>
     let inst := d.appArg!
     let proof := mkApp3 (mkConst ``of_decide_eq_true) p inst prf
     let some thmName ← orFallThrough (addTheoremSync identity p proof)
       | return none
-    return some ⟨identity, .Theorem,
-      ← proofReason "a decision procedure over the bounded domain" thmName, none⟩
+    return some (← provedVerdict identity
+      "a decision procedure over the bounded domain" thmName)
 
 /-- Rung 2's outcome: a verdict, or the state rung 3 continues from — the
 root metavariable still linked to the unsolved residual goal. -/
@@ -372,12 +378,12 @@ residual-goal GaveUp rather than escaping. -/
 def certifyRoot (identity : Identity) (p root residual : Expr) :
     Term.TermElabM Verdict := do
   let gaveUp : Verdict :=
-    ⟨identity, .GaveUp, s!"unsolved goal: {← Meta.ppExpr residual}", none⟩
+    ⟨identity, .GaveUp, s!"unsolved goal: {← Meta.ppExpr residual}", none, none⟩
   let proof ← instantiateMVars root
   if proof.hasExprMVar then return gaveUp
   try
     let thmName ← addTheoremSync identity p proof
-    return ⟨identity, .Theorem, ← proofReason "generic proof search" thmName, none⟩
+    return ← provedVerdict identity "generic proof search" thmName
   catch ex =>
     if ← isKernelTimeout ex then throw ex
     return gaveUp
@@ -391,7 +397,7 @@ def attemptGeneric (identity : Identity) (p : Expr) :
   let mvar ← Meta.mkFreshExprMVar p
   let some ext ← Meta.getSimpExtension? `thales_norm
     | return .done ⟨identity, .Error,
-      "the prover's normalization rules are not registered", none⟩
+      "the prover's normalization rules are not registered", none, none⟩
   let ctx ← Meta.Simp.mkContext (config := {})
     (simpTheorems := #[← ext.getTheorems])
     (congrTheorems := ← Meta.getSimpCongrTheorems)
@@ -432,11 +438,11 @@ def attemptGrind (identity : Identity) (p root : Expr) (goal : MVarId)
     catch _ => pure false)
     (fun ex => if ex.isRuntime then pure false else throw ex)
   if solved then return ← certifyRoot identity p root residual
-  return ⟨identity, .GaveUp, s!"unsolved goal: {← Meta.ppExpr residual}", none⟩
+  return ⟨identity, .GaveUp, s!"unsolved goal: {← Meta.ppExpr residual}", none, none⟩
 
 def timeoutVerdict (identity : Identity) (budget : Nat) : Verdict :=
   ⟨identity, .Timeout,
-    s!"the attempt exceeded the per-annotation heartbeat budget (thales.heartbeats = {budget})", none⟩
+    s!"the attempt exceeded the per-annotation heartbeat budget (thales.heartbeats = {budget})", none, none⟩
 
 /-- Runs one rung, turning either resource limit into a fall-through to the
 next. Budget exhaustion — heartbeats, or the kernel's own timeout — reports
@@ -468,7 +474,7 @@ def attemptLadder (identity : Identity) (propStx : TSyntax `term)
       (fun ex => do
         if ex.isMaxHeartbeat || (← isKernelTimeout ex) then throw ex
         return .error ⟨identity, .Error,
-          s!"property elaboration failed: {← ex.toMessageData.toString}", none⟩)
+          s!"property elaboration failed: {← ex.toMessageData.toString}", none, none⟩)
   let p ← match elaborated with
     | .ok p => pure p
     | .error v => return v
@@ -528,13 +534,13 @@ elab_rules : command
       if let some failed := findFailed? (← getEnv) fn.getString then
         let szs : Szs := if failed.construct.isSome then .Inappropriate else .Error
         return ← Verdict.emit
-          ⟨identity, szs, s!"'{fn.getString}' could not be modeled: {failed.reason}", none⟩
+          ⟨identity, szs, s!"'{fn.getString}' could not be modeled: {failed.reason}", none, none⟩
     let verdict : Verdict ←
       match p with
-      | none => pure ⟨identity, .NotTried, "stub: no structured property provided", none⟩
+      | none => pure ⟨identity, .NotTried, "stub: no structured property provided", none, none⟩
       | some p =>
         if let some reason := propInappropriate? (← getEnv) p then
-          pure ⟨identity, .Inappropriate, reason, none⟩
+          pure ⟨identity, .Inappropriate, reason, none, none⟩
         else
           try
             let ep ← elabProp [] p
@@ -556,10 +562,10 @@ elab_rules : command
                   if ex.isMaxHeartbeat || (← isKernelTimeout ex) then
                     return timeoutVerdict identity budget
                   return ⟨identity, .Error,
-                    s!"proof search failed: {← ex.toMessageData.toString}", none⟩
+                    s!"proof search failed: {← ex.toMessageData.toString}", none, none⟩
           catch ex =>
             pure ⟨identity, .Error,
-              s!"property elaboration failed: {← ex.toMessageData.toString}", none⟩
+              s!"property elaboration failed: {← ex.toMessageData.toString}", none, none⟩
     verdict.emit
 
 end ThalesDsl
