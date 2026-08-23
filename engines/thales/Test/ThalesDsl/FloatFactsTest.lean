@@ -32,8 +32,38 @@ example : unpack .binary64 (UnpackedFloat.pack .binary64
 example (f : Float.Model) : (Float.Model.pack f.unpack.neg).unpack = f.unpack.neg :=
   FloatFacts.model_unpack_pack_neg f
 
--- The lifted fact itself, at the layer residual goals are stated in.
+-- The reverse direction: packing a word's own unpacking gives the word
+-- back. Validity is the whole hypothesis — it rules out the one bit
+-- pattern that does not survive, a non-canonical `NaN` payload.
+example (b : BitVec Format.binary64.numBits) (hv : Format.binary64.Valid b) :
+    UnpackedFloat.pack .binary64 (unpack .binary64 b) = b :=
+  FloatFacts.pack_unpack_of_valid hv
+
+example (f : Float.Model) : Float.Model.pack f.unpack = f :=
+  FloatFacts.model_pack_unpack f
+
+-- Kernel-computed pins on the branches the general lemma splits on:
+-- infinity, canonical NaN, zero, subnormal, normal.
+example : UnpackedFloat.pack .binary64 (unpack .binary64 (0x7ff0000000000000#64)) =
+    0x7ff0000000000000#64 := rfl
+example : UnpackedFloat.pack .binary64 (unpack .binary64 (0x7ff8000000000000#64)) =
+    0x7ff8000000000000#64 := rfl
+example : UnpackedFloat.pack .binary64 (unpack .binary64 (0x8000000000000000#64)) =
+    0x8000000000000000#64 := rfl
+example : UnpackedFloat.pack .binary64 (unpack .binary64 (0x0000000000000001#64)) =
+    0x0000000000000001#64 := rfl
+example : UnpackedFloat.pack .binary64 (unpack .binary64 (0xbff8000000000000#64)) =
+    0xbff8000000000000#64 := rfl
+
+-- A non-canonical `NaN` is exactly what the hypothesis excludes: it
+-- unpacks to `.notANumber` and repacks to the canonical payload.
+example : UnpackedFloat.pack .binary64 (unpack .binary64 (0x7ff0000000000001#64)) =
+    0x7ff8000000000000#64 := rfl
+
+-- The lifted facts themselves, at the layer residual goals are stated in.
 example (a b : Float) : a - b = a + (-b) := FloatFacts.float_sub_eq_add_neg a b
+
+example (a : Float) : - -a = a := FloatFacts.float_neg_neg a
 
 -- It is a proof, not an assumption: a verdict resting on it still reports
 -- an empty `axioms` array.
@@ -41,4 +71,10 @@ example (a b : Float) : a - b = a + (-b) := FloatFacts.float_sub_eq_add_neg a b
 #guard_msgs in
 #eval show CoreM Bool from do
   let axioms ← collectAxioms ``FloatFacts.float_sub_eq_add_neg
+  return (axioms.filter (!standardAxioms.contains ·)).isEmpty
+
+/-- info: true -/
+#guard_msgs in
+#eval show CoreM Bool from do
+  let axioms ← collectAxioms ``FloatFacts.float_neg_neg
   return (axioms.filter (!standardAxioms.contains ·)).isEmpty
