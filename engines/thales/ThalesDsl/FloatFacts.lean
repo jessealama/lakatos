@@ -5,9 +5,12 @@ Background theory about binary64 arithmetic, proven from `Float.Model`.
 
 Lean's float model ships essentially no lemmas, so a residual goal about
 `Float` has no theory to appeal to until one is proven here. Everything
-below is kernel-checked — no axioms, no `native_decide` — but nothing
-imports this module yet: it is a reserve, stocked ahead of the goals that
-will consume it, not something a verdict currently rests on.
+below is kernel-checked — no axioms, no `native_decide`.
+
+`Float` operations are `pack (op (unpack ..) (unpack ..))`, so a fact
+about `UnpackedFloat` only reaches a residual goal once the pack/unpack
+round-trip is available to strip the repacking. That round-trip is the
+`Canonical` section below; `Norm.lean` consumes what it enables.
 -/
 
 namespace ThalesDsl.FloatFacts
@@ -283,5 +286,128 @@ example :
 example :
     UnpackedFloat.unpack .binary64 (UnpackedFloat.pack .binary64 (.infinity .negative)) =
       .infinity .negative := rfl
+
+/-! ## Canonical forms and the pack/unpack round-trip
+
+Every `Float.Model` operation unpacks its arguments, computes, and
+repacks, so relating two of them means crossing `pack` then `unpack`.
+That crossing is the identity exactly on the values `unpack` can produce
+— `Format.Valid` already rules out the one hazard, non-canonical `NaN`
+payloads — and `Canonical` names them. -/
+
+/-- The values `unpack` produces: the three specials, plus finite
+mantissa/exponent pairs in subnormal or normal position. -/
+inductive Canonical : UnpackedFloat → Prop
+  | notANumber : Canonical .notANumber
+  | infinity (s : Sign) : Canonical (.infinity s)
+  | zero (s : Sign) : Canonical (.zero s)
+  | subnormal (s : Sign) (m : Nat) (h : 0 < m) (hm : m < 2 ^ 52) :
+      Canonical (.finite s m (-1074) h)
+  | normal (s : Sign) (m : Nat) (e : Int) (h : 0 < m)
+      (hlo : 2 ^ 52 ≤ m) (hhi : m < 2 ^ 53) (helo : -1074 ≤ e) (hehi : e ≤ 971) :
+      Canonical (.finite s m e h)
+
+theorem toNat_one_append {w : Nat} (v : BitVec w) :
+    (1#1 ++ v).toNat = 2 ^ w + v.toNat := by
+  rw [BitVec.toNat_append, ← Nat.shiftLeft_add_eq_or_of_lt v.isLt]
+  simp [Nat.shiftLeft_eq]
+
+theorem canonical_unpack (b : BitVec Format.binary64.numBits) :
+    Canonical (unpack .binary64 b) := by
+  rw [UnpackedFloat.unpack]
+  split
+  · split
+    · exact .infinity _
+    · exact .notANumber
+  · rename_i hnotinf
+    split
+    · rename_i hzeroexp
+      split
+      · exact .zero _
+      · rename_i hmnz
+        have hbias : ((Format.binary64.exponentBias : Nat) : Int) = 1023 := rfl
+        have hmb : ((Format.binary64.mantissaBitsWithoutImplicit : Nat) : Int) = 52 := rfl
+        have hexp0 : (unpackExponent b).toNat = 0 := by
+          simp [BitVec.toNat_eq] at hzeroexp; exact hzeroexp
+        have he : ((unpackExponent b).toNat : Int)
+            - ((Format.binary64.exponentBias : Nat)
+              + (Format.binary64.mantissaBitsWithoutImplicit : Nat)) + 1 = -1074 := by
+          rw [hexp0, hbias, hmb]; omega
+        rw [he]
+        exact .subnormal _ _ _ (unpackMantissa b).isLt
+    · rename_i hnzexp
+      have hmlt : (unpackMantissa b).toNat < 2 ^ 52 := (unpackMantissa b).isLt
+      have happ : (1#1 ++ unpackMantissa b).toNat = 2 ^ 52 + (unpackMantissa b).toNat :=
+        toNat_one_append _
+      have hexpLt : (unpackExponent b).toNat < 2048 := (unpackExponent b).isLt
+      simp [BitVec.toNat_eq] at hnotinf hnzexp
+      have hbias : ((Format.binary64.exponentBias : Nat) : Int) = 1023 := rfl
+      have hmb : ((Format.binary64.mantissaBitsWithoutImplicit : Nat) : Int) = 52 := rfl
+      refine .normal _ _ _ _ ?_ ?_ (by rw [hbias, hmb]; omega) (by rw [hbias, hmb]; omega) <;> omega
+
+/-- Repacking a canonical value and unpacking it again changes nothing.
+The normal case is `unpack_pack_of_normal64`; the rest are the specials
+and the subnormal band. -/
+theorem unpack_pack_of_canonical {u : UnpackedFloat} (h : Canonical u) :
+    unpack .binary64 (UnpackedFloat.pack .binary64 u) = u := by
+  cases h with
+  | notANumber => rfl
+  | infinity s => cases s <;> rfl
+  | zero s => cases s <;> rfl
+  | subnormal s m h hm =>
+      have hlog : ¬52 ≤ m.log2 := fun hc => by
+        have := (Nat.le_log2 (by omega)).mp hc; omega
+      have hbias : (-1074 + (Format.binary64.exponentBias : Int)
+          + (Format.binary64.mantissaBitsWithoutImplicit : Int)).toNat = 1 := by decide
+      have hmb : Format.binary64.mantissaBits = 53 := by decide
+      rw [UnpackedFloat.pack]
+      simp only [hbias, hmb]
+      rw [if_neg (by decide), if_neg (by omega), UnpackedFloat.unpack]
+      simp only [unpackMantissa_packComponents, unpackExponent_packComponents,
+        unpackSign_packComponents64]
+      have hmant : (BitVec.ofNat 52 m).toNat = m := by
+        simp [BitVec.toNat_ofNat]; omega
+      have hne : BitVec.ofNat 52 m ≠ 0#52 := by
+        intro heq
+        have := congrArg BitVec.toNat heq
+        rw [hmant] at this
+        simp at this
+        omega
+      rw [if_neg (by decide), if_pos trivial, dif_neg hne]
+      have hb1023 : ((Format.binary64.exponentBias : Nat) : Int) = 1023 := rfl
+      simp [hmant, hb1023]
+  | normal s m e h hlo hhi helo hehi =>
+      exact unpack_pack_of_normal64 s m e h hlo hhi helo hehi
+
+/-- Negation only flips the sign, so it stays inside the canonical set. -/
+theorem canonical_neg {u : UnpackedFloat} (h : Canonical u) : Canonical u.neg := by
+  cases h with
+  | notANumber => exact .notANumber
+  | infinity s => exact .infinity _
+  | zero s => exact .zero _
+  | subnormal s m h hm => exact .subnormal _ m h hm
+  | normal s m e h hlo hhi helo hehi => exact .normal _ m e h hlo hhi helo hehi
+
+theorem model_unpack_pack (u : UnpackedFloat) :
+    (Float.Model.pack u).unpack = unpack .binary64 (UnpackedFloat.pack .binary64 u) := rfl
+
+theorem model_unpack_pack_neg (f : Float.Model) :
+    (Float.Model.pack f.unpack.neg).unpack = f.unpack.neg := by
+  rw [model_unpack_pack]
+  exact unpack_pack_of_canonical (canonical_neg (canonical_unpack _))
+
+/-! ## Facts at the `Float` layer
+
+What the residual goals are actually stated in. -/
+
+/-- IEEE subtraction is addition of the negation. Lifting the
+`UnpackedFloat` fact costs one round-trip: `-b` repacks before `+`
+unpacks it again. -/
+theorem float_sub_eq_add_neg (a b : Float) : a - b = a + (-b) := by
+  show Float.ofModel (Float.Model.sub a.toModel b.toModel)
+     = Float.ofModel (Float.Model.add a.toModel (Float.Model.neg b.toModel))
+  congr 1
+  rw [Float.Model.sub, Float.Model.add, Float.Model.neg, model_unpack_pack_neg,
+    sub_eq_add_neg]
 
 end ThalesDsl.FloatFacts

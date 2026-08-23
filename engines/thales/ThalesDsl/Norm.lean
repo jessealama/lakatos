@@ -1,10 +1,13 @@
 import Lean
+import ThalesDsl.FloatFacts
 import ThalesDsl.NormAttr
 import ThalesDsl.TsM
 
 /-! The `thales_norm` simp set: normalization lemmas that strip TsM's
 monadic wrapping from pure-looking goals, leaving bare Int arithmetic
-for the closers. Model definitions join the set at creation
+for the closers, plus the binary64 facts `FloatFacts` proves — vanilla
+Lean carries no float theory, so a residual goal about `Float` has none
+until one lands here. Model definitions join the set at creation
 (Model.lean), so goals can unfold them. -/
 
 namespace ThalesDsl
@@ -20,6 +23,10 @@ namespace ThalesDsl
 
 -- Boolean islands: after tsm_pure_inj, `decide P = true` becomes `P`.
 attribute [thales_norm] decide_eq_true_eq
+
+-- Binary64 theory from FloatFacts. Rewriting subtraction away leaves the
+-- closers one operator fewer to reason about.
+attribute [thales_norm, grind =] ThalesDsl.FloatFacts.float_sub_eq_add_neg
 
 /-- Open bounded ∀s so the closers see the inequalities. Tagged for grind
 too: the grind rung shares the normalization knowledge. -/
