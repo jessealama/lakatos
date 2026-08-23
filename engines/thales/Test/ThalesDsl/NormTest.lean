@@ -53,3 +53,13 @@ ts_def "remNorm" := ts.fn(ts.param["x"](ts.number)) : ts.number {
 example (x : Float) :
     TsModel.remNorm x = (pure (ThalesDsl.FloatOps.tsRem x 7) : TsM Float) := by
   simp only [TsModel.remNorm, tsm_pure_bind]
+
+-- Subtraction normalizes to addition of the negation: the first binary64
+-- fact in the set. Driving it through `thales_norm` rather than the lemma
+-- name pins membership, not just the proof.
+ts_def "diffNorm" := ts.fn(ts.param["a"](ts.number), ts.param["b"](ts.number)) : ts.number {
+  ts.return(ts.binop["-"](ts.id["a"], ts.id["b"]))
+}
+
+example (a b : Float) : TsModel.diffNorm a b = (pure (a + (-b)) : TsM Float) := by
+  simp only [TsModel.diffNorm, thales_norm]
