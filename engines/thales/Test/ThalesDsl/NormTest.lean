@@ -44,3 +44,12 @@ ts_def "halveNorm" := ts.fn(ts.param["x"](ts.number)) : ts.number {
 
 example (x : Float) : TsModel.halveNorm x = (pure (x / 2) : TsM Float) := by
   simp only [TsModel.halveNorm, tsm_pure_bind]
+
+-- Remainder sheds its monadic wrapping like the other arithmetic operators.
+ts_def "remNorm" := ts.fn(ts.param["x"](ts.number)) : ts.number {
+  ts.return(ts.binop["%"](ts.id["x"], ts.num[7]))
+}
+
+example (x : Float) :
+    TsModel.remNorm x = (pure (ThalesDsl.FloatOps.tsRem x 7) : TsM Float) := by
+  simp only [TsModel.remNorm, tsm_pure_bind]

@@ -1,4 +1,5 @@
 import Lean
+import ThalesDsl.FloatOps
 import ThalesDsl.TsM
 import ThalesDsl.Norm
 import ThalesDsl.Syntax
@@ -157,12 +158,18 @@ partial def evalExpr (vars : List String) (expected : ValTy) :
     | "-" => arith (← `(fun x y => x - y))
     | "*" => arith (← `(fun x y => x * y))
     | "/" => arith (← `(fun x y => x / y))
+    | "%" => arith (← `(fun x y => ThalesDsl.FloatOps.tsRem x y))
     | "<" => cmp (← `(fun x y => Float.lt x y))
     | "<=" => cmp (← `(fun x y => Float.le x y))
     | ">" => cmp (← `(fun x y => Float.lt y x))
     | ">=" => cmp (← `(fun x y => Float.le y x))
     | "===" => cmp (← `(fun x y => Float.beq x y))
     | "!==" => cmp (← `(fun x y => !Float.beq x y))
+    -- Exponentiation is left implementation-approximated by the language,
+    -- so no Float operation is its semantics; a model would certify results
+    -- a conforming engine may disagree with.
+    | "**" => throwErrorAt op
+        "operator '**' has no model: exponentiation is implementation-approximated"
     | other => throwErrorAt op "operator '{other}' has no model in this slice"
   | `(ts_expr| ts.opaque[$kind:str]($line:num, $col:num)) =>
     throwErrorAt kind (unmappedMsg kind.getString s!"{line.getNat}:{col.getNat}")
