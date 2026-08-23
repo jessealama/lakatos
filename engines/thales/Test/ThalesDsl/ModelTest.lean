@@ -40,6 +40,85 @@ ts_def "ratio" := ts.fn(ts.param["a"](ts.number), ts.param["b"](ts.number)) : ts
 #guard decide (TsModel.ratio (-1.0) 0.0 = (pure (-(1.0 / 0.0)) : TsM Float))
 #guard decide (TsModel.ratio 0.0 0.0 = (pure (0.0 / 0.0) : TsM Float))
 
+-- ts.binop "%" — JavaScript's remainder is C fmod: the quotient truncates,
+-- so the sign follows the dividend, and a zero remainder keeps that sign.
+-- NaN when the dividend is infinite or the divisor zero; the dividend
+-- itself when only the divisor is infinite. Pinned bit-exactly, since a
+-- signed zero is invisible to `=` on Float.
+ts_def "rem" := ts.fn(ts.param["a"](ts.number), ts.param["b"](ts.number)) : ts.number {
+  ts.return(ts.binop["%"](ts.id["a"], ts.id["b"]))
+}
+
+/-- The remainder's bit pattern, or `none` if the model threw. -/
+def remBits (a b : Float) : Option UInt64 :=
+  (TsModel.rem a b).toOption.map Float.toBits
+
+#guard remBits 7.0 3.0 == some 0x3ff0000000000000
+#guard remBits 7.5 2.0 == some 0x3ff8000000000000
+#guard remBits (-7.0) 3.0 == some 0xbff0000000000000
+#guard remBits 7.0 (-3.0) == some 0x3ff0000000000000
+#guard remBits (-7.0) (-3.0) == some 0xbff0000000000000
+#guard remBits 5.3 2.0 == some 0x3ff4cccccccccccc
+-- Signed zeros: the dividend's sign survives an exact division.
+#guard remBits 6.0 3.0 == some 0x0000000000000000
+#guard remBits (-6.0) 3.0 == some 0x8000000000000000
+#guard remBits (-0.0) 5.0 == some 0x8000000000000000
+-- NaN: zero divisor, or infinite dividend.
+#guard remBits 5.0 0.0 == some 0x7ff8000000000000
+#guard remBits 0.0 0.0 == some 0x7ff8000000000000
+#guard remBits (1.0 / 0.0) 5.0 == some 0x7ff8000000000000
+#guard remBits (1.0 / 0.0) (1.0 / 0.0) == some 0x7ff8000000000000
+#guard remBits (0.0 / 0.0) 5.0 == some 0x7ff8000000000000
+#guard remBits 5.0 (0.0 / 0.0) == some 0x7ff8000000000000
+-- An infinite divisor returns the dividend untouched.
+#guard remBits 5.0 (1.0 / 0.0) == some 0x4014000000000000
+#guard remBits (-5.0) (1.0 / 0.0) == some 0xc014000000000000
+-- Inexact operands: the remainder is exact even when the operands are not.
+#guard remBits 0.1 0.03 == some 0x3f847ae147ae1480
+#guard remBits 1.0 0.1 == some 0x3fb9999999999996
+#guard remBits (-1.0) 0.1 == some 0xbfb9999999999996
+-- The widest exponent gap the format allows, where aligning the mantissas
+-- spans the whole binary64 range.
+#guard remBits (Float.ofBits 0x0000000000000001) (Float.ofBits 0x7fefffffffffffff)
+  == some 0x0000000000000001
+#guard remBits (Float.ofBits 0x7fefffffffffffff) (Float.ofBits 0x0000000000000001)
+  == some 0x0000000000000000
+#guard remBits (Float.ofBits 0x7fefffffffffffff) 3.0 == some 0x4000000000000000
+
+-- Every guard above runs in the interpreter, which an `extern` would satisfy
+-- too. These pin the property the model actually rests on: `tsRem` reduces in
+-- the *kernel*, so the decide rung stays kernel-checked instead of falling
+-- through to the evaluation tier and its axiom. One case per branch of
+-- remUnpacked's dispatch.
+example : (FloatOps.tsRem 7.0 3.0).toBits = 0x3ff0000000000000 := by decide
+example : (FloatOps.tsRem (-6.0) 3.0).toBits = 0x8000000000000000 := by decide
+example : (FloatOps.tsRem 5.0 0.0).toBits = 0x7ff8000000000000 := by decide
+example : (FloatOps.tsRem 5.0 (1.0 / 0.0)).toBits = 0x4014000000000000 := by decide
+example :
+    (FloatOps.tsRem (Float.ofBits 0x0000000000000001)
+      (Float.ofBits 0x7fefffffffffffff)).toBits = 0x0000000000000001 := by decide
+
+-- ts.binop "**" has no model, deliberately: the language leaves
+-- exponentiation implementation-approximated, so modeling it as any one
+-- Float operation would certify results a conforming engine may disagree
+-- with. The declaration fails naming the operator, which is what makes its
+-- annotations Inappropriate — a statement about the input — rather than
+-- Error, which is reserved for the engine breaking.
+ts_def "power" := ts.fn(ts.param["x"](ts.number)) : ts.number {
+  ts.return(ts.binop["**"](ts.id["x"], ts.num[2]))
+}
+
+open Lean Elab Command in
+run_cmd do
+  let some failed := findFailed? (← getEnv) "power"
+    | throwError "'power' should have been recorded as a failed declaration"
+  unless failed.construct == some "**" do
+    throwError "'power' must name the refused operator, got {repr failed.construct}"
+  unless (failed.reason.splitOn "implementation-approximated").length > 1 do
+    throwError "'power' failed for the wrong reason: {failed.reason}"
+  unless (findModel? (← getEnv) "power").isNone do
+    throwError "'power' should not have registered a model"
+
 -- ts.call: models call previously registered models.
 ts_def "twice" := ts.fn(ts.param["x"](ts.number)) : ts.number {
   ts.return(ts.call["add"](ts.id["x"], ts.id["x"]))
