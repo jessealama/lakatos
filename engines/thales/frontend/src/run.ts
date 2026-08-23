@@ -16,6 +16,8 @@ export interface LeanVerdict {
   szs: ProveStatus;
   reason: string;
   counterexample?: Record<string, number | string>;
+  /** Theorem only: the non-standard axioms the proof depends on. */
+  axioms?: string[];
 }
 
 /** One artifact whose Lean run failed or broke the verdict contract;
@@ -102,7 +104,10 @@ function isVerdict(v: unknown): v is LeanVerdict {
     isProveStatus(o.szs) &&
     typeof o.reason === 'string' &&
     o.reason.length > 0 &&
-    (o.counterexample === undefined || isCounterexample(o.counterexample))
+    (o.counterexample === undefined || isCounterexample(o.counterexample)) &&
+    (o.axioms === undefined ||
+      (Array.isArray(o.axioms) &&
+        o.axioms.every((a) => typeof a === 'string' && a.length > 0)))
   );
 }
 

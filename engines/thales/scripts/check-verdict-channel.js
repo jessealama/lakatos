@@ -184,6 +184,35 @@ for (const { file, expected } of FIXTURES) {
       );
     }
   }
+
+  // Every Theorem names what it rests on, and the list must agree with the
+  // trust wording: a kernel-checked proof uses no extra axioms, an
+  // evaluation-trusted one admits exactly its native-evaluation axiom.
+  // Nothing but a Theorem carries the field.
+  for (const [i, v] of verdicts.entries()) {
+    if (v.szs !== 'Theorem') {
+      check(
+        v.axioms === undefined,
+        `${file}: verdict ${i} (${v.szs}) carries axioms ${JSON.stringify(v.axioms)}`,
+      );
+      continue;
+    }
+    check(
+      Array.isArray(v.axioms),
+      `${file}: Theorem verdict ${i} carries no axioms array`,
+    );
+    if (/kernel-checked/.test(v.reason)) {
+      check(
+        v.axioms.length === 0,
+        `${file}: kernel-checked verdict ${i} carries axioms ${JSON.stringify(v.axioms)}`,
+      );
+    } else {
+      check(
+        v.axioms.length > 0 && v.axioms.every((a) => /native_decide/.test(a)),
+        `${file}: evaluation-trusted verdict ${i} axioms ${JSON.stringify(v.axioms)} do not name the native-evaluation axiom`,
+      );
+    }
+  }
 }
 
 done(`${FIXTURES.length} fixtures`);

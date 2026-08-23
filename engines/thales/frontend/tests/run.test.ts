@@ -224,6 +224,9 @@ describe('runLean', () => {
       'thales-verdict:{"identity":["f.ts","f","p"],"szs":"Proven","reason":"r"}',
       'thales-verdict:{"identity":["f.ts","f","p"],"szs":"InputError","reason":"r"}',
       'thales-verdict:{"identity":["f.ts","f","p"],"szs":"GaveUp","reason":""}',
+      'thales-verdict:{"identity":["f.ts","f","p"],"szs":"Theorem","reason":"r","axioms":"Lean.ofReduceBool"}',
+      'thales-verdict:{"identity":["f.ts","f","p"],"szs":"Theorem","reason":"r","axioms":[1]}',
+      'thales-verdict:{"identity":["f.ts","f","p"],"szs":"Theorem","reason":"r","axioms":[""]}',
     ];
     const res = runLean(
       ['a.lean', 'b.lean'],
@@ -242,6 +245,31 @@ describe('runLean', () => {
     expect(r.verdicts).toHaveLength(1);
     expect(r.failures).toHaveLength(1);
     expect(r.failures[0]!.messages).toHaveLength(malformed.length);
+  });
+
+  test('a Theorem verdict keeps the axioms its proof rests on', () => {
+    const res = runLean(
+      ['a.lean'],
+      '/engine',
+      fakeSpawn([
+        { status: 0 },
+        {
+          status: 0,
+          stdout:
+            'thales-verdict:{"identity":["t.ts","f","p"],"szs":"Theorem","reason":"r","axioms":["Lean.ofReduceBool"]}\n',
+        },
+      ]).spawn,
+    );
+    expect(res).toMatchObject({
+      kind: 'completed',
+      verdicts: [
+        {
+          identity: ['t.ts', 'f', 'p'],
+          szs: 'Theorem',
+          axioms: ['Lean.ofReduceBool'],
+        },
+      ],
+    });
   });
 
   test('a verdict must explain itself: an empty reason is malformed', () => {

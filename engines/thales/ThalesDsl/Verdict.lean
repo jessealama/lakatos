@@ -40,6 +40,9 @@ structure Verdict where
   reason : String
   /-- Binder-name/value pairs falsifying the property, in binder order. -/
   counterexample : Option (Array (String × Int)) := none
+  /-- Theorem only: the non-standard axioms the proof depends on, read off
+  the theorem itself. Empty for a kernel-checked proof. -/
+  axioms : Option (Array Lean.Name) := none
 
 /-- Values outside the JS safe-integer range travel as decimal strings so
 `JSON.parse` on the CLI side cannot lose precision. -/
@@ -53,10 +56,14 @@ def Verdict.toJson (v : Verdict) : Lean.Json :=
       ("szs", .str v.szs.toString),
       ("reason", .str v.reason)
     ] ++
-    match v.counterexample with
+    (match v.counterexample with
     | none => []
     | some cex =>
-      [("counterexample", Lean.Json.mkObj (cex.toList.map fun (n, x) => (n, jsonInt x)))]
+      [("counterexample", Lean.Json.mkObj (cex.toList.map fun (n, x) => (n, jsonInt x)))]) ++
+    match v.axioms with
+    | none => []
+    | some axs =>
+      [("axioms", Lean.Json.arr (axs.map fun a => .str a.toString))]
 
 /-- Frames each verdict line: stdout is also Lean's diagnostic stream, and
 the CLI treats only framed lines as part of the contract. -/

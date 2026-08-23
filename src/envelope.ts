@@ -25,6 +25,9 @@ export interface AnnotationResult extends PropertyIdentity {
   /** Prove pipeline: the construct outside the mappable subset
    * (Inappropriate), or why the prover stopped (GaveUp, NotTried). */
   reason?: string;
+  /** Theorem only: the non-standard axioms the proof depends on. Empty
+   * for a kernel-checked proof. */
+  axioms?: string[];
 }
 
 /** Run metadata the refute command captures before running tests. */
@@ -136,16 +139,17 @@ export type ProveJoin =
   | { kind: "joined"; annotations: AnnotationResult[] }
   | { kind: "mismatched"; messages: string[] };
 
-/** The Theorem reason (a run-internal kernel name) is dropped, and so is
- * the CounterSatisfiable one — its substance is the counterexample, which
- * ships in the same falsified shape the refutation engine uses. Error
- * diagnostics travel in `error` like every other engine failure. */
+/** The Theorem reason (a run-internal kernel name) is dropped — what the
+ * proof rests on travels as its axioms — and so is the CounterSatisfiable
+ * one: its substance is the counterexample, which ships in the same
+ * falsified shape the refutation engine uses. Error diagnostics travel in
+ * `error` like every other engine failure. */
 function verdictResult(
   id: PropertyIdentity,
   v: ProveVerdict,
 ): AnnotationResult {
   const szs = v.szs;
-  if (szs === "Theorem") return { ...id, szs };
+  if (szs === "Theorem") return { ...id, szs, axioms: v.axioms ?? [] };
   if (szs === "CounterSatisfiable")
     return { ...id, szs, kind: "falsified", counterexample: v.counterexample };
   if (szs === "Error") return { ...id, szs, error: v.reason };

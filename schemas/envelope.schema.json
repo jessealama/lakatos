@@ -74,14 +74,18 @@
         },
         {
           "title": "proven",
-          "description": "The property is a kernel-checked theorem; no prover internals travel with it.",
+          "description": "The property is a proven theorem. axioms lists the non-standard axioms the proof depends on: empty for a kernel-checked proof, and e.g. Lean.ofReduceBool for one admitted from compiled evaluation.",
           "additionalProperties": false,
-          "required": ["file", "function", "property", "szs"],
+          "required": ["file", "function", "property", "szs", "axioms"],
           "properties": {
             "file": { "type": "string" },
             "function": { "$ref": "#/definitions/functionName" },
             "property": { "type": "string", "minLength": 1 },
-            "szs": { "const": "Theorem" }
+            "szs": { "const": "Theorem" },
+            "axioms": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 }
+            }
           }
         },
         {
