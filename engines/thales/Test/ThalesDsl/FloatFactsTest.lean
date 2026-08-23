@@ -78,3 +78,46 @@ example (a : Float) : - -a = a := FloatFacts.float_neg_neg a
 #eval show CoreM Bool from do
   let axioms ← collectAxioms ``FloatFacts.float_neg_neg
   return (axioms.filter (!standardAxioms.contains ·)).isEmpty
+
+-- The four monotonicity facts at the Float layer: the shapes residual
+-- goals state them in, one application each, plus the bound flips the
+-- sub-rewrite needs.
+example (x y c : Float) (h : Float.le x y = true)
+    (h0 : (0 : Float) < c) (hInf : c < (1.0 / 0.0 : Float)) :
+    Float.le (x * c) (y * c) = true :=
+  FloatFacts.float_le_mul_right h h0 hInf
+
+example (x y c : Float) (h : Float.le x y = true)
+    (hLo : (-(1.0 / 0.0) : Float) < c) (hHi : c < (1.0 / 0.0 : Float)) :
+    Float.le (x + c) (y + c) = true :=
+  FloatFacts.float_le_add_right h hLo hHi
+
+example (x y c : Float) (h : Float.le x y = true)
+    (hLo : (-(1.0 / 0.0) : Float) < c) (hHi : c < (1.0 / 0.0 : Float)) :
+    Float.le (x - c) (y - c) = true :=
+  FloatFacts.float_le_sub_right h hLo hHi
+
+example (x y c : Float) (h : Float.le x y = true)
+    (h0 : (0 : Float) < c) (hInf : c < (1.0 / 0.0 : Float)) :
+    Float.le (x / c) (y / c) = true :=
+  FloatFacts.float_le_div_right h h0 hInf
+
+example (c : Float) (h : c < (1.0 / 0.0 : Float)) : (-(1.0 / 0.0) : Float) < -c :=
+  FloatFacts.float_neg_bound_lo h
+
+example (c : Float) (h : (-(1.0 / 0.0) : Float) < c) : -c < (1.0 / 0.0 : Float) :=
+  FloatFacts.float_neg_bound_hi h
+
+-- Kernel-computed instances, one per operation, with a negative operand
+-- and an overflow-free subnormal in the mix.
+example : Float.le (-3.5 * 2.0) (1.25 * 2.0) = true :=
+  FloatFacts.float_le_mul_right rfl rfl rfl
+
+example : Float.le (-3.5 + 0.5) (1.25 + 0.5) = true :=
+  FloatFacts.float_le_add_right rfl rfl rfl
+
+example : Float.le (-3.5 - 0.5) (1.25 - 0.5) = true :=
+  FloatFacts.float_le_sub_right rfl rfl rfl
+
+example : Float.le (-3.5 / 2.0) (1.25 / 2.0) = true :=
+  FloatFacts.float_le_div_right rfl rfl rfl

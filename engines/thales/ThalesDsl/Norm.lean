@@ -34,4 +34,42 @@ too: the grind rung shares the normalization knowledge. -/
     ballIco lo hi p ↔ ∀ x : Int, lo ≤ x → x < hi → p x :=
   Iff.rfl
 
+/-! The four monotonicity facts, restated on `floatInf` so their bound
+hypotheses match what number binders emit, and given grind patterns keyed
+on the operation terms: whenever both sides of a comparison goal apply
+the same operation, the fact instantiates and the guard chain closes by
+forward reasoning. -/
+
+/-- Multiplying both sides by a positive finite factor. -/
+theorem float_le_mul_of_le {x y c : Float} (h : Float.le x y = true)
+    (h0 : (0 : Float) < c) (hInf : c < floatInf) :
+    Float.le (x * c) (y * c) = true :=
+  FloatFacts.float_le_mul_right h h0 hInf
+
+/-- Adding a finite offset to both sides. -/
+theorem float_le_add_of_le {x y c : Float} (h : Float.le x y = true)
+    (hLo : -floatInf < c) (hHi : c < floatInf) :
+    Float.le (x + c) (y + c) = true :=
+  FloatFacts.float_le_add_right h hLo hHi
+
+/-- Dividing both sides by a positive finite divisor. -/
+theorem float_le_div_of_le {x y c : Float} (h : Float.le x y = true)
+    (h0 : (0 : Float) < c) (hInf : c < floatInf) :
+    Float.le (x / c) (y / c) = true :=
+  FloatFacts.float_le_div_right h h0 hInf
+
+/-- Bounds flip under negation: the offset the sub-rewrite negates keeps
+its finiteness. -/
+theorem float_neg_lo {c : Float} (h : c < floatInf) : -floatInf < -c :=
+  FloatFacts.float_neg_bound_lo h
+
+theorem float_neg_hi {c : Float} (h : -floatInf < c) : -c < floatInf :=
+  FloatFacts.float_neg_bound_hi h
+
+grind_pattern float_le_mul_of_le => x * c, y * c
+grind_pattern float_le_add_of_le => x + c, y + c
+grind_pattern float_le_div_of_le => x / c, y / c
+grind_pattern float_neg_lo => -c
+grind_pattern float_neg_hi => -c
+
 end ThalesDsl
