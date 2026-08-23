@@ -616,7 +616,7 @@ theorem repeat_shiftRightOne_eq_from (m : Nat) (rb sb : Bool) (k : Nat) :
 
 /-- The four ways an initial fraction can sit against a half ulp, with
 the arithmetic fact each case carries. -/
-theorem accuracyOfFraction_cases (num den : Nat) (hden : 0 < den) (hnum : num < den) :
+theorem accuracyOfFraction_cases (num den : Nat) (_hden : 0 < den) (hnum : num < den) :
     (accuracyOfFraction num den = .exact ∧ num = 0)
     ∨ (accuracyOfFraction num den = .inexact .lt ∧ 0 < num ∧ 2 * num < den)
     ∨ (accuracyOfFraction num den = .inexact .eq ∧ 0 < num ∧ 2 * num = den)
@@ -694,7 +694,7 @@ theorem roundedMantissa_ofFraction (m n num den : Nat) (hden : 0 < den)
       rw [repeat_shiftRightOne_eq_from, ExtendedMantissa.roundedMantissa]
       rcases Bool.eq_false_or_eq_true (m / 2 ^ k % 2 == 1) with hb | hb <;>
         rcases Bool.eq_false_or_eq_true (m % 2 ^ k != 0) with hs | hs <;>
-          simp only [hb, hs, Bool.false_or, Bool.or_false, Bool.true_or, Bool.or_true,
+          simp only [hb, hs, Bool.or_false, Bool.or_true,
             ExtendedMantissa.accuracy, Accuracy.roundToNearestEven] <;>
           grind
 
@@ -848,7 +848,7 @@ theorem key_roundWA_pos (m : Nat) (e : Int) (num den : Nat)
     · rw [dif_pos h0, h0]
       simp [key]
     · rw [dif_neg (Nat.pos_iff_ne_zero.mp h0)]
-      simp [key, Sign.apply, Int.natCast_mul, Int.natCast_pow]
+      simp [key, Sign.apply]
 
 /-- Rounding only threads the sign through, so the negative key mirrors the
 positive one. -/
@@ -880,7 +880,7 @@ an equal quotient hands the decision to the discarded fractions, compared on
 the common scale. -/
 theorem rnShiftF_mono_scaled
     {den m₁ num₁ n₁ p₁ m₂ num₂ n₂ p₂ : Nat}
-    (hden : 0 < den) (hnum₁ : num₁ < den) (hnum₂ : num₂ < den)
+    (_hden : 0 < den) (hnum₁ : num₁ < den) (hnum₂ : num₂ < den)
     (hgg : n₁ + p₁ = n₂ + p₂)
     (h : (m₁ * den + num₁) * 2 ^ p₁ ≤ (m₂ * den + num₂) * 2 ^ p₂) :
     rnShiftF m₁ n₁ num₁ den ≤ rnShiftF m₂ n₂ num₂ den := by
@@ -1419,7 +1419,7 @@ theorem roundShape_roundWA (s : Sign) (m : Nat) (e : Int) (num den : Nat)
 /-- Packing a normal-position mantissa on an exponent past 971 overflows
 to infinity. -/
 theorem unpack_pack_overflow (s : Sign) (m : Nat) (e : Int) (h : 0 < m)
-    (hlo : 2 ^ 52 ≤ m) (hhi : m < 2 ^ 53) (he : 972 ≤ e) :
+    (_hlo : 2 ^ 52 ≤ m) (_hhi : m < 2 ^ 53) (he : 972 ≤ e) :
     unpack .binary64 (UnpackedFloat.pack .binary64 (.finite s m e h)) = .infinity s := by
   have hbias : (e + Format.binary64.exponentBias + Format.binary64.mantissaBitsWithoutImplicit).toNat
       = (e + 1075).toNat := by
@@ -1978,8 +1978,8 @@ theorem mul_value_hyp {ma mb mc : Nat} {ea eb ec : Int}
 /-- `mul` monotonicity, finite against finite. -/
 theorem key_mul_mono_finite {sa sb : Sign} {ma mb : Nat} {ea eb : Int}
     {hma : 0 < ma} {hmb : 0 < mb} {mc : Nat} {ec : Int} {hc : 0 < mc}
-    (hhia : ma < 2 ^ 53) (hloa : -1074 ≤ ea) (hna : 2 ^ 52 ≤ ma ∨ ea = -1074)
-    (hhib : mb < 2 ^ 53) (hlob : -1074 ≤ eb) (hnb : 2 ^ 52 ≤ mb ∨ eb = -1074)
+    (_hhia : ma < 2 ^ 53) (hloa : -1074 ≤ ea) (hna : 2 ^ 52 ≤ ma ∨ ea = -1074)
+    (_hhib : mb < 2 ^ 53) (hlob : -1074 ≤ eb) (hnb : 2 ^ 52 ≤ mb ∨ eb = -1074)
     (hnc : 2 ^ 52 ≤ mc ∨ ec = -1074)
     (h : key (.finite sa ma ea hma) ≤ key (.finite sb mb eb hmb)) :
     key (UnpackedFloat.mul .binary64 (.finite sa ma ea hma) (.finite .positive mc ec hc))
@@ -2195,7 +2195,7 @@ theorem divM_eq (m₁ : Nat) (e₁ : Int) (m₂ : Nat) (e₂ : Int) :
 contract accepts: past the subnormal floor it carries at least 53
 significant bits. -/
 theorem div_wellPlaced {m₁ m₂ : Nat} {e₁ e₂ : Int} (h₁ : 0 < m₁) (h₂ : 0 < m₂)
-    (hm₂ : m₂ < 2 ^ 53) :
+    (_hm₂ : m₂ < 2 ^ 53) :
     WellPlaced (divM m₁ e₁ m₂ e₂ / m₂) (divT m₁ e₁ m₂ e₂) := by
   obtain ⟨hT₁, hT₂⟩ := divT_le m₁ e₁ m₂ e₂
   by_cases hfloor : divT m₁ e₁ m₂ e₂ ≤ -1074
@@ -2231,7 +2231,7 @@ theorem div_wellPlaced {m₁ m₂ : Nat} {e₁ e₂ : Int} (h₁ : 0 < m₁) (h�
     simp only [WellPlaced, grid, totalExponent]
     omega
 
-theorem div_cap {m₁ m₂ : Nat} {e₁ e₂ : Int} (h₁ : 0 < m₁) (h₂ : 0 < m₂)
+theorem div_cap {m₁ m₂ : Nat} {e₁ e₂ : Int} (h₁ : 0 < m₁) (_h₂ : 0 < m₂)
     (hm₁ : m₁ < 2 ^ 53) (he₁ : e₁ ≤ 971) (he₂ : -1074 ≤ e₂) :
     totalExponent (divM m₁ e₁ m₂ e₂ / m₂) (divT m₁ e₁ m₂ e₂) ≤ 3900 := by
   obtain ⟨hT₁, _⟩ := divT_le m₁ e₁ m₂ e₂
@@ -2250,7 +2250,7 @@ theorem div_cap {m₁ m₂ : Nat} {e₁ e₂ : Int} (h₁ : 0 < m₁) (h₂ : 0 
 /-- `div` by a positive finite constant: the shape of the result. -/
 theorem div_shape {u : UnpackedFloat} (hu : Canonical u) (hun : u ≠ .notANumber)
     {mc : Nat} {ec : Int} {hc : 0 < mc}
-    (hmc : mc < 2 ^ 53) (hloc : -1074 ≤ ec) (hhic : ec ≤ 971) :
+    (hmc : mc < 2 ^ 53) (hloc : -1074 ≤ ec) (_hhic : ec ≤ 971) :
     RoundShape (UnpackedFloat.div .binary64 u (.finite .positive mc ec hc))
       ∧ UnpackedFloat.div .binary64 u (.finite .positive mc ec hc) ≠ .notANumber := by
   cases hu with
@@ -2274,7 +2274,7 @@ theorem div_shape {u : UnpackedFloat} (hu : Canonical u) (hun : u ≠ .notANumbe
 
 /-- The scaled-value hypothesis for `div`'s rounding inputs. -/
 theorem div_value_hyp {ma mb mc : Nat} {ea eb ec : Int}
-    (hma : 0 < ma) (hmb : 0 < mb) (hmc : 0 < mc)
+    (_hma : 0 < ma) (_hmb : 0 < mb) (_hmc : 0 < mc)
     (hloa : -1074 ≤ ea) (hlob : -1074 ≤ eb)
     (h : ma * 2 ^ (ea + 1074).toNat ≤ mb * 2 ^ (eb + 1074).toNat) :
     (divM ma ea mc ec / mc * mc + divM ma ea mc ec % mc)
