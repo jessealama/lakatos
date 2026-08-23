@@ -529,7 +529,8 @@ elab_rules : command
     let identity : Identity := ⟨file.getString, fn.getString, prop.getString⟩
     -- A failed ts_def blocks the annotation only when nothing modeled the
     -- name: an overload signature fails while the implementation models.
-    -- Unmapped construct ⇒ Inappropriate, anything else ⇒ Error.
+    -- Named construct ⇒ Inappropriate (the input is outside the model),
+    -- anything else ⇒ Error (the engine is).
     if (findModel? (← getEnv) fn.getString).isNone then
       if let some failed := findFailed? (← getEnv) fn.getString then
         let szs : Szs := if failed.construct.isSome then .Inappropriate else .Error

@@ -26,8 +26,9 @@ the business of the e2e and unit suites.
   no structured reading (a half-bounded range the DSL has no binder shape
   for, a connective other than a top-level implication chain of atoms), or
   a range endpoint exceeds the safe integer range.
-- `inappropriate/` — the function uses a construct the transcriber cannot
-  map (`Inappropriate`).
+- `inappropriate/` — the annotation is outside the model: the function uses
+  a construct the transcriber cannot map, or an operator the model refuses
+  on the merits (`Inappropriate`).
 - `timeout/` — every annotation must report `Timeout` under the reduced
   heartbeat budget the harness sets via `LAKATOS_PROVE_HEARTBEATS`; the
   bucket runs as its own prove invocation so the rest of the corpus keeps

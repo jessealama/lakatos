@@ -85,10 +85,25 @@ def remBits (a b : Float) : Option UInt64 :=
   == some 0x0000000000000000
 #guard remBits (Float.ofBits 0x7fefffffffffffff) 3.0 == some 0x4000000000000000
 
+-- Every guard above runs in the interpreter, which an `extern` would satisfy
+-- too. These pin the property the model actually rests on: `tsRem` reduces in
+-- the *kernel*, so the decide rung stays kernel-checked instead of falling
+-- through to the evaluation tier and its axiom. One case per branch of
+-- remUnpacked's dispatch.
+example : (FloatOps.tsRem 7.0 3.0).toBits = 0x3ff0000000000000 := by decide
+example : (FloatOps.tsRem (-6.0) 3.0).toBits = 0x8000000000000000 := by decide
+example : (FloatOps.tsRem 5.0 0.0).toBits = 0x7ff8000000000000 := by decide
+example : (FloatOps.tsRem 5.0 (1.0 / 0.0)).toBits = 0x4014000000000000 := by decide
+example :
+    (FloatOps.tsRem (Float.ofBits 0x0000000000000001)
+      (Float.ofBits 0x7fefffffffffffff)).toBits = 0x0000000000000001 := by decide
+
 -- ts.binop "**" has no model, deliberately: the language leaves
 -- exponentiation implementation-approximated, so modeling it as any one
 -- Float operation would certify results a conforming engine may disagree
--- with. The declaration fails, and its reason names that cause.
+-- with. The declaration fails naming the operator, which is what makes its
+-- annotations Inappropriate — a statement about the input — rather than
+-- Error, which is reserved for the engine breaking.
 ts_def "power" := ts.fn(ts.param["x"](ts.number)) : ts.number {
   ts.return(ts.binop["**"](ts.id["x"], ts.num[2]))
 }
@@ -97,6 +112,8 @@ open Lean Elab Command in
 run_cmd do
   let some failed := findFailed? (← getEnv) "power"
     | throwError "'power' should have been recorded as a failed declaration"
+  unless failed.construct == some "**" do
+    throwError "'power' must name the refused operator, got {repr failed.construct}"
   unless (failed.reason.splitOn "implementation-approximated").length > 1 do
     throwError "'power' failed for the wrong reason: {failed.reason}"
   unless (findModel? (← getEnv) "power").isNone do

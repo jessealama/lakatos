@@ -25,9 +25,10 @@ initialize modelExt : SimplePersistentEnvExtension ModelInfo (List ModelInfo) �
 def findModel? (env : Environment) (tsName : String) : Option ModelInfo :=
   (modelExt.getState env).find? (·.tsName == tsName)
 
-/-- A declaration whose `ts_def` failed to elaborate. `construct` is the
-unmapped TypeScript construct when the failure came from an opaque node;
-`none` means some other elaboration failure. -/
+/-- A declaration whose `ts_def` failed to elaborate. `construct` names the
+TypeScript the model does not cover — an opaque node's kind, or an operator
+with no model — and is what separates a statement about the input from an
+engine malfunction; `none` means some other elaboration failure. -/
 structure FailedDecl where
   tsName : String
   construct : Option String
@@ -59,6 +60,24 @@ partial def findOpaque? (stx : Syntax) : Option (String × String) :=
 def unmappedMsg (construct pos : String) : String :=
   s!"unmapped TypeScript construct '{construct}' at {pos}"
 
+/-- Operators deliberately left without a model, and why. These are refusals
+on the merits, not gaps in the slice: a model would have to pick semantics
+the language does not fix. -/
+def unmodeledOperator? : String → Option String
+  | "**" => some <|
+      "'**' is implementation-approximated in JavaScript, so any model would "
+      ++ "certify results a conforming engine may disagree with"
+  | _ => none
+
+/-- The operator and reason of the first refused operator in `stx`, in tree
+order. Scanned ahead of elaboration so the refusal reads as a statement about
+the input, the way an opaque node does, rather than as a failed elaboration. -/
+partial def findUnmodeledOp? (stx : Syntax) : Option (String × String) :=
+  (match stx with
+    | `(ts_expr| ts.binop[$op:str]($_lhs:ts_expr, $_rhs:ts_expr)) =>
+      (unmodeledOperator? op.getString).map (op.getString, ·)
+    | _ => none) <|> stx.getArgs.findSome? findUnmodeledOp?
+
 /-- Every function name `stx` calls, in tree order. -/
 partial def callNames (stx : Syntax) : List String :=
   let here := match stx with
@@ -67,20 +86,19 @@ partial def callNames (stx : Syntax) : List String :=
   here ++ stx.getArgs.toList.flatMap callNames
 
 /-- Why `p` cannot be attempted under the containment contract: an opaque
-node in the formula itself, or a call to a declaration whose `ts_def`
-failed on an unmapped construct. `none` means the formula may elaborate. -/
+node or a refused operator in the formula itself, or a call to a declaration
+whose `ts_def` failed on one. `none` means the formula may elaborate. -/
 def propInappropriate? (env : Environment) (p : TSyntax `ts_prop) : Option String :=
-  match findOpaque? p.raw with
-  | some (construct, pos) => some (unmappedMsg construct pos)
-  | none =>
-    (callNames p.raw).findSome? fun n =>
-      if (findModel? env n).isSome then none
-      else match findFailed? env n with
-        | some failed =>
-          if failed.construct.isSome then
-            some s!"'{n}' could not be modeled: {failed.reason}"
-          else none
-        | none => none
+  (findOpaque? p.raw).map (fun (construct, pos) => unmappedMsg construct pos)
+  <|> (findUnmodeledOp? p.raw).map Prod.snd
+  <|> (callNames p.raw).findSome? fun n =>
+        if (findModel? env n).isSome then none
+        else match findFailed? env n with
+          | some failed =>
+            if failed.construct.isSome then
+              some s!"'{n}' could not be modeled: {failed.reason}"
+            else none
+          | none => none
 
 /-- The value types of the slice. Expression elaboration is type-directed:
 the operator decides its operand and result types. `num` is binary64 — the
@@ -165,12 +183,12 @@ partial def evalExpr (vars : List String) (expected : ValTy) :
     | ">=" => cmp (← `(fun x y => Float.le y x))
     | "===" => cmp (← `(fun x y => Float.beq x y))
     | "!==" => cmp (← `(fun x y => !Float.beq x y))
-    -- Exponentiation is left implementation-approximated by the language,
-    -- so no Float operation is its semantics; a model would certify results
-    -- a conforming engine may disagree with.
-    | "**" => throwErrorAt op
-        "operator '**' has no model: exponentiation is implementation-approximated"
-    | other => throwErrorAt op "operator '{other}' has no model in this slice"
+    | other =>
+      -- Reachable only for a refused operator the pre-scans missed; the
+      -- reason must still be the one they would have recorded.
+      match unmodeledOperator? other with
+      | some reason => throwErrorAt op reason
+      | none => throwErrorAt op "operator '{other}' has no model in this slice"
   | `(ts_expr| ts.opaque[$kind:str]($line:num, $col:num)) =>
     throwErrorAt kind (unmappedMsg kind.getString s!"{line.getNat}:{col.getNat}")
   | `(ts_expr| ts.call[$f:str]($args:ts_expr,*)) => do
@@ -220,6 +238,8 @@ elab_rules : command
     -- surfaces in the verdicts of the annotations over this declaration.
     if let some (construct, pos) := stmts.raw.findSome? findOpaque? then
       return ← recordFailure (some construct) (unmappedMsg construct pos)
+    if let some (op, reason) := stmts.raw.findSome? findUnmodeledOp? then
+      return ← recordFailure (some op) reason
     try
       let paramNames ← params.getElems.mapM fun p => do
         match p with

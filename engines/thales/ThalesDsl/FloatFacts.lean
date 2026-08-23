@@ -3,10 +3,11 @@ import Init.Data.Float.Model.Float
 /-!
 Background theory about binary64 arithmetic, proven from `Float.Model`.
 
-Lean's float model ships essentially no lemmas: the ordering theory,
-rounding characterization, and pack/unpack round-trips that `prove`
-verdicts need all live here. Everything is kernel-checked; no axioms,
-no `native_decide`.
+Lean's float model ships essentially no lemmas, so a residual goal about
+`Float` has no theory to appeal to until one is proven here. Everything
+below is kernel-checked — no axioms, no `native_decide` — but nothing
+imports this module yet: it is a reserve, stocked ahead of the goals that
+will consume it, not something a verdict currently rests on.
 -/
 
 namespace ThalesDsl.FloatFacts

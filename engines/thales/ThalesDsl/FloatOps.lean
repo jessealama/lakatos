@@ -39,8 +39,9 @@ def remUnpacked (spec : Format) : UnpackedFloat → UnpackedFloat → UnpackedFl
   | .finite s₁ m₁ e₁ _, .finite s₂ m₂ e₂ _ => remFinite spec s₁ m₁ e₁ s₂ m₂ e₂
 
 /-- The model of JavaScript's `%`. This is C `fmod`, not the IEEE
-`remainder` operation: the quotient is truncated, not rounded to
-nearest. Exact in every case, so nothing here approximates. -/
+`remainder` operation: the quotient is truncated, not rounded to nearest.
+The result is exact in every case — `remFinite` says why — but that
+argument is carried by the bit-exact tests, not yet by a proof. -/
 def tsRem (a b : Float) : Float :=
   .ofModel (.pack (remUnpacked Format.binary64 a.toModel.unpack b.toModel.unpack))
 
