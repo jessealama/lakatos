@@ -8,9 +8,10 @@ Lean's float model ships essentially no lemmas, so a residual goal about
 below is kernel-checked — no axioms, no `native_decide`.
 
 `Float` operations are `pack (op (unpack ..) (unpack ..))`, so a fact
-about `UnpackedFloat` only reaches a residual goal once the pack/unpack
-round-trip is available to strip the repacking. That round-trip is the
-`Canonical` section below; `Norm.lean` consumes what it enables.
+about `UnpackedFloat` only reaches a residual goal once the round-trip is
+available to cross the repacking — `unpack ∘ pack` for a result that gets
+repacked, `pack ∘ unpack` for one that gets compared. Both directions are
+below; `Norm.lean` consumes what they enable.
 -/
 
 namespace ThalesDsl.FloatFacts
@@ -29,6 +30,9 @@ theorem sign_neg_neg (s : Sign) : - -s = s := by
 
 theorem sign_beq_neg_neg (s t : Sign) : (s == - -t) = (s == t) := by
   cases s <;> cases t <;> rfl
+
+theorem sign_toBitVec_ofBitVec (v : BitVec 1) : (Sign.ofBitVec v).toBitVec = v := by
+  revert v; decide
 
 /-! ## Negation and subtraction -/
 
@@ -396,6 +400,117 @@ theorem model_unpack_pack_neg (f : Float.Model) :
   rw [model_unpack_pack]
   exact unpack_pack_of_canonical (canonical_neg (canonical_unpack _))
 
+/-! ## The reverse round-trip
+
+`unpack_pack_of_canonical` strips a repacking from a value that gets
+repacked; a fact whose result is *compared* instead — `le`, `lt`, `beq`
+all read `unpack` and never repack — needs the other direction. It holds
+of every valid bit pattern, the validity being what rules out the one
+counterexample, a non-canonical `NaN` payload. -/
+
+/-- A 64-bit word is its own (1, 11, 52) split reassembled. -/
+theorem packComponents_unpack (b : BitVec Format.binary64.numBits) :
+    packComponents .binary64 (Sign.ofBitVec (unpackSign b)) (unpackExponent b)
+      (unpackMantissa b) = b := by
+  simp only [packComponents, sign_toBitVec_ofBitVec, unpackSign, unpackExponent,
+    unpackMantissa, BitVec.extractLsb]
+  ext i hi
+  grind
+
+/-- The decomposition with the exponent and mantissa named by whichever
+`unpack` branch produced them. -/
+theorem packComponents_eq_self {b : BitVec Format.binary64.numBits}
+    {e : BitVec Format.binary64.exponentBits}
+    {m : BitVec Format.binary64.mantissaBitsWithoutImplicit}
+    (he : unpackExponent b = e) (hm : unpackMantissa b = m) :
+    packComponents .binary64 (Sign.ofBitVec (unpackSign b)) e m = b := by
+  subst he hm; exact packComponents_unpack b
+
+theorem pack_unpack_of_valid {b : BitVec Format.binary64.numBits}
+    (hv : Format.binary64.Valid b) :
+    UnpackedFloat.pack .binary64 (unpack .binary64 b) = b := by
+  have hbias : ((Format.binary64.exponentBias : Nat) : Int) = 1023 := rfl
+  have hmb : ((Format.binary64.mantissaBitsWithoutImplicit : Nat) : Int) = 52 := rfl
+  have hmlt : (unpackMantissa b).toNat < 2 ^ 52 := (unpackMantissa b).isLt
+  have hElt : (unpackExponent b).toNat < 2 ^ 11 := (unpackExponent b).isLt
+  rw [UnpackedFloat.unpack]
+  split
+  · rename_i hexp
+    split
+    · rename_i hmant
+      exact packComponents_eq_self hexp hmant
+    · rename_i hmant
+      exact (hv.eq_packedNaN hexp hmant).symm
+  · rename_i hexpne
+    split
+    · rename_i hexp0
+      split
+      · rename_i hmant
+        exact packComponents_eq_self hexp0 hmant
+      · rename_i hmant
+        -- subnormal: the biased exponent lands on 1, and a mantissa below
+        -- 2^52 cannot reach the normal branch's log2 test
+        have hE : (unpackExponent b).toNat = 0 := by rw [hexp0]; rfl
+        have hmpos : 0 < (unpackMantissa b).toNat := by
+          rcases Nat.eq_zero_or_pos (unpackMantissa b).toNat with h | h
+          · exact absurd (BitVec.toNat_inj.mp (by simpa using h)) hmant
+          · exact h
+        have hbe : (((unpackExponent b).toNat : Int)
+            - ((Format.binary64.exponentBias : Nat)
+              + (Format.binary64.mantissaBitsWithoutImplicit : Nat))
+            + 1 + (Format.binary64.exponentBias : Nat)
+            + (Format.binary64.mantissaBitsWithoutImplicit : Nat)).toNat = 1 := by
+          rw [hE, hbias, hmb]; omega
+        have hlog : ¬((unpackMantissa b).toNat.log2 + 1 = Format.binary64.mantissaBits) := by
+          have h52 : ¬52 ≤ (unpackMantissa b).toNat.log2 := fun hc => by
+            have := (Nat.le_log2 (by omega)).mp hc; omega
+          have h53 : Format.binary64.mantissaBits = 53 := by decide
+          omega
+        rw [UnpackedFloat.pack]
+        simp only [hbe]
+        rw [if_neg (by decide), if_neg hlog]
+        refine packComponents_eq_self hexp0 ?_
+        rw [BitVec.ofNat_toNat, BitVec.setWidth_eq]
+    · rename_i hexpnz
+      -- normal: the biased exponent is the stored one, which is neither
+      -- all-ones nor zero, and the implicit bit pins log2 at 52
+      have hEne : (unpackExponent b).toNat ≠ 2 ^ 11 - 1 := fun h =>
+        hexpne (BitVec.toNat_inj.mp (by simpa using h))
+      have hEnz : (unpackExponent b).toNat ≠ 0 := fun h =>
+        hexpnz (BitVec.toNat_inj.mp (by simpa using h))
+      have happ : (1#1 ++ unpackMantissa b).toNat = 2 ^ 52 + (unpackMantissa b).toNat :=
+        toNat_one_append _
+      have hbe : (((unpackExponent b).toNat : Int)
+          - ((Format.binary64.exponentBias : Nat)
+            + (Format.binary64.mantissaBitsWithoutImplicit : Nat))
+          + (Format.binary64.exponentBias : Nat)
+          + (Format.binary64.mantissaBitsWithoutImplicit : Nat)).toNat
+          = (unpackExponent b).toNat := by
+        rw [hbias, hmb]; omega
+      have hlog : (1#1 ++ unpackMantissa b).toNat.log2 + 1 = Format.binary64.mantissaBits := by
+        have h1 : 52 ≤ (1#1 ++ unpackMantissa b).toNat.log2 :=
+          (Nat.le_log2 (by omega)).mpr (by omega)
+        have h2 : ¬53 ≤ (1#1 ++ unpackMantissa b).toNat.log2 := fun hc => by
+          have := (Nat.le_log2 (by omega)).mp hc; omega
+        have h53 : Format.binary64.mantissaBits = 53 := by decide
+        omega
+      rw [UnpackedFloat.pack]
+      simp only [hbe]
+      rw [if_neg (by simp only [Format.binary64]; omega), if_pos hlog]
+      refine packComponents_eq_self ?_ ?_
+      · rw [BitVec.ofNat_toNat, BitVec.setWidth_eq]
+      · rw [← BitVec.toNat_inj, BitVec.toNat_ofNat, happ,
+          show (2 : Nat) ^ Format.binary64.mantissaBitsWithoutImplicit = 2 ^ 52 from rfl]
+        omega
+
+/-- A `Float.Model` carries its own validity proof, so it is exactly a
+valid bit pattern and the round-trip is unconditional. -/
+theorem model_pack_unpack (f : Float.Model) : Float.Model.pack f.unpack = f := by
+  obtain ⟨bits, hv⟩ := f
+  have h : UnpackedFloat.pack .binary64 (unpack .binary64 bits.toBitVec) = bits.toBitVec :=
+    pack_unpack_of_valid hv
+  simp only [Float.Model.pack, Float.Model.unpack, h]
+
 /-! ## Facts at the `Float` layer
 
 What the residual goals are actually stated in. -/
@@ -409,5 +524,12 @@ theorem float_sub_eq_add_neg (a b : Float) : a - b = a + (-b) := by
   congr 1
   rw [Float.Model.sub, Float.Model.add, Float.Model.neg, model_unpack_pack_neg,
     sub_eq_add_neg]
+
+/-- Double negation. Both round-trip directions are load-bearing here:
+the inner `-b` repacks before the outer `neg` unpacks it, and the result
+must repack to the float it started as. -/
+theorem float_neg_neg (a : Float) : - -a = a := by
+  show Float.ofModel (Float.Model.neg (Float.Model.neg a.toModel)) = a
+  rw [Float.Model.neg, Float.Model.neg, model_unpack_pack_neg, neg_neg, model_pack_unpack]
 
 end ThalesDsl.FloatFacts
