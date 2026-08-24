@@ -111,6 +111,8 @@ function constLines(
   const flags = s.declarationList.flags;
   if ((flags & ts.NodeFlags.Const) === 0) return undefined;
   if ((flags & ts.NodeFlags.Using) !== 0) return undefined;
+  // Parser recovery can yield a declarator list with no declarators.
+  if (s.declarationList.declarations.length === 0) return undefined;
   const lines: string[] = [];
   for (const d of s.declarationList.declarations) {
     if (!ts.isIdentifier(d.name)) return undefined;

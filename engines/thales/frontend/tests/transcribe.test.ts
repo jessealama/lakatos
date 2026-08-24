@@ -184,6 +184,19 @@ describe('const bindings', () => {
       'ts.return(ts.id["a"])',
     ]);
   });
+
+  test('a const statement with no declarators stays opaque', () => {
+    const src = [
+      'function g(a: number): number {',
+      '  const;',
+      '  return a;',
+      '}',
+    ].join('\n');
+    expect(bodyOf(src)).toEqual([
+      'ts.opaque["VariableStatement"](2, 3)',
+      'ts.return(ts.id["a"])',
+    ]);
+  });
 });
 
 describe('opaque fallbacks', () => {
