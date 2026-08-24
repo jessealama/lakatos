@@ -73,6 +73,28 @@ theorem float_neg_lo {c : Float} (h : c < floatInf) : -floatInf < -c :=
 theorem float_neg_hi {c : Float} (h : -floatInf < c) : -c < floatInf :=
   FloatFacts.float_neg_bound_hi h
 
+/-! A finite binder bound reaches the infinity hypotheses through one
+ground comparison: transitivity chains `c < 1000` with `1000 < floatInf`,
+and the ground link evaluates away during grind preprocessing. The
+infinity endpoint is fixed in each statement so the binder-emitted
+comparison alone determines the instantiation. -/
+
+theorem float_lt_inf_of_lt {a b : Float} (h : a < b) (hb : b < floatInf) :
+    a < floatInf :=
+  FloatFacts.float_lt_trans h hb
+
+theorem float_lt_inf_of_le {a b : Float} (h : a ≤ b) (hb : b < floatInf) :
+    a < floatInf :=
+  FloatFacts.float_lt_of_le_of_lt h hb
+
+theorem float_gt_neg_inf_of_lt {a b : Float} (ha : -floatInf < a) (h : a < b) :
+    -floatInf < b :=
+  FloatFacts.float_lt_trans ha h
+
+theorem float_gt_neg_inf_of_le {a b : Float} (ha : -floatInf < a) (h : a ≤ b) :
+    -floatInf < b :=
+  FloatFacts.float_lt_of_lt_of_le ha h
+
 open Lean Meta Simp in
 /-- Evaluates a closed `Float` comparison by reducing its `Decidable`
 instance, the way the `decide` tactic does; the kernel recomputes the
@@ -104,5 +126,9 @@ grind_pattern float_le_add_of_le => x + c, y + c
 grind_pattern float_le_div_of_le => x / c, y / c
 grind_pattern float_neg_lo => -c
 grind_pattern float_neg_hi => -c
+grind_pattern float_lt_inf_of_lt => a < b
+grind_pattern float_lt_inf_of_le => a ≤ b
+grind_pattern float_gt_neg_inf_of_lt => a < b
+grind_pattern float_gt_neg_inf_of_le => a ≤ b
 
 end ThalesDsl
