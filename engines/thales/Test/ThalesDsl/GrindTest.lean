@@ -30,6 +30,17 @@ ts_def "dblGrind" := ts.fn(ts.param["x"](ts.number)) : ts.number {
 example (x : Float) : TsModel.dblGrind x = (pure (x * 2) : TsM Float) := by
   grind
 
+-- A hardcoded factor: instantiating a monotonicity fact at a literal
+-- leaves ground bound hypotheses, which discharge by kernel evaluation
+-- during grind's normalization.
+example (x y : Float) (hxy : Float.le x y = true) :
+    Float.le (x * 3) (y * 3) = true := by
+  grind
+
+example (x y : Float) (hxy : Float.le x y = true) :
+    Float.le (x / 2.54) (y / 2.54) = true := by
+  grind
+
 -- The guard chain of the four monotonicity facts: grind instantiates
 -- them off the operation terms and closes the conversion shape the
 -- sub-rewrite leaves behind.

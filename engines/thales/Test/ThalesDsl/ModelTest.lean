@@ -13,6 +13,22 @@ ts_def "answer" := ts.fn() : ts.number { ts.return(ts.num[42]) }
 ts_def "minus3" := ts.fn() : ts.number { ts.return(ts.num[-3]) }
 #guard decide (TsModel.minus3 = (pure (-3.0) : TsM Float))
 
+-- Fractional and scientific literals: the transcriber emits the shortest
+-- round-tripping decimal, and OfScientific rounds correctly, so the token
+-- reconstructs the identical double.
+ts_def "cmFactor" := ts.fn() : ts.number { ts.return(ts.num[2.54]) }
+#guard decide (TsModel.cmFactor = (pure 2.54 : TsM Float))
+
+ts_def "negHalf" := ts.fn() : ts.number { ts.return(ts.num[-2.5]) }
+#guard decide (TsModel.negHalf = (pure (-2.5) : TsM Float))
+
+ts_def "sextillion" := ts.fn() : ts.number { ts.return(ts.num[1e21]) }
+#guard decide (TsModel.sextillion = (pure 1e21 : TsM Float))
+
+-- A source literal past the double range folds to the infinity it denotes.
+ts_def "overflowLit" := ts.fn() : ts.number { ts.return(ts.num[Infinity]) }
+#guard decide (TsModel.overflowLit = (pure floatInf : TsM Float))
+
 -- ts.id parameter references and ts.binop "+".
 ts_def "add" := ts.fn(ts.param["a"](ts.number), ts.param["b"](ts.number)) : ts.number {
   ts.return(ts.binop["+"](ts.id["a"], ts.id["b"]))

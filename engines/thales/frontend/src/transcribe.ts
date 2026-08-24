@@ -66,26 +66,25 @@ function opaqueDef(
   );
 }
 
-/** The integer value of a numeric literal, or undefined for non-integers. */
-function integerValue(lit: ts.NumericLiteral): bigint | undefined {
+/** The Lean literal token for a numeric literal. tsc normalizes the
+ * literal text (separators stripped, radix prefixes decimalized), and
+ * toString prints the shortest round-tripping decimal, which Lean's
+ * OfScientific reconstructs as the identical double. */
+function numberToken(lit: ts.NumericLiteral): string {
   const n = Number(lit.text);
-  if (!Number.isSafeInteger(n)) return undefined;
-  return BigInt(n);
+  if (!Number.isFinite(n)) return 'Infinity';
+  return n.toString().replace('e+', 'e');
 }
 
 function transcribeExpr(e: ts.Expression, sf: ts.SourceFile): string {
   if (ts.isIdentifier(e)) return `ts.id[${leanStr(e.text)}]`;
-  if (ts.isNumericLiteral(e)) {
-    const v = integerValue(e);
-    if (v !== undefined) return `ts.num[${v}]`;
-  }
+  if (ts.isNumericLiteral(e)) return `ts.num[${numberToken(e)}]`;
   if (
     ts.isPrefixUnaryExpression(e) &&
     e.operator === ts.SyntaxKind.MinusToken &&
     ts.isNumericLiteral(e.operand)
   ) {
-    const v = integerValue(e.operand);
-    if (v !== undefined) return `ts.num[-${v}]`;
+    return `ts.num[-${numberToken(e.operand)}]`;
   }
   if (ts.isParenthesizedExpression(e)) return transcribeExpr(e.expression, sf);
   if (ts.isBinaryExpression(e)) {

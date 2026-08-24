@@ -66,6 +66,32 @@ theorem float_neg_lo {c : Float} (h : c < floatInf) : -floatInf < -c :=
 theorem float_neg_hi {c : Float} (h : -floatInf < c) : -c < floatInf :=
   FloatFacts.float_neg_bound_hi h
 
+open Lean Meta Simp in
+/-- Evaluates a closed `Float` comparison by reducing its `Decidable`
+instance, the way the `decide` tactic does; the kernel recomputes the
+reduction when it checks the `Eq.refl` certificate. -/
+def reduceGroundFloatCmp (e : Expr) : SimpM Step := do
+  if e.hasFVar || e.hasExprMVar then return .continue
+  let inst ←
+    try synthInstance (mkApp (mkConst ``Decidable) e)
+    catch _ => return .continue
+  let r ← withAtLeastTransparency .default <| whnf inst
+  if r.isAppOf ``Decidable.isTrue then
+    return .done { expr := mkConst ``True, proof? := some (← mkEqTrue (← mkDecideProof e)) }
+  if r.isAppOf ``Decidable.isFalse then
+    let decEqFalse ← mkEq (mkApp2 (mkConst ``Decidable.decide) e inst) (mkConst ``Bool.false)
+    let h := mkExpectedPropHint (← mkEqRefl (mkConst ``Bool.false)) decEqFalse
+    let pf := mkApp3 (mkConst ``of_decide_eq_false) e inst h
+    return .done { expr := mkConst ``False, proof? := some (← mkEqFalse pf) }
+  return .continue
+
+/-- A literal factor instantiates a monotonicity fact with ground bound
+hypotheses; these evaluate away during normalization. Registered in
+`seval` because that is the set grind draws its simprocs from. -/
+simproc [seval] reduceFloatLt ((_ : Float) < _) := reduceGroundFloatCmp
+
+simproc [seval] reduceFloatLe ((_ : Float) ≤ _) := reduceGroundFloatCmp
+
 grind_pattern float_le_mul_of_le => x * c, y * c
 grind_pattern float_le_add_of_le => x + c, y + c
 grind_pattern float_le_div_of_le => x / c, y / c

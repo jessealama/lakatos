@@ -58,6 +58,36 @@ describe('expression kinds', () => {
     ]);
   });
 
+  test('fractional literals become ts.num', () => {
+    expect(bodyOf('function h(): number { return 2.54; }')).toEqual([
+      'ts.return(ts.num[2.54])',
+    ]);
+  });
+
+  test('negated fractional literals become negative ts.num', () => {
+    expect(bodyOf('function h(): number { return -2.5; }')).toEqual([
+      'ts.return(ts.num[-2.5])',
+    ]);
+  });
+
+  test('an exponent literal drops the plus sign JS printing adds', () => {
+    expect(bodyOf('function h(): number { return 1e21; }')).toEqual([
+      'ts.return(ts.num[1e21])',
+    ]);
+  });
+
+  test('numeric separators are normalized away by the parser', () => {
+    expect(bodyOf('function h(): number { return 1_000.5; }')).toEqual([
+      'ts.return(ts.num[1000.5])',
+    ]);
+  });
+
+  test('a literal past the double range becomes the Infinity token', () => {
+    expect(bodyOf('function h(): number { return 1e400; }')).toEqual([
+      'ts.return(ts.num[Infinity])',
+    ]);
+  });
+
   test('calls with identifier callees become ts.call', () => {
     expect(
       bodyOf('function twice(a: number): number { return add(a, a); }'),
@@ -208,12 +238,6 @@ describe('opaque fallbacks', () => {
     ].join('\n');
     expect(bodyOf(src)).toEqual([
       'ts.return(ts.opaque["AwaitExpression"](2, 10))',
-    ]);
-  });
-
-  test('a non-integer numeric literal becomes an opaque node', () => {
-    expect(bodyOf('function h(): number { return 0.5; }')).toEqual([
-      'ts.return(ts.opaque["NumericLiteral"](1, 31))',
     ]);
   });
 

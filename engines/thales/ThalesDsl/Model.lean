@@ -119,15 +119,7 @@ def tsIntLitToInt : TSyntax ``tsIntLit → CommandElabM (TSyntax `term)
   | `(tsIntLit| -$n:num) => `((-$n : Int))
   | stx => throwErrorAt stx "malformed integer literal"
 
-/-- A numeric literal in a program body is a binary64 value. Lean's literal
-rounding agrees with JavaScript's, so a literal too large to represent
-lands on the same double either language would choose. -/
-def tsIntLitToFloat : TSyntax ``tsIntLit → CommandElabM (TSyntax `term)
-  | `(tsIntLit| $n:num) => `(($n : Float))
-  | `(tsIntLit| -$n:num) => `((-$n : Float))
-  | stx => throwErrorAt stx "malformed integer literal"
-
-/-- A decimal endpoint, transcribed verbatim. Lean rounds it exactly as
+/-- A decimal literal, transcribed verbatim. Lean rounds it exactly as
 JavaScript does, so no adjustment is needed here. -/
 def tsFloatLitToTerm : TSyntax ``tsFloatLit → CommandElabM (TSyntax `term)
   | `(tsFloatLit| $n:scientific) => `(($n : Float))
@@ -146,10 +138,10 @@ def freshArg (i : Nat) : Ident := mkIdent (Name.mkSimple s!"ts#arg{i}")
 throw here, so `#thales_prove` can contain them per command. -/
 partial def evalExpr (vars : List String) (expected : ValTy) :
     TSyntax `ts_expr → CommandElabM (TSyntax `term)
-  | `(ts_expr| ts.num[$n:tsIntLit]) => do
+  | `(ts_expr| ts.num[$n:tsFloatLit]) => do
     unless expected == .num do
       throwErrorAt n "a numeric literal cannot be {expected.describe}"
-    `((pure $(← tsIntLitToFloat n) : TsM Float))
+    `((pure $(← tsFloatLitToTerm n) : TsM Float))
   | `(ts_expr| ts.id[$x:str]) => do
     unless vars.contains x.getString do
       throwErrorAt x "unbound identifier '{x.getString}'"
