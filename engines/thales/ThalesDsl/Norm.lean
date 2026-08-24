@@ -28,6 +28,13 @@ attribute [thales_norm] decide_eq_true_eq
 -- closers one operator fewer to reason about.
 attribute [thales_norm, grind =] ThalesDsl.FloatFacts.float_sub_eq_add_neg
 
+-- Commutativity of `*` and `+`: the monotonicity facts below are keyed on
+-- the right-constant orientation only; these equations let grind identify
+-- the left-constant spelling with it. Grind-only — a permutative rewrite
+-- has no place in a simp set.
+attribute [grind =] ThalesDsl.FloatFacts.float_mul_comm
+attribute [grind =] ThalesDsl.FloatFacts.float_add_comm
+
 /-- Open bounded ∀s so the closers see the inequalities. Tagged for grind
 too: the grind rung shares the normalization knowledge. -/
 @[thales_norm, grind =] theorem ballIco_iff (lo hi : Int) (p : Int → Prop) :
