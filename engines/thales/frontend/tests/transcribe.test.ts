@@ -99,6 +99,32 @@ describe('expression kinds', () => {
       'ts.return(ts.id["a"])',
     ]);
   });
+
+  test('unary minus on a non-literal becomes ts.unop', () => {
+    expect(bodyOf('function neg(x: number): number { return -x; }')).toEqual([
+      'ts.return(ts.unop["-"](ts.id["x"]))',
+    ]);
+  });
+
+  test('unary minus wraps a compound operand', () => {
+    expect(
+      bodyOf('function f(x: number): number { return -(x + 1); }'),
+    ).toEqual([
+      'ts.return(ts.unop["-"](ts.binop["+"](ts.id["x"], ts.num[1])))',
+    ]);
+  });
+
+  test('unary plus becomes ts.unop', () => {
+    expect(bodyOf('function f(x: number): number { return +x; }')).toEqual([
+      'ts.return(ts.unop["+"](ts.id["x"]))',
+    ]);
+  });
+
+  test('logical not stays opaque', () => {
+    expect(bodyOf('function f(x: number): number { return !x; }')).toEqual([
+      'ts.return(ts.opaque["PrefixUnaryExpression"](1, 40))',
+    ]);
+  });
 });
 
 describe('const bindings', () => {

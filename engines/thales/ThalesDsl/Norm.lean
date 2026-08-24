@@ -28,6 +28,10 @@ attribute [thales_norm] decide_eq_true_eq
 -- closers one operator fewer to reason about.
 attribute [thales_norm, grind =] ThalesDsl.FloatFacts.float_sub_eq_add_neg
 
+-- Double negation strips: reachable now that unary minus is in the
+-- expression model.
+attribute [thales_norm, grind =] ThalesDsl.FloatFacts.float_neg_neg
+
 -- Commutativity of `*` and `+`: the monotonicity facts below are keyed on
 -- the right-constant orientation only; these equations let grind identify
 -- the left-constant spelling with it. Grind-only — a permutative rewrite
