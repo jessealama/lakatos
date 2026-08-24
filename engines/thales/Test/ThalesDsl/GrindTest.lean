@@ -52,3 +52,7 @@ example (x y sf so tf to : Float)
     (hxy : Float.le x y = true) :
     Float.le ((x * sf + so + -to) / tf) ((y * sf + so + -to) / tf) = true := by
   grind
+
+-- Double negation strips under grind as under simp.
+example (x : Float) : - -x = x := by
+  grind

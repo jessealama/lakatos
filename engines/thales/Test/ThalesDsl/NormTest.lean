@@ -63,3 +63,12 @@ ts_def "diffNorm" := ts.fn(ts.param["a"](ts.number), ts.param["b"](ts.number)) :
 
 example (a b : Float) : TsModel.diffNorm a b = (pure (a + (-b)) : TsM Float) := by
   simp only [TsModel.diffNorm, thales_norm]
+
+-- Unary minus sheds its wrapping, and double negation strips away:
+-- float_neg_neg is in the set now that an operator can write it.
+ts_def "negNorm" := ts.fn(ts.param["x"](ts.number)) : ts.number {
+  ts.return(ts.unop["-"](ts.unop["-"](ts.id["x"])))
+}
+
+example (x : Float) : TsModel.negNorm x = (pure x : TsM Float) := by
+  simp only [TsModel.negNorm, thales_norm]

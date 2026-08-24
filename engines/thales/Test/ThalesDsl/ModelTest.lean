@@ -46,6 +46,20 @@ ts_def "sq" := ts.fn(ts.param["x"](ts.number)) : ts.number {
 }
 #guard decide (TsModel.sq (-4.0) = (pure 16.0 : TsM Float))
 
+-- ts.unop "-" is IEEE negation; "+" is ToNumber on a value already a
+-- number, so it models as the identity.
+ts_def "negate" := ts.fn(ts.param["x"](ts.number)) : ts.number {
+  ts.return(ts.unop["-"](ts.id["x"]))
+}
+#guard decide (TsModel.negate 4.0 = (pure (-4.0) : TsM Float))
+-- Negation flips the sign bit even on zero.
+#guard ((TsModel.negate 0.0).toOption.map Float.toBits) == some 0x8000000000000000
+
+ts_def "posid" := ts.fn(ts.param["x"](ts.number)) : ts.number {
+  ts.return(ts.unop["+"](ts.id["x"]))
+}
+#guard decide (TsModel.posid (-2.5) = (pure (-2.5) : TsM Float))
+
 -- ts.binop "/" — total IEEE division: finite quotients, signed infinities
 -- at zero divisors, NaN at 0/0.
 ts_def "ratio" := ts.fn(ts.param["a"](ts.number), ts.param["b"](ts.number)) : ts.number {

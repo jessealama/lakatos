@@ -25,6 +25,7 @@ declare_syntax_cat ts_expr
 syntax "ts.num[" tsFloatLit "]" : ts_expr
 syntax "ts.id[" str "]" : ts_expr
 syntax "ts.binop[" str "](" ts_expr ", " ts_expr ")" : ts_expr
+syntax "ts.unop[" str "](" ts_expr ")" : ts_expr
 syntax "ts.call[" str "](" ts_expr,* ")" : ts_expr
 
 declare_syntax_cat ts_stmt

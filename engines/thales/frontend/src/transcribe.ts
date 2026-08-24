@@ -86,6 +86,14 @@ function transcribeExpr(e: ts.Expression, sf: ts.SourceFile): string {
   ) {
     return `ts.num[-${numberToken(e.operand)}]`;
   }
+  if (
+    ts.isPrefixUnaryExpression(e) &&
+    (e.operator === ts.SyntaxKind.MinusToken ||
+      e.operator === ts.SyntaxKind.PlusToken)
+  ) {
+    const op = ts.tokenToString(e.operator)!;
+    return `ts.unop[${leanStr(op)}](${transcribeExpr(e.operand, sf)})`;
+  }
   if (ts.isParenthesizedExpression(e)) return transcribeExpr(e.expression, sf);
   if (ts.isBinaryExpression(e)) {
     const op = e.operatorToken.getText(sf);

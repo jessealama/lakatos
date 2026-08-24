@@ -181,6 +181,19 @@ partial def evalExpr (vars : List String) (expected : ValTy) :
       match unmodeledOperator? other with
       | some reason => throwErrorAt op reason
       | none => throwErrorAt op "operator '{other}' has no model in this slice"
+  | `(ts_expr| ts.unop[$op:str]($x:ts_expr)) => do
+    let xt ← evalExpr vars .num x
+    unless expected == .num do
+      throwErrorAt op "operator '{op.getString}' yields a number, not {expected.describe}"
+    match op.getString with
+    | "-" => `((($xt >>= fun a => pure (-a)) : TsM Float))
+    | "+" =>
+      -- ToNumber on a value already a number: the identity.
+      pure xt
+    | other =>
+      match unmodeledOperator? other with
+      | some reason => throwErrorAt op reason
+      | none => throwErrorAt op "operator '{other}' has no model in this slice"
   | `(ts_expr| ts.opaque[$kind:str]($line:num, $col:num)) =>
     throwErrorAt kind (unmappedMsg kind.getString s!"{line.getNat}:{col.getNat}")
   | `(ts_expr| ts.call[$f:str]($args:ts_expr,*)) => do
