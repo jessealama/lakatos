@@ -71,6 +71,121 @@ describe('expression kinds', () => {
   });
 });
 
+describe('const bindings', () => {
+  test('a const before the return becomes ts.const', () => {
+    const src = [
+      'function g(a: number): number {',
+      '  const b = a + 1;',
+      '  return b * 2;',
+      '}',
+    ].join('\n');
+    expect(bodyOf(src)).toEqual([
+      'ts.const["b"](ts.binop["+"](ts.id["a"], ts.num[1]))',
+      'ts.return(ts.binop["*"](ts.id["b"], ts.num[2]))',
+    ]);
+  });
+
+  test('a declarator list desugars to one ts.const per declarator', () => {
+    const src = [
+      'function g(a: number): number {',
+      '  const b = a + 1,',
+      '    c = b + 1;',
+      '  return c;',
+      '}',
+    ].join('\n');
+    expect(bodyOf(src)).toEqual([
+      'ts.const["b"](ts.binop["+"](ts.id["a"], ts.num[1]))',
+      'ts.const["c"](ts.binop["+"](ts.id["b"], ts.num[1]))',
+      'ts.return(ts.id["c"])',
+    ]);
+  });
+
+  test('a number annotation is accepted', () => {
+    const src = [
+      'function g(a: number): number {',
+      '  const b: number = a;',
+      '  return b;',
+      '}',
+    ].join('\n');
+    expect(bodyOf(src)).toEqual([
+      'ts.const["b"](ts.id["a"])',
+      'ts.return(ts.id["b"])',
+    ]);
+  });
+
+  test('a non-number annotation makes the statement opaque', () => {
+    const src = [
+      'function g(a: number): number {',
+      '  const s: string = a;',
+      '  return a;',
+      '}',
+    ].join('\n');
+    expect(bodyOf(src)).toEqual([
+      'ts.opaque["VariableStatement"](2, 3)',
+      'ts.return(ts.id["a"])',
+    ]);
+  });
+
+  test('let and var bindings stay opaque', () => {
+    const letSrc = [
+      'function g(a: number): number {',
+      '  let b = a;',
+      '  return b;',
+      '}',
+    ].join('\n');
+    expect(bodyOf(letSrc)).toEqual([
+      'ts.opaque["VariableStatement"](2, 3)',
+      'ts.return(ts.id["b"])',
+    ]);
+    const varSrc = [
+      'function g(a: number): number {',
+      '  var b = a;',
+      '  return b;',
+      '}',
+    ].join('\n');
+    expect(bodyOf(varSrc)).toEqual([
+      'ts.opaque["VariableStatement"](2, 3)',
+      'ts.return(ts.id["b"])',
+    ]);
+  });
+
+  test('using declarations stay opaque despite sharing the Const flag', () => {
+    const src = [
+      'function g(a: number): number {',
+      '  await using b = a;',
+      '  return a;',
+      '}',
+    ].join('\n');
+    expect(bodyOf(src)).toEqual([
+      'ts.opaque["VariableStatement"](2, 3)',
+      'ts.return(ts.id["a"])',
+    ]);
+  });
+
+  test('destructuring and initializer-less declarators stay opaque', () => {
+    const src = [
+      'function g(a: number): number {',
+      '  const { x } = a;',
+      '  return a;',
+      '}',
+    ].join('\n');
+    expect(bodyOf(src)).toEqual([
+      'ts.opaque["VariableStatement"](2, 3)',
+      'ts.return(ts.id["a"])',
+    ]);
+    const bare = [
+      'function g(a: number): number {',
+      '  const x;',
+      '  return a;',
+      '}',
+    ].join('\n');
+    expect(bodyOf(bare)).toEqual([
+      'ts.opaque["VariableStatement"](2, 3)',
+      'ts.return(ts.id["a"])',
+    ]);
+  });
+});
+
 describe('opaque fallbacks', () => {
   test('an unmapped expression becomes an opaque node at its 1-based position', () => {
     const src = [
