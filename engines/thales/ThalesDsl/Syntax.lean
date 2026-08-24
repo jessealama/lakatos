@@ -11,18 +11,18 @@ elaboration failure, never a parse failure. -/
 /-- Integer literals in constructor arguments (interval endpoints, ts.num). -/
 syntax tsIntLit := ("-")? num
 
-/-- Float literals in binder bounds. Lean's decimal parsing is bit-identical
-to JavaScript's, so an endpoint transcribes verbatim and lands on the double
-the annotation meant. `Infinity` is JavaScript's spelling; an infinite
-endpoint bounds against the literal infinity, never a substituted finite
-stand-in. -/
+/-- Float literals in binder bounds and ts.num. Lean's decimal parsing is
+bit-identical to JavaScript's, so a literal transcribes verbatim and lands
+on the double the source meant. `Infinity` is JavaScript's spelling; an
+infinite endpoint bounds against the literal infinity, never a substituted
+finite stand-in. -/
 syntax tsFloatLit := ("-")? (scientific <|> num <|> "Infinity")
 
 declare_syntax_cat ts_type
 syntax "ts.number" : ts_type
 
 declare_syntax_cat ts_expr
-syntax "ts.num[" tsIntLit "]" : ts_expr
+syntax "ts.num[" tsFloatLit "]" : ts_expr
 syntax "ts.id[" str "]" : ts_expr
 syntax "ts.binop[" str "](" ts_expr ", " ts_expr ")" : ts_expr
 syntax "ts.call[" str "](" ts_expr,* ")" : ts_expr
