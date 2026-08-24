@@ -66,30 +66,25 @@ function opaqueDef(
   );
 }
 
-/** The Lean literal token for a numeric literal, or undefined when no
- * token reconstructs it. toString prints the shortest round-tripping
- * decimal and Lean's OfScientific rounds correctly, so the emitted token
- * reconstructs the identical double. */
-function numberToken(lit: ts.NumericLiteral): string | undefined {
+/** The Lean literal token for a numeric literal. tsc normalizes the
+ * literal text (separators stripped, radix prefixes decimalized), and
+ * toString prints the shortest round-tripping decimal, which Lean's
+ * OfScientific reconstructs as the identical double. */
+function numberToken(lit: ts.NumericLiteral): string {
   const n = Number(lit.text);
-  if (Number.isNaN(n)) return undefined;
   if (!Number.isFinite(n)) return 'Infinity';
   return n.toString().replace('e+', 'e');
 }
 
 function transcribeExpr(e: ts.Expression, sf: ts.SourceFile): string {
   if (ts.isIdentifier(e)) return `ts.id[${leanStr(e.text)}]`;
-  if (ts.isNumericLiteral(e)) {
-    const t = numberToken(e);
-    if (t !== undefined) return `ts.num[${t}]`;
-  }
+  if (ts.isNumericLiteral(e)) return `ts.num[${numberToken(e)}]`;
   if (
     ts.isPrefixUnaryExpression(e) &&
     e.operator === ts.SyntaxKind.MinusToken &&
     ts.isNumericLiteral(e.operand)
   ) {
-    const t = numberToken(e.operand);
-    if (t !== undefined) return `ts.num[-${t}]`;
+    return `ts.num[-${numberToken(e.operand)}]`;
   }
   if (ts.isParenthesizedExpression(e)) return transcribeExpr(e.expression, sf);
   if (ts.isBinaryExpression(e)) {

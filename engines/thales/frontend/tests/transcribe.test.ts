@@ -76,6 +76,12 @@ describe('expression kinds', () => {
     ]);
   });
 
+  test('numeric separators are normalized away by the parser', () => {
+    expect(bodyOf('function h(): number { return 1_000.5; }')).toEqual([
+      'ts.return(ts.num[1000.5])',
+    ]);
+  });
+
   test('a literal past the double range becomes the Infinity token', () => {
     expect(bodyOf('function h(): number { return 1e400; }')).toEqual([
       'ts.return(ts.num[Infinity])',
