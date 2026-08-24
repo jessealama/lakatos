@@ -2966,6 +2966,34 @@ theorem le_of_key {u v : UnpackedFloat} (hu : Canonical u) (hv : Canonical v)
     rfl
   · omega
 
+theorem lt_ne_nan_left {u v : UnpackedFloat} (h : UnpackedFloat.lt u v = true) :
+    u ≠ .notANumber := by
+  intro rfl
+  rw [UnpackedFloat.lt] at h
+  simp [UnpackedFloat.compare] at h
+
+theorem lt_ne_nan_right {u v : UnpackedFloat} (h : UnpackedFloat.lt u v = true) :
+    v ≠ .notANumber := by
+  intro rfl
+  rw [UnpackedFloat.lt] at h
+  cases u <;> simp [UnpackedFloat.compare] at h
+
+/-- A true `lt` on canonical floats yields the strict key order. -/
+theorem key_of_lt {u v : UnpackedFloat} (hu : Canonical u) (hv : Canonical v)
+    (h : UnpackedFloat.lt u v = true) : key u < key v := by
+  have h1 := lt_ne_nan_left h
+  have h2 := lt_ne_nan_right h
+  rw [UnpackedFloat.lt, compare_eq_key hu hv h1 h2] at h
+  simp at h
+  exact Int.compare_eq_lt.mp h
+
+/-- Strict key order on canonical non-NaN floats gives a true `lt`. -/
+theorem lt_of_key {u v : UnpackedFloat} (hu : Canonical u) (hv : Canonical v)
+    (h1 : u ≠ .notANumber) (h2 : v ≠ .notANumber) (hk : key u < key v) :
+    UnpackedFloat.lt u v = true := by
+  rw [UnpackedFloat.lt, compare_eq_key hu hv h1 h2, Int.compare_eq_lt.mpr hk]
+  rfl
+
 /-- A strict bound below a canonical float and above zero pins it to a
 positive finite value. -/
 theorem pos_finite_of_bounds {u : UnpackedFloat} (hu : Canonical u)
@@ -3223,5 +3251,40 @@ theorem float_le_sub_right {x y c : Float} (hxy : Float.le x y = true)
   have hsub : ∀ z : Float, (z - c) = (z + (-c)) := fun z => float_sub_eq_add_neg z c
   rw [hsub, hsub]
   exact float_le_add_right hxy (float_neg_bound_lo hHi) (float_neg_bound_hi hLo)
+
+/-! ## Order transitivity at the `Float` layer
+
+Unpacking is always canonical and a true strict comparison rules out NaN
+on both ends, so the IEEE order chains exactly as the `Int` order on keys
+does. -/
+
+theorem float_lt_trans {a b c : Float} (hab : Float.lt a b = true)
+    (hbc : Float.lt b c = true) : Float.lt a c = true := by
+  rw [float_lt_unpack] at hab hbc ⊢
+  have hk := Int.lt_trans
+    (key_of_lt (canonical_unpack _) (canonical_unpack _) hab)
+    (key_of_lt (canonical_unpack _) (canonical_unpack _) hbc)
+  exact lt_of_key (canonical_unpack _) (canonical_unpack _)
+    (lt_ne_nan_left hab) (lt_ne_nan_right hbc) hk
+
+theorem float_lt_of_lt_of_le {a b c : Float} (hab : Float.lt a b = true)
+    (hbc : Float.le b c = true) : Float.lt a c = true := by
+  rw [float_lt_unpack] at hab ⊢
+  rw [float_le_unpack] at hbc
+  have hk := Int.lt_of_lt_of_le
+    (key_of_lt (canonical_unpack _) (canonical_unpack _) hab)
+    (key_of_le (canonical_unpack _) (canonical_unpack _) hbc)
+  exact lt_of_key (canonical_unpack _) (canonical_unpack _)
+    (lt_ne_nan_left hab) (le_ne_nan_right hbc) hk
+
+theorem float_lt_of_le_of_lt {a b c : Float} (hab : Float.le a b = true)
+    (hbc : Float.lt b c = true) : Float.lt a c = true := by
+  rw [float_le_unpack] at hab
+  rw [float_lt_unpack] at hbc ⊢
+  have hk := Int.lt_of_le_of_lt
+    (key_of_le (canonical_unpack _) (canonical_unpack _) hab)
+    (key_of_lt (canonical_unpack _) (canonical_unpack _) hbc)
+  exact lt_of_key (canonical_unpack _) (canonical_unpack _)
+    (le_ne_nan_left hab) (lt_ne_nan_right hbc) hk
 
 end ThalesDsl.FloatFacts
