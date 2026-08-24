@@ -29,3 +29,15 @@ ts_def "dblGrind" := ts.fn(ts.param["x"](ts.number)) : ts.number {
 
 example (x : Float) : TsModel.dblGrind x = (pure (x * 2) : TsM Float) := by
   grind
+
+-- The guard chain of the four monotonicity facts: grind instantiates
+-- them off the operation terms and closes the conversion shape the
+-- sub-rewrite leaves behind.
+example (x y sf so tf to : Float)
+    (h1 : (0 : Float) < sf) (h2 : sf < floatInf)
+    (h3 : -floatInf < so) (h4 : so < floatInf)
+    (h5 : (0 : Float) < tf) (h6 : tf < floatInf)
+    (h7 : -floatInf < to) (h8 : to < floatInf)
+    (hxy : Float.le x y = true) :
+    Float.le ((x * sf + so + -to) / tf) ((y * sf + so + -to) / tf) = true := by
+  grind

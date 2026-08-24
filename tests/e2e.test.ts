@@ -57,6 +57,20 @@ describe.runIf(enabled)("lakatos prove end-to-end (tracer)", () => {
     );
     fs.copyFileSync(path.join(cs, "zero-edge.ts"), path.join(dir, "unique.ts"));
     fs.copyFileSync(path.join(cs, "commutes.ts"), path.join(dir, "comm.ts"));
+    // The symbolic rungs' flagship: guarded monotonicity of the linear
+    // conversion, chained from the four Float monotonicity facts.
+    fs.copyFileSync(
+      path.join(
+        repoRoot,
+        "engines",
+        "thales",
+        "tests",
+        "conformance",
+        "theorem",
+        "guarded-monotone-conversion.ts",
+      ),
+      path.join(dir, "conversion.ts"),
+    );
   });
 
   it(
@@ -115,6 +129,21 @@ describe.runIf(enabled)("lakatos prove end-to-end (tracer)", () => {
         expect(v).toBeLessThan(10);
       }
       expect(f(cex.a!, cex.b!)).not.toBe(f(cex.b!, cex.a!));
+    },
+  );
+
+  it(
+    "guarded monotonicity of the conversion proves without axioms",
+    { timeout: proveTimeoutMs(1) },
+    () => {
+      const env = runForEnvelope(["prove", "conversion.ts"]);
+      expect(env.annotations).toHaveLength(1);
+      expect(env.annotations[0]).toMatchObject({
+        function: "applyConversionFactors",
+        property: "monotone",
+        szs: "Theorem",
+        axioms: [],
+      });
     },
   );
 
