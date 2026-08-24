@@ -40,6 +40,9 @@ theorem sign_neg_neg (s : Sign) : - -s = s := by
 theorem sign_beq_neg_neg (s t : Sign) : (s == - -t) = (s == t) := by
   cases s <;> cases t <;> rfl
 
+theorem sign_mul_comm (s t : Sign) : s * t = t * s := by
+  cases s <;> cases t <;> rfl
+
 theorem sign_toBitVec_ofBitVec (v : BitVec 1) : (Sign.ofBitVec v).toBitVec = v := by
   revert v; decide
 
@@ -55,6 +58,24 @@ theorem sub_eq_add_neg (spec : Format) (a b : UnpackedFloat) :
   cases a <;> cases b <;>
     grind [UnpackedFloat.sub, UnpackedFloat.add, UnpackedFloat.neg,
            sign_apply_neg, sign_neg_neg, sign_beq_neg_neg]
+
+/-! ## Commutativity
+
+`mul` and `add` are symmetric row by row: the exceptional rows mirror
+each other (NaN has a single constructor, so both NaN rows agree), and
+the finite rows commute because their mantissa and exponent arithmetic
+does. -/
+
+theorem mul_comm (spec : Format) (a b : UnpackedFloat) :
+    UnpackedFloat.mul spec a b = UnpackedFloat.mul spec b a := by
+  cases a <;> cases b <;>
+    simp [UnpackedFloat.mul, sign_mul_comm, Nat.mul_comm, Int.add_comm]
+
+theorem add_comm (spec : Format) (a b : UnpackedFloat) :
+    UnpackedFloat.add spec a b = UnpackedFloat.add spec b a := by
+  cases a <;> cases b <;>
+    simp [UnpackedFloat.add, Int.min_comm, Int.add_comm] <;>
+    rename_i s t <;> cases s <;> cases t <;> rfl
 
 /-! ## Round-to-nearest-even on mantissas -/
 
@@ -540,6 +561,20 @@ must repack to the float it started as. -/
 theorem float_neg_neg (a : Float) : - -a = a := by
   show Float.ofModel (Float.Model.neg (Float.Model.neg a.toModel)) = a
   rw [Float.Model.neg, Float.Model.neg, model_unpack_pack_neg, neg_neg, model_pack_unpack]
+
+/-- Commutativity survives the packing: both orientations round the same
+unpacked product. -/
+theorem float_mul_comm (a b : Float) : a * b = b * a := by
+  show Float.ofModel (Float.Model.mul a.toModel b.toModel)
+     = Float.ofModel (Float.Model.mul b.toModel a.toModel)
+  congr 1
+  rw [Float.Model.mul, Float.Model.mul, mul_comm]
+
+theorem float_add_comm (a b : Float) : a + b = b + a := by
+  show Float.ofModel (Float.Model.add a.toModel b.toModel)
+     = Float.ofModel (Float.Model.add b.toModel a.toModel)
+  congr 1
+  rw [Float.Model.add, Float.Model.add, add_comm]
 
 
 /-! ## Fraction-augmented rounding arithmetic -/
