@@ -29,6 +29,8 @@ syntax "ts.call[" str "](" ts_expr,* ")" : ts_expr
 
 declare_syntax_cat ts_stmt
 syntax "ts.return(" ts_expr ")" : ts_stmt
+-- A const binding: name and initializer; scope is the rest of the body.
+syntax "ts.const[" str "](" ts_expr ")" : ts_stmt
 
 /-! Graceful degradation: a construct the front end cannot map arrives as an
 opaque node carrying the tsc SyntaxKind name and the construct's line and
