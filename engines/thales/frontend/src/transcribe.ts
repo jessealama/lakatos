@@ -101,11 +101,40 @@ function transcribeExpr(e: ts.Expression, sf: ts.SourceFile): string {
   return opaque(e, sf);
 }
 
-function transcribeStmt(s: ts.Statement, sf: ts.SourceFile): string {
-  if (ts.isReturnStatement(s) && s.expression !== undefined) {
-    return `ts.return(${transcribeExpr(s.expression, sf)})`;
+/** `ts.const` lines for a const statement's declarators, or undefined
+ * when any declarator falls outside the slice. `await using` shares the
+ * Const flag, so the Using bit is excluded explicitly. */
+function constLines(
+  s: ts.VariableStatement,
+  sf: ts.SourceFile,
+): string[] | undefined {
+  const flags = s.declarationList.flags;
+  if ((flags & ts.NodeFlags.Const) === 0) return undefined;
+  if ((flags & ts.NodeFlags.Using) !== 0) return undefined;
+  // Parser recovery can yield a declarator list with no declarators.
+  if (s.declarationList.declarations.length === 0) return undefined;
+  const lines: string[] = [];
+  for (const d of s.declarationList.declarations) {
+    if (!ts.isIdentifier(d.name)) return undefined;
+    if (d.initializer === undefined) return undefined;
+    if (d.type !== undefined && d.type.kind !== ts.SyntaxKind.NumberKeyword)
+      return undefined;
+    lines.push(
+      `ts.const[${leanStr(d.name.text)}](${transcribeExpr(d.initializer, sf)})`,
+    );
   }
-  return opaque(s, sf);
+  return lines;
+}
+
+function transcribeStmt(s: ts.Statement, sf: ts.SourceFile): string[] {
+  if (ts.isReturnStatement(s) && s.expression !== undefined) {
+    return [`ts.return(${transcribeExpr(s.expression, sf)})`];
+  }
+  if (ts.isVariableStatement(s)) {
+    const lines = constLines(s, sf);
+    if (lines !== undefined) return lines;
+  }
+  return [opaque(s, sf)];
 }
 
 /** The node that keeps a function declaration's signature outside the
@@ -145,8 +174,8 @@ function transcribeFunction(
   const params = fn.parameters.map(
     (p) => `ts.param[${leanStr((p.name as ts.Identifier).text)}](ts.number)`,
   );
-  const body = (fn.body?.statements ?? []).map(
-    (s) => `  ${transcribeStmt(s, sf)}`,
+  const body = (fn.body?.statements ?? []).flatMap((s) =>
+    transcribeStmt(s, sf).map((line) => `  ${line}`),
   );
   return [
     `ts_def ${leanStr(fn.name.text)} := ts.fn(${params.join(', ')}) : ts.number {`,

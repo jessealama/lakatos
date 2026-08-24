@@ -245,11 +245,22 @@ elab_rules : command
         match p with
         | `(ts_param| ts.param[$x:str](ts.number)) => pure x.getString
         | _ => throwErrorAt p "unsupported parameter shape"
-      -- Slice: the body is exactly one return statement.
-      let #[stmt] := stmts.raw | throwErrorAt name "the body must be a single return statement"
-      let `(ts_stmt| ts.return($e:ts_expr)) := stmt
-        | throwErrorAt stmt "unsupported statement shape"
-      let bodyTerm ← evalExpr paramNames.toList .num e
+      -- Slice: const bindings, then exactly one return. Each binding is a
+      -- bind, not a substitution, so an unused initializer still evaluates.
+      let shapeMsg := "the body must be const bindings followed by a single return"
+      let some retStx := stmts.raw.back? | throwErrorAt name shapeMsg
+      let `(ts_stmt| ts.return($e:ts_expr)) := retStx | throwErrorAt retStx shapeMsg
+      let mut vars := paramNames.toList
+      let mut binds : Array (Name × TSyntax `term) := #[]
+      for stmt in stmts.raw.pop do
+        let `(ts_stmt| ts.const[$x:str]($init:ts_expr)) := stmt
+          | throwErrorAt stmt shapeMsg
+        binds := binds.push (Name.mkSimple x.getString, ← evalExpr vars .num init)
+        vars := vars ++ [x.getString]
+      let mut bodyTerm ← evalExpr vars .num e
+      -- Right to left, so the first binding is the outermost bind.
+      for (x, initTerm) in binds.reverse do
+        bodyTerm ← `((($initTerm >>= fun $(mkIdent x) => $bodyTerm) : TsM Float))
       let declName := modelNamespace ++ Name.mkSimple name.getString
       let declId := mkIdent declName
       let ty ← mkModelType paramNames.size

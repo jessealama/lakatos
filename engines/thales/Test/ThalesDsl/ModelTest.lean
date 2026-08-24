@@ -155,3 +155,46 @@ ts_def "zeroOver" := ts.fn(ts.param["x"](ts.number)) : ts.number {
 -- disagree with SameValue above, so the two spellings cannot re-converge.
 #guard decide (Float.beq (0.0 / 0.0) (0.0 / 0.0) = false)
 #guard decide (Float.beq 0.0 (-0.0) = true)
+
+-- ts.const bindings: straight-line, each visible to later initializers
+-- and the return; elaborated as binds, so evaluation order is preserved.
+ts_def "affineConst" := ts.fn(ts.param["n"](ts.number)) : ts.number {
+  ts.const["doubled"](ts.binop["*"](ts.num[2], ts.id["n"]))
+  ts.const["shifted"](ts.binop["+"](ts.id["doubled"], ts.num[2]))
+  ts.return(ts.id["shifted"])
+}
+#guard decide (TsModel.affineConst 3.0 = (pure 8.0 : TsM Float))
+
+-- A binding may go unused; its initializer still elaborates.
+ts_def "ignored" := ts.fn(ts.param["a"](ts.number)) : ts.number {
+  ts.const["unused"](ts.binop["/"](ts.id["a"], ts.num[0]))
+  ts.return(ts.id["a"])
+}
+#guard decide (TsModel.ignored 4.0 = (pure 4.0 : TsM Float))
+
+-- A use before its binding is an unbound identifier, contained per decl.
+ts_def "tdz" := ts.fn() : ts.number {
+  ts.const["a"](ts.id["b"])
+  ts.const["b"](ts.num[1])
+  ts.return(ts.id["a"])
+}
+
+-- A binding after the return violates the body shape, contained per decl.
+ts_def "deadTail" := ts.fn() : ts.number {
+  ts.return(ts.num[1])
+  ts.const["x"](ts.num[2])
+}
+
+open Lean in
+#eval show CoreM Unit from do
+  let env ← getEnv
+  unless (findModel? env "affineConst").isSome do
+    throwError "'affineConst' should register a model"
+  let some tdz := findFailed? env "tdz"
+    | throwError "'tdz' should be recorded as failed"
+  unless tdz.construct == none do
+    throwError "'tdz' is not an opaque failure, got {repr tdz.construct}"
+  let some dead := findFailed? env "deadTail"
+    | throwError "'deadTail' should be recorded as failed"
+  unless dead.construct == none do
+    throwError "'deadTail' is not an opaque failure, got {repr dead.construct}"

@@ -12,5 +12,6 @@ export function applyConversionFactors(
   targetFactor: number,
   targetOffset: number,
 ): number {
-  return (value * sourceFactor + sourceOffset - targetOffset) / targetFactor;
+  const baseValue = value * sourceFactor + sourceOffset;
+  return (baseValue - targetOffset) / targetFactor;
 }
