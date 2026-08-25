@@ -7,6 +7,7 @@ import {
   EmptyAfterClampError,
   extractFromSource,
   intInterval,
+  isClassDomain,
   type Formula,
   type InvalidAnnotation,
   parseBody,
@@ -837,6 +838,7 @@ function isEquationGuard(e: ts.Expression): boolean {
 type PropReading =
   | { kind: 'structured'; binders: string[]; body: string }
   | { kind: 'unsupported-range'; reason: string }
+  | { kind: 'class-binder'; reason: string }
   | { kind: 'bare' };
 
 /** The body shapes this slice can structure, as guard atoms around a
@@ -870,6 +872,15 @@ function chainReading(
 function structuredProp(formula: string, moduleNames: NameMap): PropReading {
   try {
     const { binders, body } = parsePrefix(formula);
+    // Outside the model, not a missing shape: the property is refused with
+    // the construct named, whatever else the formula contains.
+    const classBinder = binders.find((b) => isClassDomain(b.domain));
+    if (classBinder !== undefined && isClassDomain(classBinder.domain)) {
+      return {
+        kind: 'class-binder',
+        reason: `class-valued binder '${classBinder.domain.className}' is not yet modeled`,
+      };
+    }
     const names = shadow(moduleNames, new Set(binders.map((b) => b.varName)));
     const binderCtors: string[] = [];
     const clamped: string[] = [];
@@ -924,10 +935,11 @@ function structuredProp(formula: string, moduleNames: NameMap): PropReading {
 }
 
 /** An annotation the transcriber deliberately emitted no prove command
- * for; the CLI reports it NotTried with this kind and reason. */
+ * for; the CLI reports it from the kind — NotTried for unsupported-range,
+ * Inappropriate for class-binder — with this reason. */
 export interface UntriedAnnotation {
   annotation: RawAnnotation;
-  kind: 'unsupported-range';
+  kind: 'unsupported-range' | 'class-binder';
   reason: string;
 }
 
@@ -953,6 +965,15 @@ function proveBlock(
       lines: [
         comment,
         `-- not tried @ensures{${a.propertyName}} on ${fnName}: ${reading.reason}`,
+      ],
+      untried: { annotation: a, ...reading },
+    };
+  }
+  if (reading.kind === 'class-binder') {
+    return {
+      lines: [
+        comment,
+        `-- inappropriate @ensures{${a.propertyName}} on ${fnName}: ${reading.reason}`,
       ],
       untried: { annotation: a, ...reading },
     };

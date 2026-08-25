@@ -1265,15 +1265,33 @@ describe('clamped ranges', () => {
     expect(lean).toContain('#thales_prove "t.ts" "f" "p"');
   });
 
-  test('a class-valued binder degrades to the bare command', () => {
+  test('a class-valued binder reports Inappropriate at transcription', () => {
     const src = [
       'export class Box { constructor(readonly size: number) {} }',
       '/** @ensures{p} forall (b: Box) { volume(b) >= 0 } */',
       'export function volume(b: Box): number { return b.size; }',
     ].join('\n');
     const { lean, untried } = transcribe(src, 't.ts');
-    expect(untried).toEqual([]);
-    expect(lean).toContain('#thales_prove "t.ts" "volume" "p"');
+    expect(untried).toHaveLength(1);
+    expect(untried[0]).toMatchObject({
+      kind: 'class-binder',
+      reason: "class-valued binder 'Box' is not yet modeled",
+    });
+    expect(lean).not.toContain('#thales_prove "t.ts" "volume" "p"');
+    expect(lean).toContain(
+      "-- inappropriate @ensures{p} on volume: class-valued binder 'Box' is not yet modeled",
+    );
+  });
+
+  test('the class binder wins over other blockers in the same property', () => {
+    const src = [
+      'export class Box { constructor(readonly size: number) {} }',
+      '/** @ensures{p} forall (b: Box) (s: string) { volume(b) >= 0 ∧ volume(b) >= 0 } */',
+      'export function volume(b: Box): number { return b.size; }',
+    ].join('\n');
+    const { untried } = transcribe(src, 't.ts');
+    expect(untried).toHaveLength(1);
+    expect(untried[0]).toMatchObject({ kind: 'class-binder' });
   });
 
   test('the artifact records the untried annotation as a comment', () => {

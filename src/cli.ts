@@ -452,6 +452,14 @@ function proveSpine(): Spine {
           };
           const u = untried.get(r);
           if (u === undefined) tried.push(identity);
+          else if (u.kind === "class-binder")
+            // Outside the model, not a missing shape: the frontend already
+            // named the construct, so the verdict is Inappropriate.
+            untriedResults.push({
+              ...identity,
+              szs: "Inappropriate",
+              reason: u.reason,
+            });
           else
             untriedResults.push({
               ...identity,
