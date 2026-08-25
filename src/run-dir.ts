@@ -16,9 +16,10 @@ export function runDirFor(startedAt: string): string {
   return path.join(RUN_ROOT, startedAt.replaceAll(":", "-"));
 }
 
-/** How many names to try before concluding something is wrong with the
- * run root rather than with this one name. */
-const MAX_CLAIM_ATTEMPTS = 1000;
+/** How many names to try before concluding something is wrong with the run
+ * root rather than with this one name. Far beyond any reachable collision:
+ * it would take this many invocations inside a single millisecond. */
+export const MAX_CLAIM_ATTEMPTS = 100;
 
 /**
  * This invocation's run directory, created here so the name is reserved
