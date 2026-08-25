@@ -1,4 +1,5 @@
 import * as fs from 'node:fs';
+import * as path from 'node:path';
 import ts from 'typescript';
 import {
   type Binder,
@@ -76,8 +77,32 @@ function numberToken(lit: ts.NumericLiteral): string {
   return n.toString().replace('e+', 'e');
 }
 
-function transcribeExpr(e: ts.Expression, sf: ts.SourceFile): string {
-  if (ts.isIdentifier(e)) return `ts.id[${leanStr(e.text)}]`;
+/** How a module's names reach the artifact: a name as written, mapped to
+ * the name the `ts_def` defining it carries. A name the map does not
+ * mention emits as written — every local, and the entry module's own
+ * declarations. */
+type NameMap = ReadonlyMap<string, string>;
+
+/** The artifact name an identifier reference resolves to. */
+function ref(name: string, names: NameMap): string {
+  return names.get(name) ?? name;
+}
+
+/** `names` with locally bound spellings removed: a parameter, a const
+ * binding, or a ∀-binder shadows the module-level name it repeats. */
+function shadow(names: NameMap, locals: ReadonlySet<string>): NameMap {
+  if (names.size === 0 || locals.size === 0) return names;
+  const scoped = new Map(names);
+  for (const l of locals) scoped.delete(l);
+  return scoped;
+}
+
+function transcribeExpr(
+  e: ts.Expression,
+  sf: ts.SourceFile,
+  names: NameMap,
+): string {
+  if (ts.isIdentifier(e)) return `ts.id[${leanStr(ref(e.text, names))}]`;
   if (ts.isNumericLiteral(e)) return `ts.num[${numberToken(e)}]`;
   if (
     ts.isPrefixUnaryExpression(e) &&
@@ -92,18 +117,20 @@ function transcribeExpr(e: ts.Expression, sf: ts.SourceFile): string {
       e.operator === ts.SyntaxKind.PlusToken)
   ) {
     const op = ts.tokenToString(e.operator)!;
-    return `ts.unop[${leanStr(op)}](${transcribeExpr(e.operand, sf)})`;
+    return `ts.unop[${leanStr(op)}](${transcribeExpr(e.operand, sf, names)})`;
   }
-  if (ts.isParenthesizedExpression(e)) return transcribeExpr(e.expression, sf);
+  if (ts.isParenthesizedExpression(e))
+    return transcribeExpr(e.expression, sf, names);
   if (ts.isBinaryExpression(e)) {
     const op = e.operatorToken.getText(sf);
-    const l = transcribeExpr(e.left, sf);
-    const r = transcribeExpr(e.right, sf);
+    const l = transcribeExpr(e.left, sf, names);
+    const r = transcribeExpr(e.right, sf, names);
     return `ts.binop[${leanStr(op)}](${l}, ${r})`;
   }
   if (ts.isCallExpression(e) && ts.isIdentifier(e.expression)) {
-    const args = e.arguments.map((a) => transcribeExpr(a, sf));
-    return `ts.call[${leanStr(e.expression.text)}](${args.join(', ')})`;
+    const args = e.arguments.map((a) => transcribeExpr(a, sf, names));
+    const callee = leanStr(ref(e.expression.text, names));
+    return `ts.call[${callee}](${args.join(', ')})`;
   }
   return opaque(e, sf);
 }
@@ -114,6 +141,7 @@ function transcribeExpr(e: ts.Expression, sf: ts.SourceFile): string {
 function constLines(
   s: ts.VariableStatement,
   sf: ts.SourceFile,
+  names: NameMap,
 ): string[] | undefined {
   const flags = s.declarationList.flags;
   if ((flags & ts.NodeFlags.Const) === 0) return undefined;
@@ -126,19 +154,22 @@ function constLines(
     if (d.initializer === undefined) return undefined;
     if (d.type !== undefined && d.type.kind !== ts.SyntaxKind.NumberKeyword)
       return undefined;
-    lines.push(
-      `ts.const[${leanStr(d.name.text)}](${transcribeExpr(d.initializer, sf)})`,
-    );
+    const init = transcribeExpr(d.initializer, sf, names);
+    lines.push(`ts.const[${leanStr(d.name.text)}](${init})`);
   }
   return lines;
 }
 
-function transcribeStmt(s: ts.Statement, sf: ts.SourceFile): string[] {
+function transcribeStmt(
+  s: ts.Statement,
+  sf: ts.SourceFile,
+  names: NameMap,
+): string[] {
   if (ts.isReturnStatement(s) && s.expression !== undefined) {
-    return [`ts.return(${transcribeExpr(s.expression, sf)})`];
+    return [`ts.return(${transcribeExpr(s.expression, sf, names)})`];
   }
   if (ts.isVariableStatement(s)) {
-    const lines = constLines(s, sf);
+    const lines = constLines(s, sf, names);
     if (lines !== undefined) return lines;
   }
   return [opaque(s, sf)];
@@ -169,23 +200,42 @@ function signatureBlocker(fn: ts.FunctionDeclaration): ts.Node | undefined {
   return undefined;
 }
 
+/** The names a function body binds itself, which shadow the module's. */
+function functionLocals(
+  fn: ts.FunctionDeclaration,
+  body: readonly ts.Statement[],
+): Set<string> {
+  const locals = new Set<string>();
+  for (const p of fn.parameters) locals.add((p.name as ts.Identifier).text);
+  for (const s of body) {
+    if (!ts.isVariableStatement(s)) continue;
+    for (const d of s.declarationList.declarations)
+      for (const id of bindingIdentifiers(d.name)) locals.add(id.text);
+  }
+  return locals;
+}
+
 function transcribeFunction(
   fn: ts.FunctionDeclaration,
   sf: ts.SourceFile,
+  scope: ModuleScope,
 ): string[] {
   if (fn.name === undefined) return [];
+  const name = scope.defName(fn.name.text);
   const blocker = signatureBlocker(fn);
   if (blocker !== undefined) {
-    return [opaqueDef(fn.name.text, blocker.kind, blocker, sf)];
+    return [opaqueDef(name, blocker.kind, blocker, sf)];
   }
   const params = fn.parameters.map(
     (p) => `ts.param[${leanStr((p.name as ts.Identifier).text)}](ts.number)`,
   );
-  const body = (fn.body?.statements ?? []).flatMap((s) =>
-    transcribeStmt(s, sf).map((line) => `  ${line}`),
+  const stmts = fn.body?.statements ?? [];
+  const names = shadow(scope.names, functionLocals(fn, stmts));
+  const body = stmts.flatMap((s) =>
+    transcribeStmt(s, sf, names).map((line) => `  ${line}`),
   );
   return [
-    `ts_def ${leanStr(fn.name.text)} := ts.fn(${params.join(', ')}) : ts.number {`,
+    `ts_def ${leanStr(name)} := ts.fn(${params.join(', ')}) : ts.number {`,
     ...body,
     '}',
   ];
@@ -201,9 +251,16 @@ function bindingIdentifiers(name: ts.BindingName): ts.Identifier[] {
   return found;
 }
 
-/** Opaque ts_defs for every name a non-function declaration binds. */
-function transcribeOtherDecl(stmt: ts.Statement, sf: ts.SourceFile): string[] {
-  const def = (name: string, at: ts.Node) => opaqueDef(name, stmt.kind, at, sf);
+/** Opaque ts_defs for every name a non-function declaration binds. An
+ * import name whose module was inlined binds no def of its own: the
+ * exporting module already carries the definition. */
+function transcribeOtherDecl(
+  stmt: ts.Statement,
+  sf: ts.SourceFile,
+  scope: ModuleScope,
+): string[] {
+  const def = (name: string, at: ts.Node) =>
+    opaqueDef(scope.defName(name), stmt.kind, at, sf);
   if (ts.isVariableStatement(stmt)) {
     return stmt.declarationList.declarations.flatMap((d) =>
       bindingIdentifiers(d.name).map((id) => def(id.text, id)),
@@ -234,8 +291,10 @@ function transcribeOtherDecl(stmt: ts.Statement, sf: ts.SourceFile): string[] {
       if (ts.isNamespaceImport(bindings)) {
         defs.push(def(bindings.name.text, bindings.name));
       } else {
-        for (const el of bindings.elements)
+        for (const el of bindings.elements) {
+          if (scope.inlined.has(el.name.text)) continue;
           defs.push(def(el.name.text, el.name));
+        }
       }
     }
     return defs;
@@ -245,6 +304,198 @@ function transcribeOtherDecl(stmt: ts.Statement, sf: ts.SourceFile): string[] {
   if (name !== undefined && ts.isIdentifier(name))
     return [def(name.text, name)];
   return [];
+}
+
+/** The top-level names a non-import declaration binds — what a reference
+ * elsewhere in the module can name. Class members are not among them: a
+ * member's ts_def name is synthesized, never written as an identifier. */
+function declaredNames(stmt: ts.Statement): string[] {
+  if (ts.isVariableStatement(stmt)) {
+    return stmt.declarationList.declarations.flatMap((d) =>
+      bindingIdentifiers(d.name).map((id) => id.text),
+    );
+  }
+  const name = (stmt as { name?: ts.Node }).name;
+  return name !== undefined && ts.isIdentifier(name) ? [name.text] : [];
+}
+
+/** How one module's top-level names reach the artifact. */
+interface ModuleScope {
+  /** Every top-level name the module binds. */
+  names: NameMap;
+  /** Import-bound names whose module was inlined: the definition travels
+   * with the exporting module, so this one emits none. */
+  inlined: ReadonlySet<string>;
+  /** The ts_def name a declaration in this module carries. */
+  defName: (name: string) => string;
+}
+
+/** Reads a module's text by absolute path, or undefined when there is no
+ * such file. Injectable, so a closure can be transcribed without a disk. */
+export type ModuleReader = (file: string) => string | undefined;
+
+const diskReader: ModuleReader = (file) => {
+  try {
+    return fs.readFileSync(file, 'utf8');
+  } catch {
+    return undefined;
+  }
+};
+
+/** A specifier names the file nodeNext will emit; the TypeScript source it
+ * was written as is what resolution wants, and it wins over a sibling
+ * spelled the way the specifier is. */
+const SOURCE_EXTENSIONS: Record<string, string[]> = {
+  '.mjs': ['.mts'],
+  '.cjs': ['.cts'],
+  '.js': ['.ts', '.tsx'],
+};
+
+/** The file a relative specifier names, or undefined for a bare specifier
+ * (a package or a builtin) and for one that reaches no file. */
+function resolveImport(
+  specifier: string,
+  from: string,
+  reader: ModuleReader,
+): { file: string; text: string } | undefined {
+  if (!/^\.\.?\//.test(specifier)) return undefined;
+  const ext = path.extname(specifier);
+  const stem = specifier.slice(0, specifier.length - ext.length);
+  const spellings = [
+    ...(SOURCE_EXTENSIONS[ext] ?? []).map((e) => stem + e),
+    specifier,
+  ];
+  for (const spelling of spellings) {
+    const file = path.resolve(path.dirname(from), spelling);
+    const text = reader(file);
+    if (text !== undefined) return { file, text };
+  }
+  return undefined;
+}
+
+/** The prefix a dependency's ts_def names carry: its path relative to the
+ * entry file, which is unique to it within the entry's artifact. */
+function moduleQualifier(entryDir: string, file: string): string {
+  return path.relative(entryDir, file).split(path.sep).join('/');
+}
+
+/** One entry file's dependency-closure walk. Artifacts are self-contained,
+ * so the closure is inlined into the entry's own artifact rather than
+ * imported: every module it reaches contributes its declarations under
+ * module-qualified names. */
+interface Closure {
+  reader: ModuleReader;
+  /** What module qualifiers are relative to: the entry file's directory. */
+  entryDir: string;
+  /** Modules already inlined, by absolute path, with their name maps. */
+  done: Map<string, NameMap>;
+  /** Modules whose walk has not finished: an import reaching back into one
+   * closes a cycle. */
+  active: Set<string>;
+  /** Blocks emitted so far, each dependency before the module using it. */
+  blocks: string[][];
+}
+
+/** Inline `target` if it is not already in, and answer its name map. */
+function inlineModule(
+  target: { file: string; text: string },
+  c: Closure,
+): NameMap {
+  const done = c.done.get(target.file);
+  if (done !== undefined) return done;
+  c.active.add(target.file);
+  const names = walkModule(
+    target.file,
+    target.file,
+    target.text,
+    moduleQualifier(c.entryDir, target.file),
+    c,
+  );
+  c.active.delete(target.file);
+  c.done.set(target.file, names);
+  return names;
+}
+
+/** Bind the names an import declaration introduces: to the exporting
+ * module's definitions when the specifier resolves, opaquely otherwise —
+ * a bare specifier, a relative one that reaches no file, a name that
+ * module does not declare, or a specifier reaching a module still being
+ * walked, which is an import cycle degrading at the edge that closes it.
+ * Default and namespace imports name a module object, which the model has
+ * no shape for, so they stay opaque however their specifier resolves. */
+function bindImport(
+  stmt: ts.ImportDeclaration,
+  from: string,
+  names: Map<string, string>,
+  inlined: Set<string>,
+  defName: (name: string) => string,
+  c: Closure,
+): void {
+  const clause = stmt.importClause;
+  if (clause === undefined) return;
+  if (clause.name !== undefined)
+    names.set(clause.name.text, defName(clause.name.text));
+  const bindings = clause.namedBindings;
+  if (bindings === undefined) return;
+  if (ts.isNamespaceImport(bindings)) {
+    names.set(bindings.name.text, defName(bindings.name.text));
+    return;
+  }
+  const specifier = stmt.moduleSpecifier;
+  const target = ts.isStringLiteral(specifier)
+    ? resolveImport(specifier.text, from, c.reader)
+    : undefined;
+  const exported =
+    target === undefined || c.active.has(target.file)
+      ? undefined
+      : inlineModule(target, c);
+  for (const el of bindings.elements) {
+    const local = el.name.text;
+    const to = exported?.get((el.propertyName ?? el.name).text);
+    if (to === undefined) {
+      names.set(local, defName(local));
+    } else {
+      names.set(local, to);
+      inlined.add(local);
+    }
+  }
+}
+
+/** Transcribe one module and, ahead of it, everything it imports. `label`
+ * is what positions are reported against; `qualifier` is empty for the
+ * entry file, whose names are the ones annotations are written about and
+ * so keep their source spelling. */
+function walkModule(
+  file: string,
+  label: string,
+  text: string,
+  qualifier: string,
+  c: Closure,
+): NameMap {
+  const sf = ts.createSourceFile(label, text, ts.ScriptTarget.Latest, true);
+  const defName = (name: string) =>
+    qualifier === '' ? name : `${qualifier}::${name}`;
+  const names = new Map<string, string>();
+  const inlined = new Set<string>();
+  // Bindings first, and dependencies with them: a call may precede the
+  // declaration it names, and every dependency's blocks must precede this
+  // module's, since the elaborator resolves a call where it stands.
+  for (const stmt of sf.statements) {
+    if (ts.isImportDeclaration(stmt)) {
+      bindImport(stmt, file, names, inlined, defName, c);
+    } else {
+      for (const name of declaredNames(stmt)) names.set(name, defName(name));
+    }
+  }
+  const scope: ModuleScope = { names, inlined, defName };
+  if (qualifier !== '') c.blocks.push([`-- module ${qualifier}`]);
+  for (const stmt of sf.statements) {
+    const defs = ts.isFunctionDeclaration(stmt)
+      ? transcribeFunction(stmt, sf, scope)
+      : transcribeOtherDecl(stmt, sf, scope);
+    c.blocks.push([...sourceComments(stmt, sf), ...defs]);
+  }
+  return names;
 }
 
 type BinderLowering =
@@ -473,9 +724,10 @@ function chainReading(
  * ranges. The
  * exception is an interval the clamp emptied: with no domain left there
  * is nothing to attempt, so it is unsupported-range whatever the body. */
-function structuredProp(formula: string): PropReading {
+function structuredProp(formula: string, moduleNames: NameMap): PropReading {
   try {
     const { binders, body } = parsePrefix(formula);
+    const names = shadow(moduleNames, new Set(binders.map((b) => b.varName)));
     const binderCtors: string[] = [];
     const clamped: string[] = [];
     for (const b of binders) {
@@ -493,7 +745,7 @@ function structuredProp(formula: string): PropReading {
       const gp = parseAtomExpr(g);
       if (gp === undefined) return { kind: 'bare' };
       if (isEquationGuard(gp.expr)) return { kind: 'bare' };
-      guardCtors.push(transcribeExpr(unwrapParens(gp.expr), gp.sf));
+      guardCtors.push(transcribeExpr(unwrapParens(gp.expr), gp.sf, names));
     }
     if (clamped.length > 0) {
       return {
@@ -505,8 +757,9 @@ function structuredProp(formula: string): PropReading {
     const sides = equationSides(expr);
     const conclusionCtor =
       sides === undefined
-        ? `ts.istrue(${transcribeExpr(expr, parsed.sf)})`
-        : `ts.eq(${transcribeExpr(sides[0], parsed.sf)}, ${transcribeExpr(sides[1], parsed.sf)})`;
+        ? `ts.istrue(${transcribeExpr(expr, parsed.sf, names)})`
+        : `ts.eq(${transcribeExpr(sides[0], parsed.sf, names)}, ` +
+          `${transcribeExpr(sides[1], parsed.sf, names)})`;
     const bodyCtor = guardCtors.reduceRight(
       (acc, g) => `ts.imp(${g}) { ${acc} }`,
       conclusionCtor,
@@ -543,6 +796,7 @@ export interface UntriedAnnotation {
 function proveBlock(
   a: RawAnnotation,
   file: string,
+  names: NameMap,
 ): { lines: string[]; untried?: UntriedAnnotation } {
   const fnName = qualifiedName(a.functionName, a.className, a.isStatic);
   const head =
@@ -550,7 +804,7 @@ function proveBlock(
     leanStr(a.propertyName);
   const comment =
     `-- @ensures{${a.propertyName}} ` + a.formula.replace(/\s+/g, ' ').trim();
-  const reading = structuredProp(a.formula);
+  const reading = structuredProp(a.formula, names);
   if (reading.kind === 'unsupported-range') {
     return {
       lines: [
@@ -599,28 +853,36 @@ export interface Transcription {
 
 /**
  * Pretty-print a TypeScript program into a `.lean` file of core DSL
- * constructors. `file` is a label only; parsing is syntax-only.
+ * constructors, with the closure of its relative imports inlined ahead of
+ * it. `file` locates the entry against the module tree `reader` reads, and
+ * labels the annotations; parsing is syntax-only. Only the entry's own
+ * annotations are proved — a dependency's belong to its own artifact.
  */
-export function transcribe(text: string, file: string): Transcription {
-  const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
-  const blocks: string[][] = [['import ThalesDsl']];
-  for (const stmt of sf.statements) {
-    const defs = ts.isFunctionDeclaration(stmt)
-      ? transcribeFunction(stmt, sf)
-      : transcribeOtherDecl(stmt, sf);
-    blocks.push([...sourceComments(stmt, sf), ...defs]);
-  }
+export function transcribe(
+  text: string,
+  file: string,
+  reader: ModuleReader = diskReader,
+): Transcription {
+  const entry = path.resolve(file);
+  const closure: Closure = {
+    reader,
+    entryDir: path.dirname(entry),
+    done: new Map(),
+    active: new Set([entry]),
+    blocks: [['import ThalesDsl']],
+  };
+  const names = walkModule(entry, file, text, '', closure);
   const { annotations, invalid } = extractFromSource(text, file);
   const untried: UntriedAnnotation[] = [];
   for (const a of annotations) {
-    const block = proveBlock(a, file);
-    blocks.push(block.lines);
+    const block = proveBlock(a, file, names);
+    closure.blocks.push(block.lines);
     if (block.untried !== undefined) untried.push(block.untried);
   }
   if (invalid.length > 0)
-    blocks.push(invalid.map((i) => skippedComment(i, file)));
+    closure.blocks.push(invalid.map((i) => skippedComment(i, file)));
   return {
-    lean: blocks.map((b) => b.join('\n')).join('\n\n') + '\n',
+    lean: closure.blocks.map((b) => b.join('\n')).join('\n\n') + '\n',
     annotations,
     invalid,
     untried,
@@ -628,8 +890,12 @@ export function transcribe(text: string, file: string): Transcription {
 }
 
 /** The `.lean` text alone; see `transcribe` for the full result. */
-export function transcribeSource(text: string, file: string): string {
-  return transcribe(text, file).lean;
+export function transcribeSource(
+  text: string,
+  file: string,
+  reader?: ModuleReader,
+): string {
+  return transcribe(text, file, reader).lean;
 }
 
 /** Read a `.ts` file from disk and transcribe it; the path (as given) is

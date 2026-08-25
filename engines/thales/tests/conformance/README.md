@@ -1,9 +1,16 @@
 # Verdict-fixture corpus
 
 End-to-end fixtures for `lakatos prove`. Each `.ts` file is one fixture, and
-its directory is its entire test specification: every `@ensures` annotation
-in the file must receive the bucket's SZS status. There are no sidecar files
+its bucket is its entire test specification: every `@ensures` annotation in
+the file must receive the bucket's SZS status. There are no sidecar files
 and no inline expectation directives.
+
+A fixture that needs more than one module is a directory inside a bucket
+whose `main.ts` is the entry: the harness runs `main.ts` alone and the rest
+of the directory is the closure it imports (relative specifiers only, `.js`
+as nodeNext writes them). Only the entry's annotations are graded, and the
+bucket's status applies to them; the dependencies are never run as entries,
+so annotations in them would go unchecked and do not belong there.
 
 The harness is the root `tests/verdict-corpus.test.ts`, gated on
 `LAKATOS_PROVE_E2E=1` like the prove e2e (it needs the Lean toolchain and is

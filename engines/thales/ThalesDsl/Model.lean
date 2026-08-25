@@ -85,20 +85,26 @@ partial def callNames (stx : Syntax) : List String :=
     | _ => []
   here ++ stx.getArgs.toList.flatMap callNames
 
+/-- The construct and reason of the first callee in `names` whose own
+`ts_def` failed on a named construct: the refusal travels with the call, so
+a caller is outside the model exactly when what it calls is. A callee that
+failed for any other reason is the engine's problem, not the input's, and
+is left to elaboration to report. -/
+def calleeFailure? (env : Environment) (names : List String) : Option (String × String) :=
+  names.findSome? fun n =>
+    if (findModel? env n).isSome then none
+    else do
+      let failed ← findFailed? env n
+      let construct ← failed.construct
+      some (construct, s!"'{n}' could not be modeled: {failed.reason}")
+
 /-- Why `p` cannot be attempted under the containment contract: an opaque
 node or a refused operator in the formula itself, or a call to a declaration
 whose `ts_def` failed on one. `none` means the formula may elaborate. -/
 def propInappropriate? (env : Environment) (p : TSyntax `ts_prop) : Option String :=
   (findOpaque? p.raw).map (fun (construct, pos) => unmappedMsg construct pos)
   <|> (findUnmodeledOp? p.raw).map Prod.snd
-  <|> (callNames p.raw).findSome? fun n =>
-        if (findModel? env n).isSome then none
-        else match findFailed? env n with
-          | some failed =>
-            if failed.construct.isSome then
-              some s!"'{n}' could not be modeled: {failed.reason}"
-            else none
-          | none => none
+  <|> (calleeFailure? env (callNames p.raw)).map Prod.snd
 
 /-- The value types of the slice. Expression elaboration is type-directed:
 the operator decides its operand and result types. `num` is binary64 — the
@@ -245,6 +251,12 @@ elab_rules : command
       return ← recordFailure (some construct) (unmappedMsg construct pos)
     if let some (op, reason) := stmts.raw.findSome? findUnmodeledOp? then
       return ← recordFailure (some op) reason
+    -- A body that calls a declaration outside the model is outside it too,
+    -- and for the same construct: an imported name the transcriber could
+    -- not follow is the input's business, not a broken elaboration.
+    let called := stmts.raw.toList.flatMap callNames
+    if let some (construct, reason) := calleeFailure? (← getEnv) called then
+      return ← recordFailure (some construct) reason
     try
       let paramNames ← params.getElems.mapM fun p => do
         match p with
