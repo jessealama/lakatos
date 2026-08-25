@@ -1,0 +1,395 @@
+{
+  "file": "engines/thales/tests/fixtures/operators.ts",
+  "declarations": [
+    {
+      "kind": "function",
+      "name": "rem7",
+      "params": ["x"],
+      "source": "export function rem7(x: number): number {\n  return x % 7;\n}",
+      "body": [
+        {
+          "kind": "return",
+          "expr": {
+            "kind": "binop",
+            "op": "%",
+            "left": {
+              "kind": "id",
+              "name": "x"
+            },
+            "right": {
+              "kind": "num",
+              "lit": "7"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "kind": "function",
+      "name": "neg",
+      "params": ["x"],
+      "source": "export function neg(x: number): number {\n  return -x;\n}",
+      "body": [
+        {
+          "kind": "return",
+          "expr": {
+            "kind": "unop",
+            "op": "-",
+            "operand": {
+              "kind": "id",
+              "name": "x"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "kind": "function",
+      "name": "plus",
+      "params": ["x"],
+      "source": "export function plus(x: number): number {\n  return +x;\n}",
+      "body": [
+        {
+          "kind": "return",
+          "expr": {
+            "kind": "unop",
+            "op": "+",
+            "operand": {
+              "kind": "id",
+              "name": "x"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "kind": "function",
+      "name": "bump",
+      "params": ["x"],
+      "source": "export function bump(x: number): number {\n  return x + 1;\n}",
+      "body": [
+        {
+          "kind": "return",
+          "expr": {
+            "kind": "binop",
+            "op": "+",
+            "left": {
+              "kind": "id",
+              "name": "x"
+            },
+            "right": {
+              "kind": "num",
+              "lit": "1"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "kind": "function",
+      "name": "chain",
+      "params": ["x"],
+      "source": "export function chain(x: number): number {\n  return bump(neg(x)) + 1;\n}",
+      "body": [
+        {
+          "kind": "return",
+          "expr": {
+            "kind": "binop",
+            "op": "+",
+            "left": {
+              "kind": "call",
+              "callee": "bump",
+              "args": [
+                {
+                  "kind": "call",
+                  "callee": "neg",
+                  "args": [
+                    {
+                      "kind": "id",
+                      "name": "x"
+                    }
+                  ]
+                }
+              ]
+            },
+            "right": {
+              "kind": "num",
+              "lit": "1"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "obligations": [
+    {
+      "function": "rem7",
+      "property": "belowSeven",
+      "formula": "forall (x: int ∈ [0, 20)) { rem7(x) < 7 }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "x",
+            "kind": "range",
+            "lo": "0",
+            "hi": "20"
+          }
+        ],
+        "conclusion": {
+          "kind": "istrue",
+          "expr": {
+            "kind": "binop",
+            "op": "<",
+            "left": {
+              "kind": "call",
+              "callee": "rem7",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "x"
+                }
+              ]
+            },
+            "right": {
+              "kind": "num",
+              "lit": "7"
+            }
+          }
+        }
+      }
+    },
+    {
+      "function": "neg",
+      "property": "nonPositive",
+      "formula": "forall (x: int ∈ [0, 5)) { neg(x) <= 0 }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "x",
+            "kind": "range",
+            "lo": "0",
+            "hi": "5"
+          }
+        ],
+        "conclusion": {
+          "kind": "istrue",
+          "expr": {
+            "kind": "binop",
+            "op": "<=",
+            "left": {
+              "kind": "call",
+              "callee": "neg",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "x"
+                }
+              ]
+            },
+            "right": {
+              "kind": "num",
+              "lit": "0"
+            }
+          }
+        }
+      }
+    },
+    {
+      "function": "plus",
+      "property": "same",
+      "formula": "forall (x: int) { plus(x) ≡ x }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "x",
+            "kind": "int"
+          }
+        ],
+        "conclusion": {
+          "kind": "eq",
+          "left": {
+            "kind": "call",
+            "callee": "plus",
+            "args": [
+              {
+                "kind": "id",
+                "name": "x"
+              }
+            ]
+          },
+          "right": {
+            "kind": "id",
+            "name": "x"
+          }
+        }
+      }
+    },
+    {
+      "function": "bump",
+      "property": "grows",
+      "formula": "forall (n: nat) { bump(n) > n }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "n",
+            "kind": "nat"
+          }
+        ],
+        "conclusion": {
+          "kind": "istrue",
+          "expr": {
+            "kind": "binop",
+            "op": ">",
+            "left": {
+              "kind": "call",
+              "callee": "bump",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "n"
+                }
+              ]
+            },
+            "right": {
+              "kind": "id",
+              "name": "n"
+            }
+          }
+        }
+      }
+    },
+    {
+      "function": "bump",
+      "property": "hits",
+      "formula": "forall (x: int ∈ [0, 10)) { bump(x) === x + 1 }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "x",
+            "kind": "range",
+            "lo": "0",
+            "hi": "10"
+          }
+        ],
+        "conclusion": {
+          "kind": "istrue",
+          "expr": {
+            "kind": "binop",
+            "op": "===",
+            "left": {
+              "kind": "call",
+              "callee": "bump",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "x"
+                }
+              ]
+            },
+            "right": {
+              "kind": "binop",
+              "op": "+",
+              "left": {
+                "kind": "id",
+                "name": "x"
+              },
+              "right": {
+                "kind": "num",
+                "lit": "1"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "function": "bump",
+      "property": "misses",
+      "formula": "forall (x: int ∈ [0, 10)) { bump(x) !== x }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "x",
+            "kind": "range",
+            "lo": "0",
+            "hi": "10"
+          }
+        ],
+        "conclusion": {
+          "kind": "istrue",
+          "expr": {
+            "kind": "binop",
+            "op": "!==",
+            "left": {
+              "kind": "call",
+              "callee": "bump",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "x"
+                }
+              ]
+            },
+            "right": {
+              "kind": "id",
+              "name": "x"
+            }
+          }
+        }
+      }
+    },
+    {
+      "function": "chain",
+      "property": "shifts",
+      "formula": "forall (x: int ∈ [0, 5)) { chain(x) ≡ 2 + neg(x) }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "x",
+            "kind": "range",
+            "lo": "0",
+            "hi": "5"
+          }
+        ],
+        "conclusion": {
+          "kind": "eq",
+          "left": {
+            "kind": "call",
+            "callee": "chain",
+            "args": [
+              {
+                "kind": "id",
+                "name": "x"
+              }
+            ]
+          },
+          "right": {
+            "kind": "binop",
+            "op": "+",
+            "left": {
+              "kind": "num",
+              "lit": "2"
+            },
+            "right": {
+              "kind": "call",
+              "callee": "neg",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "x"
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  ]
+}

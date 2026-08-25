@@ -109,6 +109,8 @@ jobs:
 
       - name: Pipeline parity
         run: npm run check:parity
+        env:
+          LAKATOS_PROVE_E2E: "1"
 
       - name: Prove end-to-end
         # vitest positionals are substring filters (tests/e2e.test.ts also

@@ -119,11 +119,14 @@ partial def elabProp (vars : List String) :
     -- coercion is a beta-redex rather than a `let` so every rung reduces it
     -- the same way. `Float.ofInt` is injective on the clamped domain, which
     -- is what makes the transcriber's safe-integer clamp load-bearing.
+    -- Both binders carry the source name — the Float lambda shadows the
+    -- Int variable it is immediately applied to — so a residual goal
+    -- prints the name the annotation wrote.
     let coerced (x : String) (iv : Ident) (body : TSyntax `term) :
         CommandElabM (TSyntax `term) :=
       `((fun ($(mkIdent (Name.mkSimple x)) : Float) => $body) (Float.ofInt $iv))
     let prop ← bs.foldrM (init := inner.prop) fun b acc => do
-      let iv := mkIdent (Name.mkSimple s!"ts#int{b.name}")
+      let iv := mkIdent (Name.mkSimple b.name)
       match b with
       | .ranged x lo hi =>
         `(ballIco $(← tsIntLitToInt lo) $(← tsIntLitToInt hi)
@@ -157,7 +160,7 @@ partial def elabProp (vars : List String) :
         bs.foldrM (init := inner.search) fun b acc => do
           match b with
           | .ranged x lo hi =>
-            let iv := mkIdent (Name.mkSimple s!"ts#int{x}")
+            let iv := mkIdent (Name.mkSimple x)
             `(findCexIco $(← tsIntLitToInt lo) $(← tsIntLitToInt hi)
                 (fun ($iv : Int) => $(← coerced x iv acc)))
           | _ => pure acc

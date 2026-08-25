@@ -1,9 +1,11 @@
 import ts from 'typescript';
 import {
+  type Binder,
   clampedEndpoints,
   extractFromSource,
   intInterval,
   type InvalidAnnotation,
+  isClassDomain,
   parseBody,
   parsePrefix,
   qualifiedName,
@@ -13,11 +15,13 @@ import { kindName, numberToken } from './transcribe.js';
 
 /** A JS expression in the shapes the plain-Lean emitter renders. The
  * frontend records operator text verbatim; what an operator means is the
- * emitter's decision, so an op this slice cannot render fails there,
- * cleanly, rather than being silently reshaped here. */
+ * emitter's decision, so the walk here admits exactly the operators the
+ * emitter renders and classifies everything else the way the old
+ * pipeline's elaborator does. */
 export type EmitExpr =
   | { kind: 'num'; lit: string }
   | { kind: 'id'; name: string }
+  | { kind: 'unop'; op: '-' | '+'; operand: EmitExpr }
   | { kind: 'binop'; op: string; left: EmitExpr; right: EmitExpr }
   | { kind: 'call'; callee: string; args: EmitExpr[] };
 
@@ -33,6 +37,14 @@ export interface EmitFunction {
   body: EmitStmt[];
 }
 
+/** A binder's denoted integer domain: a finite half-open range, the whole
+ * int line, or the naturals — the same three shapes the old grammar's
+ * binder constructors carry. */
+export type EmitBinder =
+  | { name: string; kind: 'range'; lo: string; hi: string }
+  | { name: string; kind: 'int' }
+  | { name: string; kind: 'nat' };
+
 export interface EmitObligation {
   /** Qualified function name — the annotation identity's `function`. */
   function: string;
@@ -42,8 +54,8 @@ export interface EmitObligation {
   payload:
     | {
         kind: 'structured';
-        /** Nested half-open [lo, hi) Int binders, outermost first. */
-        binders: { name: string; lo: string; hi: string }[];
+        /** Nested binders, outermost first. */
+        binders: EmitBinder[];
         conclusion:
           | { kind: 'eq'; left: EmitExpr; right: EmitExpr }
           | { kind: 'istrue'; expr: EmitExpr };
@@ -59,13 +71,13 @@ export interface Emission {
   obligations: EmitObligation[];
 }
 
-/** An annotation the frontend itself refuses: its function could not be
- * mapped, and the named construct makes that a statement about the input.
- * The reason is byte-identical to the old pipeline's, which is what the
- * parity harness pins. */
+/** An annotation the frontend itself settles: outside the model
+ * (`Inappropriate`) or failed by the engine's own gaps (`Error`), with a
+ * reason byte-identical to the old pipeline's — which is what the parity
+ * harness pins. */
 export interface ClassifiedAnnotation {
   annotation: RawAnnotation;
-  szs: 'Inappropriate';
+  szs: 'Inappropriate' | 'Error';
   reason: string;
 }
 
@@ -76,132 +88,375 @@ export interface PlainEmission {
   classified: ClassifiedAnnotation[];
 }
 
-/** The construct that keeps a declaration outside the model, at its
- * 1-based source position. */
-interface Blocker {
-  construct: string;
-  line: number;
-  column: number;
+/** Mirror of the old pipeline's `FailedDecl`: why a declaration is not in
+ * the model, with a construct name exactly when the failure is a statement
+ * about the input rather than about the engine. */
+interface FailedDecl {
+  construct?: string;
+  reason: string;
 }
 
-function blockerAt(
+/** Operators deliberately left without a model, and why — the mirror of
+ * `unmodeledOperator?` in Model.lean, byte for byte. */
+const REFUSED_OPERATORS = new Map<string, string>([
+  [
+    '**',
+    "'**' is implementation-approximated in JavaScript, so any model would " +
+      'certify results a conforming engine may disagree with',
+  ],
+]);
+
+const ARITH_OPERATORS = new Set(['+', '-', '*', '/', '%']);
+const COMPARISON_OPERATORS = new Set(['<', '<=', '>', '>=', '===', '!==']);
+
+function unmappedMsg(construct: string, pos: string): string {
+  return `unmapped TypeScript construct '${construct}' at ${pos}`;
+}
+
+function constructAt(
   node: ts.Node,
   kind: ts.SyntaxKind,
   sf: ts.SourceFile,
-): Blocker {
+): FailedDecl {
   const { line, character } = sf.getLineAndCharacterOfPosition(
     node.getStart(sf),
   );
-  return { construct: kindName(kind), line: line + 1, column: character + 1 };
+  const construct = kindName(kind);
+  return {
+    construct,
+    reason: unmappedMsg(construct, `${line + 1}:${character + 1}`),
+  };
 }
-
-/** The operators whose result the emitter has a rendering for. Meaning
- * still lives Lean-side; this set only bounds what travels as `binop`. */
-const EMITTABLE_OPERATORS = new Set([
-  '+',
-  '-',
-  '*',
-  '/',
-  '%',
-  '<',
-  '<=',
-  '>',
-  '>=',
-  '===',
-  '!==',
-]);
 
 function unwrapParens(e: ts.Expression): ts.Expression {
   return ts.isParenthesizedExpression(e) ? unwrapParens(e.expression) : e;
 }
 
-/** An expression's IR, or the first blocker in tree order. */
-function walkExpr(e: ts.Expression, sf: ts.SourceFile): EmitExpr | Blocker {
-  if (ts.isParenthesizedExpression(e)) return walkExpr(e.expression, sf);
-  if (ts.isIdentifier(e)) return { kind: 'id', name: e.text };
-  if (ts.isNumericLiteral(e)) return { kind: 'num', lit: numberToken(e) };
+/** A folded negative numeric literal, the one prefix-minus shape that is
+ * a literal rather than an operator application. */
+function negatedLiteral(e: ts.Expression): ts.NumericLiteral | undefined {
   if (
     ts.isPrefixUnaryExpression(e) &&
     e.operator === ts.SyntaxKind.MinusToken &&
     ts.isNumericLiteral(e.operand)
   ) {
-    return { kind: 'num', lit: `-${numberToken(e.operand)}` };
+    return e.operand;
+  }
+  return undefined;
+}
+
+function isUnaryArith(e: ts.Expression): e is ts.PrefixUnaryExpression {
+  return (
+    ts.isPrefixUnaryExpression(e) &&
+    (e.operator === ts.SyntaxKind.MinusToken ||
+      e.operator === ts.SyntaxKind.PlusToken)
+  );
+}
+
+/** The first construct in tree order the old transcriber would have made
+ * opaque: anything outside identifiers, numeric literals, unary ±,
+ * parentheses, binary operators (any operator — meaning is checked
+ * later), and calls of a plain identifier. */
+function findConstruct(
+  e: ts.Expression,
+  sf: ts.SourceFile,
+): FailedDecl | undefined {
+  if (ts.isParenthesizedExpression(e)) return findConstruct(e.expression, sf);
+  if (ts.isIdentifier(e) || ts.isNumericLiteral(e)) return undefined;
+  if (negatedLiteral(e) !== undefined) return undefined;
+  if (isUnaryArith(e)) return findConstruct(e.operand, sf);
+  if (ts.isBinaryExpression(e)) {
+    return findConstruct(e.left, sf) ?? findConstruct(e.right, sf);
+  }
+  if (ts.isCallExpression(e) && ts.isIdentifier(e.expression)) {
+    for (const a of e.arguments) {
+      const found = findConstruct(a, sf);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  }
+  return constructAt(e, e.kind, sf);
+}
+
+/** The first refused operator in tree order, as a failure that names it.
+ * Runs after the construct scan, like the old elaborator's pre-scans. */
+function findRefusedOp(e: ts.Expression): FailedDecl | undefined {
+  if (ts.isParenthesizedExpression(e)) return findRefusedOp(e.expression);
+  if (isUnaryArith(e) && negatedLiteral(e) === undefined) {
+    return findRefusedOp(e.operand);
+  }
+  if (ts.isBinaryExpression(e)) {
+    const op = e.operatorToken.getText();
+    const reason = REFUSED_OPERATORS.get(op);
+    if (reason !== undefined) return { construct: op, reason };
+    return findRefusedOp(e.left) ?? findRefusedOp(e.right);
+  }
+  if (ts.isCallExpression(e)) {
+    for (const a of e.arguments) {
+      const found = findRefusedOp(a);
+      if (found !== undefined) return found;
+    }
+  }
+  return undefined;
+}
+
+/** Every identifier-callee name in tree order. */
+function callNames(e: ts.Expression, into: string[] = []): string[] {
+  if (ts.isParenthesizedExpression(e)) return callNames(e.expression, into);
+  if (isUnaryArith(e)) return callNames(e.operand, into);
+  if (ts.isBinaryExpression(e)) {
+    callNames(e.left, into);
+    return callNames(e.right, into);
+  }
+  if (ts.isCallExpression(e) && ts.isIdentifier(e.expression)) {
+    into.push(e.expression.text);
+    for (const a of e.arguments) callNames(a, into);
+  }
+  return into;
+}
+
+/** What a body or formula may reference: bound value names, the models
+ * registered so far, and the declarations that failed. */
+interface WalkScope {
+  vars: ReadonlySet<string>;
+  mapped: ReadonlyMap<string, number>;
+  failed: ReadonlyMap<string, FailedDecl>;
+}
+
+/** The first callee whose own declaration failed on a named construct:
+ * the refusal travels with the call. A callee that failed for any other
+ * reason is left to the typed walk, as the old elaborator leaves it to
+ * `evalExpr`. */
+function findFailedCallee(
+  e: ts.Expression,
+  scope: WalkScope,
+): FailedDecl | undefined {
+  for (const name of callNames(e)) {
+    if (scope.mapped.has(name)) continue;
+    const failed = scope.failed.get(name);
+    if (failed?.construct !== undefined) {
+      return {
+        construct: failed.construct,
+        reason: `'${name}' could not be modeled: ${failed.reason}`,
+      };
+    }
+  }
+  return undefined;
+}
+
+type Expected = 'num' | 'bool';
+
+function describeTy(t: Expected): string {
+  return t === 'num' ? 'a number' : 'a boolean';
+}
+
+/** An engine-route failure: the walk found something with no model, or a
+ * type mismatch — the failures the old pipeline reports as `Error`. */
+class ModelError extends Error {}
+
+/** The typed walk, mirroring `evalExpr`: operand types are checked in the
+ * old elaboration order so the first failure — and its message — is the
+ * same one the old pipeline reports. */
+function walkTyped(
+  e: ts.Expression,
+  expected: Expected,
+  scope: WalkScope,
+  sf: ts.SourceFile,
+): EmitExpr {
+  if (ts.isParenthesizedExpression(e)) {
+    return walkTyped(e.expression, expected, scope, sf);
+  }
+  const negated = negatedLiteral(e);
+  if (ts.isNumericLiteral(e) || negated !== undefined) {
+    if (expected !== 'num') {
+      throw new ModelError(
+        `a numeric literal cannot be ${describeTy(expected)}`,
+      );
+    }
+    const lit =
+      negated !== undefined
+        ? `-${numberToken(negated)}`
+        : numberToken(e as ts.NumericLiteral);
+    return { kind: 'num', lit };
+  }
+  if (ts.isIdentifier(e)) {
+    if (!scope.vars.has(e.text)) {
+      throw new ModelError(`unbound identifier '${e.text}'`);
+    }
+    if (expected !== 'num') {
+      throw new ModelError(
+        `identifier '${e.text}' is a number, not ${describeTy(expected)}`,
+      );
+    }
+    return { kind: 'id', name: e.text };
+  }
+  if (isUnaryArith(e)) {
+    const operand = walkTyped(e.operand, 'num', scope, sf);
+    const op = e.operator === ts.SyntaxKind.MinusToken ? '-' : '+';
+    if (expected !== 'num') {
+      throw new ModelError(
+        `operator '${op}' yields a number, not ${describeTy(expected)}`,
+      );
+    }
+    return { kind: 'unop', op, operand };
   }
   if (ts.isBinaryExpression(e)) {
     const op = e.operatorToken.getText(sf);
-    if (!EMITTABLE_OPERATORS.has(op)) return blockerAt(e, e.kind, sf);
-    const left = walkExpr(e.left, sf);
-    if ('construct' in left) return left;
-    const right = walkExpr(e.right, sf);
-    if ('construct' in right) return right;
-    return { kind: 'binop', op, left, right };
+    const left = walkTyped(e.left, 'num', scope, sf);
+    const right = walkTyped(e.right, 'num', scope, sf);
+    if (ARITH_OPERATORS.has(op)) {
+      if (expected !== 'num') {
+        throw new ModelError(
+          `operator '${op}' yields a number, not ${describeTy(expected)}`,
+        );
+      }
+      return { kind: 'binop', op, left, right };
+    }
+    if (COMPARISON_OPERATORS.has(op)) {
+      if (expected !== 'bool') {
+        throw new ModelError(
+          `operator '${op}' yields a boolean, not ${describeTy(expected)}`,
+        );
+      }
+      return { kind: 'binop', op, left, right };
+    }
+    // A refused operator the pre-scans missed still refuses; anything
+    // else has no model, which is the engine's problem.
+    const refused = REFUSED_OPERATORS.get(op);
+    if (refused !== undefined) throw new ModelError(refused);
+    throw new ModelError(`operator '${op}' has no model in this slice`);
   }
   if (ts.isCallExpression(e) && ts.isIdentifier(e.expression)) {
-    const args: EmitExpr[] = [];
-    for (const a of e.arguments) {
-      const walked = walkExpr(a, sf);
-      if ('construct' in walked) return walked;
-      args.push(walked);
+    const name = e.expression.text;
+    const arity = scope.mapped.get(name);
+    if (arity === undefined) {
+      const failed = scope.failed.get(name);
+      if (failed !== undefined) {
+        throw new ModelError(`'${name}' has no model: ${failed.reason}`);
+      }
+      throw new ModelError(`no model registered for '${name}'`);
     }
-    return { kind: 'call', callee: e.expression.text, args };
+    if (arity !== e.arguments.length) {
+      throw new ModelError(
+        `'${name}' expects ${arity} argument(s), got ${e.arguments.length}`,
+      );
+    }
+    if (expected !== 'num') {
+      throw new ModelError(
+        `a call to '${name}' yields a number, not ${describeTy(expected)}`,
+      );
+    }
+    const args = e.arguments.map((a) => walkTyped(a, 'num', scope, sf));
+    return { kind: 'call', callee: name, args };
   }
-  return blockerAt(e, e.kind, sf);
+  // Unreachable after the construct scan; degrade like an opaque node.
+  throw new ModelError(constructAt(e, e.kind, sf).reason);
 }
 
-/** The signature check `transcribeFunction` applies, as a blocker. */
-function signatureBlocker(
+/** The old elaborator's pre-scans — opaque constructs, then refused
+ * operators, then construct-failed callees — each across every root
+ * before the next begins. */
+function prescanFailure(
+  roots: readonly ts.Expression[],
+  scope: WalkScope,
+  sf: ts.SourceFile,
+): FailedDecl | undefined {
+  const scans = [
+    (e: ts.Expression) => findConstruct(e, sf),
+    findRefusedOp,
+    (e: ts.Expression) => findFailedCallee(e, scope),
+  ];
+  for (const scan of scans) {
+    for (const e of roots) {
+      const found = scan(e);
+      if (found !== undefined) return found;
+    }
+  }
+  return undefined;
+}
+
+/** The typed walk with the engine's failures caught as a `FailedDecl`. */
+function typedOrFailure(
+  e: ts.Expression,
+  expected: Expected,
+  scope: WalkScope,
+  sf: ts.SourceFile,
+): { expr: EmitExpr } | FailedDecl {
+  try {
+    return { expr: walkTyped(e, expected, scope, sf) };
+  } catch (err) {
+    if (err instanceof ModelError) return { reason: err.message };
+    throw err;
+  }
+}
+
+/** The signature check `transcribeFunction` applies, as a failure. */
+function signatureFailure(
   fn: ts.FunctionDeclaration,
   sf: ts.SourceFile,
-): Blocker | undefined {
+): FailedDecl | undefined {
   for (const m of fn.modifiers ?? []) {
     if (
       m.kind !== ts.SyntaxKind.ExportKeyword &&
       m.kind !== ts.SyntaxKind.DefaultKeyword
     ) {
-      return blockerAt(m, m.kind, sf);
+      return constructAt(m, m.kind, sf);
     }
   }
   if (fn.asteriskToken !== undefined)
-    return blockerAt(fn.asteriskToken, fn.asteriskToken.kind, sf);
+    return constructAt(fn.asteriskToken, fn.asteriskToken.kind, sf);
   for (const p of fn.parameters) {
-    if (!ts.isIdentifier(p.name)) return blockerAt(p.name, p.name.kind, sf);
+    if (!ts.isIdentifier(p.name)) return constructAt(p.name, p.name.kind, sf);
     if (p.dotDotDotToken !== undefined)
-      return blockerAt(p.dotDotDotToken, p.dotDotDotToken.kind, sf);
+      return constructAt(p.dotDotDotToken, p.dotDotDotToken.kind, sf);
     if (p.questionToken !== undefined || p.initializer !== undefined)
-      return blockerAt(p, p.kind, sf);
-    if (p.type === undefined) return blockerAt(p, p.kind, sf);
+      return constructAt(p, p.kind, sf);
+    if (p.type === undefined) return constructAt(p, p.kind, sf);
     if (p.type.kind !== ts.SyntaxKind.NumberKeyword)
-      return blockerAt(p.type, p.type.kind, sf);
+      return constructAt(p.type, p.type.kind, sf);
   }
   if (fn.type === undefined || fn.body === undefined)
-    return blockerAt(fn, fn.kind, sf);
+    return constructAt(fn, fn.kind, sf);
   if (fn.type.kind !== ts.SyntaxKind.NumberKeyword)
-    return blockerAt(fn.type, fn.type.kind, sf);
+    return constructAt(fn.type, fn.type.kind, sf);
   return undefined;
 }
 
-/** A function declaration's IR, or its first blocker. This slice covers
- * exactly a body of `return <expr>` statements — statement breadth is a
- * later slice, and anything beyond it must degrade, not approximate. */
+/** A function declaration's IR, or its failure. This slice covers exactly
+ * a body of `return <expr>` statements — statement breadth is a later
+ * slice, and anything beyond it must degrade, not approximate. */
 function walkFunction(
   fn: ts.FunctionDeclaration,
   sf: ts.SourceFile,
-): EmitFunction | Blocker {
-  const sig = signatureBlocker(fn, sf);
+  mapped: ReadonlyMap<string, number>,
+  failed: ReadonlyMap<string, FailedDecl>,
+): EmitFunction | FailedDecl {
+  const sig = signatureFailure(fn, sf);
   if (sig !== undefined) return sig;
-  const body: EmitStmt[] = [];
+  const params = fn.parameters.map((p) => (p.name as ts.Identifier).text);
+  const scope: WalkScope = { vars: new Set(params), mapped, failed };
+  const exprs: ts.Expression[] = [];
   for (const s of fn.body!.statements) {
     if (!ts.isReturnStatement(s) || s.expression === undefined) {
-      return blockerAt(s, s.kind, sf);
+      return constructAt(s, s.kind, sf);
     }
-    const expr = walkExpr(s.expression, sf);
-    if ('construct' in expr) return expr;
-    body.push({ kind: 'return', expr });
+    exprs.push(s.expression);
   }
+  // The pre-scans cover the whole body, dead code included.
+  const prescan = prescanFailure(exprs, scope, sf);
+  if (prescan !== undefined) return prescan;
+  if (exprs.length === 0) {
+    return { reason: 'the body must return on every path' };
+  }
+  // The lowering ends its path at the first return: what follows never
+  // elaborates and never reaches the artifact.
+  const walked = typedOrFailure(exprs[0]!, 'num', scope, sf);
+  if (!('expr' in walked)) return walked;
+  const body: EmitStmt[] = [{ kind: 'return', expr: walked.expr }];
   return {
     kind: 'function',
     name: fn.name!.text,
-    params: fn.parameters.map((p) => (p.name as ts.Identifier).text),
+    params,
     source: fn.getText(sf),
     body,
   };
@@ -242,26 +497,54 @@ function equationSides(
   return [e.arguments[0]!, e.arguments[1]!];
 }
 
-/** The structured reading of an annotation formula, or bare when this
- * slice cannot express it: only all-int/nat binders whose denoted domain
- * is a finite unclamped [lo, hi), and a single conclusion atom — guards
- * and every other connective wait for their slices. */
-function obligationPayload(formula: string): EmitObligation['payload'] {
-  const bare = { kind: 'bare' as const };
+/** A binder's emitted domain: a finite half-open range, the whole int
+ * line, or the naturals — reading the domain the binder *denotes*, the
+ * same folding the old transcriber applies. `bare` covers everything this
+ * slice cannot express. */
+function lowerBinder(b: Binder): EmitBinder | 'bare' {
+  if (b.domain !== 'int' && b.domain !== 'nat') return 'bare';
+  if (b.range === undefined) {
+    return { name: b.varName, kind: b.domain === 'nat' ? 'nat' : 'int' };
+  }
+  const { lo, hi } = intInterval(b.domain, b.range);
+  if (hi === undefined) {
+    if (lo === undefined) return { name: b.varName, kind: 'int' };
+    return lo === 0n ? { name: b.varName, kind: 'nat' } : 'bare';
+  }
+  if (lo === undefined) return 'bare';
+  if (clampedEndpoints(b).length > 0) return 'bare';
+  return {
+    name: b.varName,
+    kind: 'range',
+    lo: lo.toString(),
+    hi: (hi + 1n).toString(),
+  };
+}
+
+type PayloadResult =
+  | { kind: 'payload'; payload: EmitObligation['payload'] }
+  | { kind: 'classified'; szs: 'Inappropriate' | 'Error'; reason: string };
+
+/** The structured reading of an annotation formula: int/nat binders and a
+ * single conclusion atom — guards and every other connective wait for
+ * their slices and degrade to bare. A formula the model refuses (an
+ * opaque construct, a refused operator, a construct-failed callee)
+ * classifies `Inappropriate` with the old pipeline's reason; one the
+ * typed walk fails classifies `Error` the way a failed property
+ * elaboration does. */
+function obligationPayload(
+  formula: string,
+  mapped: ReadonlyMap<string, number>,
+  failed: ReadonlyMap<string, FailedDecl>,
+): PayloadResult {
+  const bare: PayloadResult = { kind: 'payload', payload: { kind: 'bare' } };
   try {
     const { binders, body } = parsePrefix(formula);
-    const loweredBinders: { name: string; lo: string; hi: string }[] = [];
+    const loweredBinders: EmitBinder[] = [];
     for (const b of binders) {
-      if (b.domain !== 'int' && b.domain !== 'nat') return bare;
-      if (b.range === undefined) return bare;
-      const { lo, hi } = intInterval(b.domain, b.range);
-      if (lo === undefined || hi === undefined) return bare;
-      if (clampedEndpoints(b).length > 0) return bare;
-      loweredBinders.push({
-        name: b.varName,
-        lo: lo.toString(),
-        hi: (hi + 1n).toString(),
-      });
+      const lowered = lowerBinder(b);
+      if (lowered === 'bare') return bare;
+      loweredBinders.push(lowered);
     }
     const ast = parseBody(body);
     if (ast.kind !== 'atom') return bare;
@@ -269,62 +552,111 @@ function obligationPayload(formula: string): EmitObligation['payload'] {
     if (parsed === undefined) return bare;
     const expr = unwrapParens(parsed.expr);
     const sides = equationSides(expr);
-    if (sides !== undefined) {
-      const left = walkExpr(sides[0], parsed.sf);
-      if ('construct' in left) return bare;
-      const right = walkExpr(sides[1], parsed.sf);
-      if ('construct' in right) return bare;
-      return {
+    const scope: WalkScope = {
+      vars: new Set(binders.map((b) => b.varName)),
+      mapped,
+      failed,
+    };
+    const roots: [ts.Expression, Expected][] =
+      sides !== undefined
+        ? [
+            [sides[0], 'num'],
+            [sides[1], 'num'],
+          ]
+        : [[expr, 'bool']];
+    // A property the model refuses is `Inappropriate`; one the typed walk
+    // fails is a failed property elaboration, the engine's `Error`.
+    const found = prescanFailure(
+      roots.map(([root]) => root),
+      scope,
+      parsed.sf,
+    );
+    if (found !== undefined) {
+      return { kind: 'classified', szs: 'Inappropriate', reason: found.reason };
+    }
+    const walkedRoots: EmitExpr[] = [];
+    for (const [root, expected] of roots) {
+      const walked = typedOrFailure(root, expected, scope, parsed.sf);
+      if (!('expr' in walked)) {
+        return {
+          kind: 'classified',
+          szs: 'Error',
+          reason: `property elaboration failed: ${walked.reason}`,
+        };
+      }
+      walkedRoots.push(walked.expr);
+    }
+    return {
+      kind: 'payload',
+      payload: {
         kind: 'structured',
         binders: loweredBinders,
-        conclusion: { kind: 'eq', left, right },
-      };
-    }
-    const walked = walkExpr(expr, parsed.sf);
-    if ('construct' in walked) return bare;
-    return {
-      kind: 'structured',
-      binders: loweredBinders,
-      conclusion: { kind: 'istrue', expr: walked },
+        conclusion:
+          sides !== undefined
+            ? { kind: 'eq', left: walkedRoots[0]!, right: walkedRoots[1]! }
+            : { kind: 'istrue', expr: walkedRoots[0]! },
+      },
     };
   } catch {
     return bare;
   }
 }
 
+/** The class-binder refusal, checked before everything else the way the
+ * old transcriber checks it: outside the model whatever else the formula
+ * or the function contains. */
+function classBinderReason(formula: string): string | undefined {
+  try {
+    const { binders } = parsePrefix(formula);
+    for (const b of binders) {
+      if (isClassDomain(b.domain)) {
+        return `class-valued binder '${b.domain.className}' is not yet modeled`;
+      }
+    }
+  } catch {
+    // The prefix parser's rejections degrade elsewhere.
+  }
+  return undefined;
+}
+
 /**
  * Walk one module into the plain-Lean emission IR: mappable function
  * declarations with their bodies, one obligation per annotation on a
- * mapped function, and a frontend `Inappropriate` classification — with
- * the old pipeline's exact reason string — for each annotation whose
- * function could not be mapped. Import closures are a later slice; an
- * import degrades like any other unmapped declaration.
+ * mapped function, and a frontend classification — with the old
+ * pipeline's exact status and reason — for each annotation the model
+ * refuses or the engine cannot attempt. Import closures are a later
+ * slice; an import degrades like any other unmapped declaration.
  */
 export function emitModule(text: string, file: string): PlainEmission {
   const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
   const declarations: EmitFunction[] = [];
-  const blockers = new Map<string, Blocker>();
+  const mapped = new Map<string, number>();
+  const failed = new Map<string, FailedDecl>();
   for (const stmt of sf.statements) {
     if (ts.isFunctionDeclaration(stmt)) {
       if (stmt.name === undefined) continue;
-      const walked = walkFunction(stmt, sf);
-      if ('construct' in walked) blockers.set(stmt.name.text, walked);
-      else declarations.push(walked);
+      const walked = walkFunction(stmt, sf, mapped, failed);
+      if ('kind' in walked && walked.kind === 'function') {
+        declarations.push(walked);
+        mapped.set(stmt.name.text, walked.params.length);
+      } else {
+        failed.set(stmt.name.text, walked as FailedDecl);
+      }
       continue;
     }
     if (ts.isClassDeclaration(stmt)) {
       if (stmt.name === undefined) continue;
       const className = stmt.name.text;
-      blockers.set(className, blockerAt(stmt.name, stmt.kind, sf));
+      failed.set(className, constructAt(stmt.name, stmt.kind, sf));
       for (const member of stmt.members) {
         const name = member.name;
         if (name === undefined || !ts.isIdentifier(name)) continue;
         const isStatic = (
           ts.getModifiers(member as ts.HasModifiers) ?? []
         ).some((m) => m.kind === ts.SyntaxKind.StaticKeyword);
-        blockers.set(
+        failed.set(
           qualifiedName(name.text, className, isStatic),
-          blockerAt(name, stmt.kind, sf),
+          constructAt(name, stmt.kind, sf),
         );
       }
       continue;
@@ -332,7 +664,7 @@ export function emitModule(text: string, file: string): PlainEmission {
     // Any other named declaration binds outside the model.
     const name = (stmt as { name?: ts.Node }).name;
     if (name !== undefined && ts.isIdentifier(name)) {
-      blockers.set(name.text, blockerAt(name, stmt.kind, sf));
+      failed.set(name.text, constructAt(name, stmt.kind, sf));
     }
   }
 
@@ -341,14 +673,33 @@ export function emitModule(text: string, file: string): PlainEmission {
   const classified: ClassifiedAnnotation[] = [];
   for (const a of annotations) {
     const fn = qualifiedName(a.functionName, a.className, a.isStatic);
-    const blocker = blockers.get(fn);
-    if (blocker !== undefined) {
+    const classBinder = classBinderReason(a.formula);
+    if (classBinder !== undefined) {
       classified.push({
         annotation: a,
         szs: 'Inappropriate',
-        reason:
-          `'${fn}' could not be modeled: unmapped TypeScript construct ` +
-          `'${blocker.construct}' at ${blocker.line}:${blocker.column}`,
+        reason: classBinder,
+      });
+      continue;
+    }
+    // A failed declaration blocks the annotation only when nothing
+    // modeled the name: an overload signature fails while the
+    // implementation models.
+    const fnFailed = mapped.has(fn) ? undefined : failed.get(fn);
+    if (fnFailed !== undefined) {
+      classified.push({
+        annotation: a,
+        szs: fnFailed.construct !== undefined ? 'Inappropriate' : 'Error',
+        reason: `'${fn}' could not be modeled: ${fnFailed.reason}`,
+      });
+      continue;
+    }
+    const result = obligationPayload(a.formula, mapped, failed);
+    if (result.kind === 'classified') {
+      classified.push({
+        annotation: a,
+        szs: result.szs,
+        reason: result.reason,
       });
       continue;
     }
@@ -356,7 +707,7 @@ export function emitModule(text: string, file: string): PlainEmission {
       function: fn,
       property: a.propertyName,
       formula: a.formula.replace(/\s+/g, ' ').trim(),
-      payload: obligationPayload(a.formula),
+      payload: result.payload,
     });
   }
   return {

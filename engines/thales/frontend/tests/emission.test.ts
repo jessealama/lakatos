@@ -47,8 +47,8 @@ describe('emitModule on the tracer fixture', () => {
         payload: {
           kind: 'structured',
           binders: [
-            { name: 'a', lo: '0', hi: '10' },
-            { name: 'b', lo: '0', hi: '10' },
+            { name: 'a', kind: 'range', lo: '0', hi: '10' },
+            { name: 'b', kind: 'range', lo: '0', hi: '10' },
           ],
           conclusion: {
             kind: 'eq',
@@ -96,15 +96,20 @@ describe('emitModule on the tracer fixture', () => {
     expectValidEmission(emitModule(read(), FIXTURE).emission);
   });
 
-  test('the pinned tracer emission fixture is exactly what the frontend emits', () => {
-    const pinned = JSON.parse(
-      fs.readFileSync(
-        'engines/thales/tests/fixtures/tracer.emission.json',
-        'utf8',
-      ),
-    );
-    expect(emitModule(read(), FIXTURE).emission).toEqual(pinned);
-  });
+  test.each([
+    ['engines/thales/tests/fixtures/tracer.ts', 'tracer.emission.json'],
+    ['engines/thales/tests/fixtures/operators.ts', 'operators.emission.json'],
+  ])(
+    'the pinned emission for %s is exactly what the frontend emits',
+    (fixture, pin) => {
+      const pinned = JSON.parse(
+        fs.readFileSync(`engines/thales/tests/fixtures/${pin}`, 'utf8'),
+      );
+      expect(
+        emitModule(fs.readFileSync(fixture, 'utf8'), fixture).emission,
+      ).toEqual(pinned);
+    },
+  );
 
   test('extraction results ride along', () => {
     const { annotations, invalid } = emitModule(read(), FIXTURE);
@@ -181,11 +186,6 @@ describe('signature and body blockers', () => {
       'ReturnStatement',
     ],
     [
-      'an unemittable operator',
-      'function f(x: number): number { return x ** 2; }',
-      'BinaryExpression',
-    ],
-    [
       'a blocker in the left operand',
       'function f(x: number): number { return (await g()) + x; }',
       'AwaitExpression',
@@ -240,7 +240,6 @@ describe('signature and body blockers', () => {
 
 describe('obligation payload degradations', () => {
   test.each([
-    ['an unbounded int binder', 'forall (x: int) { f(x) ≡ x }'],
     ['a half-bounded range', 'forall (x: int ∈ (-∞, 10]) { f(x) ≡ x }'],
     [
       'a range past the safe integers',
@@ -260,15 +259,6 @@ describe('obligation payload degradations', () => {
       'forall (x: int ∈ [3, ∞)) { f(x) ≡ x }',
     ],
     [
-      'a blocker in the left equation side',
-      'forall (x: int ∈ [0, 5)) { (await f(x)) ≡ x }',
-    ],
-    [
-      'a blocker in the right equation side',
-      'forall (x: int ∈ [0, 5)) { x ≡ (await f(x)) }',
-    ],
-    ['a method-call conclusion', 'forall (x: int ∈ [0, 5)) { foo.bar(x, x) }'],
-    [
       'a formula the prefix parser rejects',
       'forall (x: int ∈ [0, 5)) (x: int ∈ [0, 5)) { f(x) ≡ x }',
     ],
@@ -276,10 +266,98 @@ describe('obligation payload degradations', () => {
     expect(payloadOf(formula)).toEqual({ kind: 'bare' });
   });
 
+  test.each([
+    [
+      'an unbounded int binder',
+      'forall (x: int) { f(x) ≡ x }',
+      { name: 'x', kind: 'int' },
+    ],
+    [
+      'an unbounded nat binder',
+      'forall (x: nat) { f(x) ≡ x }',
+      { name: 'x', kind: 'nat' },
+    ],
+    [
+      'an int binder denoting the naturals',
+      'forall (x: int ∈ [0, ∞)) { f(x) ≡ x }',
+      { name: 'x', kind: 'nat' },
+    ],
+    [
+      'a nat binder with only a ceiling',
+      'forall (x: nat ∈ (-∞, 10]) { f(x) ≡ x }',
+      { name: 'x', kind: 'range', lo: '0', hi: '11' },
+    ],
+  ])('%s structures', (_label, formula, binder) => {
+    expect(payloadOf(formula)).toMatchObject({
+      kind: 'structured',
+      binders: [binder],
+    });
+  });
+
+  test('bounded and unbounded binders nest in order', () => {
+    const src =
+      '/** @ensures{p} forall (a: int ∈ [0, 5)) (x: int) { f(a) ≡ f(x) } */\n' +
+      'export function f(x: number): number { return x; }\n';
+    const { emission } = emitModule(src, 't.ts');
+    expect(emission.obligations[0]!.payload).toMatchObject({
+      kind: 'structured',
+      binders: [
+        { name: 'a', kind: 'range', lo: '0', hi: '5' },
+        { name: 'x', kind: 'int' },
+      ],
+    });
+  });
+});
+
+describe('unary operators', () => {
+  test('unary minus over a non-literal is a unop node', () => {
+    const src =
+      '/** @ensures{p} forall (x: int ∈ [0, 5)) { f(x) ≡ x } */\n' +
+      'export function f(x: number): number { return -x; }\n';
+    const { emission, classified } = emitModule(src, 't.ts');
+    expect(classified).toEqual([]);
+    expect(emission.declarations[0]!.body).toEqual([
+      {
+        kind: 'return',
+        expr: { kind: 'unop', op: '-', operand: { kind: 'id', name: 'x' } },
+      },
+    ]);
+  });
+
+  test('unary plus keeps its identity model', () => {
+    const src =
+      '/** @ensures{p} forall (x: int ∈ [0, 5)) { f(x) ≡ x } */\n' +
+      'export function f(x: number): number { return +x; }\n';
+    const { emission, classified } = emitModule(src, 't.ts');
+    expect(classified).toEqual([]);
+    expect(emission.declarations[0]!.body).toEqual([
+      {
+        kind: 'return',
+        expr: { kind: 'unop', op: '+', operand: { kind: 'id', name: 'x' } },
+      },
+    ]);
+  });
+
+  test('unary minus structures inside a formula atom', () => {
+    expect(
+      payloadOf('forall (x: int ∈ [0, 5)) { f(-x) ≡ f(-x) }'),
+    ).toMatchObject({
+      kind: 'structured',
+      conclusion: {
+        kind: 'eq',
+        left: {
+          kind: 'call',
+          callee: 'f',
+          args: [{ kind: 'unop', op: '-', operand: { kind: 'id', name: 'x' } }],
+        },
+      },
+    });
+  });
+
   test('parenthesized arguments and negative literals structure', () => {
     expect(payloadOf('forall (x: int ∈ [0, 5)) { f((x)) ≡ f(-1) }')).toEqual({
       kind: 'structured',
-      binders: [{ name: 'x', lo: '0', hi: '5' }],
+      binders: [{ name: 'x', kind: 'range', lo: '0', hi: '5' }],
       conclusion: {
         kind: 'eq',
         left: { kind: 'call', callee: 'f', args: [{ kind: 'id', name: 'x' }] },
@@ -325,7 +403,7 @@ describe('emitModule degradations beyond the tracer', () => {
     const { emission } = emitModule(src, 'f.ts');
     expect(emission.obligations[0]!.payload).toEqual({
       kind: 'structured',
-      binders: [{ name: 'x', lo: '0', hi: '5' }],
+      binders: [{ name: 'x', kind: 'range', lo: '0', hi: '5' }],
       conclusion: {
         kind: 'istrue',
         expr: {
@@ -340,5 +418,325 @@ describe('emitModule degradations beyond the tracer', () => {
         },
       },
     });
+  });
+});
+
+/** All classifications of a module, as [szs, reason] pairs, plus how many
+ * obligations survived to emission. */
+function classifications(src: string) {
+  const { classified, emission } = emitModule(src, 't.ts');
+  return {
+    classified: classified.map((c) => [c.szs, c.reason]),
+    obligations: emission.obligations.length,
+  };
+}
+
+const fnWith = (body: string) =>
+  `/** @ensures{p} forall (x: int ∈ [0, 5)) { f(x) ≡ x } */\n` +
+  `export function f(x: number): number { return ${body}; }\n`;
+
+const formulaWith = (formula: string) =>
+  `/** @ensures{p} ${formula} */\n` +
+  `export function f(x: number): number { return x; }\n`;
+
+describe('body classification parity with the old pipeline', () => {
+  test('an overload signature does not shadow its implementation', () => {
+    const src =
+      '/** @ensures{p} forall (x: int ∈ [0, 5)) { f(x) ≡ x } */\n' +
+      'export function f(x: number): number;\n' +
+      'export function f(x: number): number { return x; }\n';
+    expect(classifications(src)).toEqual({ classified: [], obligations: 1 });
+  });
+
+  test('statements after a return are unreachable, as in the old lowering', () => {
+    const src =
+      '/** @ensures{p} forall (x: int ∈ [0, 5)) { f(x) ≡ x } */\n' +
+      'export function f(x: number): number { return x; return q; }\n';
+    const { emission, classified } = emitModule(src, 't.ts');
+    expect(classified).toEqual([]);
+    expect(emission.obligations).toHaveLength(1);
+    expect(emission.declarations[0]!.body).toEqual([
+      { kind: 'return', expr: { kind: 'id', name: 'x' } },
+    ]);
+  });
+
+  test('a body that can run off the end degrades like the old lowering', () => {
+    const src =
+      '/** @ensures{p} forall (x: int ∈ [0, 5)) { f(x) ≡ x } */\n' +
+      'export function f(x: number): number {}\n';
+    expect(classifications(src)).toEqual({
+      classified: [
+        [
+          'Error',
+          "'f' could not be modeled: the body must return on every path",
+        ],
+      ],
+      obligations: 0,
+    });
+  });
+
+  test('body pre-scans cover statements after a return', () => {
+    const src =
+      '/** @ensures{p} forall (x: int ∈ [0, 5)) { f(x) ≡ x } */\n' +
+      'export function f(x: number): number { return g(x); return x.y; }\n';
+    const { classified } = classifications(src);
+    expect(classified).toEqual([
+      [
+        'Inappropriate',
+        expect.stringMatching(
+          /^'f' could not be modeled: unmapped TypeScript construct 'PropertyAccessExpression' at 2:\d+$/,
+        ),
+      ],
+    ]);
+  });
+
+  test('** refuses with the spec-fidelity reason', () => {
+    expect(classifications(fnWith('x ** 2'))).toEqual({
+      classified: [
+        [
+          'Inappropriate',
+          "'f' could not be modeled: '**' is implementation-approximated " +
+            'in JavaScript, so any model would certify results a conforming ' +
+            'engine may disagree with',
+        ],
+      ],
+      obligations: 0,
+    });
+  });
+
+  test("an operator with no model is the engine's Error", () => {
+    expect(classifications(fnWith('x & 7'))).toEqual({
+      classified: [
+        [
+          'Error',
+          "'f' could not be modeled: operator '&' has no model in this slice",
+        ],
+      ],
+      obligations: 0,
+    });
+  });
+
+  test('a comparison in number position reports the type mismatch', () => {
+    expect(classifications(fnWith('(x < 1) + 1')).classified).toEqual([
+      [
+        'Error',
+        "'f' could not be modeled: operator '<' yields a boolean, not a number",
+      ],
+    ]);
+  });
+
+  test('a comparison as the returned value reports the type mismatch', () => {
+    expect(classifications(fnWith('x < 1')).classified).toEqual([
+      [
+        'Error',
+        "'f' could not be modeled: operator '<' yields a boolean, not a number",
+      ],
+    ]);
+  });
+
+  test('an unbound identifier fails the declaration', () => {
+    expect(classifications(fnWith('y')).classified).toEqual([
+      ['Error', "'f' could not be modeled: unbound identifier 'y'"],
+    ]);
+  });
+
+  test('a call to a later declaration finds no model, as in the old order', () => {
+    const src =
+      fnWith('g(x)') + 'export function g(x: number): number { return x; }\n';
+    expect(classifications(src).classified).toEqual([
+      ['Error', "'f' could not be modeled: no model registered for 'g'"],
+    ]);
+  });
+
+  test('a call to an earlier mappable declaration emits', () => {
+    const src =
+      'export function g(x: number): number { return x; }\n' + fnWith('g(x)');
+    expect(classifications(src)).toEqual({ classified: [], obligations: 1 });
+  });
+
+  test('an arity mismatch fails the caller', () => {
+    const src =
+      'export function g(x: number): number { return x; }\n' +
+      fnWith('g(x, x)');
+    expect(classifications(src).classified).toEqual([
+      ['Error', "'f' could not be modeled: 'g' expects 1 argument(s), got 2"],
+    ]);
+  });
+
+  test('a construct-blocked callee travels its construct to the caller', () => {
+    const src =
+      'export function g(x: number): number { return x.y; }\n' + fnWith('g(x)');
+    expect(classifications(src).classified).toEqual([
+      [
+        'Inappropriate',
+        "'f' could not be modeled: 'g' could not be modeled: unmapped " +
+          "TypeScript construct 'PropertyAccessExpression' at 1:47",
+      ],
+    ]);
+  });
+
+  test("an engine-failed callee stays the engine's Error", () => {
+    const src =
+      'export function g(x: number): number { return x & 7; }\n' +
+      fnWith('g(x)');
+    expect(classifications(src).classified).toEqual([
+      [
+        'Error',
+        "'f' could not be modeled: 'g' has no model: operator '&' has no " +
+          'model in this slice',
+      ],
+    ]);
+  });
+});
+
+describe('formula classification parity with the old pipeline', () => {
+  test('** in a formula is Inappropriate with the bare reason', () => {
+    expect(
+      classifications(
+        formulaWith('forall (x: int ∈ [0, 5)) { f(x) ** 2 >= 0 }'),
+      ),
+    ).toEqual({
+      classified: [
+        [
+          'Inappropriate',
+          "'**' is implementation-approximated in JavaScript, so any model " +
+            'would certify results a conforming engine may disagree with',
+        ],
+      ],
+      obligations: 0,
+    });
+  });
+
+  test('an operator with no model fails property elaboration', () => {
+    expect(
+      classifications(formulaWith('forall (x: int ∈ [0, 5)) { (x & 7) >= 0 }'))
+        .classified,
+    ).toEqual([
+      [
+        'Error',
+        "property elaboration failed: operator '&' has no model in this slice",
+      ],
+    ]);
+  });
+
+  test('an unmapped construct is Inappropriate at its atom coordinates', () => {
+    expect(
+      classifications(formulaWith('forall (x: int ∈ [0, 5)) { foo.bar(x, x) }'))
+        .classified,
+    ).toEqual([
+      [
+        'Inappropriate',
+        "unmapped TypeScript construct 'CallExpression' at 1:2",
+      ],
+    ]);
+  });
+
+  test('an await inside an equation side is Inappropriate', () => {
+    expect(
+      classifications(
+        formulaWith('forall (x: int ∈ [0, 5)) { (await f(x)) ≡ x }'),
+      ).classified,
+    ).toEqual([
+      [
+        'Inappropriate',
+        "unmapped TypeScript construct 'AwaitExpression' at 1:13",
+      ],
+    ]);
+  });
+
+  test('an unbound identifier fails property elaboration', () => {
+    expect(
+      classifications(formulaWith('forall (x: int ∈ [0, 5)) { f(x) ≡ q }'))
+        .classified,
+    ).toEqual([
+      ['Error', "property elaboration failed: unbound identifier 'q'"],
+    ]);
+  });
+
+  test('a number-valued conclusion call fails property elaboration', () => {
+    expect(
+      classifications(formulaWith('forall (x: int ∈ [0, 5)) { f(x) }'))
+        .classified,
+    ).toEqual([
+      [
+        'Error',
+        "property elaboration failed: a call to 'f' yields a number, not a boolean",
+      ],
+    ]);
+  });
+
+  test('a numeric conclusion atom fails property elaboration', () => {
+    expect(
+      classifications(formulaWith('forall (x: int ∈ [0, 5)) { x + 1 }'))
+        .classified,
+    ).toEqual([
+      [
+        'Error',
+        "property elaboration failed: operator '+' yields a number, not a boolean",
+      ],
+    ]);
+  });
+
+  test.each([
+    ['a numeric literal', '5', 'a numeric literal cannot be a boolean'],
+    ['an identifier', 'x', "identifier 'x' is a number, not a boolean"],
+    ['a unary minus', '-x', "operator '-' yields a number, not a boolean"],
+  ])(
+    '%s as the whole conclusion fails property elaboration',
+    (_label, atom, message) => {
+      expect(
+        classifications(formulaWith(`forall (x: int ∈ [0, 5)) { ${atom} }`))
+          .classified,
+      ).toEqual([['Error', `property elaboration failed: ${message}`]]);
+    },
+  );
+
+  test('a comparison inside an equation side fails property elaboration', () => {
+    expect(
+      classifications(formulaWith('forall (x: int ∈ [0, 5)) { (x < 1) ≡ x }'))
+        .classified,
+    ).toEqual([
+      [
+        'Error',
+        "property elaboration failed: operator '<' yields a boolean, not a number",
+      ],
+    ]);
+  });
+});
+
+describe('class-valued binders classify Inappropriate (#158)', () => {
+  const BOX = 'export class Box { constructor(readonly size: number) {} }\n';
+
+  test('a class-valued binder names the construct', () => {
+    const src =
+      BOX +
+      '/** @ensures{p} forall (b: Box) { scale(1) >= 0 } */\n' +
+      'export function scale(x: number): number { return x; }\n';
+    const { classified, emission } = emitModule(src, 't.ts');
+    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
+      ['Inappropriate', "class-valued binder 'Box' is not yet modeled"],
+    ]);
+    expect(emission.obligations).toEqual([]);
+    expect(emission.declarations.map((d) => d.name)).toEqual(['scale']);
+  });
+
+  test("the class binder wins over the function's own blocker", () => {
+    const src =
+      BOX +
+      '/** @ensures{p} forall (b: Box) { volume(b) >= 0 } */\n' +
+      'export function volume(b: Box): number { return b.size; }\n';
+    expect(classifications(src).classified).toEqual([
+      ['Inappropriate', "class-valued binder 'Box' is not yet modeled"],
+    ]);
+  });
+
+  test('the class binder wins over other blockers in the same property', () => {
+    const src =
+      BOX +
+      '/** @ensures{p} forall (b: Box) (s: string) { volume(b) >= 0 ∧ volume(b) >= 0 } */\n' +
+      'export function volume(b: Box): number { return b.size; }\n';
+    expect(classifications(src).classified).toEqual([
+      ['Inappropriate', "class-valued binder 'Box' is not yet modeled"],
+    ]);
   });
 });
