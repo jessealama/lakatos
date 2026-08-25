@@ -121,13 +121,77 @@
       }
     },
     "statement": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["kind", "expr"],
-      "properties": {
-        "kind": { "const": "return" },
-        "expr": { "$ref": "#/definitions/expr" }
-      }
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "expr"],
+          "properties": {
+            "kind": { "const": "return" },
+            "expr": { "$ref": "#/definitions/expr" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "error"],
+          "properties": {
+            "kind": { "const": "throw" },
+            "error": {
+              "$ref": "#/definitions/identifier",
+              "description": "The thrown error's constructor name; the message is discarded."
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "name", "init"],
+          "properties": {
+            "kind": {
+              "enum": ["const", "let"],
+              "description": "A local binding: 'const' is immutable, 'let' is a mutable local rendered as Lean's `let mut`."
+            },
+            "name": { "$ref": "#/definitions/identifier" },
+            "init": { "$ref": "#/definitions/expr" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "name", "expr"],
+          "properties": {
+            "kind": { "const": "assign" },
+            "name": {
+              "$ref": "#/definitions/identifier",
+              "description": "The mutable local (or parameter) being reassigned."
+            },
+            "expr": { "$ref": "#/definitions/expr" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "cond", "then"],
+          "properties": {
+            "kind": { "const": "if" },
+            "cond": {
+              "$ref": "#/definitions/expr",
+              "description": "A boolean-valued comparison; truthiness has no model."
+            },
+            "then": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/statement" }
+            },
+            "else": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/definitions/statement" },
+              "description": "Absent when the source has no else arm (or an empty one): control falls through to the statements after the if."
+            }
+          }
+        }
+      ]
     },
     "obligation": {
       "type": "object",

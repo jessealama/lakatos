@@ -25,7 +25,18 @@ export type EmitExpr =
   | { kind: 'binop'; op: string; left: EmitExpr; right: EmitExpr }
   | { kind: 'call'; callee: string; args: EmitExpr[] };
 
-export type EmitStmt = { kind: 'return'; expr: EmitExpr };
+/** A statement in the shapes the plain-Lean emitter renders as Lean
+ * do-notation: `const` and mutable `let` locals, reassignment, `if`/`else`
+ * (arms may return, throw, or fall through), `throw`, and `return`. A
+ * `throw` carries the error's constructor name alone — the message is a
+ * string the value model has nothing to say about. */
+export type EmitStmt =
+  | { kind: 'return'; expr: EmitExpr }
+  | { kind: 'throw'; error: string }
+  | { kind: 'const'; name: string; init: EmitExpr }
+  | { kind: 'let'; name: string; init: EmitExpr }
+  | { kind: 'assign'; name: string; expr: EmitExpr }
+  | { kind: 'if'; cond: EmitExpr; then: EmitStmt[]; else?: EmitStmt[] };
 
 export interface EmitFunction {
   kind: 'function';
@@ -223,15 +234,15 @@ interface WalkScope {
   failed: ReadonlyMap<string, FailedDecl>;
 }
 
-/** The first callee whose own declaration failed on a named construct:
- * the refusal travels with the call. A callee that failed for any other
- * reason is left to the typed walk, as the old elaborator leaves it to
- * `evalExpr`. */
-function findFailedCallee(
-  e: ts.Expression,
+/** The first callee among `names` whose own declaration failed on a named
+ * construct: the refusal travels with the call. A callee that failed for
+ * any other reason is left to the typed walk, as the old elaborator leaves
+ * it to `evalExpr`. */
+function failedCalleeIn(
+  names: readonly string[],
   scope: WalkScope,
 ): FailedDecl | undefined {
-  for (const name of callNames(e)) {
+  for (const name of names) {
     if (scope.mapped.has(name)) continue;
     const failed = scope.failed.get(name);
     if (failed?.construct !== undefined) {
@@ -242,6 +253,13 @@ function findFailedCallee(
     }
   }
   return undefined;
+}
+
+function findFailedCallee(
+  e: ts.Expression,
+  scope: WalkScope,
+): FailedDecl | undefined {
+  return failedCalleeIn(callNames(e), scope);
 }
 
 type Expected = 'num' | 'bool';
@@ -422,9 +440,328 @@ function signatureFailure(
   return undefined;
 }
 
-/** A function declaration's IR, or its failure. This slice covers exactly
- * a body of `return <expr>` statements — statement breadth is a later
- * slice, and anything beyond it must degrade, not approximate. */
+/** Names a body binds itself, and whether each may be assigned — the old
+ * transcriber's `Locals`, with the same discipline: a branch's arm gets
+ * its own copy, and a redeclaration of a name from an enclosing scope is
+ * refused rather than shadowed. */
+type Locals = Map<string, 'const' | 'mutable'>;
+
+/** The statement tree as the old transcriber would have rendered it: each
+ * node is either a mapped statement (its expressions still tsc nodes) or
+ * the opaque failure the transcriber would have emitted in its place. */
+type TStmt =
+  | { t: 'return'; expr: ts.Expression }
+  | { t: 'throw'; error: string }
+  | { t: 'decl'; mutable: boolean; name: string; init: ts.Expression }
+  | { t: 'assign'; name: string; expr: ts.Expression }
+  | {
+      t: 'if';
+      cond: { expr: ts.Expression } | { opaque: FailedDecl };
+      then: TStmt[];
+      else?: TStmt[];
+    }
+  | { t: 'opaque'; failure: FailedDecl };
+
+/** The error kind a `throw` carries — the constructor's name, exactly as
+ * the old transcriber reads it; the message is discarded. */
+function errorKind(e: ts.Expression): string | undefined {
+  const inner = unwrapParens(e);
+  if (!ts.isNewExpression(inner)) return undefined;
+  if (!ts.isIdentifier(inner.expression)) return undefined;
+  return inner.expression.text;
+}
+
+/** A declaration's `TStmt`s, or undefined when any declarator falls
+ * outside the slice — `var`, `using`, destructuring, an uninitialized
+ * `let`, a non-number type annotation, or a redeclaration of a name
+ * already bound here. Locals set for earlier declarators persist even
+ * when a later one fails, exactly as the old transcriber leaves them. */
+function declStmts(
+  s: ts.VariableStatement,
+  locals: Locals,
+): TStmt[] | undefined {
+  const flags = s.declarationList.flags;
+  const isConst = (flags & ts.NodeFlags.Const) !== 0;
+  const isLet = (flags & ts.NodeFlags.Let) !== 0;
+  if (!isConst && !isLet) return undefined;
+  if ((flags & ts.NodeFlags.Using) !== 0) return undefined;
+  if (s.declarationList.declarations.length === 0) return undefined;
+  const stmts: TStmt[] = [];
+  for (const d of s.declarationList.declarations) {
+    if (!ts.isIdentifier(d.name)) return undefined;
+    if (d.initializer === undefined) return undefined;
+    if (d.type !== undefined && d.type.kind !== ts.SyntaxKind.NumberKeyword)
+      return undefined;
+    // Shadowing a name already bound here would make a join ambiguous: an
+    // arm's own binding is what the tail would read back.
+    if (locals.has(d.name.text)) return undefined;
+    stmts.push({
+      t: 'decl',
+      mutable: !isConst,
+      name: d.name.text,
+      init: d.initializer,
+    });
+    locals.set(d.name.text, isConst ? 'const' : 'mutable');
+  }
+  return stmts;
+}
+
+/** A reassignment of a mutable local, or undefined for anything else an
+ * expression statement can be. */
+function assignStmt(e: ts.Expression, locals: Locals): TStmt | undefined {
+  if (!ts.isBinaryExpression(e)) return undefined;
+  if (e.operatorToken.kind !== ts.SyntaxKind.EqualsToken) return undefined;
+  const target = unwrapParens(e.left);
+  if (!ts.isIdentifier(target)) return undefined;
+  if (locals.get(target.text) !== 'mutable') return undefined;
+  return { t: 'assign', name: target.text, expr: e.right };
+}
+
+/** One statement's `TStmt`s, mirroring the old transcriber's fallthrough:
+ * whatever it cannot say becomes the opaque node it would have emitted. */
+function structureStmt(
+  s: ts.Statement,
+  sf: ts.SourceFile,
+  locals: Locals,
+): TStmt[] {
+  if (ts.isReturnStatement(s)) {
+    // `return;` yields undefined, which a `number` function has no value
+    // for and this slice does not model.
+    if (s.expression === undefined)
+      return [{ t: 'opaque', failure: constructAt(s, s.kind, sf) }];
+    return [{ t: 'return', expr: s.expression }];
+  }
+  if (ts.isThrowStatement(s)) {
+    const kind = errorKind(s.expression);
+    if (kind !== undefined) return [{ t: 'throw', error: kind }];
+  }
+  if (ts.isVariableStatement(s)) {
+    const stmts = declStmts(s, locals);
+    if (stmts !== undefined) return stmts;
+  }
+  if (ts.isExpressionStatement(s)) {
+    const stmt = assignStmt(s.expression, locals);
+    if (stmt !== undefined) return [stmt];
+  }
+  if (ts.isIfStatement(s)) {
+    // The condition must be a comparison: truthiness coercion and the
+    // logical operators have no model.
+    const inner = unwrapParens(s.expression);
+    const cond =
+      ts.isBinaryExpression(inner) &&
+      COMPARISON_OPERATORS.has(inner.operatorToken.getText(sf))
+        ? { expr: inner }
+        : { opaque: constructAt(inner, inner.kind, sf) };
+    // An arm's locals are a copy, so its bindings do not escape it. A
+    // non-block arm is the one statement it is, which is how an `else if`
+    // arrives: a nested if alone in the else arm.
+    const arm = (stmt: ts.Statement): TStmt[] => {
+      const body = ts.isBlock(stmt) ? stmt.statements : [stmt];
+      const armLocals: Locals = new Map(locals);
+      return body.flatMap((b) => structureStmt(b, sf, armLocals));
+    };
+    const thenArm = arm(s.thenStatement);
+    if (s.elseStatement === undefined)
+      return [{ t: 'if', cond, then: thenArm }];
+    return [{ t: 'if', cond, then: thenArm, else: arm(s.elseStatement) }];
+  }
+  return [{ t: 'opaque', failure: constructAt(s, s.kind, sf) }];
+}
+
+/** The mapped expressions of a statement tree in tree order — the order
+ * the old pipeline's pre-scans see them in the constructor text. An
+ * opaque statement contributes nothing: the transcriber replaced its whole
+ * subtree. The scan goes into branches, dead code included. */
+function treeExprs(
+  stmts: readonly TStmt[],
+  into: ts.Expression[] = [],
+): ts.Expression[] {
+  for (const s of stmts) {
+    switch (s.t) {
+      case 'return':
+        into.push(s.expr);
+        break;
+      case 'decl':
+        into.push(s.init);
+        break;
+      case 'assign':
+        into.push(s.expr);
+        break;
+      case 'if':
+        if ('expr' in s.cond) into.push(s.cond.expr);
+        treeExprs(s.then, into);
+        if (s.else !== undefined) treeExprs(s.else, into);
+        break;
+      default:
+        break;
+    }
+  }
+  return into;
+}
+
+/** The first opaque node in the statement tree, in tree order: an opaque
+ * statement, an opaque condition, or an unmapped construct inside a mapped
+ * expression — whichever the old pipeline's scan reaches first. */
+function treeConstruct(
+  stmts: readonly TStmt[],
+  sf: ts.SourceFile,
+): FailedDecl | undefined {
+  for (const s of stmts) {
+    switch (s.t) {
+      case 'opaque':
+        return s.failure;
+      case 'return': {
+        const found = findConstruct(s.expr, sf);
+        if (found !== undefined) return found;
+        break;
+      }
+      case 'decl': {
+        const found = findConstruct(s.init, sf);
+        if (found !== undefined) return found;
+        break;
+      }
+      case 'assign': {
+        const found = findConstruct(s.expr, sf);
+        if (found !== undefined) return found;
+        break;
+      }
+      case 'if': {
+        if ('opaque' in s.cond) return s.cond.opaque;
+        const found =
+          findConstruct(s.cond.expr, sf) ??
+          treeConstruct(s.then, sf) ??
+          (s.else !== undefined ? treeConstruct(s.else, sf) : undefined);
+        if (found !== undefined) return found;
+        break;
+      }
+      case 'throw':
+        break;
+    }
+  }
+  return undefined;
+}
+
+/** Whether every path through a statement leaves the function — the old
+ * lowering's `stmtLeaves`/`stmtsLeave`, verbatim. */
+function stmtLeaves(s: TStmt): boolean {
+  switch (s.t) {
+    case 'return':
+    case 'throw':
+      return true;
+    case 'if':
+      return s.else !== undefined && stmtsLeave(s.then) && stmtsLeave(s.else);
+    default:
+      return false;
+  }
+}
+
+function stmtsLeave(stmts: readonly TStmt[]): boolean {
+  return stmts.some(stmtLeaves);
+}
+
+/** The rest of the body, validated where control falls off a statement
+ * list — the mirror of the old lowering's `Cont`, kept only for its two
+ * observable effects: the order errors are discovered in, and the tail
+ * statements it yields exactly once. */
+type Cont = () => void;
+
+/** Lowers a statement tree into the emitted statement list, walking every
+ * expression in exactly the order the old `lowerStmts` elaborates them, so
+ * the first failure — and its message — is the one the old pipeline
+ * reports. A return or throw ends its path (what follows never reaches
+ * the artifact); a branch's tail is validated once, in the old lowering's
+ * join order, and stays after the branch — do-notation needs no join. */
+function lowerTree(
+  stmts: readonly TStmt[],
+  vars: readonly string[],
+  k: Cont,
+  scope: WalkScope,
+  sf: ts.SourceFile,
+): EmitStmt[] {
+  const walk = (
+    e: ts.Expression,
+    expected: Expected,
+    names: readonly string[],
+  ) => walkTyped(e, expected, { ...scope, vars: new Set(names) }, sf);
+  if (stmts.length === 0) {
+    k();
+    return [];
+  }
+  const [s, ...rest] = stmts as [TStmt, ...TStmt[]];
+  switch (s.t) {
+    // A return or a throw ends this path; whatever follows is unreachable.
+    case 'return':
+      return [{ kind: 'return', expr: walk(s.expr, 'num', vars) }];
+    case 'throw':
+      return [{ kind: 'throw', error: s.error }];
+    case 'decl': {
+      // A binding whose scope is the rest of the list; a bind rather than
+      // a substitution, so an unused initializer still evaluates.
+      const init = walk(s.init, 'num', vars);
+      const tail = lowerTree(rest, [...vars, s.name], k, scope, sf);
+      return [
+        { kind: s.mutable ? 'let' : 'const', name: s.name, init },
+        ...tail,
+      ];
+    }
+    case 'assign': {
+      const expr = walk(s.expr, 'num', vars);
+      const tail = lowerTree(rest, vars, k, scope, sf);
+      return [{ kind: 'assign', name: s.name, expr }, ...tail];
+    }
+    case 'opaque':
+      // Unreachable after the construct scan; degrade like the old
+      // elaborator would.
+      throw new ModelError(s.failure.reason);
+    case 'if': {
+      if ('opaque' in s.cond) throw new ModelError(s.cond.opaque.reason);
+      const cond = walk(s.cond.expr, 'bool', vars);
+      const elseArm = s.else ?? [];
+      // What an arm that falls through continues into: the rest of this
+      // list, and only then the enclosing continuation.
+      let tail: EmitStmt[] = [];
+      let tailBuilt = false;
+      const after: Cont = () => {
+        if (tailBuilt) return;
+        tailBuilt = true;
+        tail = lowerTree(rest, vars, k, scope, sf);
+      };
+      const ruledOut: Cont = () => {
+        throw new ModelError('the lowering reached an arm it had ruled out');
+      };
+      const thenLeaves = stmtsLeave(s.then);
+      const elseLeaves = stmtsLeave(elseArm);
+      let thenK: Cont = ruledOut;
+      let elseK: Cont = ruledOut;
+      let deadTail = false;
+      if (thenLeaves && elseLeaves) {
+        // Both arms leave: the tail is unreachable, so it is never built.
+        deadTail = true;
+      } else if (thenLeaves) {
+        elseK = after;
+      } else if (elseLeaves) {
+        thenK = after;
+      } else {
+        // Both arms fall through: the old lowering binds the tail as the
+        // join before either arm, so it is validated first here too.
+        after();
+        thenK = () => {};
+        elseK = () => {};
+      }
+      const thenIR = lowerTree(s.then, vars, thenK, scope, sf);
+      const elseIR = lowerTree(elseArm, vars, elseK, scope, sf);
+      const stmt: EmitStmt =
+        s.else !== undefined && elseIR.length > 0
+          ? { kind: 'if', cond, then: thenIR, else: elseIR }
+          : { kind: 'if', cond, then: thenIR };
+      return deadTail ? [stmt] : [stmt, ...tail];
+    }
+  }
+}
+
+/** A function declaration's IR, or its failure. The slice covers `const`
+ * and `let` locals, reassignment, `if`/`else`, `throw`, and `return`;
+ * anything beyond it must degrade, not approximate. */
 function walkFunction(
   fn: ts.FunctionDeclaration,
   sf: ts.SourceFile,
@@ -435,31 +772,47 @@ function walkFunction(
   if (sig !== undefined) return sig;
   const params = fn.parameters.map((p) => (p.name as ts.Identifier).text);
   const scope: WalkScope = { vars: new Set(params), mapped, failed };
-  const exprs: ts.Expression[] = [];
-  for (const s of fn.body!.statements) {
-    if (!ts.isReturnStatement(s) || s.expression === undefined) {
-      return constructAt(s, s.kind, sf);
-    }
-    exprs.push(s.expression);
+  // Parameters are assignable, the way JavaScript has them.
+  const locals: Locals = new Map(params.map((p) => [p, 'mutable' as const]));
+  const tree = fn.body!.statements.flatMap((s) => structureStmt(s, sf, locals));
+  // The pre-scans cover the whole body in the old elaborator's order —
+  // opaque constructs, then refused operators, then construct-failed
+  // callees — dead code included.
+  const construct = treeConstruct(tree, sf);
+  if (construct !== undefined) return construct;
+  const exprs = treeExprs(tree);
+  for (const e of exprs) {
+    const refused = findRefusedOp(e);
+    if (refused !== undefined) return refused;
   }
-  // The pre-scans cover the whole body, dead code included.
-  const prescan = prescanFailure(exprs, scope, sf);
-  if (prescan !== undefined) return prescan;
-  if (exprs.length === 0) {
-    return { reason: 'the body must return on every path' };
+  const callee = failedCalleeIn(
+    exprs.flatMap((e) => callNames(e)),
+    scope,
+  );
+  if (callee !== undefined) return callee;
+  try {
+    const body = lowerTree(
+      tree,
+      params,
+      () => {
+        // A `number` function that runs off the end returns undefined,
+        // which this slice has no value for.
+        throw new ModelError('the body must return on every path');
+      },
+      scope,
+      sf,
+    );
+    return {
+      kind: 'function',
+      name: fn.name!.text,
+      params,
+      source: fn.getText(sf),
+      body,
+    };
+  } catch (err) {
+    if (err instanceof ModelError) return { reason: err.message };
+    throw err;
   }
-  // The lowering ends its path at the first return: what follows never
-  // elaborates and never reaches the artifact.
-  const walked = typedOrFailure(exprs[0]!, 'num', scope, sf);
-  if (!('expr' in walked)) return walked;
-  const body: EmitStmt[] = [{ kind: 'return', expr: walked.expr }];
-  return {
-    kind: 'function',
-    name: fn.name!.text,
-    params,
-    source: fn.getText(sf),
-    body,
-  };
 }
 
 /** Parse one formula atom the way the transcriber does: wrapped in

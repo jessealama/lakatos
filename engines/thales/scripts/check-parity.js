@@ -31,8 +31,8 @@ const QUICK_FIXTURES = [
 
 /** The expression slice of the conformance corpus (#147): single-return
  * bodies, int/nat binders, single-atom conclusions. Fixtures with
- * statements, guards, number binders, imports, or unsupported ranges
- * join the manifest with their slices (#148-#151). */
+ * guards, number binders, imports, or unsupported ranges join the
+ * manifest with their slices (#149-#151). */
 const EXPRESSION_FIXTURES = [
   'engines/thales/tests/fixtures/operators.ts',
   `${CONFORMANCE}/theorem/add-commutes.ts`,
@@ -62,9 +62,26 @@ const EXPRESSION_FIXTURES = [
   `${CONFORMANCE}/timeout/big-domain.ts`,
 ];
 
+/** The statement slice (#148): statement-bodied fixtures — const and
+ * mutable locals, reassignment, branches whose arms return, throw, or
+ * fall through — plus the statement-level degradations (loops, a
+ * shadowing redeclaration, an uninitialized let). Statement fixtures
+ * whose formulas need guards or number binders wait for #150. */
+const STATEMENT_FIXTURES = [
+  'engines/thales/tests/fixtures/statements.ts',
+  `${CONFORMANCE}/theorem/branch-joined-let.ts`,
+  `${CONFORMANCE}/theorem/const-chain.ts`,
+  `${CONFORMANCE}/theorem/let-binding.ts`,
+  `${CONFORMANCE}/countersatisfiable/branch-throw.ts`,
+  `${CONFORMANCE}/inappropriate/branch-loop.ts`,
+  `${CONFORMANCE}/inappropriate/for-loop.ts`,
+  `${CONFORMANCE}/inappropriate/shadowed-const.ts`,
+  `${CONFORMANCE}/inappropriate/uninitialized-let.ts`,
+];
+
 const fixtures =
   process.env.LAKATOS_PROVE_E2E === '1'
-    ? [...QUICK_FIXTURES, ...EXPRESSION_FIXTURES]
+    ? [...QUICK_FIXTURES, ...EXPRESSION_FIXTURES, ...STATEMENT_FIXTURES]
     : QUICK_FIXTURES;
 
 const { check, done } = checker('parity');

@@ -48,6 +48,9 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
 #eval goldenCheck "tests/fixtures/operators.emission.json"
   "tests/fixtures/operators.emitted.lean.expected"
 
+#eval goldenCheck "tests/fixtures/statements.emission.json"
+  "tests/fixtures/statements.emitted.lean.expected"
+
 -- Emitted defs live under the model namespace: a TS function named
 -- after a root-level Lean name (`id`) must still define.
 #eval show CoreM Unit from do
@@ -90,16 +93,50 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
   unless (rendered.splitOn "pure'").length == 3 do
     throwError "the reserved binder name is not primed:\n{rendered}"
 
+-- The statement decoding round-trips strictly, else arm optional.
+#guard
+  (decodeStmt (Json.mkObj [("kind", "throw"), ("error", "RangeError")]))
+  matches .ok (.throwErr "RangeError")
+#guard
+  (decodeStmt (Json.mkObj
+    [("kind", "let"), ("name", "y"),
+     ("init", Json.mkObj [("kind", "id"), ("name", "x")])]))
+  matches .ok (.letDecl "y" (.id "x"))
+#guard
+  (decodeStmt (Json.mkObj
+    [("kind", "if"),
+     ("cond", Json.mkObj [("kind", "id"), ("name", "b")]),
+     ("then", Json.arr #[Json.mkObj [("kind", "throw"), ("error", "E")]])]))
+  matches .ok (.ite (.id "b") #[.throwErr "E"] none)
+#guard (decodeStmt (Json.mkObj [("kind", "while")])) matches .error _
+
+-- A mutable local renders as `let mut`, a reassigned parameter is rebound
+-- ahead of the body, and no join helper reaches the source text.
+#eval show CoreM Unit from do
+  let e : Emission := {
+    file := "t.ts"
+    declarations := #[{ name := "clampUp", params := #["x"], source := "clampUp",
+                        body := #[
+                          .ite (.binop "<" (.id "x") (.num "1"))
+                            #[.assign "x" (.num "1")] none,
+                          .ret (.id "x")] }]
+    obligations := #[] }
+  let rendered ← renderEmission e
+  unless (rendered.splitOn "let mut x := x").length == 2 do
+    throwError "the assigned parameter is not rebound:\n{rendered}"
+  unless (rendered.splitOn "fun").length == 1 do
+    throwError "a helper lambda leaked into the source text:\n{rendered}"
+
 -- A shape outside the slice is refused with a message naming the gap.
 #eval show CoreM Unit from do
   let e : Emission := {
     file := "t.ts"
-    declarations := #[{ name := "f", params := #["x"], source := "f",
-                        body := #[.ret (.id "x"), .ret (.id "x")] }]
+    declarations := #[{ name := "helper.mts::double", params := #["x"],
+                        source := "f", body := #[.ret (.id "x")] }]
     obligations := #[] }
   let refused ← try
     let _ ← renderEmission e
     pure false
   catch _ => pure true
   unless refused do
-    throwError "a multi-statement body was rendered instead of refused"
+    throwError "a module-qualified name was rendered instead of refused"

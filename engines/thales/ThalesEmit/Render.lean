@@ -5,8 +5,8 @@ import ThalesEmit.Json
 /-! IR → `TSyntax` → text. Every line of Lean code in the artifact is
 built by quotation and printed by Lean's pretty-printer; the only strings
 assembled by hand are comments and the fixed header. Shapes beyond this
-slice — multi-statement bodies, module-qualified names — are refused
-with a message naming the gap, never approximated. -/
+slice — module-qualified names — are refused with a message naming the
+gap, never approximated. -/
 
 namespace ThalesEmit
 
@@ -43,7 +43,7 @@ re-parsed plain text, so a binder or parameter spelled like one would
 capture the reference. -/
 def reservedNames : List String :=
   ["pure", "ballIco", "floatInf", "Float", "Number", "Int",
-   "JsM", "JsNumber", "Bool", "TsModel"]
+   "JsM", "JsNumber", "Bool", "TsModel", "JsError", "mut"]
 
 /-- A binder or parameter: the source name, primed out of the reserved
 vocabulary — a spelling no TS identifier has. -/
@@ -148,17 +148,91 @@ def intEndpointTerm (i : Int) : RenderM (TSyntax `term) := do
   let n : TSyntax `term := ⟨Syntax.mkNumLit (toString i.natAbs)⟩
   if i < 0 then `(-$n) else pure n
 
+/-! Statement bodies render as do-notation — `let`, `let mut`, `if`
+statements, early `return`, `throw` — one Lean statement per IR statement:
+the do-elaborator does the control-flow lowering, so no tail is ever
+written out twice and no helper lambda reaches the source text. -/
+
+/-- A statement's value expression: binder-coercion never applies inside a
+body, where every name is already a `JsNumber`. -/
+def bodyTerm (e : JsExpr) : RenderM (TSyntax `term) :=
+  return (← valueTerm (fun _ => false) e).term
+
+mutual
+
+/-- An arm's statement sequence. An arm the source left empty still needs
+a do-element, so it renders as `pure ()`. -/
+partial def stmtsDoSeq (stmts : Array JsStmt) :
+    RenderM (TSyntax ``Lean.Parser.Term.doSeqIndent) := do
+  let elems ←
+    if stmts.isEmpty then pure #[← `(doElem| pure ())]
+    else stmts.mapM stmtDoElem
+  `(Lean.Parser.Term.doSeqIndent| $[$elems:doElem]*)
+
+partial def stmtDoElem : JsStmt → RenderM (TSyntax `doElem)
+  | .ret e => do `(doElem| return $(← bodyTerm e))
+  | .throwErr kind =>
+    -- The error carries its constructor name alone, like the old model.
+    `(doElem| throw (JsError.error $(Syntax.mkStrLit kind)))
+  | .constDecl x e => do
+    -- Locals are ascribed: TypeScript typed them `number`, and a bare
+    -- literal initializer would otherwise elaborate at `Nat`.
+    `(doElem| let $(← scopedIdent x) : JsNumber := $(← bodyTerm e))
+  | .letDecl x e => do
+    `(doElem| let mut $(← scopedIdent x) : JsNumber := $(← bodyTerm e))
+  | .assign x e => do
+    `(doElem| $(← scopedIdent x):ident := $(← bodyTerm e))
+  | .ite c thn els => iteElem c thn els
+
+/-- An `if` statement. An else arm that is itself exactly one `if` joins
+the chain as `else if`, the way the source spells it: the nested doIf's
+condition and arms are grafted onto the outer node's else-if groups,
+which is syntax the quotations built — only rearranged. -/
+partial def iteElem (c : JsExpr) (thn : Array JsStmt)
+    (els : Option (Array JsStmt)) : RenderM (TSyntax `doElem) := do
+  let ct ← bodyTerm c
+  let thenSeq ← stmtsDoSeq thn
+  match els with
+  | none => `(doElem| if $ct then $thenSeq:doSeqIndent)
+  | some #[.ite c2 t2 e2] => do
+    let inner ← iteElem c2 t2 e2
+    let base ← `(doElem| if $ct then $thenSeq:doSeqIndent)
+    -- doIf's shape: "if", cond, "then", seq, else-if groups, else?.
+    let a := inner.raw.getArgs
+    let elseIf := mkNode `group
+      #[mkNode `group #[mkAtom "else", mkAtom "if"], a[1]!, a[2]!, a[3]!]
+    return ⟨(base.raw.setArg 4 (mkNullNode (#[elseIf] ++ a[4]!.getArgs))).setArg 5 a[5]!⟩
+  | some elseStmts => do
+    let elseSeq ← stmtsDoSeq elseStmts
+    `(doElem| if $ct then $thenSeq:doSeqIndent else $elseSeq:doSeqIndent)
+
+end
+
+/-- The mutable names a statement tree assigns, arms included: a parameter
+among them is rebound `let mut` ahead of the body, the way JavaScript has
+parameters assignable. -/
+partial def assignedNames (s : JsStmt) : List String :=
+  match s with
+  | .assign x _ => [x]
+  | .ite _ thn els =>
+    thn.toList.flatMap assignedNames
+      ++ (els.getD #[]).toList.flatMap assignedNames
+  | _ => []
+
 def fnCommand (f : EmitFn) : RenderM (TSyntax `command) := do
   let name ← modelIdent f.name
   let params ← f.params.mapM scopedIdent
-  match f.body with
-  | #[.ret e] =>
-    let ⟨body, _⟩ ← valueTerm (fun _ => false) e
-    -- Dual-tagged like the old models: the js_norm closers and the grind
-    -- rung both unfold a model by its equations.
-    `(@[js_norm, grind] def $name ($params* : JsNumber) : JsM JsNumber := do
-        return $body)
-  | _ => throw s!"'{f.name}': only single-return bodies are in the emission slice yet"
+  let assigned := f.body.toList.flatMap assignedNames
+  let rebound ← f.params.filterMapM fun p => do
+    unless assigned.contains p do return none
+    let pi ← scopedIdent p
+    return some (← `(doElem| let mut $pi:ident := $pi))
+  let body ← f.body.mapM stmtDoElem
+  let elems := rebound ++ body
+  -- Dual-tagged like the old models: the js_norm closers and the grind
+  -- rung both unfold a model by its equations.
+  `(@[js_norm, grind] def $name ($params* : JsNumber) : JsM JsNumber := do
+      $[$elems:doElem]*)
 
 def obligationCommand (e : Emission) (o : Obligation) : RenderM (TSyntax `command) := do
   let file := Syntax.mkStrLit e.file
@@ -220,6 +294,13 @@ partial def unscope : Syntax → Syntax
   | .node info kind args => .node info kind (args.map unscope)
   | s => s
 
+/-- Formatted command text, without trailing whitespace: the printer
+leaves a dangling space after `then` when the arm breaks to its own line,
+and the artifact is plain text a person's editor would flag it in. -/
+def prettyLines (fmt : Format) : String :=
+  String.intercalate "\n"
+    (((fmt.pretty 100).splitOn "\n").map (·.dropEndWhile (· == ' ') |>.toString))
+
 /-- The full artifact text. Pretty-printing runs in `CoreM` against an
 environment that imports `ThalesDsl`, which carries every syntax the
 quotations build. -/
@@ -228,11 +309,11 @@ def renderEmission (e : Emission) : CoreM String := do
   for f in e.declarations do
     let cmd ← rendered (fnCommand f)
     blocks := blocks.push
-      (commentLines f.source ++ "\n" ++ (← ppCommand cmd).pretty 100)
+      (commentLines f.source ++ "\n" ++ prettyLines (← ppCommand cmd))
   for o in e.obligations do
     let cmd ← rendered (obligationCommand e o)
     blocks := blocks.push
-      (s!"-- @ensures\{{o.property}} {o.formula}\n" ++ (← ppCommand cmd).pretty 100)
+      (s!"-- @ensures\{{o.property}} {o.formula}\n" ++ prettyLines (← ppCommand cmd))
   return String.intercalate "\n\n" blocks.toList ++ "\n"
 where
   rendered (x : RenderM (TSyntax `command)) : CoreM (TSyntax `command) := do
