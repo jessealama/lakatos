@@ -1,9 +1,15 @@
 import { describe, expect, test } from 'vitest';
 import * as fs from 'node:fs';
+import { schemaValidator } from '../../../../tests/helpers/schema-validator.js';
 import { emitModule } from '../src/emission.js';
 
 const FIXTURE = 'engines/thales/tests/fixtures/tracer.ts';
 const read = () => fs.readFileSync(FIXTURE, 'utf8');
+
+const expectValidEmission = schemaValidator(
+  new URL('../../../../schemas/thales-emission.schema.json', import.meta.url),
+  'emission',
+);
 
 describe('emitModule on the tracer fixture', () => {
   test('maps add with its body IR', () => {
@@ -84,6 +90,20 @@ describe('emitModule on the tracer fixture', () => {
         "'Counter#bump' could not be modeled: unmapped TypeScript construct 'ClassDeclaration' at 13:3",
       ],
     ]);
+  });
+
+  test('the emission validates against the schema', () => {
+    expectValidEmission(emitModule(read(), FIXTURE).emission);
+  });
+
+  test('the pinned tracer emission fixture is exactly what the frontend emits', () => {
+    const pinned = JSON.parse(
+      fs.readFileSync(
+        'engines/thales/tests/fixtures/tracer.emission.json',
+        'utf8',
+      ),
+    );
+    expect(emitModule(read(), FIXTURE).emission).toEqual(pinned);
   });
 
   test('extraction results ride along', () => {
