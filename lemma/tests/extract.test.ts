@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { extractFromSource } from "../src/extract.js";
+import { qualifiedName } from "../src/qualified-name.js";
 
 const FOO = `/** @ensures{nonzero} forall (x: int) (y: number) {
  *    Number.isInteger(y) ==> foo(x, y) !== 0 } */
@@ -165,15 +166,14 @@ describe("extract — class methods", () => {
     expect(i.className).toBe("Box");
     expect(i.isStatic).toBe(false);
     expect(i.line).toBeGreaterThan(0);
-    expect(i.message).toMatch(/non-public method 'touch'/);
+    expect(i.message).toMatch(/non-public member 'touch'/);
   });
 
-  it("collects @ensures on an accessor as invalid", () => {
+  it("records an accessor annotation alongside its constructor", () => {
     const r = extractFromSource(CLASS_ACCESSOR, "class-accessor.ts");
-    expect(r.annotations).toEqual([]);
-    expect(r.invalid).toHaveLength(1);
-    expect(r.invalid[0]!.functionName).toBe("value");
-    expect(r.invalid[0]!.message).toMatch(/unsupported member 'value'/);
+    expect(r.invalid).toEqual([]);
+    expect(r.annotations).toHaveLength(1);
+    expect(r.annotations[0]!.functionName).toBe("value");
   });
 
   it("collects @ensures on a method of a non-exported class as invalid", () => {
@@ -194,7 +194,7 @@ describe("extract — class methods", () => {
     const i = r.invalid[0]!;
     expect(i.propertyName).toBe("p");
     expect(i.message).toMatch(
-      /duplicate property name 'p' on method 'Box\.id'/,
+      /duplicate property name 'p' on member 'Box\.id'/,
     );
   });
 
@@ -272,7 +272,7 @@ export function f(x: number): number { return x; }
     const r = extractFromSource(src, "modifiers.ts");
     expect(r.annotations).toEqual([]);
     expect(r.invalid.map((i) => i.propertyName).sort()).toEqual(["p", "q"]);
-    expect(r.invalid[0]!.message).toMatch(/non-public method 'touch'/);
+    expect(r.invalid[0]!.message).toMatch(/non-public member 'touch'/);
     expect(r.invalid[1]!.message).toMatch(/unsupported member 'probe'/);
   });
 
@@ -324,7 +324,7 @@ export function f(x: number): number { return x; }
     expect(i.propertyName).toBe("<unnamed>");
     expect(i.functionName).toBe("m");
     expect(i.className).toBe("<anonymous>");
-    expect(i.message).toMatch(/method 'm' of an anonymous class/);
+    expect(i.message).toMatch(/member 'm' of an anonymous class/);
   });
 
   it("collects a private-identifier member as invalid under its literal label", () => {
@@ -337,7 +337,7 @@ export function f(x: number): number { return x; }
     expect(r.annotations).toEqual([]);
     expect(r.invalid).toHaveLength(1);
     expect(r.invalid[0]!.functionName).toBe("#hidden");
-    expect(r.invalid[0]!.message).toMatch(/non-public method '#hidden'/);
+    expect(r.invalid[0]!.message).toMatch(/non-public member '#hidden'/);
   });
 
   it("collects @ensures on a method of an anonymous class under a placeholder", () => {
@@ -371,19 +371,6 @@ export function f(x: number): number { return x; }
       "<computed>",
       "<computed>",
     ]);
-  });
-
-  it("collects @ensures on a constructor as invalid, labeled 'constructor'", () => {
-    const src = `export class Box {
-  /** @ensures{p} forall (x: int) { x === x } */
-  constructor(readonly n: number) {}
-}
-`;
-    const r = extractFromSource(src, "ctor.ts");
-    expect(r.annotations).toEqual([]);
-    expect(r.invalid).toHaveLength(1);
-    expect(r.invalid[0]!.functionName).toBe("constructor");
-    expect(r.invalid[0]!.message).toMatch(/unsupported member 'constructor'/);
   });
 
   it("collects a computed-name member as invalid under '<computed>'", () => {
@@ -426,5 +413,155 @@ describe("extract — variable and re-export forms", () => {
   it("collects names from an `export { ... }` declaration", () => {
     const r = extractFromSource(REEXPORT, "reexport.ts");
     expect([...r.exports].sort()).toEqual(["bar", "foo"]);
+  });
+});
+
+const CLASS_GETTER = `export class Box {
+  #v: number;
+
+  constructor(v: number) {
+    this.#v = v;
+  }
+
+  /** @ensures{roundTrip} forall (x: number) { Object.is(new Box(x).v, x) } */
+  get v(): number {
+    return this.#v;
+  }
+}
+`;
+
+describe("extract — getter accessors", () => {
+  it("records a getter annotation as an instance member", () => {
+    const r = extractFromSource(CLASS_GETTER, "klass.ts");
+    expect(r.invalid).toEqual([]);
+    expect(r.annotations).toHaveLength(1);
+    const a = r.annotations[0]!;
+    expect(a.propertyName).toBe("roundTrip");
+    expect(a.functionName).toBe("v");
+    expect(a.className).toBe("Box");
+    expect(a.isStatic).toBe(false);
+    expect(qualifiedName(a.functionName, a.className, a.isStatic)).toBe(
+      "Box#v",
+    );
+  });
+
+  it("records a static getter annotation as a static member", () => {
+    const src = `export class Box {
+  /** @ensures{zero} forall (x: int) { Box.origin === 0 } */
+  static get origin(): number { return 0; }
+}
+`;
+    const r = extractFromSource(src, "static-getter.ts");
+    expect(r.invalid).toEqual([]);
+    expect(r.annotations).toHaveLength(1);
+    const a = r.annotations[0]!;
+    expect(a.functionName).toBe("origin");
+    expect(a.isStatic).toBe(true);
+    expect(qualifiedName(a.functionName, a.className, a.isStatic)).toBe(
+      "Box.origin",
+    );
+  });
+
+  it("collects @ensures on a setter as invalid", () => {
+    const src = `export class Box {
+  /** @ensures{p} forall (x: int) { x === x } */
+  set v(n: number) { void n; }
+}
+`;
+    const r = extractFromSource(src, "setter.ts");
+    expect(r.annotations).toEqual([]);
+    expect(r.invalid).toHaveLength(1);
+    expect(r.invalid[0]!.functionName).toBe("v");
+    expect(r.invalid[0]!.message).toMatch(/unsupported member 'v'/);
+  });
+
+  it("collects @ensures on an abstract getter as invalid", () => {
+    const src = `export abstract class Box {
+  /** @ensures{p} forall (x: int) { x === x } */
+  abstract get v(): number;
+}
+`;
+    const r = extractFromSource(src, "abstract-getter.ts");
+    expect(r.annotations).toEqual([]);
+    expect(r.invalid).toHaveLength(1);
+    expect(r.invalid[0]!.message).toMatch(/unsupported member 'v'/);
+  });
+
+  it("collects @ensures on a non-public getter as invalid", () => {
+    const src = `export class Box {
+  /** @ensures{p} forall (x: int) { x === x } */
+  private get v(): number { return 0; }
+
+  /** @ensures{q} forall (x: int) { x === x } */
+  get #w(): number { return 0; }
+}
+`;
+    const r = extractFromSource(src, "private-getter.ts");
+    expect(r.annotations).toEqual([]);
+    expect(r.invalid.map((i) => i.propertyName).sort()).toEqual(["p", "q"]);
+    for (const i of r.invalid) expect(i.message).toMatch(/non-public member/);
+  });
+
+  it("collects @ensures on a getter of a non-exported class as invalid", () => {
+    const src = `class Box {
+  /** @ensures{p} forall (x: int) { x === x } */
+  get v(): number { return 0; }
+}
+`;
+    const r = extractFromSource(src, "unexported-getter.ts");
+    expect(r.annotations).toEqual([]);
+    expect(r.invalid).toHaveLength(1);
+    expect(r.invalid[0]!.message).toMatch(/which is not exported/);
+  });
+});
+
+describe("extract — constructors", () => {
+  it("records a constructor annotation under the label 'constructor'", () => {
+    const src = `export class Box {
+  /** @ensures{accepts} forall (x: int) { new Box(x).n === x } */
+  constructor(readonly n: number) {}
+}
+`;
+    const r = extractFromSource(src, "ctor.ts");
+    expect(r.invalid).toEqual([]);
+    expect(r.annotations).toHaveLength(1);
+    const a = r.annotations[0]!;
+    expect(a.propertyName).toBe("accepts");
+    expect(a.functionName).toBe("constructor");
+    expect(a.className).toBe("Box");
+    expect(a.isStatic).toBe(false);
+    expect(qualifiedName(a.functionName, a.className, a.isStatic)).toBe(
+      "Box#constructor",
+    );
+  });
+
+  it("collects @ensures on a constructor of a non-exported class as invalid", () => {
+    const src = `class Box {
+  /** @ensures{p} forall (x: int) { x === x } */
+  constructor(readonly n: number) {}
+}
+`;
+    const r = extractFromSource(src, "unexported-ctor.ts");
+    expect(r.annotations).toEqual([]);
+    expect(r.invalid).toHaveLength(1);
+    expect(r.invalid[0]!.functionName).toBe("constructor");
+    expect(r.invalid[0]!.message).toMatch(/which is not exported/);
+  });
+
+  it("does not collide a constructor and a getter sharing a property name", () => {
+    const src = `export class Box {
+  /** @ensures{p} forall (x: int) { x === x } */
+  constructor(readonly n: number) {}
+
+  /** @ensures{p} forall (x: int) { x === x } */
+  get v(): number { return 0; }
+}
+`;
+    const r = extractFromSource(src, "ctor-getter.ts");
+    expect(r.invalid).toEqual([]);
+    expect(r.annotations.map((a) => a.functionName).sort()).toEqual([
+      "constructor",
+      "v",
+    ]);
   });
 });

@@ -53,7 +53,7 @@
   "definitions": {
     "functionName": {
       "type": "string",
-      "description": "Bare function name, or Class#method (instance) / Class.method (static).",
+      "description": "Bare function name, or Class#member (instance) / Class.member (static). A class member is a method, a getter, or the constructor, which is named Class#constructor.",
       "pattern": "^[$A-Za-z_][$A-Za-z0-9_]*([#.][$A-Za-z_][$A-Za-z0-9_]*)?$"
     },
     "counterexample": {

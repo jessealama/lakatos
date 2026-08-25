@@ -1,6 +1,8 @@
 /**
- * Render a property's identity: the bare function name, or `Class#method`
- * (instance) / `Class.method` (static) when it lives on a class.
+ * Render a property's identity: the bare function name, or `Class#member`
+ * (instance) / `Class.member` (static) when it lives on a class. A member is
+ * a method, a getter, or the constructor — the last under the label
+ * `constructor`, which no other member of a class can take.
  */
 export function qualifiedName(
   functionName: string,

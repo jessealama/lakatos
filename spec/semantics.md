@@ -33,9 +33,9 @@ Every construct is specified in three parts:
 
 ### The property as a whole
 
-- **Well-formedness**: attaches to an exported function declaration. Binder
-  names are pairwise distinct and scope over the formula body. TODO:
-  attachment to other declaration forms.
+- **Well-formedness**: attaches to one of the declaration forms listed
+  under *Attachment points* below. Binder names are pairwise distinct and
+  scope over the formula body.
 - **Truth conditions**: the formula holds for every assignment of values to
   the bound variables drawn from their (guarded) domains.
 - **Engine obligations**: the refuter samples assignments and evaluates;
@@ -43,6 +43,46 @@ Every construct is specified in three parts:
   translation. The prover's coverage is bounded `int`/`nat` binders: it
   establishes a property by evaluating it over the whole domain, so a
   domain it cannot enumerate is reported unproven rather than assumed.
+
+### Attachment points
+
+An `@ensures` names the declaration it is attached to. That declaration
+must be reachable from outside its module, since a property no caller can
+exercise is not a property of the module's interface. Every accepted form
+yields a *qualified name*, the second component of a verdict's identity
+triple (file, qualified name, property name):
+
+| Attachment point | Qualified name |
+|---|---|
+| Exported function declaration | `f` |
+| Exported `const` bound to an arrow or function expression | `f` |
+| Public instance method of an exported class | `C#m` |
+| Public static method of an exported class | `C.m` |
+| Public instance getter of an exported class | `C#g` |
+| Public static getter of an exported class | `C.g` |
+| Constructor of an exported class | `C#constructor` |
+
+A class's members share one namespace, so no two accepted attachment
+points on a class can collide: a class has at most one constructor, and a
+getter and a method cannot share a name.
+
+These are not attachment points:
+
+- **Setters.** A setter's call has no value, so there is nothing for a
+  formula to speak about.
+- **Abstract members.** They have no body to check a claim against.
+- **Computed-name members** (`[Symbol.iterator]`, `["x"]`). The name has no
+  fixed spelling, so the identity triple cannot name the subject.
+- **Fields**, including a field initialized with a function expression. A
+  field is reassignable, so the annotation would not pin the callee.
+- **Non-public members** — `private`, `protected`, or `#private`, the
+  constructor included. No caller outside the class can reach them.
+- **Members of a non-exported class**, and **members of an anonymous
+  class**: unreachable, and unnameable, respectively.
+
+A rejected attachment is a diagnostic, not silence: the annotation is
+reported with the best identity available, which may use the placeholder
+labels `<computed>` and `<anonymous>`.
 
 ### Binder domains
 

@@ -24,6 +24,14 @@ const classFailSrc = path.join(
   root,
   "engines/pabst/tests/fixtures/e2e/class-fail.ts",
 );
+const accessorPassSrc = path.join(
+  root,
+  "engines/pabst/tests/fixtures/e2e/accessor-pass.ts",
+);
+const accessorFailSrc = path.join(
+  root,
+  "engines/pabst/tests/fixtures/e2e/accessor-fail.ts",
+);
 const nearMissSrc = path.join(
   root,
   "engines/pabst/tests/fixtures/e2e/near-miss.ts",
@@ -207,6 +215,37 @@ describe("end-to-end", () => {
       });
     },
   );
+
+  it(
+    "getter and constructor properties that hold pass vitest",
+    { timeout: 30000 },
+    () => {
+      const [r] = generate([accessorPassSrc], ".pabst", 3);
+      expect(r).toBeDefined();
+      const env = run(r!);
+      expect(env.failed).toBe(0);
+      expect(issuesOf(env)).toEqual([]);
+      // Both attachment points ran: the getter and the constructor.
+      expect(env.annotations.map((a) => a.function).sort()).toEqual([
+        "Box#constructor",
+        "Box#v",
+      ]);
+    },
+  );
+
+  it("a buggy getter is flagged as Class#getter", { timeout: 30000 }, () => {
+    const [r] = generate([accessorFailSrc], ".pabst", 3);
+    expect(r).toBeDefined();
+    const env = run(r!);
+    expect(env.failed).toBeGreaterThan(0);
+    expect(issuesOf(env)).toHaveLength(1);
+    expectValidIssue(issuesOf(env)[0]);
+    expect(issuesOf(env)[0]).toMatchObject({
+      function: "ClampedBox#v",
+      property: "roundTrip",
+      kind: "falsified",
+    });
+  });
 
   it(
     "a static-method near-miss is flagged as Class.method with the -0 counterexample",
