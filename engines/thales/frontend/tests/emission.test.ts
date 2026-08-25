@@ -133,8 +133,12 @@ function payloadOf(formula: string) {
 
 describe('signature and body blockers', () => {
   test.each([
-    ['an async function', 'async function f(x: number): number { return x; }'],
-    ['a generator', 'function* f(x: number): number { return x; }'],
+    [
+      'an async function',
+      'async function f(x: number): number { return x; }',
+      undefined,
+    ],
+    ['a generator', 'function* f(x: number): number { return x; }', undefined],
     [
       'a destructured parameter',
       'function f({ x }: { x: number }): number { return 1; }',
@@ -145,14 +149,22 @@ describe('signature and body blockers', () => {
       'function f(...x: number[]): number { return 1; }',
       'DotDotDotToken',
     ],
-    ['an optional parameter', 'function f(x?: number): number { return 1; }'],
-    ['an untyped parameter', 'function f(x): number { return 1; }'],
+    [
+      'an optional parameter',
+      'function f(x?: number): number { return 1; }',
+      undefined,
+    ],
+    ['an untyped parameter', 'function f(x): number { return 1; }', undefined],
     [
       'a non-number parameter type',
       'function f(x: string): number { return 1; }',
       'StringKeyword',
     ],
-    ['a bodiless overload signature', 'function f(x: number): number;'],
+    [
+      'a bodiless overload signature',
+      'function f(x: number): number;',
+      undefined,
+    ],
     [
       'a non-number return type',
       'function f(x: number): string { return "x"; }',
