@@ -117,6 +117,170 @@ describe('emitModule on the tracer fixture', () => {
   });
 });
 
+/** The classification for one annotated declaration. */
+function classifiedOf(decl: string, fn = 'f'): string | undefined {
+  const src = `/** @ensures{p} forall (x: int ∈ [0, 5)) { ${fn}(x) ≡ x } */\n${decl}\n`;
+  return emitModule(src, 't.ts').classified[0]?.reason;
+}
+
+/** The payload of one obligation on a mappable identity function. */
+function payloadOf(formula: string) {
+  const src = `/** @ensures{p} ${formula} */\nexport function f(x: number): number {\n  return x;\n}\n`;
+  const { emission, classified } = emitModule(src, 't.ts');
+  expect(classified).toEqual([]);
+  return emission.obligations[0]!.payload;
+}
+
+describe('signature and body blockers', () => {
+  test.each([
+    ['an async function', 'async function f(x: number): number { return x; }'],
+    ['a generator', 'function* f(x: number): number { return x; }'],
+    [
+      'a destructured parameter',
+      'function f({ x }: { x: number }): number { return 1; }',
+      'ObjectBindingPattern',
+    ],
+    [
+      'a rest parameter',
+      'function f(...x: number[]): number { return 1; }',
+      'DotDotDotToken',
+    ],
+    ['an optional parameter', 'function f(x?: number): number { return 1; }'],
+    ['an untyped parameter', 'function f(x): number { return 1; }'],
+    [
+      'a non-number parameter type',
+      'function f(x: string): number { return 1; }',
+      'StringKeyword',
+    ],
+    ['a bodiless overload signature', 'function f(x: number): number;'],
+    [
+      'a non-number return type',
+      'function f(x: number): string { return "x"; }',
+      'StringKeyword',
+    ],
+    [
+      'a declaration statement in the body',
+      'function f(x: number): number { const y = 1; return y; }',
+      'VariableStatement',
+    ],
+    [
+      'a bare return',
+      'function f(x: number): number { return; }',
+      'ReturnStatement',
+    ],
+    [
+      'an unemittable operator',
+      'function f(x: number): number { return x ** 2; }',
+      'BinaryExpression',
+    ],
+    [
+      'a blocker in the left operand',
+      'function f(x: number): number { return (await g()) + x; }',
+      'AwaitExpression',
+    ],
+    [
+      'a blocker in the right operand',
+      'function f(x: number): number { return x + (await g()); }',
+      'AwaitExpression',
+    ],
+    [
+      'a blocker in a call argument',
+      'function f(x: number): number { return f(await g()); }',
+      'AwaitExpression',
+    ],
+  ])('%s classifies its annotation', (_label, decl, construct) => {
+    const reason = classifiedOf(decl);
+    expect(reason).toMatch(
+      /'f' could not be modeled: unmapped TypeScript construct/,
+    );
+    if (construct !== undefined) expect(reason).toContain(`'${construct}'`);
+  });
+
+  test('a static class member classifies under its dotted name', () => {
+    const src = [
+      'export class Box {',
+      '  /** @ensures{p} forall (x: int ∈ [0, 5)) { make(x) ≡ x } */',
+      '  static make(x: number): number {',
+      '    return x;',
+      '  }',
+      '}',
+      '',
+    ].join('\n');
+    const { classified } = emitModule(src, 't.ts');
+    expect(classified[0]!.reason).toMatch(
+      /'Box\.make' could not be modeled: unmapped TypeScript construct 'ClassDeclaration'/,
+    );
+  });
+
+  test('nameless and computed-name declarations bind no blocker', () => {
+    const src = [
+      'export default function (x: number): number { return x; }',
+      'export default class {}',
+      'class C { ["m"](x: number): number { return x; } }',
+      'interface I { x: number; }',
+      '',
+    ].join('\n');
+    const { emission, classified } = emitModule(src, 't.ts');
+    expect(emission.declarations).toEqual([]);
+    expect(classified).toEqual([]);
+  });
+});
+
+describe('obligation payload degradations', () => {
+  test.each([
+    ['an unbounded int binder', 'forall (x: int) { f(x) ≡ x }'],
+    ['a half-bounded range', 'forall (x: int ∈ (-∞, 10]) { f(x) ≡ x }'],
+    [
+      'a range past the safe integers',
+      'forall (x: int ∈ [0, 99999999999999999999)) { f(x) ≡ x }',
+    ],
+    [
+      'an implication body',
+      'forall (x: int ∈ [0, 5)) { f(x) >= 0 -> f(x) ≡ x }',
+    ],
+    ['an unparseable atom', 'forall (x: int ∈ [0, 5)) { 2x ≡ x }'],
+    [
+      'an atom that is not valid JavaScript',
+      'forall (x: int ∈ [0, 5)) { f(x) is wonderful }',
+    ],
+    [
+      'a half-bounded floor above zero',
+      'forall (x: int ∈ [3, ∞)) { f(x) ≡ x }',
+    ],
+    [
+      'a blocker in the left equation side',
+      'forall (x: int ∈ [0, 5)) { (await f(x)) ≡ x }',
+    ],
+    [
+      'a blocker in the right equation side',
+      'forall (x: int ∈ [0, 5)) { x ≡ (await f(x)) }',
+    ],
+    ['a method-call conclusion', 'forall (x: int ∈ [0, 5)) { foo.bar(x, x) }'],
+    [
+      'a formula the prefix parser rejects',
+      'forall (x: int ∈ [0, 5)) (x: int ∈ [0, 5)) { f(x) ≡ x }',
+    ],
+  ])('%s degrades to a bare payload', (_label, formula) => {
+    expect(payloadOf(formula)).toEqual({ kind: 'bare' });
+  });
+
+  test('parenthesized arguments and negative literals structure', () => {
+    expect(payloadOf('forall (x: int ∈ [0, 5)) { f((x)) ≡ f(-1) }')).toEqual({
+      kind: 'structured',
+      binders: [{ name: 'x', lo: '0', hi: '5' }],
+      conclusion: {
+        kind: 'eq',
+        left: { kind: 'call', callee: 'f', args: [{ kind: 'id', name: 'x' }] },
+        right: {
+          kind: 'call',
+          callee: 'f',
+          args: [{ kind: 'num', lit: '-1' }],
+        },
+      },
+    });
+  });
+});
+
 describe('emitModule degradations beyond the tracer', () => {
   test('a formula outside the structured slice degrades to a bare payload', () => {
     const src = [

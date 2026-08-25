@@ -20,6 +20,9 @@ lean_lib «ThalesEmit» where
 
 lean_exe «thales-emit» where
   root := `ThalesEmit.Main
+  -- The renderer imports ThalesDsl at runtime and pretty-prints through
+  -- interpreted parenthesizers, which needs the interpreter's symbols.
+  supportInterpreter := true
 
 lean_lib «ThalesDslTest» where
   globs := #[.submodules `Test]
