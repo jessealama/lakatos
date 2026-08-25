@@ -12,7 +12,7 @@ namespace ThalesDsl
 open Lean Elab Command
 open Js
 
-syntax "#thales_prove " str str str " := " term : command
+syntax "#thales_prove " str ppSpace str ppSpace str " := " term : command
 
 /-- An integer literal term, possibly negated. -/
 def intLitTerm? : TSyntax `term → Option Int
