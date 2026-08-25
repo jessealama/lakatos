@@ -22,7 +22,7 @@ export function bump(x: number): number {
   return x + 1;
 }
 
-/** @ensures{shifts} forall (x: int ∈ [0, 5)) { chain(x) ≡ 2 - neg(x) } */
+/** @ensures{shifts} forall (x: int ∈ [0, 5)) { chain(x) ≡ 2 + neg(x) } */
 export function chain(x: number): number {
   return bump(neg(x)) + 1;
 }

@@ -85,8 +85,8 @@ def TsModel.chain (x : JsNumber) : JsM JsNumber := do
         JsM Bool) =
       pure true
 
--- @ensures{shifts} forall (x: int ∈ [0, 5)) { chain(x) ≡ 2 - neg(x) }
+-- @ensures{shifts} forall (x: int ∈ [0, 5)) { chain(x) ≡ 2 + neg(x) }
 #thales_prove "engines/thales/tests/fixtures/operators.ts" "chain" "shifts" :=
   ballIco 0 5 fun x =>
     TsModel.chain (Float.ofInt x) = do
-      return 2 - (← TsModel.neg (Float.ofInt x))
+      return 2 + (← TsModel.neg (Float.ofInt x))

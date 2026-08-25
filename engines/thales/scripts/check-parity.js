@@ -34,6 +34,7 @@ const QUICK_FIXTURES = [
  * statements, guards, number binders, imports, or unsupported ranges
  * join the manifest with their slices (#148-#151). */
 const EXPRESSION_FIXTURES = [
+  'engines/thales/tests/fixtures/operators.ts',
   `${CONFORMANCE}/theorem/add-commutes.ts`,
   `${CONFORMANCE}/theorem/bounded-double.ts`,
   `${CONFORMANCE}/theorem/endpoints.ts`,
@@ -57,6 +58,7 @@ const EXPRESSION_FIXTURES = [
   `${CONFORMANCE}/inappropriate/await-remote.ts`,
   `${CONFORMANCE}/inappropriate/class-method.ts`,
   `${CONFORMANCE}/inappropriate/exponentiation.ts`,
+  `${CONFORMANCE}/error/unmodeled-operator.ts`,
   `${CONFORMANCE}/timeout/big-domain.ts`,
 ];
 
@@ -69,6 +71,25 @@ const { check, done } = checker('parity');
 
 process.chdir(repoRoot); // the fixture path is the annotations' identity file
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'thales-parity-'));
+
+// One lake build settles the emitter; each fixture then pays only the
+// process spawn, with lake's search path captured once.
+const emitBin = path.join(engineRoot, '.lake', 'build', 'bin', 'thales-emit');
+const emitBuild = spawnSync('lake', ['build', 'thales-emit'], {
+  cwd: engineRoot,
+  encoding: 'utf8',
+  timeout: 600_000,
+});
+check(
+  emitBuild.status === 0,
+  `lake build thales-emit failed (${emitBuild.status}):\n${emitBuild.stderr}`,
+);
+const leanPath = spawnSync('lake', ['env', 'printenv', 'LEAN_PATH'], {
+  cwd: engineRoot,
+  encoding: 'utf8',
+  timeout: 600_000,
+}).stdout?.trim();
+check(Boolean(leanPath), 'lake env yielded no LEAN_PATH');
 
 /** One envelope entry, as both pipelines must produce it. */
 function entry(fn, property, szs, reason, axioms, counterexample) {
@@ -125,6 +146,15 @@ function verdictsOf(leanFile, label) {
 for (const [i, fixture] of fixtures.entries()) {
   const text = fs.readFileSync(fixture, 'utf8');
 
+  // Timeout fixtures are graded the way the corpus harness grades them:
+  // under a reduced heartbeat budget, where Timeout is deterministic and
+  // cheap. Both pipelines see the same budget, so parity still binds.
+  if (fixture.includes('/timeout/')) {
+    process.env.LAKATOS_PROVE_HEARTBEATS = '1';
+  } else {
+    delete process.env.LAKATOS_PROVE_HEARTBEATS;
+  }
+
   // Old pipeline: transcribe, run, one verdict line per annotation that
   // got a command; untried annotations are reported the way the CLI does.
   const oldSide = (() => {
@@ -154,10 +184,11 @@ for (const [i, fixture] of fixtures.entries()) {
     const jsonFile = path.join(tmp, `emission-${i}.json`);
     const leanFile = path.join(tmp, `new-${i}.lean`);
     fs.writeFileSync(jsonFile, JSON.stringify(emission));
-    const emit = spawnSync('lake', ['exe', 'thales-emit', jsonFile, leanFile], {
+    const emit = spawnSync(emitBin, [jsonFile, leanFile], {
       cwd: engineRoot,
       encoding: 'utf8',
       timeout: 120_000,
+      env: { ...process.env, LEAN_PATH: leanPath },
     });
     check(
       emit.status === 0,

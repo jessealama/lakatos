@@ -36,6 +36,9 @@ the business of the e2e and unit suites.
 - `inappropriate/` — the annotation is outside the model: the function uses
   a construct the transcriber cannot map, or an operator the model refuses
   on the merits (`Inappropriate`).
+- `error/` — the attempt fails on the engine's own gaps (`Error`): an
+  operator with no model in the slice, an unbound identifier — the input
+  is fine, the engine is what falls short.
 - `timeout/` — every annotation must report `Timeout` under the reduced
   heartbeat budget the harness sets via `LAKATOS_PROVE_HEARTBEATS`; the
   bucket runs as its own prove invocation so the rest of the corpus keeps

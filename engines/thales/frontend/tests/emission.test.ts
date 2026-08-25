@@ -677,6 +677,20 @@ describe('formula classification parity with the old pipeline', () => {
     ]);
   });
 
+  test.each([
+    ['a numeric literal', '5', 'a numeric literal cannot be a boolean'],
+    ['an identifier', 'x', "identifier 'x' is a number, not a boolean"],
+    ['a unary minus', '-x', "operator '-' yields a number, not a boolean"],
+  ])(
+    '%s as the whole conclusion fails property elaboration',
+    (_label, atom, message) => {
+      expect(
+        classifications(formulaWith(`forall (x: int ∈ [0, 5)) { ${atom} }`))
+          .classified,
+      ).toEqual([['Error', `property elaboration failed: ${message}`]]);
+    },
+  );
+
   test('a comparison inside an equation side fails property elaboration', () => {
     expect(
       classifications(formulaWith('forall (x: int ∈ [0, 5)) { (x < 1) ≡ x }'))

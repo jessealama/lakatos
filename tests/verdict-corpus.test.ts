@@ -30,6 +30,7 @@ const BUCKET_STATUS: Record<string, string> = {
   gaveup: "GaveUp",
   nottried: "NotTried",
   inappropriate: "Inappropriate",
+  error: "Error",
   timeout: "Timeout",
 };
 

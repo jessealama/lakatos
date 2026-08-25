@@ -347,7 +347,7 @@
     {
       "function": "chain",
       "property": "shifts",
-      "formula": "forall (x: int ∈ [0, 5)) { chain(x) ≡ 2 - neg(x) }",
+      "formula": "forall (x: int ∈ [0, 5)) { chain(x) ≡ 2 + neg(x) }",
       "payload": {
         "kind": "structured",
         "binders": [
@@ -372,7 +372,7 @@
           },
           "right": {
             "kind": "binop",
-            "op": "-",
+            "op": "+",
             "left": {
               "kind": "num",
               "lit": "2"

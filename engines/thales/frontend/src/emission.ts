@@ -353,18 +353,35 @@ function walkTyped(
   throw new ModelError(constructAt(e, e.kind, sf).reason);
 }
 
-/** An expression's IR or its failure, checked in the old elaborator's
- * order: opaque constructs, then refused operators, then construct-failed
- * callees, then the typed walk. */
-function walkChecked(
+/** The old elaborator's pre-scans — opaque constructs, then refused
+ * operators, then construct-failed callees — each across every root
+ * before the next begins. */
+function prescanFailure(
+  roots: readonly ts.Expression[],
+  scope: WalkScope,
+  sf: ts.SourceFile,
+): FailedDecl | undefined {
+  const scans = [
+    (e: ts.Expression) => findConstruct(e, sf),
+    findRefusedOp,
+    (e: ts.Expression) => findFailedCallee(e, scope),
+  ];
+  for (const scan of scans) {
+    for (const e of roots) {
+      const found = scan(e);
+      if (found !== undefined) return found;
+    }
+  }
+  return undefined;
+}
+
+/** The typed walk with the engine's failures caught as a `FailedDecl`. */
+function typedOrFailure(
   e: ts.Expression,
   expected: Expected,
   scope: WalkScope,
   sf: ts.SourceFile,
 ): { expr: EmitExpr } | FailedDecl {
-  const failure =
-    findConstruct(e, sf) ?? findRefusedOp(e) ?? findFailedCallee(e, scope);
-  if (failure !== undefined) return failure;
   try {
     return { expr: walkTyped(e, expected, scope, sf) };
   } catch (err) {
@@ -425,32 +442,17 @@ function walkFunction(
     }
     exprs.push(s.expression);
   }
-  // The old elaborator runs each pre-scan across the whole body — dead
-  // code included — before the next scan begins.
-  for (const e of exprs) {
-    const found = findConstruct(e, sf);
-    if (found !== undefined) return found;
-  }
-  for (const e of exprs) {
-    const found = findRefusedOp(e);
-    if (found !== undefined) return found;
-  }
-  for (const e of exprs) {
-    const found = findFailedCallee(e, scope);
-    if (found !== undefined) return found;
-  }
+  // The pre-scans cover the whole body, dead code included.
+  const prescan = prescanFailure(exprs, scope, sf);
+  if (prescan !== undefined) return prescan;
   if (exprs.length === 0) {
     return { reason: 'the body must return on every path' };
   }
   // The lowering ends its path at the first return: what follows never
   // elaborates and never reaches the artifact.
-  const body: EmitStmt[] = [];
-  try {
-    body.push({ kind: 'return', expr: walkTyped(exprs[0]!, 'num', scope, sf) });
-  } catch (err) {
-    if (err instanceof ModelError) return { reason: err.message };
-    throw err;
-  }
+  const walked = typedOrFailure(exprs[0]!, 'num', scope, sf);
+  if (!('expr' in walked)) return walked;
+  const body: EmitStmt[] = [{ kind: 'return', expr: walked.expr }];
   return {
     kind: 'function',
     name: fn.name!.text,
@@ -562,71 +564,39 @@ function obligationPayload(
             [sides[1], 'num'],
           ]
         : [[expr, 'bool']];
-    // The old elaborator's pre-scan order over the whole property: opaque
-    // constructs, then refused operators, then construct-failed callees —
-    // each scan across the full tree before the next begins.
-    for (const [root] of roots) {
-      const construct = findConstruct(root, parsed.sf);
-      if (construct !== undefined) {
-        return {
-          kind: 'classified',
-          szs: 'Inappropriate',
-          reason: construct.reason,
-        };
-      }
+    // A property the model refuses is `Inappropriate`; one the typed walk
+    // fails is a failed property elaboration, the engine's `Error`.
+    const found = prescanFailure(
+      roots.map(([root]) => root),
+      scope,
+      parsed.sf,
+    );
+    if (found !== undefined) {
+      return { kind: 'classified', szs: 'Inappropriate', reason: found.reason };
     }
-    for (const [root] of roots) {
-      const refused = findRefusedOp(root);
-      if (refused !== undefined) {
-        return {
-          kind: 'classified',
-          szs: 'Inappropriate',
-          reason: refused.reason,
-        };
-      }
-    }
-    for (const [root] of roots) {
-      const callee = findFailedCallee(root, scope);
-      if (callee !== undefined) {
-        return {
-          kind: 'classified',
-          szs: 'Inappropriate',
-          reason: callee.reason,
-        };
-      }
-    }
-    try {
-      if (sides !== undefined) {
-        const left = walkTyped(sides[0], 'num', scope, parsed.sf);
-        const right = walkTyped(sides[1], 'num', scope, parsed.sf);
-        return {
-          kind: 'payload',
-          payload: {
-            kind: 'structured',
-            binders: loweredBinders,
-            conclusion: { kind: 'eq', left, right },
-          },
-        };
-      }
-      const walked = walkTyped(expr, 'bool', scope, parsed.sf);
-      return {
-        kind: 'payload',
-        payload: {
-          kind: 'structured',
-          binders: loweredBinders,
-          conclusion: { kind: 'istrue', expr: walked },
-        },
-      };
-    } catch (err) {
-      if (err instanceof ModelError) {
+    const walkedRoots: EmitExpr[] = [];
+    for (const [root, expected] of roots) {
+      const walked = typedOrFailure(root, expected, scope, parsed.sf);
+      if (!('expr' in walked)) {
         return {
           kind: 'classified',
           szs: 'Error',
-          reason: `property elaboration failed: ${err.message}`,
+          reason: `property elaboration failed: ${walked.reason}`,
         };
       }
-      throw err;
+      walkedRoots.push(walked.expr);
     }
+    return {
+      kind: 'payload',
+      payload: {
+        kind: 'structured',
+        binders: loweredBinders,
+        conclusion:
+          sides !== undefined
+            ? { kind: 'eq', left: walkedRoots[0]!, right: walkedRoots[1]! }
+            : { kind: 'istrue', expr: walkedRoots[0]! },
+      },
+    };
   } catch {
     return bare;
   }
