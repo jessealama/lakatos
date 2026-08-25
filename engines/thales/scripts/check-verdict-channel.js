@@ -42,6 +42,17 @@ const FIXTURES = [
     ],
   },
   {
+    // Binder heads the emission pipeline writes that the old grammar's
+    // spine also produces; each row is the verdict the old pipeline gives
+    // the same property.
+    file: 'binder-shapes-plain.lean',
+    expected: [
+      ['ident', 'CounterSatisfiable', /false on its bounded domain/, { x: -3 }],
+      ['ident', 'GaveUp', /unsolved goal:[\s\S]*Float\.ofInt x = 0/],
+      ['ident', 'GaveUp', /unsolved goal:[\s\S]*0 ≤ n →/],
+    ],
+  },
+  {
     file: 'theorem-arith.lean',
     expected: [
       ...Array.from({ length: 7 }, () => [
