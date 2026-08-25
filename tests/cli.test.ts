@@ -381,6 +381,24 @@ describe("cli refute command (README usage claims)", () => {
       `export function plain(n: number): number { return n; }\n`,
       "utf8",
     );
+    // In a subdirectory: the `*.ts` glob case below counts the top-level
+    // fixtures, and a fourth one there would change its arithmetic.
+    fs.mkdirSync(path.join(workDir, "klass"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workDir, "klass", "box.ts"),
+      `export class Box {
+  #v: number;
+  constructor(v: number) {
+    this.#v = v;
+  }
+  /** @ensures{roundTrip} forall (x: number) { Object.is(new Box(x).v, x) } */
+  get v(): number {
+    return this.#v;
+  }
+}
+`,
+      "utf8",
+    );
     fs.mkdirSync(path.join(workDir, "inputerr"), { recursive: true });
     fs.writeFileSync(
       path.join(workDir, "inputerr", "mixed.ts"),
@@ -422,6 +440,30 @@ export function ok(x: number): number { return x; }
       );
       expect(byProperty).toEqual({ p: "InputError", q: "GaveUp" });
       expect(env.generated).toBe(1);
+    },
+  );
+
+  it(
+    "refute runs an @ensures attached to a getter under Class#getter",
+    { timeout: 60000 },
+    () => {
+      const { code, stdout } = runMain(["refute", "klass/box.ts"]);
+      expect(code).toBe(0);
+      const env = JSON.parse(stdout[0]!);
+      expectValidEnvelope(env);
+      expect(env).toMatchObject({
+        generated: 1,
+        passed: 1,
+        failed: 0,
+        annotations: [
+          {
+            file: "klass/box.ts",
+            function: "Box#v",
+            property: "roundTrip",
+            szs: "GaveUp",
+          },
+        ],
+      });
     },
   );
 

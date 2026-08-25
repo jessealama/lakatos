@@ -142,7 +142,7 @@ function resolveDuplicates(
     const subject =
       a.className === undefined
         ? `function '${a.functionName}'`
-        : `method '${qualifiedName(a.functionName, a.className, a.isStatic)}'`;
+        : `member '${qualifiedName(a.functionName, a.className, a.isStatic)}'`;
     out.push({
       propertyName: a.propertyName,
       functionName: a.functionName,
@@ -212,8 +212,8 @@ function collectClassAnnotations(
     for (const line of unnamed) {
       const subject =
         className === undefined
-          ? `method '${label}' of an anonymous class`
-          : `method '${label}' of class '${className}'`;
+          ? `member '${label}' of an anonymous class`
+          : `member '${label}' of class '${className}'`;
       invalid.push({
         propertyName: "<unnamed>",
         functionName: label,
@@ -229,11 +229,11 @@ function collectClassAnnotations(
     // identity best-effort and the message states what is unsupported.
     const problem =
       className === undefined
-        ? `@ensures on method '${label}' of an anonymous class in ${file} (anonymous classes are not supported)`
-        : !isEligibleMethod(member)
+        ? `@ensures on member '${label}' of an anonymous class in ${file} (anonymous classes are not supported)`
+        : !isEligibleMember(member)
           ? ineligibleMessage(member, label, className, file)
           : !exportsSet.has(className)
-            ? `@ensures on method '${label}' of class '${className}', which is not exported from ${file}`
+            ? `@ensures on member '${label}' of class '${className}', which is not exported from ${file}`
             : undefined;
     if (problem !== undefined) {
       for (const m of matches) {
@@ -261,15 +261,27 @@ function collectClassAnnotations(
   }
 }
 
-function isEligibleMethod(
-  member: ts.ClassElement,
-): member is ts.MethodDeclaration {
-  if (!ts.isMethodDeclaration(member)) return false;
-  if (!ts.isIdentifier(member.name)) return false; // computed name or #private
+/** The member kinds an @ensures may attach to: a method, a getter, or the
+ * constructor. Setters are excluded — a property about a write has no value to
+ * speak of. A constructor has no name to check; the other two must be named by
+ * a plain identifier, so `#private` and computed names fall out here. */
+type EligibleMember =
+  ts.MethodDeclaration | ts.GetAccessorDeclaration | ts.ConstructorDeclaration;
+
+function isEligibleMember(member: ts.ClassElement): member is EligibleMember {
+  const named =
+    ts.isMethodDeclaration(member) || ts.isGetAccessorDeclaration(member);
+  if (!named && !ts.isConstructorDeclaration(member)) return false;
+  if (named && !ts.isIdentifier(member.name)) return false;
+  return (
+    isPublic(member) && !hasModifier(member, ts.SyntaxKind.AbstractKeyword)
+  );
+}
+
+function isPublic(member: ts.ClassElement): boolean {
   if (hasModifier(member, ts.SyntaxKind.PrivateKeyword)) return false;
   if (hasModifier(member, ts.SyntaxKind.ProtectedKeyword)) return false;
-  if (hasModifier(member, ts.SyntaxKind.AbstractKeyword)) return false;
-  return true;
+  return !(member.name !== undefined && ts.isPrivateIdentifier(member.name));
 }
 
 function ineligibleMessage(
@@ -278,17 +290,16 @@ function ineligibleMessage(
   className: string,
   file: string,
 ): string {
-  const nonPublic =
-    ts.isMethodDeclaration(member) &&
-    (hasModifier(member, ts.SyntaxKind.PrivateKeyword) ||
-      hasModifier(member, ts.SyntaxKind.ProtectedKeyword) ||
-      ts.isPrivateIdentifier(member.name));
-  if (nonPublic) {
-    return `@ensures on non-public method '${label}' of class '${className}' in ${file}`;
+  const attachable =
+    ts.isMethodDeclaration(member) ||
+    ts.isGetAccessorDeclaration(member) ||
+    ts.isConstructorDeclaration(member);
+  if (attachable && !isPublic(member)) {
+    return `@ensures on non-public member '${label}' of class '${className}' in ${file}`;
   }
   return (
     `@ensures on unsupported member '${label}' of class '${className}' in ${file} ` +
-    `(accessors, constructors, abstract, and computed-name members are not supported)`
+    `(setters, abstract, computed-name, and non-method members are not supported)`
   );
 }
 
