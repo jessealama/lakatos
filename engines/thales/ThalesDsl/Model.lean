@@ -1,12 +1,14 @@
 import Lean
-import ThalesDsl.FloatOps
-import ThalesDsl.TsM
+import Js.Number.FloatOps
+import Js.Runtime
+import ThalesDsl.Binders
 import ThalesDsl.Norm
 import ThalesDsl.Syntax
 
 namespace ThalesDsl
 
 open Lean Elab Command
+open Js
 
 /-- A registered TS function model. This slice types every parameter and
 result as `Float`, so arity is the whole signature. -/
@@ -139,21 +141,21 @@ def tsFloatLitToTerm : TSyntax ``tsFloatLit → CommandElabM (TSyntax `term)
 /-- `ts#argN`: cannot capture, since `#` never occurs in a TS identifier. -/
 def freshArg (i : Nat) : Ident := mkIdent (Name.mkSimple s!"ts#arg{i}")
 
-/-- Transcribes a `ts_expr` into a Lean term of type `TsM Float` /
-`TsM Bool` per `expected`. Registry misses and operator/type mismatches
+/-- Transcribes a `ts_expr` into a Lean term of type `JsM Float` /
+`JsM Bool` per `expected`. Registry misses and operator/type mismatches
 throw here, so `#thales_prove` can contain them per command. -/
 partial def evalExpr (vars : List String) (expected : ValTy) :
     TSyntax `ts_expr → CommandElabM (TSyntax `term)
   | `(ts_expr| ts.num[$n:tsFloatLit]) => do
     unless expected == .num do
       throwErrorAt n "a numeric literal cannot be {expected.describe}"
-    `((pure $(← tsFloatLitToTerm n) : TsM Float))
+    `((pure $(← tsFloatLitToTerm n) : JsM Float))
   | `(ts_expr| ts.id[$x:str]) => do
     unless vars.contains x.getString do
       throwErrorAt x "unbound identifier '{x.getString}'"
     unless expected == .num do
       throwErrorAt x "identifier '{x.getString}' is a number, not {expected.describe}"
-    `((pure $(mkIdent (Name.mkSimple x.getString)) : TsM Float))
+    `((pure $(mkIdent (Name.mkSimple x.getString)) : JsM Float))
   | `(ts_expr| ts.binop[$op:str]($l:ts_expr, $r:ts_expr)) => do
     let lt ← evalExpr vars .num l
     let rt ← evalExpr vars .num r
@@ -162,19 +164,19 @@ partial def evalExpr (vars : List String) (expected : ValTy) :
     let arith (f : TSyntax `term) : CommandElabM (TSyntax `term) := do
       unless expected == .num do
         throwErrorAt op "operator '{op.getString}' yields a number, not {expected.describe}"
-      `((($lt >>= fun a => $rt >>= fun b => pure ($f a b)) : TsM Float))
+      `((($lt >>= fun a => $rt >>= fun b => pure ($f a b)) : JsM Float))
     -- The comparisons are IEEE predicates, already Bool-valued, so there is
     -- no Prop to `decide` here.
     let cmp (f : TSyntax `term) : CommandElabM (TSyntax `term) := do
       unless expected == .bool do
         throwErrorAt op "operator '{op.getString}' yields a boolean, not {expected.describe}"
-      `((($lt >>= fun a => $rt >>= fun b => pure ($f a b)) : TsM Bool))
+      `((($lt >>= fun a => $rt >>= fun b => pure ($f a b)) : JsM Bool))
     match op.getString with
     | "+" => arith (← `(fun x y => x + y))
     | "-" => arith (← `(fun x y => x - y))
     | "*" => arith (← `(fun x y => x * y))
     | "/" => arith (← `(fun x y => x / y))
-    | "%" => arith (← `(fun x y => ThalesDsl.FloatOps.tsRem x y))
+    | "%" => arith (← `(fun x y => Js.Number.FloatOps.tsRem x y))
     | "<" => cmp (← `(fun x y => Float.lt x y))
     | "<=" => cmp (← `(fun x y => Float.le x y))
     | ">" => cmp (← `(fun x y => Float.lt y x))
@@ -192,7 +194,7 @@ partial def evalExpr (vars : List String) (expected : ValTy) :
     unless expected == .num do
       throwErrorAt op "operator '{op.getString}' yields a number, not {expected.describe}"
     match op.getString with
-    | "-" => `((($xt >>= fun a => pure (-a)) : TsM Float))
+    | "-" => `((($xt >>= fun a => pure (-a)) : JsM Float))
     | "+" =>
       -- ToNumber on a value already a number: the identity.
       pure xt
@@ -217,14 +219,14 @@ partial def evalExpr (vars : List String) (expected : ValTy) :
     let mut call : TSyntax `term ← `($(mkIdent info.declName))
     for n in argNames do
       call ← `($call $n)
-    let mut body ← `(($call : TsM Float))
+    let mut body ← `(($call : JsM Float))
     for (name, arg) in (argNames.zip argTerms.toList).reverse do
-      body ← `((($arg >>= fun $name => $body) : TsM Float))
+      body ← `((($arg >>= fun $name => $body) : JsM Float))
     pure body
   | stx => throwErrorAt stx "unsupported expression shape"
 
 /-! Statement lowering: a function body is a statement tree, and the model
-is one `TsM Float` expression. Every statement list lowers to that same
+is one `JsM Float` expression. Every statement list lowers to that same
 type, so a branch whose arms disagree about returning still composes. -/
 
 mutual
@@ -274,7 +276,7 @@ which is exactly how a branch's reassignments reach the tail. Each
 continuation is run at most once, so no tail is ever duplicated. -/
 abbrev Cont := CommandElabM (TSyntax `term)
 
-/-- Lowers a statement list into one `TsM Float` term, splicing `k` where
+/-- Lowers a statement list into one `JsM Float` term, splicing `k` where
 control falls off the end of the list. -/
 partial def lowerStmts (fresh : IO.Ref Nat) (sc : Scope) :
     List (TSyntax `ts_stmt) → Cont → CommandElabM (TSyntax `term)
@@ -289,12 +291,12 @@ partial def lowerStmts (fresh : IO.Ref Nat) (sc : Scope) :
       let sc' := { vars := sc.vars ++ [x.getString],
                    muts := if mutable then sc.muts ++ [x.getString] else sc.muts }
       let body ← lowerStmts fresh sc' rest k
-      `(((($initTerm) >>= fun $(mkIdent (Name.mkSimple x.getString)) => $body) : TsM Float))
+      `(((($initTerm) >>= fun $(mkIdent (Name.mkSimple x.getString)) => $body) : JsM Float))
     match s with
     -- A return or a throw ends this path; whatever follows is unreachable.
     | `(ts_stmt| ts.return($e:ts_expr)) => evalExpr sc.vars .num e
     | `(ts_stmt| ts.throw[$kind:str]) =>
-      `((TsM.throw (.error $kind) : TsM Float))
+      `((JsM.throw (.error $kind) : JsM Float))
     | `(ts_stmt| ts.const[$x:str]($init:ts_expr)) => bindLocal false x init
     | `(ts_stmt| ts.let[$x:str]($init:ts_expr)) => bindLocal true x init
     | `(ts_stmt| ts.assign[$x:str]($e:ts_expr)) => do
@@ -302,7 +304,7 @@ partial def lowerStmts (fresh : IO.Ref Nat) (sc : Scope) :
         throwErrorAt x "'{x.getString}' is not a mutable binding"
       let valTerm ← evalExpr sc.vars .num e
       let body ← lowerStmts fresh sc rest k
-      `(((($valTerm) >>= fun $(mkIdent (Name.mkSimple x.getString)) => $body) : TsM Float))
+      `(((($valTerm) >>= fun $(mkIdent (Name.mkSimple x.getString)) => $body) : JsM Float))
     | `(ts_stmt| ts.if($c:ts_expr) {$a:ts_stmt*} $[else {$b:ts_stmt*}]?) => do
       let elseArm := b.getD #[]
       let condTerm ← evalExpr sc.vars .bool c
@@ -333,7 +335,7 @@ partial def lowerStmts (fresh : IO.Ref Nat) (sc : Scope) :
           let mut call : TSyntax `term ← `($joinId)
           for j in joins do
             call ← `($call $(mkIdent (Name.mkSimple j)))
-          `(($call : TsM Float))
+          `(($call : JsM Float))
         let lam ← joins.foldrM (init := ← after) fun j acc =>
           `(fun ($(mkIdent (Name.mkSimple j)) : Float) => $acc)
         joinBinding := some (joinId, lam)
@@ -343,7 +345,7 @@ partial def lowerStmts (fresh : IO.Ref Nat) (sc : Scope) :
       let elseTerm ← lowerStmts fresh sc elseArm.toList elseK
       let branch ←
         `(((($condTerm) >>= fun $condId =>
-              bif $condId then $thenTerm else $elseTerm) : TsM Float))
+              bif $condId then $thenTerm else $elseTerm) : JsM Float))
       match joinBinding with
       | some (joinId, lam) => `((let $joinId:ident := $lam; $branch))
       | none => pure branch
@@ -354,9 +356,9 @@ partial def lowerStmts (fresh : IO.Ref Nat) (sc : Scope) :
 /-- The namespace under which models are declared. -/
 def modelNamespace : Name := `TsModel
 
-/-- `Float → ... → Float → TsM Float` with `arity` arrows. -/
+/-- `Float → ... → Float → JsM Float` with `arity` arrows. -/
 def mkModelType (arity : Nat) : CommandElabM (TSyntax `term) := do
-  let mut ty ← `(TsM Float)
+  let mut ty ← `(JsM Float)
   for _ in List.range arity do
     ty ← `(Float → $ty)
   pure ty
@@ -408,7 +410,7 @@ elab_rules : command
       let savedMsgs := (← get).messages
       -- Dual-tagged: the simp closers and the grind rung both unfold
       -- models by their equations.
-      elabCommand (← `(@[thales_norm, grind] def $declId : $ty := $fn))
+      elabCommand (← `(@[js_norm, grind] def $declId : $ty := $fn))
       if (← get).messages.hasErrors && !savedMsgs.hasErrors then
         modify fun s => { s with messages := savedMsgs }
         recordFailure none "the model definition did not elaborate"

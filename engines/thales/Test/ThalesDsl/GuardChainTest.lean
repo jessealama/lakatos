@@ -1,6 +1,6 @@
 import ThalesDsl.Prove
 
-open ThalesDsl Lean
+open ThalesDsl Lean Js Js.Number
 
 ts_def "idf" := ts.fn(ts.param["a"](ts.number)) : ts.number {
   ts.return(ts.id["a"])
@@ -51,5 +51,5 @@ ts_def "idf" := ts.fn(ts.param["a"](ts.number)) : ts.number {
 -- a `threw` issue (SZS Error). That divergence is deliberate and safe —
 -- an Error can never contradict a Theorem — and pinned here plus in
 -- pabst's runtime tests rather than left latent.
-example : ¬ ((pure false : TsM Bool) = pure true) := by decide
-example : ¬ ((TsM.throw (.error "boom") : TsM Bool) = pure true) := by decide
+example : ¬ ((pure false : JsM Bool) = pure true) := by decide
+example : ¬ ((JsM.throw (.error "boom") : JsM Bool) = pure true) := by decide

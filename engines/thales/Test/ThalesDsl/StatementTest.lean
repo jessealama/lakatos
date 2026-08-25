@@ -1,9 +1,9 @@
 import ThalesDsl.Prove
 
-open ThalesDsl
+open ThalesDsl Js Js.Number
 
 -- Statement lowering: a body is a statement tree, and every statement list
--- in it — arms included — lowers to one `TsM Float` expression.
+-- in it — arms included — lowers to one `JsM Float` expression.
 
 -- An `if` with no else: the then arm returns, and the rest of the body is
 -- the else arm's continuation.
@@ -13,8 +13,8 @@ ts_def "clamp" := ts.fn(ts.param["x"](ts.number)) : ts.number {
   }
   ts.return(ts.id["x"])
 }
-#guard decide (TsModel.clamp (-3.0) = (pure 0.0 : TsM Float))
-#guard decide (TsModel.clamp 3.0 = (pure 3.0 : TsM Float))
+#guard decide (TsModel.clamp (-3.0) = (pure 0.0 : JsM Float))
+#guard decide (TsModel.clamp 3.0 = (pure 3.0 : JsM Float))
 
 -- Both arms return: there is no tail to continue into.
 ts_def "sign" := ts.fn(ts.param["x"](ts.number)) : ts.number {
@@ -24,8 +24,8 @@ ts_def "sign" := ts.fn(ts.param["x"](ts.number)) : ts.number {
     ts.return(ts.num[1])
   }
 }
-#guard decide (TsModel.sign (-3.0) = (pure (-1.0) : TsM Float))
-#guard decide (TsModel.sign 3.0 = (pure 1.0 : TsM Float))
+#guard decide (TsModel.sign (-3.0) = (pure (-1.0) : JsM Float))
+#guard decide (TsModel.sign 3.0 = (pure 1.0 : JsM Float))
 
 -- ts.throw leaves its path, carrying the error kind alone.
 ts_def "recip" := ts.fn(ts.param["x"](ts.number)) : ts.number {
@@ -34,8 +34,8 @@ ts_def "recip" := ts.fn(ts.param["x"](ts.number)) : ts.number {
   }
   ts.return(ts.binop["/"](ts.num[1], ts.id["x"]))
 }
-#guard decide (TsModel.recip 0.0 = (TsM.throw (.error "RangeError") : TsM Float))
-#guard decide (TsModel.recip 4.0 = (pure 0.25 : TsM Float))
+#guard decide (TsModel.recip 0.0 = (JsM.throw (.error "RangeError") : JsM Float))
+#guard decide (TsModel.recip 4.0 = (pure 0.25 : JsM Float))
 
 -- A throwing condition throws before either arm runs.
 ts_def "viaRecip" := ts.fn(ts.param["x"](ts.number)) : ts.number {
@@ -44,9 +44,9 @@ ts_def "viaRecip" := ts.fn(ts.param["x"](ts.number)) : ts.number {
   }
   ts.return(ts.num[1])
 }
-#guard decide (TsModel.viaRecip 0.0 = (TsM.throw (.error "RangeError") : TsM Float))
-#guard decide (TsModel.viaRecip 4.0 = (pure 0.0 : TsM Float))
-#guard decide (TsModel.viaRecip 0.5 = (pure 1.0 : TsM Float))
+#guard decide (TsModel.viaRecip 0.0 = (JsM.throw (.error "RangeError") : JsM Float))
+#guard decide (TsModel.viaRecip 4.0 = (pure 0.0 : JsM Float))
+#guard decide (TsModel.viaRecip 0.5 = (pure 1.0 : JsM Float))
 
 -- A `ts.let` reassigned in both arms: the tail reads the joined binding.
 ts_def "bump" := ts.fn(ts.param["x"](ts.number)) : ts.number {
@@ -58,8 +58,8 @@ ts_def "bump" := ts.fn(ts.param["x"](ts.number)) : ts.number {
   }
   ts.return(ts.binop["+"](ts.id["y"], ts.id["x"]))
 }
-#guard decide (TsModel.bump 20.0 = (pure 21.0 : TsM Float))
-#guard decide (TsModel.bump 1.0 = (pure 3.0 : TsM Float))
+#guard decide (TsModel.bump 20.0 = (pure 21.0 : JsM Float))
+#guard decide (TsModel.bump 1.0 = (pure 3.0 : JsM Float))
 
 -- An arm that does not assign carries the initializer through the join.
 ts_def "bumpOne" := ts.fn(ts.param["x"](ts.number)) : ts.number {
@@ -69,8 +69,8 @@ ts_def "bumpOne" := ts.fn(ts.param["x"](ts.number)) : ts.number {
   }
   ts.return(ts.id["y"])
 }
-#guard decide (TsModel.bumpOne 20.0 = (pure 1.0 : TsM Float))
-#guard decide (TsModel.bumpOne 1.0 = (pure 5.0 : TsM Float))
+#guard decide (TsModel.bumpOne 20.0 = (pure 1.0 : JsM Float))
+#guard decide (TsModel.bumpOne 1.0 = (pure 5.0 : JsM Float))
 
 -- Several names join at once, each arm reading the values it entered with.
 ts_def "shuffle" := ts.fn(ts.param["x"](ts.number)) : ts.number {
@@ -82,8 +82,8 @@ ts_def "shuffle" := ts.fn(ts.param["x"](ts.number)) : ts.number {
   }
   ts.return(ts.binop["+"](ts.binop["*"](ts.id["a"], ts.num[10]), ts.id["b"]))
 }
-#guard decide (TsModel.shuffle 1.0 = (pure 23.0 : TsM Float))
-#guard decide (TsModel.shuffle (-1.0) = (pure 12.0 : TsM Float))
+#guard decide (TsModel.shuffle 1.0 = (pure 23.0 : JsM Float))
+#guard decide (TsModel.shuffle (-1.0) = (pure 12.0 : JsM Float))
 
 -- An `else if` chain, whose middle arm both returns on one path and falls
 -- through on another: the arms disagree about leaving, and the tail is
@@ -101,9 +101,9 @@ ts_def "ladder" := ts.fn(ts.param["x"](ts.number)) : ts.number {
   }
   ts.return(ts.binop["+"](ts.id["y"], ts.num[100]))
 }
-#guard decide (TsModel.ladder (-1.0) = (pure (-1.0) : TsM Float))
-#guard decide (TsModel.ladder 5.0 = (pure 101.0 : TsM Float))
-#guard decide (TsModel.ladder 50.0 = (pure 102.0 : TsM Float))
+#guard decide (TsModel.ladder (-1.0) = (pure (-1.0) : JsM Float))
+#guard decide (TsModel.ladder 5.0 = (pure 101.0 : JsM Float))
+#guard decide (TsModel.ladder 50.0 = (pure 102.0 : JsM Float))
 
 -- A parameter is assignable, the way JavaScript has it.
 ts_def "atLeastOne" := ts.fn(ts.param["x"](ts.number)) : ts.number {
@@ -112,8 +112,8 @@ ts_def "atLeastOne" := ts.fn(ts.param["x"](ts.number)) : ts.number {
   }
   ts.return(ts.id["x"])
 }
-#guard decide (TsModel.atLeastOne 0.5 = (pure 1.0 : TsM Float))
-#guard decide (TsModel.atLeastOne 4.0 = (pure 4.0 : TsM Float))
+#guard decide (TsModel.atLeastOne 0.5 = (pure 1.0 : JsM Float))
+#guard decide (TsModel.atLeastOne 4.0 = (pure 4.0 : JsM Float))
 
 -- A body that can run off the end has no value to return; the declaration
 -- degrades rather than inventing one.

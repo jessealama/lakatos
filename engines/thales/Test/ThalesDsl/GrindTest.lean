@@ -1,20 +1,20 @@
 import ThalesDsl
 
-open ThalesDsl
+open ThalesDsl Js Js.Number
 
--- The grind rung shares the normalization knowledge: the thales_norm
+-- The grind rung shares the normalization knowledge: the js_norm
 -- lemmas and model equations are tagged for grind too, so it can attack
 -- goals simp never normalized (a rung-2 window blowout hands grind the
 -- original proposition, monadic wrapping intact).
 
 example (x : Int) :
-    (pure x >>= fun a => pure 1 >>= fun b => pure (a + b) : TsM Int) =
-      (pure (x + 1) : TsM Int) := by
+    (pure x >>= fun a => pure 1 >>= fun b => pure (a + b) : JsM Int) =
+      (pure (x + 1) : JsM Int) := by
   grind
 
 -- Boolean islands discharge to their Prop for grind as for omega.
 example (x : Int) (h : 0 ≤ x) :
-    (pure x >>= fun a => pure 0 >>= fun b => pure (decide (a ≥ b)) : TsM Bool) =
+    (pure x >>= fun a => pure 0 >>= fun b => pure (decide (a ≥ b)) : JsM Bool) =
       pure true := by
   grind
 
@@ -27,7 +27,7 @@ ts_def "dblGrind" := ts.fn(ts.param["x"](ts.number)) : ts.number {
   ts.return(ts.binop["*"](ts.id["x"], ts.num[2]))
 }
 
-example (x : Float) : TsModel.dblGrind x = (pure (x * 2) : TsM Float) := by
+example (x : Float) : TsModel.dblGrind x = (pure (x * 2) : JsM Float) := by
   grind
 
 -- A hardcoded factor: instantiating a monotonicity fact at a literal
