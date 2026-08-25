@@ -39,6 +39,12 @@ describe("cli prove", () => {
       "",
     ].join("\n"),
     "invalid.ts": `class Hidden {\n  /** @ensures{p} forall (x: int) { id(x) === x } */\n  static id(x: number): number { return x; }\n}\n`,
+    "classbinder.ts": [
+      "export class Box { constructor(readonly size: number) {} }",
+      "/** @ensures{p} forall (b: Box) { volume(b) >= 0 } */",
+      "export function volume(b: Box): number { return b.size; }",
+      "",
+    ].join("\n"),
   });
 
   afterEach(() => {
@@ -181,6 +187,29 @@ describe("cli prove", () => {
       "utf8",
     );
     expect(artifact).toContain("-- not tried");
+  });
+
+  it("a class-valued binder reports Inappropriate without reaching Lean", () => {
+    const { code, stdout, stderr } = runMain(["prove", "classbinder.ts"]);
+    expect(runLeanMock).not.toHaveBeenCalled();
+    expect(code).toBe(0);
+    const env = JSON.parse(stdout[0]!);
+    expectValidEnvelope(env);
+    expect(env.annotations).toEqual([
+      {
+        file: "classbinder.ts",
+        function: "volume",
+        property: "p",
+        szs: "Inappropriate",
+        reason: "class-valued binder 'Box' is not yet modeled",
+      },
+    ]);
+    // The artifact is still written: it documents the refusal as a comment.
+    const artifact = fs.readFileSync(
+      path.join(announcedRunDir(stderr), "thales", "classbinder.ts.lean"),
+      "utf8",
+    );
+    expect(artifact).toContain("-- inappropriate");
   });
 
   it("an unhealthy run keeps the unsupported-range metadata", () => {
