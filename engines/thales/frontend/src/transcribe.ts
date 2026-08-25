@@ -824,7 +824,7 @@ function equationSides(
  * semantics only — SameValue has no node there — and emitting the call
  * opaquely would misreport an in-spec formula as Inappropriate, so an
  * equation guard degrades the property to bare instead. */
-function isEquationGuard(e: ts.Expression): boolean {
+export function isEquationGuard(e: ts.Expression): boolean {
   const inner = unwrapParens(e);
   if (
     ts.isPrefixUnaryExpression(inner) &&
@@ -845,7 +845,7 @@ type PropReading =
  * conclusion atom: a bare atom, or a top-level implication chain whose
  * antecedents and conclusion are all atoms — exactly the shape the refuter
  * lowers to fc.pre discards. Any other connective is undefined (bare). */
-function chainReading(
+export function chainReading(
   ast: Formula,
 ): { guards: string[]; conclusion: string } | undefined {
   if (ast.kind === 'atom') return { guards: [], conclusion: ast.js };

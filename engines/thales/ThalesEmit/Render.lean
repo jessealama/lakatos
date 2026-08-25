@@ -234,13 +234,22 @@ def fnCommand (f : EmitFn) : RenderM (TSyntax `command) := do
   `(@[js_norm, grind] def $name ($params* : JsNumber) : JsM JsNumber := do
       $[$elems:doElem]*)
 
+/-- A boolean-valued expression as the proposition that it evaluates to
+`pure true` — the shape the old pipeline elaborates for both a boolean
+island conclusion and a guard hypothesis. -/
+def boolIsland (coerced : String → Bool) (expr : JsExpr) :
+    RenderM (TSyntax `term) := do
+  let ⟨t, lifted⟩ ← valueTerm coerced expr
+  if lifted then `(((do return $t) : JsM Bool) = pure true)
+  else `((pure $t : JsM Bool) = pure true)
+
 def obligationCommand (e : Emission) (o : Obligation) : RenderM (TSyntax `command) := do
   let file := Syntax.mkStrLit e.file
   let fn := Syntax.mkStrLit o.function
   let prop := Syntax.mkStrLit o.property
   match o.payload with
   | .bare => `(#thales_prove $file $fn $prop)
-  | .structured binders conclusion =>
+  | .structured binders guards conclusion =>
     let bound := binders.map (·.name)
     let coerced := fun n => bound.contains n
     let leaf ← match conclusion with
@@ -252,12 +261,11 @@ def obligationCommand (e : Emission) (o : Obligation) : RenderM (TSyntax `comman
         -- neither, the left side is ascribed.
         if lPins || rPins then `($lt = $rt)
         else `(($lt : JsM JsNumber) = $rt)
-      | .istrue expr => do
-        let ⟨t, lifted⟩ ← valueTerm coerced expr
-        -- A boolean island must evaluate to `pure true`, the same shape
-        -- the old pipeline elaborates.
-        if lifted then `(((do return $t) : JsM Bool) = pure true)
-        else `((pure $t : JsM Bool) = pure true)
+      | .istrue expr => boolIsland coerced expr
+    -- A guard is a hypothesis, not a connective: one that throws fails it
+    -- just as one that returns false does, excluding the assignment.
+    let leaf ← guards.foldrM (init := leaf) fun g acc => do
+      `($(← boolIsland coerced g) → $acc)
     let propTerm ← binders.foldrM (init := leaf) fun b acc => do
       match b with
       | .range name lo hi =>

@@ -21,3 +21,9 @@ def TsModel.ident (x : JsNumber) : JsM JsNumber := do
 #thales_prove "binder-shapes-plain.lean" "ident" "natShaped" :=
   ∀ (n : Int), 0 ≤ n →
     ((pure (Float.le 0 (Float.ofInt n)) : JsM Bool) = pure true)
+
+-- a ranged binder over an unbounded one: the spine keeps both, so nothing
+-- is bounded and the decide rungs stand down
+#thales_prove "binder-shapes-plain.lean" "ident" "mixedSpine" :=
+  ballIco 0 3 fun x =>
+    ∀ (n : Int), TsModel.ident (Float.ofInt n) = pure (Float.ofInt x)

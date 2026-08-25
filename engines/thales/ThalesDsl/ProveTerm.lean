@@ -37,17 +37,25 @@ structure PropSpine where
   binders : List SpineBinder
   /-- Guard hypotheses in outer-to-inner order, each the full
   `(… : JsM Bool) = pure true` proposition, kept as syntax for search
-  threading. Only populated when every binder is ranged. -/
+  threading. -/
   guards : List (TSyntax `term)
   leaf : TSyntax `term
   deriving Inhabited
 
+/-- Whether a term is an emitted guard hypothesis: a boolean island's
+`= pure true` proposition. A nat binder's `0 ≤ n` occupies the same arrow
+position and is deliberately not one — it stays in the leaf. -/
+partial def isGuardProp : TSyntax `term → Bool
+  | `(($inner)) => isGuardProp inner
+  | `($_ = pure true) => true
+  | _ => false
+
 /-- The binder spine of a plain-Prop payload: the heads emission writes,
-outermost first, and the leaf under them — the same data the old grammar
-carried structurally, recovered here for rung selection and witness
-search. A payload with any other head is its own leaf; a nat binder's
-nonnegativity hypothesis stays in the leaf, since search never runs on an
-unbounded domain. -/
+outermost first, then the guard hypotheses under them, and the leaf under
+those — the same data the old grammar carried structurally, recovered here
+for rung selection and witness search. A payload with any other head is
+its own leaf; a nat binder's nonnegativity hypothesis stays in the leaf,
+since search never runs on an unbounded domain. -/
 partial def propSpine (t : TSyntax `term) : PropSpine :=
   match t with
   | `(($inner)) => propSpine inner
@@ -64,19 +72,32 @@ partial def propSpine (t : TSyntax `term) : PropSpine :=
   | `(∀ ($x:ident : Float), $body) =>
     let inner := propSpine body
     { inner with binders := .unbounded x.getId.toString :: inner.binders }
+  | `($g → $rest) =>
+    if isGuardProp g then
+      let inner := propSpine rest
+      -- Guards sit inside every binder; one wrapping a binder is no shape
+      -- emission writes, so the implication stays the leaf instead.
+      if inner.binders.isEmpty then { inner with guards := g :: inner.guards }
+      else ⟨[], [], t⟩
+    else ⟨[], [], t⟩
   | _ => ⟨[], [], t⟩
 
 def intTerm (i : Int) : CommandElabM (TSyntax `term) := do
   let n := Syntax.mkNumLit (toString i.natAbs)
   if i < 0 then `((-$n : Int)) else `(($n : Int))
 
-/-- The witness-search term for a spine: one `findCexIco` per binder, a
-decidable test on the leaf — the shape `extractWitness` reduces. Only the
-falsity path ever elaborates it, so a leaf with no `Decidable` instance
-costs nothing here. -/
+/-- The witness-search term for a spine: one `findCexIco` per binder, the
+guards threaded inside them, and a decidable test on the leaf — the shape
+`extractWitness` reduces. A guard that is false, or that throws, excludes
+the assignment, so a reported witness always satisfies every guard. Only
+the falsity path ever elaborates this, so a leaf with no `Decidable`
+instance costs nothing here. -/
 def buildSearchTerm (spine : List (String × Int × Int))
-    (leaf : TSyntax `term) : CommandElabM (TSyntax `term) := do
-  let init ← `(if $leaf then (none : Option (List Int)) else some [])
+    (guards : List (TSyntax `term)) (leaf : TSyntax `term) :
+    CommandElabM (TSyntax `term) := do
+  let base ← `(if $leaf then (none : Option (List Int)) else some [])
+  let init ← guards.foldrM (init := base) fun g acc =>
+    `(if $g then $acc else (none : Option (List Int)))
   spine.foldrM (init := init) fun (x, lo, hi) acc => do
     let xi := mkIdent (Name.mkSimple x)
     `(findCexIco $(← intTerm lo) $(← intTerm hi) (fun ($xi : Int) => $acc))
@@ -105,7 +126,7 @@ elab_rules : command
           (fun acc (_, lo, hi) => acc * (hi - lo).toNat) 1
         -- Witness search never runs on an unbounded domain.
         let searchStx ←
-          if allBounded then buildSearchTerm ranged spine.leaf
+          if allBounded then buildSearchTerm ranged spine.guards spine.leaf
           else `((none : Option (List Int)))
         let budget := max (thales.heartbeats.get (← getOptions)) 1
         let evalCap := thales.maxEvaluatedElements.get (← getOptions)

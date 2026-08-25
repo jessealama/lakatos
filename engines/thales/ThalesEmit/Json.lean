@@ -50,8 +50,11 @@ inductive Conclusion where
   | istrue (expr : JsExpr)
 deriving Repr, Inhabited
 
+/-- Guards sit inside every binder and in front of the conclusion, the
+order the array carries. -/
 inductive Payload where
-  | structured (binders : Array BinderIR) (conclusion : Conclusion)
+  | structured (binders : Array BinderIR) (guards : Array JsExpr)
+      (conclusion : Conclusion)
   | bare
 deriving Repr, Inhabited
 
@@ -157,7 +160,14 @@ def decodeConclusion (j : Json) : Except String Conclusion := do
 def decodePayload (j : Json) : Except String Payload := do
   match ← getStr j "kind" with
   | "structured" =>
-    pure (.structured (← (← getArr j "binders").mapM decodeBinder)
+    -- `guards` is absent, never empty, when the formula has none.
+    let guards ← match j.getObjVal? "guards" with
+      | .error _ => pure #[]
+      | .ok v =>
+        match v.getArr? with
+        | .ok a => a.mapM decodeExpr
+        | .error _ => throw "field 'guards' is not an array"
+    pure (.structured (← (← getArr j "binders").mapM decodeBinder) guards
       (← decodeConclusion (← j.getObjVal? "conclusion")))
   | "bare" => pure .bare
   | k => throw s!"unknown payload kind '{k}'"

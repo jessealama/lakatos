@@ -71,7 +71,7 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
     declarations := #[{ name := "bump", params := #["x"], source := "bump",
                         body := #[.ret (.binop "+" (.id "x") (.num "1"))] }]
     obligations := #[{ function := "bump", property := "p", formula := "f",
-                       payload := .structured #[.int "bump"]
+                       payload := .structured #[.int "bump"] #[]
                          (.eq (.call "bump" #[.id "bump"])
                               (.call "bump" #[.id "bump"])) }] }
   let rendered ← renderEmission e
@@ -86,7 +86,7 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
     declarations := #[{ name := "f", params := #["x"], source := "f",
                         body := #[.ret (.id "x")] }]
     obligations := #[{ function := "f", property := "p", formula := "f",
-                       payload := .structured #[.int "pure"]
+                       payload := .structured #[.int "pure"] #[]
                          (.istrue (.binop ">=" (.call "f" #[.id "pure"])
                                              (.num "0"))) }] }
   let rendered ← renderEmission e

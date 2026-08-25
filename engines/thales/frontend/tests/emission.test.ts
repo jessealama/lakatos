@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { assert, describe, expect, test } from 'vitest';
 import * as fs from 'node:fs';
 import { schemaValidator } from '../../../../tests/helpers/schema-validator.js';
 import { emitModule } from '../src/emission.js';
@@ -251,10 +251,6 @@ describe('obligation payload degradations', () => {
       'a range past the safe integers',
       'forall (x: int ∈ [0, 99999999999999999999)) { f(x) ≡ x }',
     ],
-    [
-      'an implication body',
-      'forall (x: int ∈ [0, 5)) { f(x) >= 0 -> f(x) ≡ x }',
-    ],
     ['an unparseable atom', 'forall (x: int ∈ [0, 5)) { 2x ≡ x }'],
     [
       'an atom that is not valid JavaScript',
@@ -303,6 +299,69 @@ describe('obligation payload degradations', () => {
       kind: 'structured',
       binders: [binder],
     });
+  });
+
+  test('a guard chain structures with guards outermost first', () => {
+    const src = [
+      '/** @ensures{guarded} forall (x: int ∈ [0, 10)) { x >= 1 -> keep(x) >= 1 } */',
+      'export function keep(x: number): number {',
+      '  if (x < 1) {',
+      '    return 1;',
+      '  }',
+      '  return x;',
+      '}',
+      '',
+    ].join('\n');
+    const { emission } = emitModule(src, 'guarded.ts');
+    const payload = emission.obligations[0]!.payload;
+    assert(payload.kind === 'structured');
+    expect(payload.guards).toEqual([
+      {
+        kind: 'binop',
+        op: '>=',
+        left: { kind: 'id', name: 'x' },
+        right: { kind: 'num', lit: '1' },
+      },
+    ]);
+    expect(payload.conclusion.kind).toBe('istrue');
+  });
+
+  test('a two-guard chain keeps both antecedents in order', () => {
+    const payload = payloadOf(
+      'forall (x: int ∈ [0, 10)) { x >= 1 -> x >= 2 -> f(x) >= 2 }',
+    );
+    assert(payload.kind === 'structured');
+    expect(payload.guards).toEqual([
+      {
+        kind: 'binop',
+        op: '>=',
+        left: { kind: 'id', name: 'x' },
+        right: { kind: 'num', lit: '1' },
+      },
+      {
+        kind: 'binop',
+        op: '>=',
+        left: { kind: 'id', name: 'x' },
+        right: { kind: 'num', lit: '2' },
+      },
+    ]);
+  });
+
+  test('a guardless payload carries no guards field', () => {
+    expect(
+      payloadOf('forall (x: int ∈ [0, 5)) { f(x) ≡ x }'),
+    ).not.toHaveProperty('guards');
+  });
+
+  test('an equation guard degrades to bare', () => {
+    // Object.is in guard position is refused, matching the old pipeline
+    const src = [
+      '/** @ensures{eqGuard} forall (x: int ∈ [0, 10)) { f(x) ≡ x -> f(x) >= 0 } */',
+      'export function f(x: number): number { return x; }',
+      '',
+    ].join('\n');
+    const { emission } = emitModule(src, 'eq-guard.ts');
+    expect(emission.obligations[0]!.payload).toEqual({ kind: 'bare' });
   });
 
   test('bounded and unbounded binders nest in order', () => {
