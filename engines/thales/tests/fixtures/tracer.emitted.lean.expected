@@ -9,10 +9,11 @@ set_option autoImplicit false
 --   return a + b;
 -- }
 @[js_norm, grind]
-def add (a b : JsNumber) : JsM JsNumber := do
+def TsModel.add (a b : JsNumber) : JsM JsNumber := do
   return a + b
 
 -- @ensures{commutes} forall (a: int ∈ [0, 10)) (b: int ∈ [0, 10)) { add(a, b) ≡ add(b, a) }
 #thales_prove "engines/thales/tests/fixtures/tracer.ts" "add" "commutes" :=
   ballIco 0 10 fun a =>
-    ballIco 0 10 fun b => add (Float.ofInt a) (Float.ofInt b) = add (Float.ofInt b) (Float.ofInt a)
+    ballIco 0 10 fun b =>
+      TsModel.add (Float.ofInt a) (Float.ofInt b) = TsModel.add (Float.ofInt b) (Float.ofInt a)

@@ -440,6 +440,56 @@ const formulaWith = (formula: string) =>
   `export function f(x: number): number { return x; }\n`;
 
 describe('body classification parity with the old pipeline', () => {
+  test('an overload signature does not shadow its implementation', () => {
+    const src =
+      '/** @ensures{p} forall (x: int ∈ [0, 5)) { f(x) ≡ x } */\n' +
+      'export function f(x: number): number;\n' +
+      'export function f(x: number): number { return x; }\n';
+    expect(classifications(src)).toEqual({ classified: [], obligations: 1 });
+  });
+
+  test('statements after a return are unreachable, as in the old lowering', () => {
+    const src =
+      '/** @ensures{p} forall (x: int ∈ [0, 5)) { f(x) ≡ x } */\n' +
+      'export function f(x: number): number { return x; return q; }\n';
+    const { emission, classified } = emitModule(src, 't.ts');
+    expect(classified).toEqual([]);
+    expect(emission.obligations).toHaveLength(1);
+    expect(emission.declarations[0]!.body).toEqual([
+      { kind: 'return', expr: { kind: 'id', name: 'x' } },
+    ]);
+  });
+
+  test('a body that can run off the end degrades like the old lowering', () => {
+    const src =
+      '/** @ensures{p} forall (x: int ∈ [0, 5)) { f(x) ≡ x } */\n' +
+      'export function f(x: number): number {}\n';
+    expect(classifications(src)).toEqual({
+      classified: [
+        [
+          'Error',
+          "'f' could not be modeled: the body must return on every path",
+        ],
+      ],
+      obligations: 0,
+    });
+  });
+
+  test('body pre-scans cover statements after a return', () => {
+    const src =
+      '/** @ensures{p} forall (x: int ∈ [0, 5)) { f(x) ≡ x } */\n' +
+      'export function f(x: number): number { return g(x); return x.y; }\n';
+    const { classified } = classifications(src);
+    expect(classified).toEqual([
+      [
+        'Inappropriate',
+        expect.stringMatching(
+          /^'f' could not be modeled: unmapped TypeScript construct 'PropertyAccessExpression' at 2:\d+$/,
+        ),
+      ],
+    ]);
+  });
+
   test('** refuses with the spec-fidelity reason', () => {
     expect(classifications(fnWith('x ** 2'))).toEqual({
       classified: [

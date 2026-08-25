@@ -38,6 +38,28 @@ def identTerm (name : String) : RenderM Ident := do
     throw s!"'{name}' is not an emittable identifier yet"
   return mkIdent (Name.mkSimple name)
 
+/-- The names the emitted text references unqualified. The artifact is
+re-parsed plain text, so a binder or parameter spelled like one would
+capture the reference. -/
+def reservedNames : List String :=
+  ["pure", "ballIco", "floatInf", "Float", "Number", "Int",
+   "JsM", "JsNumber", "Bool", "TsModel"]
+
+/-- A binder or parameter: the source name, primed out of the reserved
+vocabulary — a spelling no TS identifier has. -/
+def scopedIdent (name : String) : RenderM Ident := do
+  let _ ← identTerm name
+  if reservedNames.contains name then
+    return mkIdent (Name.mkSimple (name ++ "'"))
+  return mkIdent (Name.mkSimple name)
+
+/-- A model reference: emitted defs live under the old pipeline's
+`TsModel` namespace, so they collide with no root-level name and no
+binder can capture them. -/
+def modelIdent (name : String) : RenderM Ident := do
+  let _ ← identTerm name
+  return mkIdent (`TsModel ++ Name.mkSimple name)
+
 /-- A value-level rendering: a Float- or Bool-valued term that may embed
 `(← call)` lifts, and whether any lift occurred. Lifts appear left to
 right in JS evaluation order, which is the old model's bind order. -/
@@ -53,7 +75,7 @@ boundary the old pipeline's binders cross. -/
 partial def valueTerm (coerced : String → Bool) : JsExpr → RenderM Rendered
   | .num lit => return ⟨← numTerm lit, false⟩
   | .id name => do
-    let x ← identTerm name
+    let x ← scopedIdent name
     if coerced name then return ⟨← `(Float.ofInt $x), false⟩
     return ⟨x, false⟩
   | .unop op x => do
@@ -98,7 +120,7 @@ partial def valueTerm (coerced : String → Bool) : JsExpr → RenderM Rendered
 value-level. -/
 partial def callTerm (coerced : String → Bool) (callee : String)
     (args : Array JsExpr) : RenderM (TSyntax `term) := do
-  let f ← identTerm callee
+  let f ← modelIdent callee
   let argTerms ← args.mapM (fun a => return (← valueTerm coerced a).term)
   if argTerms.isEmpty then pure f else `($f $argTerms*)
 
@@ -127,8 +149,8 @@ def intEndpointTerm (i : Int) : RenderM (TSyntax `term) := do
   if i < 0 then `(-$n) else pure n
 
 def fnCommand (f : EmitFn) : RenderM (TSyntax `command) := do
-  let name ← identTerm f.name
-  let params ← f.params.mapM identTerm
+  let name ← modelIdent f.name
+  let params ← f.params.mapM scopedIdent
   match f.body with
   | #[.ret e] =>
     let ⟨body, _⟩ ← valueTerm (fun _ => false) e
@@ -165,13 +187,13 @@ def obligationCommand (e : Emission) (o : Obligation) : RenderM (TSyntax `comman
     let propTerm ← binders.foldrM (init := leaf) fun b acc => do
       match b with
       | .range name lo hi =>
-        let xi ← identTerm name
+        let xi ← scopedIdent name
         `(ballIco $(← intEndpointTerm lo) $(← intEndpointTerm hi) fun $xi => $acc)
       | .int name =>
-        let xi ← identTerm name
+        let xi ← scopedIdent name
         `(∀ ($xi : Int), $acc)
       | .nat name =>
-        let xi ← identTerm name
+        let xi ← scopedIdent name
         `(∀ ($xi : Int), 0 ≤ $xi → $acc)
     `(#thales_prove $file $fn $prop := $propTerm:term)
 

@@ -48,6 +48,48 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
 #eval goldenCheck "tests/fixtures/operators.emission.json"
   "tests/fixtures/operators.emitted.lean.expected"
 
+-- Emitted defs live under the model namespace: a TS function named
+-- after a root-level Lean name (`id`) must still define.
+#eval show CoreM Unit from do
+  let e : Emission := {
+    file := "t.ts"
+    declarations := #[{ name := "id", params := #["x"], source := "id",
+                        body := #[.ret (.id "x")] }]
+    obligations := #[] }
+  let rendered ← renderEmission e
+  unless (rendered.splitOn "def TsModel.id ").length == 2 do
+    throwError "the emitted def is not namespaced:\n{rendered}"
+
+-- The artifact is re-parsed plain text: a binder named after the
+-- function it calls must not capture the call.
+#eval show CoreM Unit from do
+  let e : Emission := {
+    file := "t.ts"
+    declarations := #[{ name := "bump", params := #["x"], source := "bump",
+                        body := #[.ret (.binop "+" (.id "x") (.num "1"))] }]
+    obligations := #[{ function := "bump", property := "p", formula := "f",
+                       payload := .structured #[.int "bump"]
+                         (.eq (.call "bump" #[.id "bump"])
+                              (.call "bump" #[.id "bump"])) }] }
+  let rendered ← renderEmission e
+  unless (rendered.splitOn "TsModel.bump (Float.ofInt bump)").length == 3 do
+    throwError "the call is exposed to binder capture:\n{rendered}"
+
+-- A binder named after the emitted vocabulary itself (`pure`) is primed,
+-- keeping the annotation provable instead of capturing the leaf.
+#eval show CoreM Unit from do
+  let e : Emission := {
+    file := "t.ts"
+    declarations := #[{ name := "f", params := #["x"], source := "f",
+                        body := #[.ret (.id "x")] }]
+    obligations := #[{ function := "f", property := "p", formula := "f",
+                       payload := .structured #[.int "pure"]
+                         (.istrue (.binop ">=" (.call "f" #[.id "pure"])
+                                             (.num "0"))) }] }
+  let rendered ← renderEmission e
+  unless (rendered.splitOn "pure'").length == 3 do
+    throwError "the reserved binder name is not primed:\n{rendered}"
+
 -- A shape outside the slice is refused with a message naming the gap.
 #eval show CoreM Unit from do
   let e : Emission := {

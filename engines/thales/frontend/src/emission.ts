@@ -418,14 +418,38 @@ function walkFunction(
   if (sig !== undefined) return sig;
   const params = fn.parameters.map((p) => (p.name as ts.Identifier).text);
   const scope: WalkScope = { vars: new Set(params), mapped, failed };
-  const body: EmitStmt[] = [];
+  const exprs: ts.Expression[] = [];
   for (const s of fn.body!.statements) {
     if (!ts.isReturnStatement(s) || s.expression === undefined) {
       return constructAt(s, s.kind, sf);
     }
-    const walked = walkChecked(s.expression, 'num', scope, sf);
-    if (!('expr' in walked)) return walked;
-    body.push({ kind: 'return', expr: walked.expr });
+    exprs.push(s.expression);
+  }
+  // The old elaborator runs each pre-scan across the whole body — dead
+  // code included — before the next scan begins.
+  for (const e of exprs) {
+    const found = findConstruct(e, sf);
+    if (found !== undefined) return found;
+  }
+  for (const e of exprs) {
+    const found = findRefusedOp(e);
+    if (found !== undefined) return found;
+  }
+  for (const e of exprs) {
+    const found = findFailedCallee(e, scope);
+    if (found !== undefined) return found;
+  }
+  if (exprs.length === 0) {
+    return { reason: 'the body must return on every path' };
+  }
+  // The lowering ends its path at the first return: what follows never
+  // elaborates and never reaches the artifact.
+  const body: EmitStmt[] = [];
+  try {
+    body.push({ kind: 'return', expr: walkTyped(exprs[0]!, 'num', scope, sf) });
+  } catch (err) {
+    if (err instanceof ModelError) return { reason: err.message };
+    throw err;
   }
   return {
     kind: 'function',
@@ -688,7 +712,10 @@ export function emitModule(text: string, file: string): PlainEmission {
       });
       continue;
     }
-    const fnFailed = failed.get(fn);
+    // A failed declaration blocks the annotation only when nothing
+    // modeled the name: an overload signature fails while the
+    // implementation models.
+    const fnFailed = mapped.has(fn) ? undefined : failed.get(fn);
     if (fnFailed !== undefined) {
       classified.push({
         annotation: a,
