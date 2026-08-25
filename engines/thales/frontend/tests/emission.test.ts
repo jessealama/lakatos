@@ -279,6 +279,11 @@ describe('obligation payload degradations', () => {
       { name: 'x', kind: 'int' },
     ],
     [
+      'an int binder over the whole line',
+      'forall (x: int ∈ (-∞, ∞)) { f(x) ≡ x }',
+      { name: 'x', kind: 'int' },
+    ],
+    [
       'an unbounded nat binder',
       'forall (x: nat) { f(x) ≡ x }',
       { name: 'x', kind: 'nat' },
@@ -774,6 +779,51 @@ describe('statement bodies (#148)', () => {
       'export function f(x: number): number { { return x; } }',
       'Block',
     ],
+    [
+      'a using declaration, despite sharing the Const flag',
+      'export function f(x: number): number { await using y = x; return x; }',
+      'VariableStatement',
+    ],
+    [
+      'a const statement with no declarators',
+      'export function f(x: number): number { const; return x; }',
+      'VariableStatement',
+    ],
+    [
+      'a destructuring declarator',
+      'export function f(x: number): number { const { y } = x; return x; }',
+      'VariableStatement',
+    ],
+    [
+      'a non-number declarator annotation',
+      'export function f(x: number): number { const y: string = "a"; return x; }',
+      'VariableStatement',
+    ],
+    [
+      'a throw of a non-identifier constructor',
+      'export function f(x: number): number { throw new Foo.Bar(); }',
+      'ThrowStatement',
+    ],
+    [
+      'a call statement',
+      'export function f(x: number): number { f(x); return x; }',
+      'ExpressionStatement',
+    ],
+    [
+      'an assignment to a property',
+      'export function f(x: number): number { x.y = 1; return x; }',
+      'ExpressionStatement',
+    ],
+    [
+      "a construct inside a declarator's initializer",
+      'export function f(x: number): number { const y = x.q; return y; }',
+      'PropertyAccessExpression',
+    ],
+    [
+      "a construct inside a reassignment's value",
+      'export function f(x: number): number { let y = 1; y = x.q; return y; }',
+      'PropertyAccessExpression',
+    ],
   ])(
     '%s classifies Inappropriate on its construct',
     (_label, decl, construct) => {
@@ -789,6 +839,50 @@ describe('statement bodies (#148)', () => {
       ]);
     },
   );
+
+  test('a number-annotated declarator maps like a bare one', () => {
+    const src = annotated(
+      'export function f(x: number): number { const y: number = 2 * x; return y; }',
+    );
+    const { emission, classified } = emitModule(src, 't.ts');
+    expect(classified).toEqual([]);
+    expect(emission.declarations[0]!.body).toEqual([
+      {
+        kind: 'const',
+        name: 'y',
+        init: {
+          kind: 'binop',
+          op: '*',
+          left: { kind: 'num', lit: '2' },
+          right: { kind: 'id', name: 'x' },
+        },
+      },
+      { kind: 'return', expr: { kind: 'id', name: 'y' } },
+    ]);
+  });
+
+  test('an else arm that leaves keeps the tail after the branch', () => {
+    const src = annotated(
+      'export function f(x: number): number { let y = x; if (x < 0) { y = 1; } else { return 0; } return y; }',
+    );
+    const { emission, classified } = emitModule(src, 't.ts');
+    expect(classified).toEqual([]);
+    expect(emission.declarations[0]!.body).toEqual([
+      { kind: 'let', name: 'y', init: { kind: 'id', name: 'x' } },
+      {
+        kind: 'if',
+        cond: {
+          kind: 'binop',
+          op: '<',
+          left: { kind: 'id', name: 'x' },
+          right: { kind: 'num', lit: '0' },
+        },
+        then: [{ kind: 'assign', name: 'y', expr: { kind: 'num', lit: '1' } }],
+        else: [{ kind: 'return', expr: { kind: 'num', lit: '0' } }],
+      },
+      { kind: 'return', expr: { kind: 'id', name: 'y' } },
+    ]);
+  });
 
   test("an arm's own binding dies with the arm, as in the old lowering", () => {
     const src = annotated(

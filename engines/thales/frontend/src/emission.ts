@@ -588,6 +588,8 @@ function treeExprs(
         into.push(s.expr);
         break;
       case 'if':
+        // An opaque condition never reaches this scan: the construct scan
+        // runs first and returns it as the declaration's failure.
         if ('expr' in s.cond) into.push(s.cond.expr);
         treeExprs(s.then, into);
         if (s.else !== undefined) treeExprs(s.else, into);
@@ -709,12 +711,14 @@ function lowerTree(
       const tail = lowerTree(rest, vars, k, scope, sf);
       return [{ kind: 'assign', name: s.name, expr }, ...tail];
     }
+    /* v8 ignore start -- an opaque statement or condition is unreachable
+       here: the construct scan already degraded the declaration. The throw
+       mirrors the old elaborator's, kept for the same defense. */
     case 'opaque':
-      // Unreachable after the construct scan; degrade like the old
-      // elaborator would.
       throw new ModelError(s.failure.reason);
     case 'if': {
       if ('opaque' in s.cond) throw new ModelError(s.cond.opaque.reason);
+      /* v8 ignore stop */
       const cond = walk(s.cond.expr, 'bool', vars);
       const elseArm = s.else ?? [];
       // What an arm that falls through continues into: the rest of this
@@ -722,13 +726,19 @@ function lowerTree(
       let tail: EmitStmt[] = [];
       let tailBuilt = false;
       const after: Cont = () => {
+        /* v8 ignore next -- each continuation runs at most once by
+           construction; the guard is the old lowering's invariant. */
         if (tailBuilt) return;
         tailBuilt = true;
         tail = lowerTree(rest, vars, k, scope, sf);
       };
+      /* v8 ignore start -- the mirror of the old lowering's ruled-out
+         continuation: an arm the leave-analysis proved leaving never
+         invokes it, so it exists only to fail loudly on a bug. */
       const ruledOut: Cont = () => {
         throw new ModelError('the lowering reached an arm it had ruled out');
       };
+      /* v8 ignore stop */
       const thenLeaves = stmtsLeave(s.then);
       const elseLeaves = stmtsLeave(elseArm);
       let thenK: Cont = ruledOut;
@@ -811,6 +821,7 @@ function walkFunction(
     };
   } catch (err) {
     if (err instanceof ModelError) return { reason: err.message };
+    /* v8 ignore next 2 -- the walk throws nothing else */
     throw err;
   }
 }
