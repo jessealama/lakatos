@@ -33,7 +33,10 @@ const BUCKET_STATUS: Record<string, string> = {
   timeout: "Timeout",
 };
 
-/** Every fixture in the corpus, as bucket-relative posix paths. */
+/** The entry file of every fixture in the corpus, as bucket-relative posix
+ * paths. A fixture is one `.ts` file, or a directory whose `main.ts` is the
+ * entry of a multi-file closure: the modules it imports are that entry's,
+ * not fixtures of their own, and are never run as entries. */
 function corpusFixtures(): string[] {
   const fixtures: string[] = [];
   for (const dirent of fs.readdirSync(corpusRoot, { withFileTypes: true })) {
@@ -47,6 +50,16 @@ function corpusFixtures(): string[] {
     });
     for (const entry of entries) {
       if (entry.name.startsWith(".")) continue; // editor/OS droppings
+      if (entry.isDirectory()) {
+        const main = path.join(corpusRoot, bucket, entry.name, "main.ts");
+        if (!fs.existsSync(main)) {
+          throw new Error(
+            `multi-file fixture needs a main.ts entry: ${bucket}/${entry.name}`,
+          );
+        }
+        fixtures.push(`${bucket}/${entry.name}/main.ts`);
+        continue;
+      }
       if (!entry.isFile() || !entry.name.endsWith(".ts")) {
         throw new Error(
           `stray corpus entry (buckets hold only .ts fixtures): ${bucket}/${entry.name}`,
@@ -56,6 +69,11 @@ function corpusFixtures(): string[] {
     }
   }
   return fixtures.sort();
+}
+
+/** The bucket a fixture's verdict is graded against. */
+function bucketOf(fixture: string): string | undefined {
+  return BUCKET_STATUS[fixture.split("/")[0]!];
 }
 
 // Collected at module scope so the bucket and stray-entry checks fail every
@@ -80,11 +98,12 @@ describe.runIf(enabled)("verdict corpus", () => {
   useRepoScratchDir(
     path.join(repoRoot, ".thales", "verdict-corpus-work"),
     (dir) => {
-      for (const f of fixtures) {
-        const dest = path.join(dir, f);
-        fs.mkdirSync(path.dirname(dest), { recursive: true });
-        fs.copyFileSync(path.join(corpusRoot, f), dest);
-      }
+      // The whole tree, not just the entries: a multi-file fixture's
+      // dependencies must sit beside its entry for the import to resolve.
+      fs.cpSync(corpusRoot, dir, {
+        recursive: true,
+        filter: (src) => !src.endsWith("README.md"),
+      });
     },
   );
 
@@ -104,7 +123,7 @@ describe.runIf(enabled)("verdict corpus", () => {
 
       // One readable diff over ALL mismatches, not just the first.
       const mismatches = env.annotations.flatMap((a) => {
-        const want = BUCKET_STATUS[path.dirname(a.file)];
+        const want = bucketOf(a.file);
         if (a.szs === want) return [];
         return [
           `${a.file} ${a.function}/${a.property}: expected ${want}, got ${a.szs}`,

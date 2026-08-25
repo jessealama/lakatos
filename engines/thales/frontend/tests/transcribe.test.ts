@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import {
+  type ModuleReader,
   transcribe,
   transcribeFile,
   transcribeSource,
@@ -1078,5 +1082,274 @@ describe('invalid annotations', () => {
     expect(t.annotations.map((a) => a.propertyName)).toEqual(['q']);
     expect(t.invalid.map((i) => i.propertyName)).toEqual(['p']);
     expect(t.lean).toBe(transcribeSource(hidden, 'hidden.ts'));
+  });
+});
+
+describe('relative import closures', () => {
+  /** An in-memory module tree, keyed the way the walk resolves: absolute
+   * paths against the importing file's directory. */
+  function reader(files: Record<string, string>): ModuleReader {
+    const abs = new Map(
+      Object.entries(files).map(([f, text]) => [path.resolve(f), text]),
+    );
+    return (file) => abs.get(file);
+  }
+
+  const TWICE = [
+    'import { double } from "./helper.mjs";',
+    'export function twice(x: number): number {',
+    '  return double(x);',
+    '}',
+  ].join('\n');
+
+  const HELPER = [
+    'export function double(x: number): number {',
+    '  return x * 2;',
+    '}',
+  ].join('\n');
+
+  test('a dependency is inlined under module-qualified names, before its user', () => {
+    const lean = transcribeSource(
+      TWICE,
+      'main.mts',
+      reader({ 'helper.mts': HELPER }),
+    );
+    const defs = lean.split('\n').filter((l) => l.startsWith('ts_def '));
+    expect(defs).toEqual([
+      'ts_def "helper.mts::double" := ts.fn(ts.param["x"](ts.number)) : ts.number {',
+      'ts_def "twice" := ts.fn(ts.param["x"](ts.number)) : ts.number {',
+    ]);
+    expect(lean).toContain(
+      'ts.return(ts.call["helper.mts::double"](ts.id["x"]))',
+    );
+    expect(lean).toContain('-- module helper.mts');
+    // The dependency's source is commented into the artifact like any other.
+    expect(lean).toContain('-- export function double(x: number): number {');
+  });
+
+  test('the nodeNext source extension wins over a sibling of the written one', () => {
+    const lean = transcribeSource(
+      TWICE,
+      'main.mts',
+      reader({
+        'helper.mts': HELPER,
+        'helper.mjs': 'export function double(x) { return x * 3; }',
+      }),
+    );
+    expect(lean).toContain('ts_def "helper.mts::double"');
+    expect(lean).not.toContain('helper.mjs::double');
+  });
+
+  test('a bare specifier stays opaque', () => {
+    const src = [
+      'import { readFile } from "node:fs/promises";',
+      'export function f(x: number): number { return readFile(x); }',
+    ].join('\n');
+    const lean = transcribeSource(src, 'main.mts', reader({}));
+    expect(lean).toContain(
+      'ts_def "readFile" := ts.opaque["ImportDeclaration"](1, 10)',
+    );
+    expect(lean).toContain('ts.return(ts.call["readFile"](ts.id["x"]))');
+  });
+
+  test('a relative specifier that does not resolve stays opaque', () => {
+    const lean = transcribeSource(TWICE, 'main.mts', reader({}));
+    expect(lean).toContain(
+      'ts_def "double" := ts.opaque["ImportDeclaration"](1, 10)',
+    );
+  });
+
+  test('the closure is transitive, and each module is inlined once', () => {
+    const src = [
+      'import { b } from "./b.mjs";',
+      'import { c } from "./c.mjs";',
+      'export function f(x: number): number { return b(x) + c(x); }',
+    ].join('\n');
+    const lean = transcribeSource(
+      src,
+      'main.mts',
+      reader({
+        'b.mts': [
+          'import { c } from "./c.mjs";',
+          'export function b(x: number): number { return c(x) + 1; }',
+        ].join('\n'),
+        'c.mts': 'export function c(x: number): number { return x * 2; }',
+      }),
+    );
+    const defs = lean.split('\n').filter((l) => l.startsWith('ts_def '));
+    expect(defs).toEqual([
+      'ts_def "c.mts::c" := ts.fn(ts.param["x"](ts.number)) : ts.number {',
+      'ts_def "b.mts::b" := ts.fn(ts.param["x"](ts.number)) : ts.number {',
+      'ts_def "f" := ts.fn(ts.param["x"](ts.number)) : ts.number {',
+    ]);
+    expect(lean).toContain(
+      'ts.return(ts.binop["+"](ts.call["c.mts::c"](ts.id["x"]), ts.num[1]))',
+    );
+  });
+
+  test('a dependency outside the entry directory qualifies by relative path', () => {
+    const lean = transcribeSource(
+      'import { double } from "../lib/helper.mjs";\nexport function twice(x: number): number { return double(x); }',
+      'src/main.mts',
+      reader({ 'lib/helper.mts': HELPER }),
+    );
+    expect(lean).toContain('ts_def "../lib/helper.mts::double"');
+    expect(lean).toContain('ts.call["../lib/helper.mts::double"]');
+  });
+
+  test('an import chain resolves to the module that declares the name', () => {
+    const lean = transcribeSource(
+      'import { c } from "./b.mjs";\nexport function f(x: number): number { return c(x); }',
+      'main.mts',
+      reader({
+        'b.mts': 'import { c } from "./c.mjs";\nexport { c };',
+        'c.mts': 'export function c(x: number): number { return x * 2; }',
+      }),
+    );
+    expect(lean).toContain('ts.return(ts.call["c.mts::c"](ts.id["x"]))');
+  });
+
+  test('an aliased import rewrites to the exported name', () => {
+    const lean = transcribeSource(
+      'import { double as twofold } from "./helper.mjs";\nexport function f(x: number): number { return twofold(x); }',
+      'main.mts',
+      reader({ 'helper.mts': HELPER }),
+    );
+    expect(lean).toContain(
+      'ts.return(ts.call["helper.mts::double"](ts.id["x"]))',
+    );
+  });
+
+  test('an import cycle degrades only the cycle-closing names', () => {
+    const lean = transcribeSource(
+      [
+        'import { helper } from "./b.mjs";',
+        'export function base(x: number): number { return x + 1; }',
+        'export function f(x: number): number { return helper(x); }',
+      ].join('\n'),
+      'main.mts',
+      reader({
+        'b.mts': [
+          'import { base } from "./main.mjs";',
+          'export function helper(x: number): number { return base(x) * 2; }',
+        ].join('\n'),
+      }),
+    );
+    // The back edge into the entry is what degrades ...
+    expect(lean).toContain(
+      'ts_def "b.mts::base" := ts.opaque["ImportDeclaration"](1, 10)',
+    );
+    expect(lean).toContain('ts.call["b.mts::base"](ts.id["x"])');
+    // ... and the entry's own declarations are untouched by it.
+    expect(lean).toContain(
+      'ts_def "base" := ts.fn(ts.param["x"](ts.number)) : ts.number {',
+    );
+    expect(lean).toContain('ts.call["b.mts::helper"](ts.id["x"])');
+  });
+
+  test('a default-only import binds its name and reaches no module', () => {
+    const lean = transcribeSource(
+      'import dflt from "./helper.mjs";',
+      'main.mts',
+      reader({ 'helper.mts': HELPER }),
+    );
+    expect(lean).toContain(
+      'ts_def "dflt" := ts.opaque["ImportDeclaration"](1, 8)',
+    );
+    expect(lean).not.toContain('helper.mts::double');
+  });
+
+  test('a specifier the parser did not recover as a string stays opaque', () => {
+    const lean = transcribeSource(
+      'import { double } from `./helper.mjs`;',
+      'main.mts',
+      reader({ 'helper.mts': HELPER }),
+    );
+    expect(lean).toContain(
+      'ts_def "double" := ts.opaque["ImportDeclaration"](1, 10)',
+    );
+  });
+
+  test('default and namespace imports stay opaque even when the module resolves', () => {
+    const lean = transcribeSource(
+      'import dflt, * as ns from "./helper.mjs";',
+      'main.mts',
+      reader({ 'helper.mts': HELPER }),
+    );
+    expect(lean).toContain(
+      'ts_def "dflt" := ts.opaque["ImportDeclaration"](1, 8)',
+    );
+    expect(lean).toContain(
+      'ts_def "ns" := ts.opaque["ImportDeclaration"](1, 19)',
+    );
+  });
+
+  test('a local binding shadows an imported name', () => {
+    const lean = transcribeSource(
+      [
+        'import { double } from "./helper.mjs";',
+        'export function f(double: number): number { return double; }',
+        'export function g(x: number): number {',
+        '  const double = x + 1;',
+        '  return double;',
+        '}',
+      ].join('\n'),
+      'main.mts',
+      reader({ 'helper.mts': HELPER }),
+    );
+    expect(lean).toContain('ts.return(ts.id["double"])');
+    expect(lean).not.toContain('ts.id["helper.mts::double"]');
+  });
+
+  test('a property atom rewrites imported names, and its binders shadow them', () => {
+    const lean = transcribeSource(
+      [
+        'import { double } from "./helper.mjs";',
+        '/** @ensures{p} forall (x: int ∈ [0, 5)) { double(x) >= 0 } */',
+        'export function twice(x: number): number { return double(x); }',
+      ].join('\n'),
+      'main.mts',
+      reader({ 'helper.mts': HELPER }),
+    );
+    expect(lean).toContain(
+      'ts.istrue(ts.binop[">="](ts.call["helper.mts::double"](ts.id["x"]), ts.num[0]))',
+    );
+    const shadowed = transcribeSource(
+      [
+        'import { double } from "./helper.mjs";',
+        '/** @ensures{p} forall (double: int ∈ [0, 5)) { double >= 0 } */',
+        'export function twice(x: number): number { return x; }',
+      ].join('\n'),
+      'main.mts',
+      reader({ 'helper.mts': HELPER }),
+    );
+    expect(shadowed).toContain(
+      'ts.istrue(ts.binop[">="](ts.id["double"], ts.num[0]))',
+    );
+  });
+
+  test('a dependency contributes declarations, never prove commands', () => {
+    const lean = transcribeSource(
+      TWICE,
+      'main.mts',
+      reader({
+        'helper.mts':
+          '/** @ensures{q} forall (x: int ∈ [0, 5)) { double(x) >= 0 } */\n' +
+          HELPER,
+      }),
+    );
+    expect(lean.match(/#thales_prove/g)).toBeNull();
+  });
+
+  test('the disk is the default reader', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'thales-closure-'));
+    try {
+      fs.writeFileSync(path.join(dir, 'helper.mts'), HELPER);
+      const entry = path.join(dir, 'main.mts');
+      fs.writeFileSync(entry, TWICE);
+      expect(transcribeFile(entry)).toContain('ts_def "helper.mts::double"');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
