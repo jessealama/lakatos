@@ -51,6 +51,16 @@
         {
           "type": "object",
           "additionalProperties": false,
+          "required": ["kind", "op", "operand"],
+          "properties": {
+            "kind": { "const": "unop" },
+            "op": { "enum": ["-", "+"] },
+            "operand": { "$ref": "#/definitions/expr" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
           "required": ["kind", "op", "left", "right"],
           "properties": {
             "kind": { "const": "binop" },
@@ -143,16 +153,30 @@
                 "kind": { "const": "structured" },
                 "binders": {
                   "type": "array",
-                  "description": "Nested half-open [lo, hi) Int binders, outermost first; endpoints are decimal strings.",
+                  "description": "Nested Int binders, outermost first: a half-open [lo, hi) range with decimal-string endpoints, the whole int line, or the naturals.",
                   "items": {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "required": ["name", "lo", "hi"],
-                    "properties": {
-                      "name": { "$ref": "#/definitions/identifier" },
-                      "lo": { "type": "string", "pattern": "^-?[0-9]+$" },
-                      "hi": { "type": "string", "pattern": "^-?[0-9]+$" }
-                    }
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["name", "kind", "lo", "hi"],
+                        "properties": {
+                          "name": { "$ref": "#/definitions/identifier" },
+                          "kind": { "const": "range" },
+                          "lo": { "type": "string", "pattern": "^-?[0-9]+$" },
+                          "hi": { "type": "string", "pattern": "^-?[0-9]+$" }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["name", "kind"],
+                        "properties": {
+                          "name": { "$ref": "#/definitions/identifier" },
+                          "kind": { "enum": ["int", "nat"] }
+                        }
+                      }
+                    ]
                   }
                 },
                 "conclusion": {

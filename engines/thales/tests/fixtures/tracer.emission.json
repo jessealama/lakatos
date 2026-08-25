@@ -35,11 +35,13 @@
         "binders": [
           {
             "name": "a",
+            "kind": "range",
             "lo": "0",
             "hi": "10"
           },
           {
             "name": "b",
+            "kind": "range",
             "lo": "0",
             "hi": "10"
           }
