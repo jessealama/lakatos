@@ -186,26 +186,326 @@ describe('const bindings', () => {
     ]);
   });
 
-  test('let and var bindings stay opaque', () => {
-    const letSrc = [
+  test('a let binding becomes ts.let', () => {
+    const src = [
       'function g(a: number): number {',
       '  let b = a;',
       '  return b;',
       '}',
     ].join('\n');
-    expect(bodyOf(letSrc)).toEqual([
-      'ts.opaque["VariableStatement"](2, 3)',
+    expect(bodyOf(src)).toEqual([
+      'ts.let["b"](ts.id["a"])',
       'ts.return(ts.id["b"])',
     ]);
-    const varSrc = [
+  });
+
+  test('var bindings stay opaque', () => {
+    const src = [
       'function g(a: number): number {',
       '  var b = a;',
       '  return b;',
       '}',
     ].join('\n');
-    expect(bodyOf(varSrc)).toEqual([
+    expect(bodyOf(src)).toEqual([
       'ts.opaque["VariableStatement"](2, 3)',
       'ts.return(ts.id["b"])',
+    ]);
+  });
+
+  test('an uninitialized let stays opaque', () => {
+    const src = [
+      'function g(a: number): number {',
+      '  let b;',
+      '  b = a;',
+      '  return b;',
+      '}',
+    ].join('\n');
+    expect(bodyOf(src)).toEqual([
+      'ts.opaque["VariableStatement"](2, 3)',
+      'ts.opaque["ExpressionStatement"](3, 3)',
+      'ts.return(ts.id["b"])',
+    ]);
+  });
+
+  test('a redeclaration inside an arm stays opaque', () => {
+    const src = [
+      'function g(a: number): number {',
+      '  let b = a;',
+      '  if (a < 0) {',
+      '    const b = 1;',
+      '    return b;',
+      '  }',
+      '  return b;',
+      '}',
+    ].join('\n');
+    expect(bodyOf(src)).toEqual([
+      'ts.let["b"](ts.id["a"])',
+      'ts.if(ts.binop["<"](ts.id["a"], ts.num[0])) {',
+      'ts.opaque["VariableStatement"](4, 5)',
+      'ts.return(ts.id["b"])',
+      '}',
+      'ts.return(ts.id["b"])',
+    ]);
+  });
+});
+
+describe('statement lowering', () => {
+  test('an if with no else becomes a one-armed ts.if', () => {
+    const src = [
+      'function clamp(x: number): number {',
+      '  if (x < 0) {',
+      '    return 0;',
+      '  }',
+      '  return x;',
+      '}',
+    ].join('\n');
+    expect(bodyOf(src)).toEqual([
+      'ts.if(ts.binop["<"](ts.id["x"], ts.num[0])) {',
+      'ts.return(ts.num[0])',
+      '}',
+      'ts.return(ts.id["x"])',
+    ]);
+  });
+
+  test('an else arm becomes the second block', () => {
+    const src = [
+      'function sign(x: number): number {',
+      '  if (x < 0) {',
+      '    return -1;',
+      '  } else {',
+      '    return 1;',
+      '  }',
+      '}',
+    ].join('\n');
+    expect(bodyOf(src)).toEqual([
+      'ts.if(ts.binop["<"](ts.id["x"], ts.num[0])) {',
+      'ts.return(ts.num[-1])',
+      '} else {',
+      'ts.return(ts.num[1])',
+      '}',
+    ]);
+  });
+
+  test('an else if nests inside the else arm', () => {
+    const src = [
+      'function step(x: number): number {',
+      '  if (x < 0) {',
+      '    return 0;',
+      '  } else if (x < 10) {',
+      '    return 1;',
+      '  }',
+      '  return 2;',
+      '}',
+    ].join('\n');
+    expect(bodyOf(src)).toEqual([
+      'ts.if(ts.binop["<"](ts.id["x"], ts.num[0])) {',
+      'ts.return(ts.num[0])',
+      '} else {',
+      'ts.if(ts.binop["<"](ts.id["x"], ts.num[10])) {',
+      'ts.return(ts.num[1])',
+      '}',
+      '}',
+      'ts.return(ts.num[2])',
+    ]);
+  });
+
+  test('an unbraced arm is the one statement it is', () => {
+    const src = [
+      'function clamp(x: number): number {',
+      '  if (x < 0) return 0;',
+      '  return x;',
+      '}',
+    ].join('\n');
+    expect(bodyOf(src)).toEqual([
+      'ts.if(ts.binop["<"](ts.id["x"], ts.num[0])) {',
+      'ts.return(ts.num[0])',
+      '}',
+      'ts.return(ts.id["x"])',
+    ]);
+  });
+
+  test('a condition that is not a comparison stays opaque', () => {
+    const src = [
+      'function f(x: number): number {',
+      '  if (x) {',
+      '    return 0;',
+      '  }',
+      '  return x;',
+      '}',
+    ].join('\n');
+    expect(bodyOf(src)).toEqual([
+      'ts.if(ts.opaque["Identifier"](2, 7)) {',
+      'ts.return(ts.num[0])',
+      '}',
+      'ts.return(ts.id["x"])',
+    ]);
+  });
+
+  test('a throw carries the error kind and drops the message', () => {
+    const src = [
+      'function recip(x: number): number {',
+      '  if (x === 0) {',
+      '    throw new RangeError(`bad ${x}`);',
+      '  }',
+      '  return 1 / x;',
+      '}',
+    ].join('\n');
+    expect(bodyOf(src)).toEqual([
+      'ts.if(ts.binop["==="](ts.id["x"], ts.num[0])) {',
+      'ts.throw["RangeError"]',
+      '}',
+      'ts.return(ts.binop["/"](ts.num[1], ts.id["x"]))',
+    ]);
+  });
+
+  test('a throw of anything but a constructed error stays opaque', () => {
+    const src = ['function f(x: number): number {', '  throw x;', '}'].join(
+      '\n',
+    );
+    expect(bodyOf(src)).toEqual(['ts.opaque["ThrowStatement"](2, 3)']);
+  });
+
+  test('a reassignment of a let becomes ts.assign', () => {
+    const src = [
+      'function bump(x: number): number {',
+      '  let y = 0;',
+      '  if (x > 10) {',
+      '    y = 1;',
+      '  } else {',
+      '    y = 2;',
+      '  }',
+      '  return y + x;',
+      '}',
+    ].join('\n');
+    expect(bodyOf(src)).toEqual([
+      'ts.let["y"](ts.num[0])',
+      'ts.if(ts.binop[">"](ts.id["x"], ts.num[10])) {',
+      'ts.assign["y"](ts.num[1])',
+      '} else {',
+      'ts.assign["y"](ts.num[2])',
+      '}',
+      'ts.return(ts.binop["+"](ts.id["y"], ts.id["x"]))',
+    ]);
+  });
+
+  test('a parameter is assignable', () => {
+    const src = [
+      'function atLeastOne(x: number): number {',
+      '  if (x < 1) {',
+      '    x = 1;',
+      '  }',
+      '  return x;',
+      '}',
+    ].join('\n');
+    expect(bodyOf(src)).toEqual([
+      'ts.if(ts.binop["<"](ts.id["x"], ts.num[1])) {',
+      'ts.assign["x"](ts.num[1])',
+      '}',
+      'ts.return(ts.id["x"])',
+    ]);
+  });
+
+  test('assigning a const stays opaque', () => {
+    const src = [
+      'function f(x: number): number {',
+      '  const y = x;',
+      '  y = 1;',
+      '  return y;',
+      '}',
+    ].join('\n');
+    expect(bodyOf(src)).toEqual([
+      'ts.const["y"](ts.id["x"])',
+      'ts.opaque["ExpressionStatement"](3, 3)',
+      'ts.return(ts.id["y"])',
+    ]);
+  });
+
+  test('a call for its effects stays opaque', () => {
+    const src = [
+      'function f(x: number): number {',
+      '  record(x);',
+      '  return x;',
+      '}',
+    ].join('\n');
+    expect(bodyOf(src)).toEqual([
+      'ts.opaque["ExpressionStatement"](2, 3)',
+      'ts.return(ts.id["x"])',
+    ]);
+  });
+
+  test('assigning anything but a plain name stays opaque', () => {
+    const src = [
+      'function f(x: number): number {',
+      '  totals.sum = x;',
+      '  return x;',
+      '}',
+    ].join('\n');
+    expect(bodyOf(src)).toEqual([
+      'ts.opaque["ExpressionStatement"](2, 3)',
+      'ts.return(ts.id["x"])',
+    ]);
+  });
+
+  test('a throw whose constructor is not a plain name stays opaque', () => {
+    const src = [
+      'function f(x: number): number {',
+      '  throw new errors.Bad(x);',
+      '}',
+    ].join('\n');
+    expect(bodyOf(src)).toEqual(['ts.opaque["ThrowStatement"](2, 3)']);
+  });
+
+  test('assigning a name the body did not bind stays opaque', () => {
+    const src = [
+      'function f(x: number): number {',
+      '  outer = x;',
+      '  return x;',
+      '}',
+    ].join('\n');
+    expect(bodyOf(src)).toEqual([
+      'ts.opaque["ExpressionStatement"](2, 3)',
+      'ts.return(ts.id["x"])',
+    ]);
+  });
+
+  test('a compound assignment stays opaque', () => {
+    const src = [
+      'function f(x: number): number {',
+      '  let y = 0;',
+      '  y += x;',
+      '  return y;',
+      '}',
+    ].join('\n');
+    expect(bodyOf(src)).toEqual([
+      'ts.let["y"](ts.num[0])',
+      'ts.opaque["ExpressionStatement"](3, 3)',
+      'ts.return(ts.id["y"])',
+    ]);
+  });
+
+  test('a bare return has no value to model and stays opaque', () => {
+    const src = ['function f(x: number): number {', '  return;', '}'].join(
+      '\n',
+    );
+    expect(bodyOf(src)).toEqual(['ts.opaque["ReturnStatement"](2, 3)']);
+  });
+
+  test('a loop inside an arm stays opaque, naming the construct', () => {
+    const src = [
+      'function f(x: number): number {',
+      '  if (x < 0) {',
+      '    while (x < 0) {',
+      '      x = x + 1;',
+      '    }',
+      '  }',
+      '  return x;',
+      '}',
+    ].join('\n');
+    expect(bodyOf(src)).toEqual([
+      'ts.if(ts.binop["<"](ts.id["x"], ts.num[0])) {',
+      'ts.opaque["WhileStatement"](3, 5)',
+      '}',
+      'ts.return(ts.id["x"])',
     ]);
   });
 
@@ -1298,6 +1598,25 @@ describe('relative import closures', () => {
       reader({ 'helper.mts': HELPER }),
     );
     expect(lean).toContain('ts.return(ts.id["double"])');
+    expect(lean).not.toContain('ts.id["helper.mts::double"]');
+  });
+
+  test('a binding inside a branch shadows an imported name too', () => {
+    const lean = transcribeSource(
+      [
+        'import { double } from "./helper.mjs";',
+        'export function g(x: number): number {',
+        '  if (x > 0) {',
+        '    const double = x + 1;',
+        '    return double;',
+        '  }',
+        '  return x;',
+        '}',
+      ].join('\n'),
+      'main.mts',
+      reader({ 'helper.mts': HELPER }),
+    );
+    expect(lean).toContain('ts.const["double"](ts.binop["+"](ts.id["x"]');
     expect(lean).not.toContain('ts.id["helper.mts::double"]');
   });
 

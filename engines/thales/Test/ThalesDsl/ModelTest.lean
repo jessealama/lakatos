@@ -209,11 +209,14 @@ ts_def "tdz" := ts.fn() : ts.number {
   ts.return(ts.id["a"])
 }
 
--- A binding after the return violates the body shape, contained per decl.
+-- A return ends its path, so what follows it never runs and never
+-- elaborates — an initializer that would have thrown included.
 ts_def "deadTail" := ts.fn() : ts.number {
   ts.return(ts.num[1])
-  ts.const["x"](ts.num[2])
+  ts.const["x"](ts.binop["/"](ts.num[1], ts.num[0]))
+  ts.return(ts.id["x"])
 }
+#guard decide (TsModel.deadTail = (pure 1.0 : TsM Float))
 
 open Lean in
 #eval show CoreM Unit from do
@@ -224,7 +227,5 @@ open Lean in
     | throwError "'tdz' should be recorded as failed"
   unless tdz.construct == none do
     throwError "'tdz' is not an opaque failure, got {repr tdz.construct}"
-  let some dead := findFailed? env "deadTail"
-    | throwError "'deadTail' should be recorded as failed"
-  unless dead.construct == none do
-    throwError "'deadTail' is not an opaque failure, got {repr dead.construct}"
+  unless (findModel? env "deadTail").isSome do
+    throwError "'deadTail' should register a model"

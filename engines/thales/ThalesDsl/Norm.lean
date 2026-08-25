@@ -21,6 +21,30 @@ namespace ThalesDsl
     ((pure a : TsM α) = pure b) ↔ a = b :=
   ⟨fun h => Except.ok.inj h, fun h => h ▸ rfl⟩
 
+/-! A lowered `if` is a `cond` between two `TsM` computations. The set
+keeps such a branch at the top of its expression — everything downstream
+of it is pushed into both arms — and splits it into the two implications
+its arms carry, which is what hands the closers the branch condition as a
+hypothesis on the arm it selects. Only that shape lets a literal arm
+reduce: while a branch sits under an operation, neither arm is a term the
+ground evaluators can see. -/
+
+/-- What follows a branch runs in whichever arm was taken. -/
+@[thales_norm] theorem tsm_cond_bind {α β : Type} (c : Bool)
+    (x y : TsM α) (f : α → TsM β) :
+    ((bif c then x else y) >>= f) = bif c then (x >>= f) else (y >>= f) := by
+  cases c <;> rfl
+
+/-- A branch on one side of an equation is one obligation per arm. -/
+@[thales_norm] theorem tsm_cond_eq {α : Type} (c : Bool) (x y z : TsM α) :
+    ((bif c then x else y) = z) ↔ ((c = true → x = z) ∧ (c = false → y = z)) := by
+  cases c <;> simp
+
+/-- The same split for a branch that reached the boolean island itself. -/
+@[thales_norm] theorem cond_eq_true_iff (c a b : Bool) :
+    ((bif c then a else b) = true) ↔ ((c = true → a = true) ∧ (c = false → b = true)) := by
+  cases c <;> simp
+
 -- Boolean islands: after tsm_pure_inj, `decide P = true` becomes `P`.
 attribute [thales_norm] decide_eq_true_eq
 
@@ -99,6 +123,15 @@ theorem float_gt_neg_inf_of_le {a b : Float} (ha : -floatInf < a) (h : a ≤ b) 
     -floatInf < b :=
   FloatFacts.float_lt_of_lt_of_le ha h
 
+/-- IEEE comparison is total away from NaN, so a branch condition that came
+back false is the reverse comparison. What rules NaN out is the pair of
+infinity bounds a `number` binder emits; a literal operand's own pair is
+ground and evaluates away. -/
+theorem float_le_of_not_lt {x y : Float} (hxLo : -floatInf < x) (hxHi : x < floatInf)
+    (hyLo : -floatInf < y) (hyHi : y < floatInf) (h : Float.lt x y = false) :
+    Float.le y x = true :=
+  FloatFacts.float_le_of_not_lt hxLo hxHi hyLo hyHi h
+
 open Lean Meta Simp in
 /-- Evaluates a closed `Float` comparison by reducing its `Decidable`
 instance, the way the `decide` tactic does; the kernel recomputes the
@@ -125,6 +158,23 @@ simproc [seval] reduceFloatLt ((_ : Float) < _) := reduceGroundFloatCmp
 
 simproc [seval] reduceFloatLe ((_ : Float) ≤ _) := reduceGroundFloatCmp
 
+open Lean Meta Simp in
+/-- The same evaluation one level down, on the `Bool` the source-level
+comparisons actually lower to. A branch whose arms are literals leaves
+exactly these behind once the condition has been split on. -/
+def reduceGroundFloatBool (e : Expr) : SimpM Step := do
+  if e.hasFVar || e.hasExprMVar then return .continue
+  let r ← withAtLeastTransparency .default <| whnf e
+  unless r.isConstOf ``Bool.true || r.isConstOf ``Bool.false do return .continue
+  let pf ← mkExpectedTypeHint (← mkEqRefl e) (← mkEq e r)
+  return .done { expr := r, proof? := some pf }
+
+simproc [seval] reduceFloatLtBool (Float.lt _ _) := reduceGroundFloatBool
+
+simproc [seval] reduceFloatLeBool (Float.le _ _) := reduceGroundFloatBool
+
+simproc [seval] reduceFloatBeqBool (Float.beq _ _) := reduceGroundFloatBool
+
 grind_pattern float_le_mul_of_le => x * c, y * c
 grind_pattern float_le_add_of_le => x + c, y + c
 grind_pattern float_le_div_of_le => x / c, y / c
@@ -134,5 +184,6 @@ grind_pattern float_lt_inf_of_lt => a < b
 grind_pattern float_lt_inf_of_le => a ≤ b
 grind_pattern float_gt_neg_inf_of_lt => a < b
 grind_pattern float_gt_neg_inf_of_le => a ≤ b
+grind_pattern float_le_of_not_lt => Float.lt x y
 
 end ThalesDsl

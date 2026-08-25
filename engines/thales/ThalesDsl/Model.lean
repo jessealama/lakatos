@@ -223,6 +223,134 @@ partial def evalExpr (vars : List String) (expected : ValTy) :
     pure body
   | stx => throwErrorAt stx "unsupported expression shape"
 
+/-! Statement lowering: a function body is a statement tree, and the model
+is one `TsM Float` expression. Every statement list lowers to that same
+type, so a branch whose arms disagree about returning still composes. -/
+
+mutual
+
+/-- Whether every path through a statement leaves the function — a return
+or a throw, or an `if` whose two arms both do. Anything else falls
+through, and the lowering must hand it the rest of the body. -/
+partial def stmtLeaves : TSyntax `ts_stmt → Bool
+  | `(ts_stmt| ts.return($_e:ts_expr)) => true
+  | `(ts_stmt| ts.throw[$_k:str]) => true
+  | `(ts_stmt| ts.if($_c:ts_expr) {$a:ts_stmt*} $[else {$b:ts_stmt*}]?) =>
+    match b with
+    | some b => stmtsLeave a && stmtsLeave b
+    | none => false
+  | _ => false
+
+partial def stmtsLeave (stmts : TSyntaxArray `ts_stmt) : Bool :=
+  stmts.any stmtLeaves
+
+end
+
+/-- The mutable names a statement list assigns, in first-assignment order.
+Restricted to `muts` — an arm's own locals die with the arm, so they are
+never part of the join. -/
+partial def assignedIn (muts : List String) (stmts : TSyntaxArray `ts_stmt) :
+    List String :=
+  (stmts.toList.flatMap go).eraseDups
+where
+  go (s : TSyntax `ts_stmt) : List String :=
+    match s with
+    | `(ts_stmt| ts.assign[$x:str]($_e:ts_expr)) =>
+      if muts.contains x.getString then [x.getString] else []
+    | `(ts_stmt| ts.if($_c:ts_expr) {$a:ts_stmt*} $[else {$b:ts_stmt*}]?) =>
+      a.toList.flatMap go ++ (b.getD #[]).toList.flatMap go
+    | _ => []
+
+/-- Names in scope, and which of them a `ts.assign` may rebind. Rebinding
+is by shadowing: a reassignment binds the name again over the rest of the
+list, so nothing in the elaborated term is mutable. -/
+structure Scope where
+  vars : List String
+  muts : List String
+
+/-- The rest of the body, as an action that builds it where it is spliced.
+Identifiers inside resolve to whatever binding is innermost at that point,
+which is exactly how a branch's reassignments reach the tail. Each
+continuation is run at most once, so no tail is ever duplicated. -/
+abbrev Cont := CommandElabM (TSyntax `term)
+
+/-- Lowers a statement list into one `TsM Float` term, splicing `k` where
+control falls off the end of the list. -/
+partial def lowerStmts (fresh : IO.Ref Nat) (sc : Scope) :
+    List (TSyntax `ts_stmt) → Cont → CommandElabM (TSyntax `term)
+  | [], k => k
+  | s :: rest, k => do
+    -- A binding whose scope is the rest of the list; a bind rather than a
+    -- substitution, so an unused initializer still evaluates.
+    let bindLocal (mutable : Bool) (x : StrLit) (init : TSyntax `ts_expr) := do
+      if sc.vars.contains x.getString then
+        throwErrorAt x "'{x.getString}' shadows a binding already in scope"
+      let initTerm ← evalExpr sc.vars .num init
+      let sc' := { vars := sc.vars ++ [x.getString],
+                   muts := if mutable then sc.muts ++ [x.getString] else sc.muts }
+      let body ← lowerStmts fresh sc' rest k
+      `(((($initTerm) >>= fun $(mkIdent (Name.mkSimple x.getString)) => $body) : TsM Float))
+    match s with
+    -- A return or a throw ends this path; whatever follows is unreachable.
+    | `(ts_stmt| ts.return($e:ts_expr)) => evalExpr sc.vars .num e
+    | `(ts_stmt| ts.throw[$kind:str]) =>
+      `((TsM.throw (.error $kind) : TsM Float))
+    | `(ts_stmt| ts.const[$x:str]($init:ts_expr)) => bindLocal false x init
+    | `(ts_stmt| ts.let[$x:str]($init:ts_expr)) => bindLocal true x init
+    | `(ts_stmt| ts.assign[$x:str]($e:ts_expr)) => do
+      unless sc.muts.contains x.getString do
+        throwErrorAt x "'{x.getString}' is not a mutable binding"
+      let valTerm ← evalExpr sc.vars .num e
+      let body ← lowerStmts fresh sc rest k
+      `(((($valTerm) >>= fun $(mkIdent (Name.mkSimple x.getString)) => $body) : TsM Float))
+    | `(ts_stmt| ts.if($c:ts_expr) {$a:ts_stmt*} $[else {$b:ts_stmt*}]?) => do
+      let elseArm := b.getD #[]
+      let condTerm ← evalExpr sc.vars .bool c
+      -- What an arm that falls through continues into: the rest of this
+      -- list, and only then the enclosing continuation.
+      let after : Cont := lowerStmts fresh sc rest k
+      let n ← fresh.modifyGet fun n => (n, n + 1)
+      let condId := mkIdent (Name.mkSimple s!"ts#cond{n}")
+      let ruledOut : Cont :=
+        throwErrorAt s "the lowering reached an arm it had ruled out"
+      let mut joinBinding : Option (Ident × TSyntax `term) := none
+      let mut thenK : Cont := ruledOut
+      let mut elseK : Cont := ruledOut
+      if stmtsLeave a && stmtsLeave elseArm then
+        -- Both arms leave: the tail is unreachable, so it is never built.
+        pure ()
+      else if stmtsLeave a then
+        elseK := after
+      else if stmtsLeave elseArm then
+        thenK := after
+      else
+        -- Both arms fall through, so the tail has two callers. Binding it
+        -- to a function of the names the arms may have reassigned joins
+        -- the branches without writing the tail out twice.
+        let joins := (assignedIn sc.muts a ++ assignedIn sc.muts elseArm).eraseDups
+        let joinId := mkIdent (Name.mkSimple s!"ts#join{n}")
+        let jump : Cont := do
+          let mut call : TSyntax `term ← `($joinId)
+          for j in joins do
+            call ← `($call $(mkIdent (Name.mkSimple j)))
+          `(($call : TsM Float))
+        let lam ← joins.foldrM (init := ← after) fun j acc =>
+          `(fun ($(mkIdent (Name.mkSimple j)) : Float) => $acc)
+        joinBinding := some (joinId, lam)
+        thenK := jump
+        elseK := jump
+      let thenTerm ← lowerStmts fresh sc a.toList thenK
+      let elseTerm ← lowerStmts fresh sc elseArm.toList elseK
+      let branch ←
+        `(((($condTerm) >>= fun $condId =>
+              bif $condId then $thenTerm else $elseTerm) : TsM Float))
+      match joinBinding with
+      | some (joinId, lam) => `((let $joinId:ident := $lam; $branch))
+      | none => pure branch
+    | `(ts_stmt| ts.opaque[$kind:str]($line:num, $col:num)) =>
+      throwErrorAt kind (unmappedMsg kind.getString s!"{line.getNat}:{col.getNat}")
+    | stx => throwErrorAt stx "unsupported statement shape"
+
 /-- The namespace under which models are declared. -/
 def modelNamespace : Name := `TsModel
 
@@ -262,22 +390,14 @@ elab_rules : command
         match p with
         | `(ts_param| ts.param[$x:str](ts.number)) => pure x.getString
         | _ => throwErrorAt p "unsupported parameter shape"
-      -- Slice: const bindings, then exactly one return. Each binding is a
-      -- bind, not a substitution, so an unused initializer still evaluates.
-      let shapeMsg := "the body must be const bindings followed by a single return"
-      let some retStx := stmts.raw.back? | throwErrorAt name shapeMsg
-      let `(ts_stmt| ts.return($e:ts_expr)) := retStx | throwErrorAt retStx shapeMsg
-      let mut vars := paramNames.toList
-      let mut binds : Array (Name × TSyntax `term) := #[]
-      for stmt in stmts.raw.pop do
-        let `(ts_stmt| ts.const[$x:str]($init:ts_expr)) := stmt
-          | throwErrorAt stmt shapeMsg
-        binds := binds.push (Name.mkSimple x.getString, ← evalExpr vars .num init)
-        vars := vars ++ [x.getString]
-      let mut bodyTerm ← evalExpr vars .num e
-      -- Right to left, so the first binding is the outermost bind.
-      for (x, initTerm) in binds.reverse do
-        bodyTerm ← `((($initTerm >>= fun $(mkIdent x) => $bodyTerm) : TsM Float))
+      -- Parameters are assignable: JavaScript lets a body rebind one, and
+      -- rebinding here is shadowing, so it costs the lowering nothing.
+      let scope : Scope := { vars := paramNames.toList, muts := paramNames.toList }
+      let fresh ← IO.mkRef 0
+      -- A `number` function that runs off the end returns undefined, which
+      -- this slice has no value for: the declaration degrades instead.
+      let bodyTerm ← lowerStmts fresh scope stmts.toList
+        (throwErrorAt name "the body must return on every path")
       let declName := modelNamespace ++ Name.mkSimple name.getString
       let declId := mkIdent declName
       let ty ← mkModelType paramNames.size

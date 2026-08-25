@@ -1,9 +1,11 @@
 namespace ThalesDsl
 
-/-- Runtime errors a TS program can raise. Granularity grows with the
-exception slice; for now one constructor carrying a message. -/
+/-- Runtime errors a TS program can raise. The payload is the error's
+kind — the constructor a `throw new RangeError(...)` names — and nothing
+more: a thrown message is a string the model has no way to build and no
+property has any use for. -/
 inductive JsError where
-  | error (message : String)
+  | error (kind : String)
 deriving Repr, DecidableEq
 
 /-- The semantic domain of elaborated TS models: one computable monad for
