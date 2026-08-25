@@ -28,6 +28,20 @@ const FIXTURES = [
     ],
   },
   {
+    // The plain-Prop payload the emission pipeline writes, sharing a file
+    // with the old grammar's structured and bare forms.
+    file: 'theorem-plain.lean',
+    expected: [
+      [
+        'add',
+        'Theorem',
+        /proved by a decision procedure over the bounded domain, kernel-checked as/,
+      ],
+      ['double', 'CounterSatisfiable', /false on its bounded domain/, { a: 1 }],
+      ['dbl', 'NotTried'],
+    ],
+  },
+  {
     file: 'theorem-arith.lean',
     expected: [
       ...Array.from({ length: 7 }, () => [
