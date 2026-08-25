@@ -282,6 +282,8 @@ def obligationCommand (e : Emission) (o : Obligation) : RenderM (TSyntax `comman
       | .number name lower upper =>
         -- Never enumerated: the binder is its type plus whichever bounds it
         -- carries as hypotheses, lower outermost — the old pipeline's shape.
+        -- One ungrouped ∀ head per binder, never `∀ (x y : JsNumber)`: that
+        -- is the only spelling `ProveTerm.propSpine` recovers.
         let xi ← scopedIdent name
         let mut body := acc
         if let some (op, lit) := upper then

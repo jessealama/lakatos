@@ -52,7 +52,8 @@ partial def isGuardProp : TSyntax `term → Bool
 
 /-- Whether a term is a `number` binder's own bound hypothesis: a `<` or
 `≤` with the binder on one side. Only the Float heads consult this, so a
-nat binder's `0 ≤ n` is never mistaken for one. -/
+nat binder's `0 ≤ n` is never mistaken for one; like its one caller
+`peelBounds`, it is structurally inert today. -/
 def isBoundHyp (x : Name) : TSyntax `term → Bool
   | `($a < $b) | `($a ≤ $b) =>
     (a.raw.isIdent && a.raw.getId.eraseMacroScopes == x) ||
@@ -60,7 +61,10 @@ def isBoundHyp (x : Name) : TSyntax `term → Bool
   | _ => false
 
 /-- Steps over the bound hypotheses a `number` binder head introduces, so
-the guards under them are still recovered. -/
+the guards under them are still recovered. Structurally inert today: only
+an unbounded arm reaches it, and the guards and leaf it uncovers are read
+only by the witness search, which never runs on an unbounded domain. Kept
+because it becomes live the moment a number binder is searchable. -/
 partial def peelBounds (x : Name) (t : TSyntax `term) : TSyntax `term :=
   match t with
   | `($h → $rest) => if isBoundHyp x h then peelBounds x rest else t

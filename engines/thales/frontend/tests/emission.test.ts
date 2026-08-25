@@ -1063,6 +1063,40 @@ describe('formula classification parity with the old pipeline', () => {
     });
   });
 
+  test('** in a guard is Inappropriate with the bare reason', () => {
+    expect(
+      classifications(
+        formulaWith('forall (x: int ∈ [0, 5)) { x ** 2 >= 0 -> f(x) >= 0 }'),
+      ),
+    ).toEqual({
+      classified: [
+        [
+          'Inappropriate',
+          "'**' is implementation-approximated in JavaScript, so any model " +
+            'would certify results a conforming engine may disagree with',
+        ],
+      ],
+      obligations: 0,
+    });
+  });
+
+  // Guards precede the conclusion in the scan, so the two refusals must be
+  // distinguishable: the reported one is the guard's.
+  test('a refused guard is reported before a refused conclusion', () => {
+    expect(
+      classifications(
+        formulaWith(
+          'forall (x: int ∈ [0, 5)) { (await f(x)) >= 0 -> foo.bar(x) }',
+        ),
+      ).classified,
+    ).toEqual([
+      [
+        'Inappropriate',
+        "unmapped TypeScript construct 'AwaitExpression' at 1:3",
+      ],
+    ]);
+  });
+
   test('an operator with no model fails property elaboration', () => {
     expect(
       classifications(formulaWith('forall (x: int ∈ [0, 5)) { (x & 7) >= 0 }'))

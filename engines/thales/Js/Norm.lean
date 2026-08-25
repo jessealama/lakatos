@@ -8,8 +8,8 @@ import Js.Binders
 monadic wrapping from pure-looking goals, leaving bare Int arithmetic
 for the closers, plus the binary64 facts `FloatFacts` proves — vanilla
 Lean carries no float theory, so a residual goal about `Float` has none
-until one lands here. Model definitions join the set at creation
-(Model.lean), so goals can unfold them. -/
+until one lands here. Model definitions join the set at
+model-elaboration time, so goals can unfold them. -/
 
 namespace Js
 
