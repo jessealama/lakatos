@@ -1,6 +1,6 @@
 import ThalesDsl.Binders
 
-open ThalesDsl
+open Js ThalesDsl
 
 -- ballIco decides bounded ∀ over half-open Int ranges.
 #guard decide (ballIco 0 3 fun x => x < 3)

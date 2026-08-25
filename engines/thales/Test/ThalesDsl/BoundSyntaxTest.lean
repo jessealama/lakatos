@@ -1,6 +1,6 @@
 import ThalesDsl.Prove
 
-open ThalesDsl
+open Js ThalesDsl
 
 ts_def "idf" := ts.fn(ts.param["a"](ts.number)) : ts.number {
   ts.return(ts.id["a"])
