@@ -94,6 +94,10 @@ jobs:
       - name: Build
         run: lake build
 
+      - name: Build thales-emit
+        # A lean_exe is not a default target; the parity check runs it.
+        run: lake build thales-emit
+
       - name: Lean tests
         run: lake build ThalesDslTest
 
@@ -102,6 +106,9 @@ jobs:
 
       - name: Transcriber end-to-end
         run: npm run check:transcriber
+
+      - name: Pipeline parity
+        run: npm run check:parity
 
       - name: Prove end-to-end
         # vitest positionals are substring filters (tests/e2e.test.ts also
