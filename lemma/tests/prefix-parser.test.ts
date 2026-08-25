@@ -84,10 +84,17 @@ describe("parsePrefix", () => {
     expect(r.body).toBe("f(x, x) === g(x, x)");
   });
 
-  it("rejects an unknown domain", () => {
+  it("parses an unknown identifier domain as a class domain", () => {
+    const r = parsePrefix("forall (x: float) { x === x }");
+    expect(r.binders).toEqual([
+      { varName: "x", domain: { className: "float" } },
+    ]);
+  });
+
+  it("rejects a domain that is not an identifier", () => {
     expectLemmaError(
-      () => parsePrefix("forall (x: float) { x === x }"),
-      /unknown generation domain 'float'/,
+      () => parsePrefix("forall (x: int[]) { x === x }"),
+      /invalid domain 'int\[\]'/,
     );
   });
 
@@ -173,10 +180,10 @@ describe("parsePrefix — interval constraints", () => {
     );
   });
 
-  it("still rejects an unknown domain when an interval is attached", () => {
+  it("rejects a constraint on a class domain", () => {
     expectLemmaError(
       () => parsePrefix("forall (x: float ∈ [1, 30]) { x === x }"),
-      /unknown generation domain 'float'/,
+      /a class domain admits no constraint/,
     );
   });
 
@@ -432,5 +439,35 @@ describe("parsePrefix — braced body", () => {
   it("parses a multi-line braced body", () => {
     const r = parsePrefix("forall (x: int) {\n  x + 1 > x\n}");
     expect(r.body).toBe("x + 1 > x");
+  });
+});
+
+describe("parsePrefix — class domains", () => {
+  it("parses a class-domain binder group binding two variables", () => {
+    const r = parsePrefix("∀ (p q : Point) { 0 <= p.distance(q) }");
+    expect(r.binders).toEqual([
+      { varName: "p", domain: { className: "Point" } },
+      { varName: "q", domain: { className: "Point" } },
+    ]);
+    expect(r.body).toBe("0 <= p.distance(q)");
+  });
+
+  it("parses a class binder alongside a guarded primitive group", () => {
+    const r = parsePrefix(
+      "forall (m: Meter) (k: number ∈ (-∞, ∞)) { m.scaled(k) === m.scaled(k) }",
+    );
+    expect(r.binders[0]).toEqual({
+      varName: "m",
+      domain: { className: "Meter" },
+    });
+    expect(r.binders[1]!.varName).toBe("k");
+    expect(r.binders[1]!.domain).toBe("number");
+  });
+
+  it("rejects a regex constraint on a class domain", () => {
+    expectLemmaError(
+      () => parsePrefix("forall (p: Point in /a/) { p === p }"),
+      /a class domain admits no constraint/,
+    );
   });
 });

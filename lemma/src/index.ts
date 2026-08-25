@@ -9,7 +9,15 @@
 
 export { LemmaError } from "./errors.js";
 
-export type { Binder, Domain, Range, StringPattern } from "./binder.js";
+export type {
+  Binder,
+  ClassDomain,
+  CtorParam,
+  GenerablePrimitive,
+  Primitive,
+  Range,
+  StringPattern,
+} from "./binder.js";
 
 export { collectAtoms } from "./formula-ast.js";
 export type { Formula } from "./formula-ast.js";
@@ -31,6 +39,9 @@ export type {
 export { parsePrefix } from "./prefix-parser.js";
 export type { ParsedPrefix } from "./prefix-parser.js";
 
+export { resolveClassBinders } from "./class-domain.js";
+export type { ClassInfo, ClassTable } from "./class-domain.js";
+
 export { parseBody } from "./formula-parser.js";
 
 export {
@@ -38,7 +49,8 @@ export {
   clampedEndpoints,
   intBounds,
   intInterval,
-  isDomain,
+  isClassDomain,
+  isPrimitive,
   numberConstraints,
   numberDoubleConstraints,
   SAFE_INTEGER_RANGE,

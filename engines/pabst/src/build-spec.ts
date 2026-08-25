@@ -1,13 +1,16 @@
 import {
   clampedEndpoints,
+  type ClassTable,
   collectAtoms,
   EmptyAfterClampError,
   extract,
   type InvalidAnnotation,
+  isClassDomain,
   LemmaError,
   parseBody,
   parsePrefix,
   type RawAnnotation,
+  resolveClassBinders,
   unsupportedRangeReason,
 } from "../../../lemma/src/index.js";
 import { lowerTop } from "./lower.js";
@@ -34,7 +37,7 @@ export interface BuildResult {
 }
 
 export function buildSpecs(file: string): BuildResult {
-  const { exports, annotations, invalid } = extract(file);
+  const { exports, classes, annotations, invalid } = extract(file);
   const specs: PropertySpec[] = [];
   const untried: UntriedProperty[] = [];
   const refuse = (a: RawAnnotation, endpoints: string[]) =>
@@ -47,7 +50,7 @@ export function buildSpecs(file: string): BuildResult {
     });
   for (const a of annotations) {
     try {
-      const spec = buildSpec(a, exports, file);
+      const spec = buildSpec(a, exports, classes, file);
       // Asked after the spec is built, so an annotation this engine could
       // not have tested anyway keeps its own diagnostic: the clamp is
       // reported only when it is the sole blocker.
@@ -75,9 +78,11 @@ export function buildSpecs(file: string): BuildResult {
 function buildSpec(
   a: RawAnnotation,
   exports: Set<string>,
+  classes: ClassTable,
   file: string,
 ): PropertySpec {
   const { binders, body } = parsePrefix(a.formula);
+  resolveClassBinders(binders, classes, file);
   const ast = parseBody(body);
   const { preconditions, body: loweredBody } = lowerTop(ast);
   const boundVars = new Set(binders.map((b) => b.varName));
@@ -86,6 +91,13 @@ function buildSpec(
     for (const id of freeIdentifiers(atom)) idents.add(id);
   }
   const { freeExports } = classify(idents, boundVars, exports);
+  // Binder classes may never appear in the formula text, but the generated
+  // spec must import them to construct instances.
+  for (const b of binders) {
+    if (isClassDomain(b.domain) && !freeExports.includes(b.domain.className)) {
+      freeExports.push(b.domain.className);
+    }
+  }
   return {
     name: a.propertyName,
     functionName: a.functionName,

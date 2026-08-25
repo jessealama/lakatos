@@ -7,7 +7,7 @@ import {
   RUNTIME_SPECIFIER,
 } from "./contract.js";
 import { arbitraryFor } from "./domains.js";
-import { qualifiedName } from "../../../lemma/src/index.js";
+import { isClassDomain, qualifiedName } from "../../../lemma/src/index.js";
 import type { PropertySpec } from "./ir.js";
 
 const SRC_EXT = /\.(ts|tsx|mts|cts|js|mjs|cjs)$/;
@@ -82,17 +82,38 @@ function emitProp(
   indent: string,
 ): string {
   const arbs = s.binders.map((b) => arbitraryFor(b)).join(", ");
-  const vars = s.binders.map((b) => b.varName).join(", ");
+  // A class binder's generated value is its constructor-argument tuple;
+  // the instance is constructed in the test body so a throwing tuple can
+  // discard the sample (it denotes no instance — spec/semantics.md).
+  const classNames = s.binders.map((b) =>
+    isClassDomain(b.domain) ? b.domain.className : null,
+  );
+  const vars = s.binders
+    .map((b, i) => (classNames[i] === null ? b.varName : `__args_${b.varName}`))
+    .join(", ");
   const varNames = s.binders.map((b) => JSON.stringify(b.varName)).join(", ");
   const name = JSON.stringify(s.name);
   const file = JSON.stringify(sourceFile);
   const fn = JSON.stringify(
     qualifiedName(s.functionName, s.className, s.isStatic),
   );
-  const reporter = `(d) => ${REPORT_ALIAS}(${file}, ${fn}, ${name}, [${varNames}], d)`;
+  const hasClass = classNames.some((c) => c !== null);
+  const ctors = hasClass
+    ? `, [${classNames.map((c) => JSON.stringify(c)).join(", ")}]`
+    : "";
+  const reporter = `(d) => ${REPORT_ALIAS}(${file}, ${fn}, ${name}, [${varNames}], d${ctors})`;
   const params = `{ seed: ${seed}, reporter: ${reporter} }`;
   const out: string[] = [];
   out.push(`${indent}test.prop([${arbs}], ${params})(${name}, (${vars}) => {`);
+  for (const b of s.binders) {
+    if (!isClassDomain(b.domain)) continue;
+    const v = b.varName;
+    const cls = b.domain.className;
+    out.push(`${indent}  let ${v}!: ${cls};`);
+    out.push(
+      `${indent}  try { ${v} = new ${cls}(...__args_${v}); } catch { fc.pre(false); }`,
+    );
+  }
   for (const p of s.preconditions) out.push(`${indent}  fc.pre(${p});`);
   out.push(`${indent}  const __r = (${s.body});`);
   out.push(`${indent}  return __r;`);

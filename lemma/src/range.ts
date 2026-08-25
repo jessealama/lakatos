@@ -6,7 +6,7 @@ import {
   SAFE_INTEGER_RANGE,
 } from "./domains.js";
 import { LemmaError } from "./errors.js";
-import type { Domain, Range } from "./binder.js";
+import type { Primitive, Range } from "./binder.js";
 
 /**
  * An interval that is nonempty as written but empty once intersected with
@@ -30,7 +30,7 @@ const BIGINT_LITERAL = /^[+-]?\d+n?$/;
 const NUMBER_LITERAL = /^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/;
 const INFINITE_LITERAL = /^([+-]?)(?:∞|Infinity)$/;
 
-export function isNumericDomain(d: Domain): boolean {
+export function isNumericDomain(d: Primitive): boolean {
   return d === "int" || d === "nat" || d === "number" || d === "bigint";
 }
 
@@ -40,7 +40,7 @@ const CLOSE_DELIM = /[\])]/;
 
 /** Parse and validate an interval constraint like "[1, 30]" or "(0, 1]".
  * A round bracket excludes its endpoint. */
-export function parseRange(text: string, domain: Domain): Range {
+export function parseRange(text: string, domain: Primitive): Range {
   if (!isNumericDomain(domain)) {
     throw new LemmaError(
       `domain '${domain}' does not support ∈ interval constraints — ` +
@@ -92,7 +92,7 @@ function parseBound(
   lit: string,
   side: "lower" | "upper",
   open: boolean,
-  domain: Domain,
+  domain: Primitive,
 ): string | undefined {
   const inf = INFINITE_LITERAL.exec(lit);
   if (!inf) return parseEndpoint(lit, domain);
@@ -125,7 +125,11 @@ function parseBound(
  * remains. Neither is reported here: an endpoint beyond the safe range is a
  * representability question each engine asks via `clampedEndpoints`, not a
  * parse-time diagnostic. */
-function validateIntegerInterval(domain: Domain, range: Range, text: string) {
+function validateIntegerInterval(
+  domain: Primitive,
+  range: Range,
+  text: string,
+) {
   if (domain === "bigint") {
     const { lo, hi } = bigintBounds(range);
     if (lo !== undefined && hi !== undefined && lo > hi) {
@@ -168,7 +172,7 @@ function validateNumberInterval(range: Range, text: string): void {
   }
 }
 
-function parseEndpoint(lit: string, domain: Domain): string {
+function parseEndpoint(lit: string, domain: Primitive): string {
   switch (domain) {
     case "int":
     case "nat": {

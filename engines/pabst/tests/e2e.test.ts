@@ -24,6 +24,14 @@ const classFailSrc = path.join(
   root,
   "engines/pabst/tests/fixtures/e2e/class-fail.ts",
 );
+const binderPassSrc = path.join(
+  root,
+  "engines/pabst/tests/fixtures/e2e/binder-pass.ts",
+);
+const binderFailSrc = path.join(
+  root,
+  "engines/pabst/tests/fixtures/e2e/binder-fail.ts",
+);
 const accessorPassSrc = path.join(
   root,
   "engines/pabst/tests/fixtures/e2e/accessor-pass.ts",
@@ -215,6 +223,41 @@ describe("end-to-end", () => {
         kind: "falsified",
         counterexample: { x: 0 },
       });
+    },
+  );
+
+  it(
+    "a true property over class binders passes: throwing tuples discard",
+    { timeout: 30000 },
+    () => {
+      const [r] = generate([binderPassSrc], OUT_ROOT, 3);
+      expect(r).toBeDefined();
+      const env = run(r!);
+      expect(env.failed).toBe(0);
+      expect(issuesOf(env)).toEqual([]);
+    },
+  );
+
+  it(
+    "a false property over class binders reports constructions as the counterexample",
+    { timeout: 30000 },
+    () => {
+      const [r] = generate([binderFailSrc], OUT_ROOT, 3);
+      expect(r).toBeDefined();
+      const env = run(r!);
+      expect(env.failed).toBeGreaterThan(0);
+      expect(issuesOf(env)).toHaveLength(1);
+      expectValidIssue(issuesOf(env)[0]);
+      const issue = issuesOf(env)[0]!;
+      expect(issue).toMatchObject({
+        function: "Point#distance",
+        property: "tight",
+        kind: "falsified",
+      });
+      const cx = (issue as { counterexample: Record<string, string> })
+        .counterexample;
+      expect(cx.p).toMatch(/^new Point\(/);
+      expect(cx.q).toMatch(/^new Point\(/);
     },
   );
 

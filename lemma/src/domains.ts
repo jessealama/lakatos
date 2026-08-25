@@ -1,9 +1,9 @@
 import type { DoubleConstraints } from "fast-check";
-import type { Binder, Domain, Range } from "./binder.js";
+import type { Binder, ClassDomain, Primitive, Range } from "./binder.js";
 
-// A Record rather than a list so adding a Domain member without updating
+// A Record rather than a list so adding a Primitive member without updating
 // this table is a type error.
-const DOMAINS: Record<Domain, true> = {
+const DOMAINS: Record<Primitive, true> = {
   int: true,
   nat: true,
   number: true,
@@ -12,8 +12,12 @@ const DOMAINS: Record<Domain, true> = {
   bigint: true,
 };
 
-export function isDomain(s: string): s is Domain {
+export function isPrimitive(s: string): s is Primitive {
   return Object.prototype.hasOwnProperty.call(DOMAINS, s);
+}
+
+export function isClassDomain(d: Primitive | ClassDomain): d is ClassDomain {
+  return typeof d !== "string";
 }
 
 export const MAX_SAFE = 9007199254740991n;

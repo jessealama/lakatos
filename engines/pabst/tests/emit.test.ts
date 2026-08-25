@@ -168,3 +168,60 @@ describe("emit — bounded intervals", () => {
     expect(out).toContain("test.prop([fc.integer(), fc.double()]");
   });
 });
+
+const pointDomain = {
+  className: "Point",
+  ctorParams: [
+    { name: "x", domain: "number" as const },
+    { name: "y", domain: "number" as const },
+  ],
+};
+
+const classSpec: PropertySpec = {
+  name: "nonNegative",
+  functionName: "distance",
+  className: "Point",
+  binders: [
+    { varName: "p", domain: pointDomain },
+    { varName: "q", domain: pointDomain },
+  ],
+  body: '__bool(0 <= p.distance(q), "0 <= p.distance(q)")',
+  preconditions: [],
+  freeExports: ["Point"],
+  location: { file: "point.ts", line: 1 },
+};
+
+describe("emit — class binders", () => {
+  const out = emit([classSpec], "point.ts", "out/point.pabst.test.ts", 42);
+
+  it("draws each class binder as its constructor-argument tuple", () => {
+    expect(out).toContain(
+      "test.prop([fc.tuple(fc.double(), fc.double()), fc.tuple(fc.double(), fc.double())]",
+    );
+    expect(out).toContain("(__args_p, __args_q) => {");
+  });
+
+  it("constructs each instance and discards tuples the constructor rejects", () => {
+    expect(out).toContain("let p!: Point;");
+    expect(out).toContain(
+      "try { p = new Point(...__args_p); } catch { fc.pre(false); }",
+    );
+    expect(out).toContain("let q!: Point;");
+    expect(out).toContain(
+      "try { q = new Point(...__args_q); } catch { fc.pre(false); }",
+    );
+  });
+
+  it("tells the reporter which binders are constructions", () => {
+    expect(out).toContain('["p", "q"], d, ["Point", "Point"])');
+  });
+
+  it("imports the binder class from the module under test", () => {
+    expect(out).toContain("const { Point } = __M;");
+  });
+
+  it("passes no constructor list when every binder is primitive", () => {
+    const plain = emit([spec], "foo.ts", "out/foo.pabst.test.ts", 42);
+    expect(plain).not.toContain("], d, [");
+  });
+});

@@ -1,4 +1,22 @@
-export type Domain = "int" | "nat" | "number" | "boolean" | "string" | "bigint";
+export type Primitive =
+  "int" | "nat" | "number" | "boolean" | "string" | "bigint";
+
+/** The ES primitives a constructor parameter may be annotated with. */
+export type GenerablePrimitive = "number" | "boolean" | "string" | "bigint";
+
+export interface CtorParam {
+  name: string;
+  domain: GenerablePrimitive;
+}
+
+/** A class-valued domain: the binder ranges over the image of successful
+ * construction (spec/semantics.md, "Class-valued binders"). The parser
+ * carries only the name; resolution against the annotated module attaches
+ * the constructor parameters. */
+export interface ClassDomain {
+  className: string;
+  ctorParams?: CtorParam[];
+}
 
 /** Interval constraint on a numeric binder. Endpoints are the user's
  * literal text, kept verbatim so floats are emitted exactly as written —
@@ -23,7 +41,7 @@ export interface StringPattern {
 
 export interface Binder {
   varName: string;
-  domain: Domain;
+  domain: Primitive | ClassDomain;
   range?: Range;
   pattern?: StringPattern;
 }

@@ -1,0 +1,4 @@
+{
+  "annotation": "∀ (p q : Point) { 0 <= p.distance(q) }",
+  "note": "a class-domain binder group parses; resolution is validation-stage"
+}
