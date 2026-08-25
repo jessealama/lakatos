@@ -420,6 +420,41 @@ describe('statement lowering', () => {
     ]);
   });
 
+  test('a call for its effects stays opaque', () => {
+    const src = [
+      'function f(x: number): number {',
+      '  record(x);',
+      '  return x;',
+      '}',
+    ].join('\n');
+    expect(bodyOf(src)).toEqual([
+      'ts.opaque["ExpressionStatement"](2, 3)',
+      'ts.return(ts.id["x"])',
+    ]);
+  });
+
+  test('assigning anything but a plain name stays opaque', () => {
+    const src = [
+      'function f(x: number): number {',
+      '  totals.sum = x;',
+      '  return x;',
+      '}',
+    ].join('\n');
+    expect(bodyOf(src)).toEqual([
+      'ts.opaque["ExpressionStatement"](2, 3)',
+      'ts.return(ts.id["x"])',
+    ]);
+  });
+
+  test('a throw whose constructor is not a plain name stays opaque', () => {
+    const src = [
+      'function f(x: number): number {',
+      '  throw new errors.Bad(x);',
+      '}',
+    ].join('\n');
+    expect(bodyOf(src)).toEqual(['ts.opaque["ThrowStatement"](2, 3)']);
+  });
+
   test('assigning a name the body did not bind stays opaque', () => {
     const src = [
       'function f(x: number): number {',
