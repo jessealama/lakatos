@@ -1,15 +1,18 @@
 # Lemma conformance fixtures
 
-Two corpora, each with its own scope and its own harness. **Directory
-membership is the expectation** in both: every implementation must accept
-everything under `accept/` and reject everything under `reject/`. Neither
-has an `expect` field.
+Three corpora, each with its own scope and its own harness. **Directory
+membership is the expectation** in all of them: every implementation must
+accept everything under `accept/` and reject everything under `reject/`.
+None has an `expect` field.
 
 - `accept/`, `reject/` — **property bodies**. Constrain the parser: what
   a well-formed `@ensures` formula looks like.
 - `attach/accept/`, `attach/reject/` — **attachment points**. Constrain
   extraction: which declarations an `@ensures` may be attached to, per
   *Attachment points* in `../semantics.md`.
+- `binder/accept/`, `binder/reject/` — **class-valued binder domains**.
+  Constrain binder validation: which classes a binder may range over, per
+  *Class-valued binders* in `../semantics.md`.
 
 ## Property-body fixtures (`accept/`, `reject/`)
 
@@ -59,3 +62,24 @@ silence.
 The formulas are deliberately dull. What a fixture pins is the attachment
 point, so a formula that failed to parse would move the failure to the
 wrong stage; the property-body corpus above is where formula syntax lives.
+
+## Binder-domain fixtures (`binder/accept/`, `binder/reject/`)
+
+Each fixture is one TypeScript module carrying exactly one `@ensures`
+whose quantifier prefix contains a class-valued binder. Like attachment,
+class-name resolution is context-sensitive: only a whole module can say
+whether the name denotes an exported, non-default class declared there,
+and whether that class's constructor parameters are generable.
+
+A `binder/accept/` module must yield exactly one annotation whose prefix
+parses and validates with no diagnostic. A `binder/reject/` module must
+yield exactly one diagnostic naming the offending domain or constructor
+parameter — a rejected binder is reported, never dropped in silence.
+
+The classes and formulas are deliberately dull, and every attachment
+point is unremarkable: what a fixture here pins is the binder's
+eligibility alone. Parse-level facts about class domains (e.g. that a
+class domain admits no `∈` constraint) stay in the property-body corpus.
+
+This corpus is committed ahead of the reference implementation of
+class-valued binders; its harness lands with that implementation.

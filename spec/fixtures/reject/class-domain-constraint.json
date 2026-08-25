@@ -1,0 +1,5 @@
+{
+  "annotation": "forall (p: Point ∈ [0, 1]) { 0 <= p.x }",
+  "note": "a class domain admits no constraint",
+  "stage": "prefix"
+}

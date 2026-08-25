@@ -86,7 +86,8 @@ labels `<computed>` and `<anonymous>`.
 
 ### Binder domains
 
-`int`, `nat`, `number`, `boolean`, `string`, `bigint`.
+`int`, `nat`, `number`, `boolean`, `string`, `bigint`, or a class name
+(see *Class-valued binders* below).
 
 - **Truth conditions**: `int`/`nat` denote the mathematical (unbounded)
   integers/naturals; `number` denotes IEEE-754 binary64 and ranges over
@@ -99,6 +100,60 @@ labels `<computed>` and `<anonymous>`.
   `int`/`nat` binder's values must be exactly representable as binary64;
   values outside `±(2^53 − 1)` are not, which is why an interval reaching
   beyond that range is refused rather than narrowed.
+
+### Class-valued binders
+
+A domain may be a class name: `∀ (p q : Point) { 0 <= p.distance(q) }`.
+
+- **Well-formedness**: the name resolves to an exported, non-default,
+  named class declared in the annotated module — the same reachability
+  rule attachment points and island free identifiers follow. An imported
+  class is not yet an admissible domain. The six primitive domain
+  spellings are reserved and shadow any class of the same name. A class
+  domain admits no `∈` constraint. Every constructor parameter must be
+  annotated with one of `number`, `boolean`, `string`, or `bigint`;
+  class-typed, union, optional, defaulted, and rest parameters are all
+  refused, with a diagnostic naming the parameter.
+- **Truth conditions**: the binder ranges over the *image of successful
+  construction*: the property holds iff, for every tuple of argument
+  values drawn from the constructor's parameter domains on which
+  construction completes normally, the formula holds of the instance the
+  constructor returns. The constructor's guards thereby define the
+  domain — an argument tuple on which construction throws denotes no
+  instance and lies outside the quantifier — and whatever normalization
+  the constructor performs is part of the domain, because the binder
+  denotes the constructor's outputs, never its raw inputs. A binder
+  group `(p q : C)` is two independent quantifications over the same
+  image, exactly as with primitive domains.
+
+  The claim is about constructed, unmutated, exact instances. Three
+  families of values TypeScript's type system would call `C` are
+  explicitly outside it: structurally-typed values that never passed
+  through the constructor (object literals, casts), instances of
+  subclasses, and instances mutated after construction (including
+  through `readonly`, which is erased at runtime). An always-throwing
+  constructor yields an empty domain, over which every property holds
+  vacuously — the same situation as an interval guard denoting the
+  empty set.
+- **Engine obligations**: the refuter draws argument tuples from the
+  constructor's parameter domains, runs the real constructor, and
+  discards any tuple on which construction throws — the same discard
+  channel as a failing root-level antecedent. It must not derive its
+  sampling from the guards' text, only from the parameter types: a
+  refuter that pre-filters by reading the guards can never catch a
+  defective guard. A constructor invocation in the *formula body* enjoys
+  no such reading — there it is an ordinary island call, and a throw is
+  a counterexample. A refuted property's counterexample reports the
+  constructor argument tuples, the reproducible identity of an instance.
+  The prover quantifies over every tuple in the parameter domains — for
+  `number`, all of binary64, `NaN` and the infinities included, exactly
+  as an unguarded binder — and takes "construction completed normally,
+  with this result" as its hypothesis; the constructor's guards, not
+  free hypotheses, are what restrict the domain, so weakening a guard
+  genuinely weakens what the annotation claims. The engines therefore
+  agree on the domain — the image — and differ only in how they explore
+  it: a refuter sampling policy that omits a value on which the
+  constructor always throws leaves no image value uncovered.
 
 ### Guards (`∈` constraints)
 

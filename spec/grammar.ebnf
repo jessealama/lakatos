@@ -42,8 +42,23 @@ binder-group    ::= "(" var-name+ ":" domain constraint? ")"
                        both with the same domain and constraint *)
 var-name        ::= IDENT                  (* /^[A-Za-z_][A-Za-z0-9_]*$/ *)
 domain          ::= "int" | "nat" | "number" | "boolean" | "string" | "bigint"
+                  | class-name
+class-name      ::= IDENT
+                    (* the six primitive spellings are reserved: they are
+                       matched first, so a class of the same name is
+                       unaddressable as a domain. Side conditions
+                       (validation, not grammar): the name resolves to an
+                       exported, non-default, named class declared in the
+                       annotated module, and every constructor parameter
+                       is annotated with one of number/boolean/string/
+                       bigint — class-typed, union, optional, defaulted,
+                       and rest parameters are refused. See semantics.md,
+                       "Class-valued binders". *)
 
 constraint      ::= MEMBER guard
+                    (* primitive domains only: a class domain admits no
+                       constraint — there is nothing coherent for an
+                       interval or regex to mean on a class *)
 MEMBER          ::= "∈" | "in"
 guard           ::= interval               (* numeric domains only:
                                               int, nat, number, bigint *)
