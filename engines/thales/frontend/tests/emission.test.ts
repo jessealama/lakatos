@@ -92,13 +92,19 @@ describe('emitModule on the tracer fixture', () => {
     ]);
   });
 
-  test('the emission validates against the schema', () => {
-    expectValidEmission(emitModule(read(), FIXTURE).emission);
+  test.each([
+    ['engines/thales/tests/fixtures/tracer.ts'],
+    ['engines/thales/tests/fixtures/statements.ts'],
+  ])('the emission for %s validates against the schema', (fixture) => {
+    expectValidEmission(
+      emitModule(fs.readFileSync(fixture, 'utf8'), fixture).emission,
+    );
   });
 
   test.each([
     ['engines/thales/tests/fixtures/tracer.ts', 'tracer.emission.json'],
     ['engines/thales/tests/fixtures/operators.ts', 'operators.emission.json'],
+    ['engines/thales/tests/fixtures/statements.ts', 'statements.emission.json'],
   ])(
     'the pinned emission for %s is exactly what the frontend emits',
     (fixture, pin) => {
@@ -176,9 +182,9 @@ describe('signature and body blockers', () => {
       'StringKeyword',
     ],
     [
-      'a declaration statement in the body',
-      'function f(x: number): number { const y = 1; return y; }',
-      'VariableStatement',
+      'a loop in the body',
+      'function f(x: number): number { while (x < 1) { x = 1; } return x; }',
+      'WhileStatement',
     ],
     [
       'a bare return',
@@ -270,6 +276,11 @@ describe('obligation payload degradations', () => {
     [
       'an unbounded int binder',
       'forall (x: int) { f(x) ≡ x }',
+      { name: 'x', kind: 'int' },
+    ],
+    [
+      'an int binder over the whole line',
+      'forall (x: int ∈ (-∞, ∞)) { f(x) ≡ x }',
       { name: 'x', kind: 'int' },
     ],
     [
@@ -585,6 +596,309 @@ describe('body classification parity with the old pipeline', () => {
         "'f' could not be modeled: 'g' has no model: operator '&' has no " +
           'model in this slice',
       ],
+    ]);
+  });
+});
+
+describe('statement bodies (#148)', () => {
+  const annotated = (decl: string) =>
+    `/** @ensures{p} forall (x: int ∈ [0, 5)) { f(x) >= 0 } */\n${decl}\n`;
+
+  test('a branching, throwing, reassigning body maps statement for statement', () => {
+    const src = annotated(
+      [
+        'export function f(x: number): number {',
+        '  const bonus = 2;',
+        '  if (x < 0) {',
+        '    throw new RangeError(`bad: ${x}`);',
+        '  } else if (x < 2) {',
+        '    return x + bonus;',
+        '  }',
+        '  let rank = 0;',
+        '  if (x < 4) {',
+        '    rank = 1;',
+        '  } else {',
+        '    rank = 2;',
+        '  }',
+        '  return rank;',
+        '}',
+      ].join('\n'),
+    );
+    const { emission, classified } = emitModule(src, 't.ts');
+    expect(classified).toEqual([]);
+    expect(emission.declarations[0]!.body).toEqual([
+      { kind: 'const', name: 'bonus', init: { kind: 'num', lit: '2' } },
+      {
+        kind: 'if',
+        cond: {
+          kind: 'binop',
+          op: '<',
+          left: { kind: 'id', name: 'x' },
+          right: { kind: 'num', lit: '0' },
+        },
+        then: [{ kind: 'throw', error: 'RangeError' }],
+        else: [
+          {
+            kind: 'if',
+            cond: {
+              kind: 'binop',
+              op: '<',
+              left: { kind: 'id', name: 'x' },
+              right: { kind: 'num', lit: '2' },
+            },
+            then: [
+              {
+                kind: 'return',
+                expr: {
+                  kind: 'binop',
+                  op: '+',
+                  left: { kind: 'id', name: 'x' },
+                  right: { kind: 'id', name: 'bonus' },
+                },
+              },
+            ],
+          },
+        ],
+      },
+      { kind: 'let', name: 'rank', init: { kind: 'num', lit: '0' } },
+      {
+        kind: 'if',
+        cond: {
+          kind: 'binop',
+          op: '<',
+          left: { kind: 'id', name: 'x' },
+          right: { kind: 'num', lit: '4' },
+        },
+        then: [
+          { kind: 'assign', name: 'rank', expr: { kind: 'num', lit: '1' } },
+        ],
+        else: [
+          { kind: 'assign', name: 'rank', expr: { kind: 'num', lit: '2' } },
+        ],
+      },
+      { kind: 'return', expr: { kind: 'id', name: 'rank' } },
+    ]);
+  });
+
+  test('a parameter reassignment maps like any mutable local', () => {
+    const src = annotated(
+      'export function f(x: number): number { if (x < 1) { x = 1; } return x; }',
+    );
+    const { emission, classified } = emitModule(src, 't.ts');
+    expect(classified).toEqual([]);
+    expect(emission.declarations[0]!.body).toEqual([
+      {
+        kind: 'if',
+        cond: {
+          kind: 'binop',
+          op: '<',
+          left: { kind: 'id', name: 'x' },
+          right: { kind: 'num', lit: '1' },
+        },
+        then: [{ kind: 'assign', name: 'x', expr: { kind: 'num', lit: '1' } }],
+      },
+      { kind: 'return', expr: { kind: 'id', name: 'x' } },
+    ]);
+  });
+
+  test('a tail behind a branch whose arms both leave never reaches the artifact', () => {
+    const src = annotated(
+      'export function f(x: number): number { if (x < 0) { return 0; } else { return 1; } return q; }',
+    );
+    const { emission, classified } = emitModule(src, 't.ts');
+    expect(classified).toEqual([]);
+    expect(emission.declarations[0]!.body).toHaveLength(1);
+  });
+
+  test('an empty arm keeps its statement, an empty else is dropped', () => {
+    const src = annotated(
+      'export function f(x: number): number { if (x < 0) {} else {} return x; }',
+    );
+    const { emission, classified } = emitModule(src, 't.ts');
+    expect(classified).toEqual([]);
+    expect(emission.declarations[0]!.body[0]).toEqual({
+      kind: 'if',
+      cond: {
+        kind: 'binop',
+        op: '<',
+        left: { kind: 'id', name: 'x' },
+        right: { kind: 'num', lit: '0' },
+      },
+      then: [],
+    });
+  });
+
+  test.each([
+    [
+      'a redeclaration of a parameter',
+      'export function f(x: number): number { const x = 1; return x; }',
+      'VariableStatement',
+    ],
+    [
+      "an arm's redeclaration of an enclosing binding",
+      'export function f(x: number): number { const y = 1; if (x > 0) { const y = 2; return y; } return y; }',
+      'VariableStatement',
+    ],
+    [
+      'an uninitialized let',
+      'export function f(x: number): number { let y: number; y = x; return y; }',
+      'VariableStatement',
+    ],
+    [
+      'a var declaration',
+      'export function f(x: number): number { var y = 1; return y; }',
+      'VariableStatement',
+    ],
+    [
+      'a compound assignment',
+      'export function f(x: number): number { x += 1; return x; }',
+      'ExpressionStatement',
+    ],
+    [
+      'an assignment to a const',
+      'export function f(x: number): number { const y = 1; y = 2; return y; }',
+      'ExpressionStatement',
+    ],
+    [
+      'a truthiness condition',
+      'export function f(x: number): number { if (x) { return 1; } return 0; }',
+      'Identifier',
+    ],
+    [
+      'a logical-operator condition',
+      'export function f(x: number): number { if (x < 1 && x > 0) { return 1; } return 0; }',
+      'BinaryExpression',
+    ],
+    [
+      'a throw of a non-constructor value',
+      'export function f(x: number): number { throw x; }',
+      'ThrowStatement',
+    ],
+    [
+      'a bare nested block',
+      'export function f(x: number): number { { return x; } }',
+      'Block',
+    ],
+    [
+      'a using declaration, despite sharing the Const flag',
+      'export function f(x: number): number { await using y = x; return x; }',
+      'VariableStatement',
+    ],
+    [
+      'a const statement with no declarators',
+      'export function f(x: number): number { const; return x; }',
+      'VariableStatement',
+    ],
+    [
+      'a destructuring declarator',
+      'export function f(x: number): number { const { y } = x; return x; }',
+      'VariableStatement',
+    ],
+    [
+      'a non-number declarator annotation',
+      'export function f(x: number): number { const y: string = "a"; return x; }',
+      'VariableStatement',
+    ],
+    [
+      'a throw of a non-identifier constructor',
+      'export function f(x: number): number { throw new Foo.Bar(); }',
+      'ThrowStatement',
+    ],
+    [
+      'a call statement',
+      'export function f(x: number): number { f(x); return x; }',
+      'ExpressionStatement',
+    ],
+    [
+      'an assignment to a property',
+      'export function f(x: number): number { x.y = 1; return x; }',
+      'ExpressionStatement',
+    ],
+    [
+      "a construct inside a declarator's initializer",
+      'export function f(x: number): number { const y = x.q; return y; }',
+      'PropertyAccessExpression',
+    ],
+    [
+      "a construct inside a reassignment's value",
+      'export function f(x: number): number { let y = 1; y = x.q; return y; }',
+      'PropertyAccessExpression',
+    ],
+  ])(
+    '%s classifies Inappropriate on its construct',
+    (_label, decl, construct) => {
+      expect(classifications(annotated(decl)).classified).toEqual([
+        [
+          'Inappropriate',
+          expect.stringMatching(
+            new RegExp(
+              `^'f' could not be modeled: unmapped TypeScript construct '${construct}' at 2:\\d+$`,
+            ),
+          ),
+        ],
+      ]);
+    },
+  );
+
+  test('a number-annotated declarator maps like a bare one', () => {
+    const src = annotated(
+      'export function f(x: number): number { const y: number = 2 * x; return y; }',
+    );
+    const { emission, classified } = emitModule(src, 't.ts');
+    expect(classified).toEqual([]);
+    expect(emission.declarations[0]!.body).toEqual([
+      {
+        kind: 'const',
+        name: 'y',
+        init: {
+          kind: 'binop',
+          op: '*',
+          left: { kind: 'num', lit: '2' },
+          right: { kind: 'id', name: 'x' },
+        },
+      },
+      { kind: 'return', expr: { kind: 'id', name: 'y' } },
+    ]);
+  });
+
+  test('an else arm that leaves keeps the tail after the branch', () => {
+    const src = annotated(
+      'export function f(x: number): number { let y = x; if (x < 0) { y = 1; } else { return 0; } return y; }',
+    );
+    const { emission, classified } = emitModule(src, 't.ts');
+    expect(classified).toEqual([]);
+    expect(emission.declarations[0]!.body).toEqual([
+      { kind: 'let', name: 'y', init: { kind: 'id', name: 'x' } },
+      {
+        kind: 'if',
+        cond: {
+          kind: 'binop',
+          op: '<',
+          left: { kind: 'id', name: 'x' },
+          right: { kind: 'num', lit: '0' },
+        },
+        then: [{ kind: 'assign', name: 'y', expr: { kind: 'num', lit: '1' } }],
+        else: [{ kind: 'return', expr: { kind: 'num', lit: '0' } }],
+      },
+      { kind: 'return', expr: { kind: 'id', name: 'y' } },
+    ]);
+  });
+
+  test("an arm's own binding dies with the arm, as in the old lowering", () => {
+    const src = annotated(
+      'export function f(x: number): number { if (x < 0) { const y = 1; x = y; } return y; }',
+    );
+    expect(classifications(src).classified).toEqual([
+      ['Error', "'f' could not be modeled: unbound identifier 'y'"],
+    ]);
+  });
+
+  test('a body that can fall past a one-armed branch degrades', () => {
+    const src = annotated(
+      'export function f(x: number): number { if (x < 0) { return 0; } }',
+    );
+    expect(classifications(src).classified).toEqual([
+      ['Error', "'f' could not be modeled: the body must return on every path"],
     ]);
   });
 });

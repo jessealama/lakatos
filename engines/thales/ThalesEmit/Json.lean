@@ -18,6 +18,11 @@ deriving Repr, Inhabited
 
 inductive JsStmt where
   | ret (expr : JsExpr)
+  | throwErr (error : String)
+  | constDecl (name : String) (init : JsExpr)
+  | letDecl (name : String) (init : JsExpr)
+  | assign (name : String) (expr : JsExpr)
+  | ite (cond : JsExpr) (thn : Array JsStmt) (els : Option (Array JsStmt))
 deriving Repr, Inhabited
 
 structure EmitFn where
@@ -95,9 +100,30 @@ partial def decodeExpr (j : Json) : Except String JsExpr := do
       (← (← getArr j "args").mapM decodeExpr))
   | k => throw s!"unknown expression kind '{k}'"
 
-def decodeStmt (j : Json) : Except String JsStmt := do
+partial def decodeStmt (j : Json) : Except String JsStmt := do
   match ← getStr j "kind" with
   | "return" => pure (.ret (← decodeExpr (← j.getObjVal? "expr")))
+  | "throw" => pure (.throwErr (← getStr j "error"))
+  | "const" =>
+    pure (.constDecl (← getStr j "name")
+      (← decodeExpr (← j.getObjVal? "init")))
+  | "let" =>
+    pure (.letDecl (← getStr j "name")
+      (← decodeExpr (← j.getObjVal? "init")))
+  | "assign" =>
+    pure (.assign (← getStr j "name")
+      (← decodeExpr (← j.getObjVal? "expr")))
+  | "if" => do
+    let cond ← decodeExpr (← j.getObjVal? "cond")
+    let thn ← (← getArr j "then").mapM decodeStmt
+    -- `else` is genuinely optional: absent means control falls through.
+    let els ← match j.getObjVal? "else" with
+      | .error _ => pure none
+      | .ok v =>
+        match v.getArr? with
+        | .ok a => some <$> a.mapM decodeStmt
+        | .error _ => throw "field 'else' is not an array"
+    pure (.ite cond thn els)
   | k => throw s!"unknown statement kind '{k}'"
 
 def decodeFn (j : Json) : Except String EmitFn := do

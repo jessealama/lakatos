@@ -36,10 +36,10 @@ export default defineConfig({
         // autoUpdate. Re-lowered 2026-08-25: emission.ts carries two
         // defensive branches no input can reach.
         autoUpdate: true,
-        statements: 99.1,
-        branches: 98,
+        statements: 99.39,
+        branches: 98.19,
         functions: 100,
-        lines: 99.4,
+        lines: 99.6,
       },
     },
   },
