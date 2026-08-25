@@ -92,15 +92,17 @@ const readmeExampleSrc = path.join(
   root,
   "engines/pabst/tests/fixtures/e2e/readme-example.ts",
 );
-const genDir = path.join(root, ".pabst/engines/pabst/tests/fixtures/e2e");
+// The generated tests import "lakatos/runtime" via the package
+// self-reference, so they must live inside the repo tree; this suite gets its
+// own root there rather than sharing one with a CLI run.
+const OUT_ROOT = ".lakatos/pabst-e2e";
+const genDir = path.join(root, OUT_ROOT, "engines/pabst/tests/fixtures/e2e");
 
 function clean(): void {
   fs.rmSync(genDir, { recursive: true, force: true });
 }
 
-// A suite-private results file: the CLI's real .pabst/.last-run.json must
-// survive a run of this suite untouched.
-const E2E_RESULTS = ".pabst/.e2e-run.json";
+const E2E_RESULTS = path.join(OUT_ROOT, "vitest-results.json");
 
 function run(gen: GenResult): Envelope {
   const result = runTests(gen.outFile!, E2E_RESULTS);
@@ -128,7 +130,7 @@ describe("end-to-end", () => {
   afterAll(clean);
 
   it("a true property passes vitest", { timeout: 30000 }, () => {
-    const [r] = generate([passSrc]);
+    const [r] = generate([passSrc], OUT_ROOT);
     expect(r).toBeDefined();
     const env = run(r!);
     expect(env.failed).toBe(0);
@@ -139,7 +141,7 @@ describe("end-to-end", () => {
     "a false property fails vitest with a structured counterexample",
     { timeout: 30000 },
     () => {
-      const [r] = generate([failSrc]);
+      const [r] = generate([failSrc], OUT_ROOT);
       expect(r).toBeDefined();
       const env = run(r!);
       expect(env.failed).toBeGreaterThan(0);
@@ -157,7 +159,7 @@ describe("end-to-end", () => {
     "a two-binder commutativity claim is falsified with both binders bound",
     { timeout: 30000 },
     () => {
-      const [r] = generate([commutesSrc]);
+      const [r] = generate([commutesSrc], OUT_ROOT);
       expect(r).toBeDefined();
       const env = run(r!);
       expect(issuesOf(env)).toHaveLength(1);
@@ -189,7 +191,7 @@ describe("end-to-end", () => {
     "class instance + static properties that hold pass vitest",
     { timeout: 30000 },
     () => {
-      const [r] = generate([classPassSrc], ".pabst", 3);
+      const [r] = generate([classPassSrc], OUT_ROOT, 3);
       expect(r).toBeDefined();
       const env = run(r!);
       expect(env.failed).toBe(0);
@@ -201,7 +203,7 @@ describe("end-to-end", () => {
     "a buggy instance method is flagged as Class#method",
     { timeout: 30000 },
     () => {
-      const [r] = generate([classFailSrc], ".pabst", 3);
+      const [r] = generate([classFailSrc], OUT_ROOT, 3);
       expect(r).toBeDefined();
       const env = run(r!);
       expect(env.failed).toBeGreaterThan(0);
@@ -220,7 +222,7 @@ describe("end-to-end", () => {
     "getter and constructor properties that hold pass vitest",
     { timeout: 30000 },
     () => {
-      const [r] = generate([accessorPassSrc], ".pabst", 3);
+      const [r] = generate([accessorPassSrc], OUT_ROOT, 3);
       expect(r).toBeDefined();
       const env = run(r!);
       expect(env.failed).toBe(0);
@@ -234,7 +236,7 @@ describe("end-to-end", () => {
   );
 
   it("a buggy getter is flagged as Class#getter", { timeout: 30000 }, () => {
-    const [r] = generate([accessorFailSrc], ".pabst", 3);
+    const [r] = generate([accessorFailSrc], OUT_ROOT, 3);
     expect(r).toBeDefined();
     const env = run(r!);
     expect(env.failed).toBeGreaterThan(0);
@@ -251,7 +253,7 @@ describe("end-to-end", () => {
     "a static-method near-miss is flagged as Class.method with the -0 counterexample",
     { timeout: 30000 },
     () => {
-      const [r] = generate([nearMissSrc], ".pabst", 3);
+      const [r] = generate([nearMissSrc], OUT_ROOT, 3);
       expect(r).toBeDefined();
       const env = run(r!);
       expect(env.failed).toBeGreaterThan(0);
@@ -280,7 +282,7 @@ describe("end-to-end", () => {
         fs.readFileSync(readmeExampleSrc, "utf8"),
         "engines/pabst/tests/fixtures/e2e/readme-example.ts must be byte-identical to the README's first ts block",
       ).toBe(block);
-      const [r] = generate([readmeExampleSrc], ".pabst", 3);
+      const [r] = generate([readmeExampleSrc], OUT_ROOT, 3);
       expect(r).toBeDefined();
       const env = run(r!);
       expect(env.failed).toBeGreaterThan(0);
@@ -299,7 +301,7 @@ describe("end-to-end", () => {
   );
 
   it("README string laws (contains) pass vitest", { timeout: 30000 }, () => {
-    const [r] = generate([stringLawsSrc]);
+    const [r] = generate([stringLawsSrc], OUT_ROOT);
     expect(r).toBeDefined();
     const env = run(r!);
     expect(env.failed).toBe(0);
@@ -307,7 +309,7 @@ describe("end-to-end", () => {
   });
 
   it("Number(String(x)) round-trips over int", { timeout: 30000 }, () => {
-    const [r] = generate([intRoundTripSrc]);
+    const [r] = generate([intRoundTripSrc], OUT_ROOT);
     expect(r).toBeDefined();
     const env = run(r!);
     expect(env.failed).toBe(0);
@@ -318,7 +320,7 @@ describe("end-to-end", () => {
     "float addition is NOT associative (falsified)",
     { timeout: 30000 },
     () => {
-      const [r] = generate([floatAssocSrc], ".pabst", 1);
+      const [r] = generate([floatAssocSrc], OUT_ROOT, 1);
       expect(r).toBeDefined();
       const env = run(r!);
       expect(env.failed).toBeGreaterThan(0);
@@ -340,7 +342,7 @@ describe("end-to-end", () => {
     "parseInt is NOT the inverse of String over doubles (falsified)",
     { timeout: 30000 },
     () => {
-      const [r] = generate([parseRoundTripSrc], ".pabst", 3);
+      const [r] = generate([parseRoundTripSrc], OUT_ROOT, 3);
       expect(r).toBeDefined();
       const env = run(r!);
       expect(env.failed).toBeGreaterThan(0);
@@ -360,7 +362,7 @@ describe("end-to-end", () => {
     "a property whose body throws is reported as kind 'threw'",
     { timeout: 30000 },
     () => {
-      const [r] = generate([safeSqrtSrc], ".pabst", 3);
+      const [r] = generate([safeSqrtSrc], OUT_ROOT, 3);
       expect(r).toBeDefined();
       const env = run(r!);
       expect(env.failed).toBeGreaterThan(0);
@@ -383,7 +385,7 @@ describe("end-to-end", () => {
     () => {
       // The prover reads the same thrown guard as a failed `= pure true`
       // hypothesis — vacuous truth. Divergence documented on both sides.
-      const [r] = generate([throwingGuardSrc], ".pabst", 3);
+      const [r] = generate([throwingGuardSrc], OUT_ROOT, 3);
       expect(r).toBeDefined();
       const env = run(r!);
       expect(env.failed).toBeGreaterThan(0);
@@ -401,7 +403,7 @@ describe("end-to-end", () => {
     "an unsatisfiable precondition is reported as kind 'exhausted'",
     { timeout: 30000 },
     () => {
-      const [r] = generate([exhaustedSrc]);
+      const [r] = generate([exhaustedSrc], OUT_ROOT);
       expect(r).toBeDefined();
       const env = run(r!);
       expect(env.failed).toBeGreaterThan(0);
@@ -419,7 +421,7 @@ describe("end-to-end", () => {
     "interval-bounded binders only generate in-range values",
     { timeout: 30000 },
     () => {
-      const [r] = generate([boundedSrc]);
+      const [r] = generate([boundedSrc], OUT_ROOT);
       expect(r).toBeDefined();
       const env = run(r!);
       expect(env.failed).toBe(0);
@@ -431,7 +433,7 @@ describe("end-to-end", () => {
     "regex-guarded string binders only generate matching values",
     { timeout: 30000 },
     () => {
-      const [r] = generate([regexGuardSrc]);
+      const [r] = generate([regexGuardSrc], OUT_ROOT);
       expect(r).toBeDefined();
       // Pin the emitted arbitraries: anchored, non-capturing, flags kept.
       const emitted = fs.readFileSync(r!.outFile!, "utf8");
@@ -447,7 +449,7 @@ describe("end-to-end", () => {
     "equation syntax: guarded identities pass vitest",
     { timeout: 30000 },
     () => {
-      const [r] = generate([equationPassSrc], ".pabst", 3);
+      const [r] = generate([equationPassSrc], OUT_ROOT, 3);
       expect(r).toBeDefined();
       const env = run(r!);
       expect(env.failed).toBe(0);
@@ -459,7 +461,7 @@ describe("end-to-end", () => {
     "equation syntax: the -0 near-miss is refuted via ≡",
     { timeout: 30000 },
     () => {
-      const [r] = generate([equationFailSrc], ".pabst", 3);
+      const [r] = generate([equationFailSrc], OUT_ROOT, 3);
       expect(r).toBeDefined();
       const env = run(r!);
       expect(env.failed).toBeGreaterThan(0);
@@ -483,7 +485,7 @@ describe("e2e — math-y connectives", () => {
     { timeout: 30000 },
     () => {
       clean();
-      const [res] = generate([connectivesSrc], ".pabst", 1234);
+      const [res] = generate([connectivesSrc], OUT_ROOT, 1234);
       const env = run(res!);
       expect(issuesOf(env)).toEqual([]);
       expect(env.failed).toBe(0);
@@ -495,7 +497,7 @@ describe("e2e — math-y connectives", () => {
     { timeout: 30000 },
     () => {
       clean();
-      const [res] = generate([atomNotBoolSrc], ".pabst", 1234);
+      const [res] = generate([atomNotBoolSrc], OUT_ROOT, 1234);
       const env = run(res!);
       const issue = issuesOf(env).find((i) => i.property === "notBool");
       expect(issue?.kind).toBe("threw");

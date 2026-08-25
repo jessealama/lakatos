@@ -81,13 +81,21 @@ property twice. A pattern that explicitly names declarations
 (`lakatos refute "index.d.ts"`) is honored, for packages whose hand-written
 types are the source.
 
-Pabst writes the test files it generates to a `.pabst/` directory in your
-project. Those files are regenerated on every run, so there is no reason to
-commit them — add `.pabst/` to your `.gitignore`:
+Pabst writes the test files it generates into a `.lakatos/` directory in your
+project, under one subdirectory per invocation named for the run's start time
+(`.lakatos/2026-08-17T12-53-06.896Z/pabst/`, matching the `startedAt` the
+report carries). Nothing there is ever reused, so there is no reason to commit
+it — add `.lakatos/` to your `.gitignore`:
 
 ```gitignore
-.pabst/
+.lakatos/
 ```
+
+No run is ever written over another: two invocations that start in the same
+millisecond get `...943Z` and `...943Z-2`, and the progress line on stderr
+names whichever one this run took. Runs accumulate — lakatos never deletes an
+earlier one, so you can still read the artifacts behind yesterday's report.
+Delete the directory when you want the space back.
 
 ## Output
 
@@ -209,9 +217,8 @@ spelling of an equation is a plain `Object.is` call).
 - **Scoping:** every symbol an atom references must be `export`ed from its module.
 
 Each `@ensures{name}` becomes one issue (keyed by file, function, and property
-name) if it fails. Generated files land in the `.pabst/` directory (see
-[Usage](#usage)) mirroring the source tree; they are regenerated every run and
-must never be hand-edited.
+name) if it fails. Generated files land in the run's own directory (see
+[Usage](#usage)) mirroring the source tree; they must never be hand-edited.
 
 ## Development
 

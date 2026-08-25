@@ -23,7 +23,7 @@ the conjecture to be repaired. That loop is exactly what this tool runs.
 Both engines work end to end. `lakatos refute` scrapes `@ensures`
 annotations, generates fast-check property tests, runs them, and prints a
 per-annotation JSON report. `lakatos prove` transcribes each file into a
-`.lean` artifact under `.thales/`, runs it through the Lean engine
+`.lean` artifact under the run directory, runs it through the Lean engine
 (`lake env lean`), and assembles the same per-annotation envelope from the
 prover's verdicts; it requires the Lean toolchain (elan/lake) on PATH and,
 for now, a lakatos checkout — the npm package does not yet ship the Lean
@@ -31,11 +31,17 @@ engine. `lakatos check` is a stub: it scrapes the same annotations,
 reports each one `NotTried`, and exits 1. The rest of this README
 describes the committed design.
 
+Every invocation writes its artifacts into its own directory under
+`.lakatos/`, named for the run's start time in UTC — the same instant the
+report carries as `startedAt`. Nothing is ever overwritten and nothing is
+ever pruned: add `.lakatos/` to your `.gitignore` and delete it when you
+want the space back.
+
 ## Usage
 
 ```
 $ lakatos refute src/foo.ts
-lakatos: generated 1 property across 1 file(s) into .pabst/
+lakatos: generated 1 property across 1 file(s) into .lakatos/2026-08-17T12-53-06.896Z/pabst/
 {
   "version": "0.1.0",
   "startedAt": "2026-08-17T12:53:06.896Z",

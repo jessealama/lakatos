@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { runMain, useTempProject } from "./helpers/cli.js";
+import { announcedRunDir, runMain, useTempProject } from "./helpers/cli.js";
 import { expectValidEnvelope } from "./helpers/envelope-schema.js";
 import { runLean } from "../engines/thales/frontend/src/run.js";
 import type { ProveVerdict } from "../src/envelope.js";
 import type { ProveStatus } from "../src/szs.js";
+import { RUN_ROOT } from "../src/run-dir.js";
 
 // The Lean toolchain never runs in unit tests: the runner is mocked at the
 // module seam, exactly as cli-unhealthy.test.ts mocks pabst's runTests.
@@ -42,7 +43,7 @@ describe("cli prove", () => {
 
   afterEach(() => {
     runLeanMock.mockReset();
-    fs.rmSync(".thales", { recursive: true, force: true });
+    fs.rmSync(RUN_ROOT, { recursive: true, force: true });
   });
 
   it("healthy run: envelope from verdicts, artifact on disk, exit 0", () => {
@@ -67,7 +68,13 @@ describe("cli prove", () => {
     ]);
     expect(env.seed).toBeUndefined();
     expect(env.passed).toBeUndefined();
-    const artifact = path.join(".thales", "annotated.ts.lean");
+    // The run's artifacts live under the directory named by the instant the
+    // envelope reports, so a report and its artifacts match by eye.
+    const artifact = path.join(
+      announcedRunDir(stderr),
+      "thales",
+      "annotated.ts.lean",
+    );
     expect(runLeanMock.mock.calls[0]![0]).toEqual([artifact]);
     expect(fs.readFileSync(artifact, "utf8")).toContain("#thales_prove");
     expect(stderr.join("\n")).toContain("transcribed 1 annotation");
@@ -152,7 +159,7 @@ describe("cli prove", () => {
   });
 
   it("a file whose only annotation is untried never reaches Lean", () => {
-    const { code, stdout } = runMain(["prove", "allhuge.ts"]);
+    const { code, stdout, stderr } = runMain(["prove", "allhuge.ts"]);
     expect(runLeanMock).not.toHaveBeenCalled();
     expect(code).toBe(0);
     const env = JSON.parse(stdout[0]!);
@@ -170,7 +177,7 @@ describe("cli prove", () => {
     ]);
     // The artifact is still written: it documents the skip as a comment.
     const artifact = fs.readFileSync(
-      path.join(".thales", "allhuge.ts.lean"),
+      path.join(announcedRunDir(stderr), "thales", "allhuge.ts.lean"),
       "utf8",
     );
     expect(artifact).toContain("-- not tried");
@@ -312,18 +319,23 @@ describe("cli prove", () => {
   });
 
   it("a contained file failure: Error entries for that file, others verdict, exit 2", () => {
-    runLeanMock.mockReturnValue({
-      kind: "completed",
-      verdicts: [verdict("annotated", "Theorem")],
-      failures: [
-        {
-          file: path.join(".thales", "other.ts.lean"),
-          messages: [
-            "the Lean run on .thales/other.ts.lean failed before reporting its verdicts",
-          ],
-        },
-      ],
-      diagnostics: [],
+    // The failure is keyed by the artifact the run was actually handed: its
+    // directory is named after this invocation, unknown to the test upfront.
+    runLeanMock.mockImplementation((files) => {
+      const other = files.find((f) => f.endsWith("other.ts.lean"))!;
+      return {
+        kind: "completed",
+        verdicts: [verdict("annotated", "Theorem")],
+        failures: [
+          {
+            file: other,
+            messages: [
+              `the Lean run on ${other} failed before reporting its verdicts`,
+            ],
+          },
+        ],
+        diagnostics: [],
+      };
     });
     const { code, stdout, stderr } = runMain([
       "prove",

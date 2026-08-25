@@ -3,9 +3,6 @@ import { readFileSync, rmSync } from "node:fs";
 import { interruptedBy, type InterruptSignal } from "../../../src/interrupt.js";
 import type { FileResult, VitestJson } from "./vitest-json.js";
 
-/** Where the spawned vitest writes its JSON results, relative to cwd. */
-export const RESULTS_FILE = ".pabst/.last-run.json";
-
 export type RunResult =
   | { kind: "completed"; json: VitestJson }
   | { kind: "no-results"; status: number; stdout: string; stderr: string }
@@ -37,7 +34,7 @@ type Spawn = (
  */
 export function runTests(
   target: string | string[],
-  resultsFile: string = RESULTS_FILE,
+  resultsFile: string,
   spawn: Spawn = spawnSync,
 ): RunResult {
   // A stale results file from a previous run must not be mistaken for this

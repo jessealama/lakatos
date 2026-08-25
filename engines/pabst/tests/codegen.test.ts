@@ -5,6 +5,10 @@ import * as os from "node:os";
 import { generate } from "../src/codegen.js";
 import { LemmaError } from "../../../lemma/src/index.js";
 
+// The out root is the caller's to choose; these tests pick an arbitrary
+// one, since what is under test is the mirroring, not the CLI's naming.
+const OUT = "out";
+
 describe("generate", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pabst-codegen-"));
   const prevCwd = process.cwd();
@@ -41,14 +45,12 @@ export class Counter {
   });
 
   it("writes one generated test file and reports the count", () => {
-    const results = generate(["bar.ts"], ".pabst", 7);
+    const results = generate(["bar.ts"], OUT, 7);
     expect(results).toHaveLength(1);
     expect(results[0]!.properties).toEqual([
       { function: "bar", property: "pos" },
     ]);
-    expect(results[0]!.outFile).toBe(
-      path.join(".pabst", "bar.ts.pabst.test.ts"),
-    );
+    expect(results[0]!.outFile).toBe(path.join(OUT, "bar.ts.pabst.test.ts"));
     expect(fs.existsSync(results[0]!.outFile!)).toBe(true);
     const code = fs.readFileSync(results[0]!.outFile!, "utf8");
     expect(code).toContain(
@@ -58,7 +60,7 @@ export class Counter {
   });
 
   it("reports each generated property's qualified identity in order", () => {
-    const [r] = generate(["multi.ts"], ".pabst", 7);
+    const [r] = generate(["multi.ts"], OUT, 7);
     expect(r!.properties).toEqual([
       { function: "abs", property: "nonneg" },
       { function: "Counter#bump", property: "grows" },
@@ -66,11 +68,9 @@ export class Counter {
   });
 
   it("skips a file with no @ensures annotations", () => {
-    const results = generate(["plain.ts"], ".pabst", 7);
+    const results = generate(["plain.ts"], OUT, 7);
     expect(results).toEqual([]);
-    expect(fs.existsSync(path.join(".pabst", "plain.ts.pabst.test.ts"))).toBe(
-      false,
-    );
+    expect(fs.existsSync(path.join(OUT, "plain.ts.pabst.test.ts"))).toBe(false);
   });
 });
 
@@ -93,13 +93,13 @@ describe("generate: source outside the current directory", () => {
   });
 
   it("throws LemmaError rather than writing outside the output root", () => {
-    expect(() => generate(["../evil.ts"], ".pabst", 7)).toThrow(LemmaError);
-    expect(() => generate(["../evil.ts"], ".pabst", 7)).toThrow(
+    expect(() => generate(["../evil.ts"], OUT, 7)).toThrow(LemmaError);
+    expect(() => generate(["../evil.ts"], OUT, 7)).toThrow(
       /outside the current directory/,
     );
-    // Nothing may leak into the tree: not under .pabst/, not beside it.
+    // Nothing may leak into the tree: not under the out root, not beside it.
     expect(fs.existsSync(path.join(dir, "evil.ts.pabst.test.ts"))).toBe(false);
-    expect(fs.existsSync(path.join(dir, "pkg", ".pabst"))).toBe(false);
+    expect(fs.existsSync(path.join(dir, "pkg", OUT))).toBe(false);
   });
 });
 
@@ -129,7 +129,7 @@ export function two(n: number): number { return n; }
   });
 
   it("reports a wholly untried file without writing an artifact", () => {
-    const results = generate(["allhuge.ts"], ".pabst", 7);
+    const results = generate(["allhuge.ts"], OUT, 7);
     expect(results).toHaveLength(1);
     expect(results[0]!.outFile).toBeUndefined();
     expect(results[0]!.properties).toEqual([]);
@@ -142,13 +142,13 @@ export function two(n: number): number { return n; }
           "the safe integer range (±9007199254740991)",
       },
     ]);
-    expect(fs.existsSync(path.join(".pabst", "allhuge.ts.pabst.test.ts"))).toBe(
+    expect(fs.existsSync(path.join(OUT, "allhuge.ts.pabst.test.ts"))).toBe(
       false,
     );
   });
 
   it("generates only the testable properties of a mixed file", () => {
-    const results = generate(["mixedhuge.ts"], ".pabst", 7);
+    const results = generate(["mixedhuge.ts"], OUT, 7);
     expect(results[0]!.properties).toEqual([
       { function: "two", property: "small" },
     ]);

@@ -96,7 +96,7 @@ describe.runIf(enabled)("verdict corpus", () => {
   });
 
   useRepoScratchDir(
-    path.join(repoRoot, ".thales", "verdict-corpus-work"),
+    path.join(repoRoot, ".lakatos", "verdict-corpus-work"),
     (dir) => {
       // The whole tree, not just the entries: a multi-file fixture's
       // dependencies must sit beside its entry for the import to resolve.

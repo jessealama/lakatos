@@ -8,7 +8,7 @@ export default defineConfig({
       "lemma/tests/**/*.test.ts",
       "engines/pabst/tests/**/*.test.ts",
       "engines/thales/frontend/tests/**/*.test.ts",
-      ".pabst/**/*.test.ts",
+      ".lakatos/**/*.test.ts",
     ],
     // Absolute: refute spawns vitest from a project directory that may sit
     // inside this repo, and such a run inherits this config — a relative
@@ -34,10 +34,10 @@ export default defineConfig({
         // upward in this file; if it drops below, the run fails. Seeded
         // from the baseline on 2026-08-17 — bump only happens via autoUpdate.
         autoUpdate: true,
-        statements: 99.37,
-        branches: 98.22,
+        statements: 99.38,
+        branches: 98.23,
         functions: 100,
-        lines: 99.54,
+        lines: 99.55,
       },
     },
   },

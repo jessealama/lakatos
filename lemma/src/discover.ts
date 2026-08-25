@@ -81,7 +81,7 @@ function configError(diagnostic: ts.Diagnostic): LemmaError {
 }
 
 // path.relative yields ".."-led (or, across Windows drives, absolute) paths
-// for files outside cwd. Generated tests are rooted in ./.pabst/, so a source
+// for files outside cwd. Generated tests are rooted in ./.lakatos/, so a source
 // outside the package cannot be tested from here — a monorepo neighbor's
 // files are that neighbor's run, not this one's — and is dropped.
 function insideCwd(rel: string): boolean {

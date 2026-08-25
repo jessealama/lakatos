@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import { runMain, useTempProject } from "./helpers/cli.js";
 import { expectValidEnvelope } from "./helpers/envelope-schema.js";
 import { runTests, type RunResult } from "../engines/pabst/src/run.js";
+import { RUN_ROOT } from "../src/run-dir.js";
 
 // A domain that only fits after the safe-integer clamp is refused, not
 // silently narrowed — the same NotTried + unsupported-range the prover
@@ -39,7 +40,7 @@ describe("cli refute on unrepresentable domains", () => {
 
   afterEach(() => {
     runTestsMock.mockReset();
-    fs.rmSync(".pabst", { recursive: true, force: true });
+    fs.rmSync(RUN_ROOT, { recursive: true, force: true });
   });
 
   it("ships NotTried with kind and reason; the rest still run", () => {

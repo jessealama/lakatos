@@ -33,7 +33,7 @@ export interface GenResult {
 
 export function generate(
   files: string[],
-  outRoot = ".pabst",
+  outRoot: string,
   seed: number = randomSeed(),
 ): GenResult[] {
   const results: GenResult[] = [];

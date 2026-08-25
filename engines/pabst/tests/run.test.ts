@@ -1,21 +1,25 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { runTests, RESULTS_FILE } from "../src/run.js";
+import { runTests } from "../src/run.js";
 import { encodeIssue } from "../src/contract.js";
 import { FALSIFIED } from "./helpers/fixtures.js";
 
 const repoRoot = process.cwd();
 
 // The spawned vitest resolves its binary by walking up node_modules from cwd,
-// so these projects live inside the repo tree (gitignored under .pabst/), not
+// so these projects live inside the repo tree (gitignored under .lakatos/), not
 // os.tmpdir(). The spawned vitest also inherits the nearest config walking up
 // from cwd, so each fixture pins its own: `ok` an empty one (restoring
 // vitest's default include, which picks up *.spec.ts), `broken` the same
 // empty one, `crash` a throwing one. Fixture tests are *.spec.ts so the OUTER
-// suite's include (tests/**/*.test.ts, .pabst/**/*.test.ts) never collects a
+// suite's include (tests/**/*.test.ts, .lakatos/**/*.test.ts) never collects a
 // leftover copy from a crashed run.
-const workDir = path.join(repoRoot, ".pabst", "runtest");
+const workDir = path.join(repoRoot, ".lakatos", "runtest");
+
+// Where these tests tell runTests to write its results, relative to whichever
+// fixture directory the run happens in.
+const RESULTS = path.join("out", "vitest-results.json");
 const okDir = path.join(workDir, "ok");
 const crashDir = path.join(workDir, "crash");
 const brokenDir = path.join(workDir, "broken");
@@ -77,7 +81,7 @@ describe("runTests", () => {
     "returns the parsed vitest JSON from a completed run",
     { timeout: 60000 },
     () => {
-      const result = inDir(okDir, () => runTests("."));
+      const result = inDir(okDir, () => runTests(".", RESULTS));
       expect(result.kind).toBe("completed");
       if (result.kind !== "completed") return;
       expect(result.json.numPassedTests).toBe(1);
@@ -94,18 +98,18 @@ describe("runTests", () => {
 
   it("reports no-results when the stale results file cannot be cleared", () => {
     const result = inDir(okDir, () => {
-      fs.rmSync(RESULTS_FILE, { force: true });
-      fs.mkdirSync(RESULTS_FILE, { recursive: true });
+      fs.rmSync(RESULTS, { force: true });
+      fs.mkdirSync(RESULTS, { recursive: true });
       try {
-        return runTests(".");
+        return runTests(".", RESULTS);
       } finally {
-        fs.rmSync(RESULTS_FILE, { recursive: true, force: true });
+        fs.rmSync(RESULTS, { recursive: true, force: true });
       }
     });
     expect(result.kind).toBe("no-results");
     if (result.kind !== "no-results") return;
     expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain(RESULTS_FILE);
+    expect(result.stderr).toContain(RESULTS);
   });
 
   it("surfaces the spawn error when vitest cannot be launched", () => {
@@ -113,7 +117,7 @@ describe("runTests", () => {
     const result = inDir(okDir, () => {
       process.env.PATH = "";
       try {
-        return runTests(".");
+        return runTests(".", RESULTS);
       } finally {
         process.env.PATH = prevPath;
       }
@@ -128,7 +132,7 @@ describe("runTests", () => {
     "reports a broken run when a test file fails to load",
     { timeout: 60000 },
     () => {
-      const result = inDir(brokenDir, () => runTests("."));
+      const result = inDir(brokenDir, () => runTests(".", RESULTS));
       expect(result.kind).toBe("broken-run");
       if (result.kind !== "broken-run") return;
       expect(result.status).not.toBe(0);
@@ -140,9 +144,9 @@ describe("runTests", () => {
     // Results the dying vitest managed to write are not this run's story:
     // the interruption outranks whatever landed on disk.
     const killed = () => {
-      fs.mkdirSync(path.dirname(RESULTS_FILE), { recursive: true });
+      fs.mkdirSync(path.dirname(RESULTS), { recursive: true });
       fs.writeFileSync(
-        RESULTS_FILE,
+        RESULTS,
         JSON.stringify({
           numPassedTests: 9,
           numFailedTests: 0,
@@ -158,7 +162,7 @@ describe("runTests", () => {
         stderr: null,
       };
     };
-    const result = inDir(okDir, () => runTests(".", RESULTS_FILE, killed));
+    const result = inDir(okDir, () => runTests(".", RESULTS, killed));
     expect(result).toEqual({ kind: "interrupted", signal: "SIGINT" });
   });
 
@@ -173,7 +177,7 @@ describe("runTests", () => {
         code: "ETIMEDOUT",
       }),
     });
-    const result = inDir(okDir, () => runTests(".", RESULTS_FILE, timedOut));
+    const result = inDir(okDir, () => runTests(".", RESULTS, timedOut));
     expect(result.kind).toBe("no-results");
   });
 
@@ -182,9 +186,9 @@ describe("runTests", () => {
     { timeout: 60000 },
     () => {
       const result = inDir(crashDir, () => {
-        fs.mkdirSync(path.dirname(RESULTS_FILE), { recursive: true });
+        fs.mkdirSync(path.dirname(RESULTS), { recursive: true });
         fs.writeFileSync(
-          RESULTS_FILE,
+          RESULTS,
           JSON.stringify({
             numPassedTests: 9,
             numFailedTests: 0,
@@ -193,7 +197,7 @@ describe("runTests", () => {
           }),
           "utf8",
         );
-        return runTests(".");
+        return runTests(".", RESULTS);
       });
       expect(result.kind).toBe("no-results");
       if (result.kind !== "no-results") return;

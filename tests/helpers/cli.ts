@@ -38,6 +38,18 @@ export function runMain(argv: string[]): MainRun {
 }
 
 /**
+ * The run directory the CLI announced on stderr. Tests read it the way a
+ * user does rather than recomputing it from the envelope's startedAt: a run
+ * whose name was taken steps to the next free one, so the two can differ.
+ */
+export function announcedRunDir(stderr: string[]): string {
+  const m = /into (.+)[/\\](?:pabst|thales)\/$/m.exec(stderr.join("\n"));
+  if (m === null)
+    throw new Error(`no run directory announced in: ${stderr.join("\n")}`);
+  return m[1]!;
+}
+
+/**
  * Run main() and unwrap the single-envelope contract: the expected exit
  * code (0 unless the run is meant to find counterexamples), exactly one
  * stdout line, and that line a schema-valid envelope.
