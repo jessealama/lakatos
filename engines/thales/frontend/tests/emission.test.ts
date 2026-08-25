@@ -95,6 +95,7 @@ describe('emitModule on the tracer fixture', () => {
   test.each([
     ['engines/thales/tests/fixtures/tracer.ts'],
     ['engines/thales/tests/fixtures/statements.ts'],
+    ['engines/thales/tests/fixtures/binders.ts'],
   ])('the emission for %s validates against the schema', (fixture) => {
     expectValidEmission(
       emitModule(fs.readFileSync(fixture, 'utf8'), fixture).emission,
@@ -105,6 +106,7 @@ describe('emitModule on the tracer fixture', () => {
     ['engines/thales/tests/fixtures/tracer.ts', 'tracer.emission.json'],
     ['engines/thales/tests/fixtures/operators.ts', 'operators.emission.json'],
     ['engines/thales/tests/fixtures/statements.ts', 'statements.emission.json'],
+    ['engines/thales/tests/fixtures/binders.ts', 'binders.emission.json'],
   ])(
     'the pinned emission for %s is exactly what the frontend emits',
     (fixture, pin) => {
@@ -509,12 +511,36 @@ describe('number binders', () => {
       `/** @ensures{p} forall ${binder} { f(${expected.name}) >= 0 } */`,
       'export function f(x: number): number { return x * x; }',
     ].join('\n');
-    const { emission } = emitModule(src, 'number-binders.ts');
+    const { emission, classified } = emitModule(src, 'number-binders.ts');
+    // A number binder is no degradation: nothing may be classified away.
+    expect(classified).toEqual([]);
     const payload = emission.obligations[0]!.payload;
     expect(payload.kind).toBe('structured');
     assert(payload.kind === 'structured');
     expect(payload.binders[0]).toEqual(expected);
     expectValidEmission(emission);
+  });
+
+  test('a multi-name number binder expands to one binder per name', () => {
+    const src = [
+      '/** @ensures{p} forall (x y: number) (sf: number ∈ (0, ∞)) { f(x) <= f(y) } */',
+      'export function f(x: number): number { return x * x; }',
+    ].join('\n');
+    const { emission, classified } = emitModule(src, 'number-binders.ts');
+    expect(classified).toEqual([]);
+    expect(emission.obligations[0]!.payload).toMatchObject({
+      kind: 'structured',
+      binders: [
+        { name: 'x', kind: 'number' },
+        { name: 'y', kind: 'number' },
+        {
+          name: 'sf',
+          kind: 'number',
+          lower: { op: '<', lit: '0' },
+          upper: { op: '<', lit: 'Infinity' },
+        },
+      ],
+    });
   });
 });
 

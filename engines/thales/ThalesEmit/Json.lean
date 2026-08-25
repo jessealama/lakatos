@@ -184,7 +184,7 @@ def decodePayload (j : Json) : Except String Payload := do
       | .error _ => pure #[]
       | .ok v =>
         match v.getArr? with
-        | .ok a => a.mapM decodeExpr
+        | .ok a => (a.mapM decodeExpr).mapError fun m => s!"field 'guards': {m}"
         | .error _ => throw "field 'guards' is not an array"
     pure (.structured (← (← getArr j "binders").mapM decodeBinder) guards
       (← decodeConclusion (← j.getObjVal? "conclusion")))

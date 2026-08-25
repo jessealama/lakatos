@@ -77,10 +77,14 @@ const STATEMENT_FIXTURES = [
   `${CONFORMANCE}/inappropriate/uninitialized-let.ts`,
 ];
 
-/** The binder/guard slice: guard chains, guard-respecting witnesses, and
- * number binders — bounded, half-bounded, and rangeless. Imports and the
- * binder degradations join as their shapes land. */
+/** The binder/guard slice (#150): guard chains, guard-respecting
+ * witnesses, and number binders — bounded, half-bounded, and rangeless.
+ * With this slice the manifest covers every shape the emission pipeline
+ * reaches; imports (#149) and unsupported ranges (#151) are what still
+ * wait. */
 const BINDER_FIXTURES = [
+  'engines/thales/tests/fixtures/binders.ts',
+  `${CONFORMANCE}/countersatisfiable/guarded-witness.ts`,
   `${CONFORMANCE}/theorem/guarded-floor.ts`,
   `${CONFORMANCE}/theorem/branch-guarded-throw.ts`,
   `${CONFORMANCE}/theorem/number-binder.ts`,

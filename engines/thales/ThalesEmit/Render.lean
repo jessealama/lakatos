@@ -322,15 +322,20 @@ partial def unscope : Syntax → Syntax
   | .node info kind args => .node info kind (args.map unscope)
   | s => s
 
+def indentWidth (line : String) : Nat := (line.takeWhile (· == ' ')).toString.length
+
 /-- `return`'s argument is optional, so a line break between the two parses
 back as a bare `return`; the printer breaks there whenever the argument is
 too wide for the line. Rejoining them is what keeps the artifact
-re-parsable. -/
+re-parsable. A broken argument is always indented past its `return`, which
+is what tells it apart from a genuinely bare `return` followed by a
+sibling statement. -/
 partial def joinReturns : List String → List String
   | line :: rest =>
     match joinReturns rest with
     | next :: tail =>
-      if line == "return" || line.endsWith " return" then
+      if (line == "return" || line.endsWith " return") &&
+          indentWidth next > indentWidth line then
         (line ++ " " ++ next.dropWhile (· == ' ')) :: tail
       else line :: next :: tail
     | [] => [line]

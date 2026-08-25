@@ -37,6 +37,29 @@ open Lean ThalesEmit
   (decodeBinder (Json.mkObj [("name", "a"), ("kind", "number")]))
   matches .ok (.number "a" none none)
 #guard (decodeBinder (Json.mkObj [("name", "x"), ("kind", "real")])) matches .error _
+-- A bound is an op × literal pair; a bare string is not one.
+#guard
+  (decodeBinder (Json.mkObj
+    [("name", "a"), ("kind", "number"), ("lower", "0")]))
+  matches .error _
+
+-- Guards are optional, decode in order, and name their own field when
+-- they break the schema.
+def payloadShell (guards : Json) : Json :=
+  Json.mkObj
+    [("kind", "structured"), ("binders", Json.arr #[]), ("guards", guards),
+     ("conclusion", Json.mkObj
+       [("kind", "istrue"), ("expr", Json.mkObj [("kind", "id"), ("name", "b")])])]
+
+#guard
+  (decodePayload (payloadShell (Json.arr
+    #[Json.mkObj [("kind", "id"), ("name", "g")],
+      Json.mkObj [("kind", "id"), ("name", "h")]])))
+  matches .ok (.structured #[] #[.id "g", .id "h"] (.istrue (.id "b")))
+#guard (decodePayload (payloadShell "g")) matches .error "field 'guards' is not an array"
+#guard
+  (decodePayload (payloadShell (Json.arr #[Json.mkObj [("kind", "cond")]])))
+  matches .error "field 'guards': unknown expression kind 'cond'"
 
 -- The pinned emissions render to the golden artifacts — files a human
 -- inspected and accepted. #eval runs CoreM inside this module's own
@@ -60,6 +83,9 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
 
 #eval goldenCheck "tests/fixtures/statements.emission.json"
   "tests/fixtures/statements.emitted.lean.expected"
+
+#eval goldenCheck "tests/fixtures/binders.emission.json"
+  "tests/fixtures/binders.emitted.lean.expected"
 
 -- Emitted defs live under the model namespace: a TS function named
 -- after a root-level Lean name (`id`) must still define.
@@ -173,6 +199,10 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
     throwError "a number binder was coerced from Int:\n{rendered}"
   unless (rendered.splitOn "return\n").length == 1 do
     throwError "a return was split from its argument:\n{rendered}"
+  -- The positive half of the same pin: the conclusion is wide enough that
+  -- the printer breaks it, so this is the rejoined line, not an unbroken one.
+  unless (rendered.splitOn "return Float.le").length == 2 do
+    throwError "the return and its argument are not on one line:\n{rendered}"
 
 -- A shape outside the slice is refused with a message naming the gap.
 #eval show CoreM Unit from do

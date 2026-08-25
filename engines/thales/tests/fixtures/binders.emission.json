@@ -1,0 +1,322 @@
+{
+  "file": "engines/thales/tests/fixtures/binders.ts",
+  "declarations": [
+    {
+      "kind": "function",
+      "name": "keep",
+      "params": ["x"],
+      "source": "export function keep(x: number): number {\n  if (x < 1) {\n    return 1;\n  }\n  return x;\n}",
+      "body": [
+        {
+          "kind": "if",
+          "cond": {
+            "kind": "binop",
+            "op": "<",
+            "left": {
+              "kind": "id",
+              "name": "x"
+            },
+            "right": {
+              "kind": "num",
+              "lit": "1"
+            }
+          },
+          "then": [
+            {
+              "kind": "return",
+              "expr": {
+                "kind": "num",
+                "lit": "1"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "return",
+          "expr": {
+            "kind": "id",
+            "name": "x"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "function",
+      "name": "twice",
+      "params": ["x"],
+      "source": "export function twice(x: number): number {\n  return x + x;\n}",
+      "body": [
+        {
+          "kind": "return",
+          "expr": {
+            "kind": "binop",
+            "op": "+",
+            "left": {
+              "kind": "id",
+              "name": "x"
+            },
+            "right": {
+              "kind": "id",
+              "name": "x"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "kind": "function",
+      "name": "scale",
+      "params": ["value", "factor"],
+      "source": "export function scale(value: number, factor: number): number {\n  return value * factor;\n}",
+      "body": [
+        {
+          "kind": "return",
+          "expr": {
+            "kind": "binop",
+            "op": "*",
+            "left": {
+              "kind": "id",
+              "name": "value"
+            },
+            "right": {
+              "kind": "id",
+              "name": "factor"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "obligations": [
+    {
+      "function": "keep",
+      "property": "chained",
+      "formula": "forall (x: int ∈ [0, 10)) { x >= 2 → x >= 1 → keep(x) >= 1 }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "x",
+            "kind": "range",
+            "lo": "0",
+            "hi": "10"
+          }
+        ],
+        "guards": [
+          {
+            "kind": "binop",
+            "op": ">=",
+            "left": {
+              "kind": "id",
+              "name": "x"
+            },
+            "right": {
+              "kind": "num",
+              "lit": "2"
+            }
+          },
+          {
+            "kind": "binop",
+            "op": ">=",
+            "left": {
+              "kind": "id",
+              "name": "x"
+            },
+            "right": {
+              "kind": "num",
+              "lit": "1"
+            }
+          }
+        ],
+        "conclusion": {
+          "kind": "istrue",
+          "expr": {
+            "kind": "binop",
+            "op": ">=",
+            "left": {
+              "kind": "call",
+              "callee": "keep",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "x"
+                }
+              ]
+            },
+            "right": {
+              "kind": "num",
+              "lit": "1"
+            }
+          }
+        }
+      }
+    },
+    {
+      "function": "keep",
+      "property": "guardedWitness",
+      "formula": "forall (x: int ∈ [0, 10)) { x >= 5 → keep(x) >= 6 }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "x",
+            "kind": "range",
+            "lo": "0",
+            "hi": "10"
+          }
+        ],
+        "guards": [
+          {
+            "kind": "binop",
+            "op": ">=",
+            "left": {
+              "kind": "id",
+              "name": "x"
+            },
+            "right": {
+              "kind": "num",
+              "lit": "5"
+            }
+          }
+        ],
+        "conclusion": {
+          "kind": "istrue",
+          "expr": {
+            "kind": "binop",
+            "op": ">=",
+            "left": {
+              "kind": "call",
+              "callee": "keep",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "x"
+                }
+              ]
+            },
+            "right": {
+              "kind": "num",
+              "lit": "6"
+            }
+          }
+        }
+      }
+    },
+    {
+      "function": "twice",
+      "property": "negativeFloor",
+      "formula": "forall (x: int ∈ [-3, 3)) { twice(x) >= 0 }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "x",
+            "kind": "range",
+            "lo": "-3",
+            "hi": "3"
+          }
+        ],
+        "conclusion": {
+          "kind": "istrue",
+          "expr": {
+            "kind": "binop",
+            "op": ">=",
+            "left": {
+              "kind": "call",
+              "callee": "twice",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "x"
+                }
+              ]
+            },
+            "right": {
+              "kind": "num",
+              "lit": "0"
+            }
+          }
+        }
+      }
+    },
+    {
+      "function": "scale",
+      "property": "scaled",
+      "formula": "forall (x y: number) (sf: number ∈ (0, ∞)) { x <= y → scale(x, sf) <= scale(y, sf) }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "x",
+            "kind": "number"
+          },
+          {
+            "name": "y",
+            "kind": "number"
+          },
+          {
+            "name": "sf",
+            "kind": "number",
+            "lower": {
+              "op": "<",
+              "lit": "0"
+            },
+            "upper": {
+              "op": "<",
+              "lit": "Infinity"
+            }
+          }
+        ],
+        "guards": [
+          {
+            "kind": "binop",
+            "op": "<=",
+            "left": {
+              "kind": "id",
+              "name": "x"
+            },
+            "right": {
+              "kind": "id",
+              "name": "y"
+            }
+          }
+        ],
+        "conclusion": {
+          "kind": "istrue",
+          "expr": {
+            "kind": "binop",
+            "op": "<=",
+            "left": {
+              "kind": "call",
+              "callee": "scale",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "x"
+                },
+                {
+                  "kind": "id",
+                  "name": "sf"
+                }
+              ]
+            },
+            "right": {
+              "kind": "call",
+              "callee": "scale",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "y"
+                },
+                {
+                  "kind": "id",
+                  "name": "sf"
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  ]
+}
