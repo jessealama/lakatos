@@ -24,9 +24,9 @@ _Avoid_: "unsupported placeholder" (the old compiler's accept-then-fail hazard; 
 The generated `.lean` file for one source file, written under the run directory's `thales/` mirror by the shared mirroring rule (source extension kept: `a.ts` → `<run>/thales/a.ts.lean`). Annotation-free sources get no artifact. Artifacts are regenerated every run and never hand-edited.
 
 **Model**:
-The Lean definition a `ts_def` elaborates to, registered in the model registry; this slice types every parameter and result as `Float` — IEEE-754 binary64, the type a TypeScript `number` actually holds — over the `TsM` monad. Binders still quantify over the mathematical integers and coerce in at the call boundary, which is exactly why an interval reaching past the safe-integer range is refused: outside it the coercion stops being injective. A declaration that fails to model lands in the failed registry instead, with the unmapped construct recorded when an opaque node caused it.
+The Lean definition a `ts_def` elaborates to, registered in the model registry; this slice types every parameter and result as `Float` — IEEE-754 binary64, the type a TypeScript `number` actually holds — over the `JsM` monad. Binders still quantify over the mathematical integers and coerce in at the call boundary, which is exactly why an interval reaching past the safe-integer range is refused: outside it the coercion stops being injective. A declaration that fails to model lands in the failed registry instead, with the unmapped construct recorded when an opaque node caused it.
 
-**TsM**:
+**JsM**:
 The semantic domain of models: `Except JsError` today, growing with future slices (state, fuel). The load-bearing property is computability — the decide rungs must be able to evaluate models over bounded domains, so nothing noncomputable may enter a model's type. With binary64 bodies this is the only route to a proof at all: vanilla Lean carries no `Float` arithmetic theory, so a domain that cannot be enumerated cannot yet be settled.
 
 **Bounded quantification (`ballIco`)**:

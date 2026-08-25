@@ -8,6 +8,10 @@ package «thales» where
   ]
 
 @[default_target]
+lean_lib «Js» where
+  globs := #[.submodules `Js, .one `Js]
+
+@[default_target]
 lean_lib «ThalesDsl» where
   globs := #[.submodules `ThalesDsl, .one `ThalesDsl]
 

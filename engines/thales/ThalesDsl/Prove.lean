@@ -15,6 +15,7 @@ register_option thales.maxEvaluatedElements : Nat := {
 namespace ThalesDsl
 
 open Lean Elab Command
+open Js
 
 /-- One parsed ∀-binder: its variable, plus the range when bounded. -/
 inductive BinderShape where
@@ -55,7 +56,7 @@ structure ElabProp where
 /-- Transcribes a `ts_prop` into a Lean `Prop` term — bounded binders become
 nested `ballIco`, unbounded int/nat binders plain `∀`s (nat carries its
 nonnegativity hypothesis) whose values coerce into the Float body at the
-call boundary, `≡` equations compare `TsM Float` results, boolean
+call boundary, `≡` equations compare `JsM Float` results, boolean
 islands must evaluate to `pure true`, `ts.imp` guards thread the same
 `= pure true` shape as hypotheses in front of the conclusion — plus a
 parallel witness-search term
@@ -69,13 +70,13 @@ partial def elabProp (vars : List String) :
     -- `≡` is SameValue — the relation the refuter runs as `Object.is` —
     -- which is exactly Lean's propositional equality on Float. `===` is
     -- IEEE and lives in evalExpr as Float.beq.
-    let prop ← `(($lt : TsM Float) = $rt)
-    let search ← `(if ($lt : TsM Float) = $rt then (none : Option (List Int)) else some [])
+    let prop ← `(($lt : JsM Float) = $rt)
+    let search ← `(if ($lt : JsM Float) = $rt then (none : Option (List Int)) else some [])
     return ⟨prop, search, [], true, 1⟩
   | `(ts_prop| ts.istrue($e:ts_expr)) => do
     let t ← evalExpr vars .bool e
-    let prop ← `(($t : TsM Bool) = pure true)
-    let search ← `(if ($t : TsM Bool) = pure true then (none : Option (List Int)) else some [])
+    let prop ← `(($t : JsM Bool) = pure true)
+    let search ← `(if ($t : JsM Bool) = pure true then (none : Option (List Int)) else some [])
     return ⟨prop, search, [], true, 1⟩
   | `(ts_prop| ts.imp($g:ts_expr) {$body:ts_prop}) => do
     let gt ← evalExpr vars .bool g
@@ -85,9 +86,9 @@ partial def elabProp (vars : List String) :
     -- assignment (the refuter instead surfaces a thrown guard as a
     -- `threw` issue — a documented divergence, Error never contradicting
     -- a Theorem). A witness must satisfy the guard the same way.
-    let prop ← `((($gt : TsM Bool) = pure true) → $(inner.prop))
+    let prop ← `((($gt : JsM Bool) = pure true) → $(inner.prop))
     let search ←
-      `(if ($gt : TsM Bool) = pure true then $(inner.search)
+      `(if ($gt : JsM Bool) = pure true then $(inner.search)
         else (none : Option (List Int)))
     return ⟨prop, search, inner.names, inner.allBounded, inner.domainSize⟩
   | `(ts_prop| ts.forall($binders:ts_binder,*) {$body:ts_prop}) => do
@@ -388,14 +389,14 @@ def certifyRoot (identity : Identity) (p root residual : Expr) :
     if ← isKernelTimeout ex then throw ex
     return gaveUp
 
-/-- Rung 2, the generic stage: normalize with the `thales_norm` simp set,
+/-- Rung 2, the generic stage: normalize with the `js_norm` simp set,
 then close with omega. Success is kernel-checked like the decide rung; a
 closer that fails leaves the residual goal — rolled back to its
 pre-closer state — for the next rung. -/
 def attemptGeneric (identity : Identity) (p : Expr) :
     Term.TermElabM GenericOutcome := do
   let mvar ← Meta.mkFreshExprMVar p
-  let some ext ← Meta.getSimpExtension? `thales_norm
+  let some ext ← Meta.getSimpExtension? `js_norm
     | return .done ⟨identity, .Error,
       "the prover's normalization rules are not registered", none, none⟩
   let ctx ← Meta.Simp.mkContext (config := {})

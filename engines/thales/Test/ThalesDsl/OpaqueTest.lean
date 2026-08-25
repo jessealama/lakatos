@@ -1,6 +1,6 @@
 import ThalesDsl.Model
 
-open Lean ThalesDsl
+open Lean ThalesDsl Js Js.Number
 
 -- An opaque node in expression position degrades the declaration alone: it
 -- is recorded as failed with the construct name, registers no model, and
@@ -36,7 +36,7 @@ ts_def "callsOops" := ts.fn() : ts.number { ts.return(ts.call["oops"]()) }
 
 -- Later declarations elaborate normally.
 ts_def "after" := ts.fn() : ts.number { ts.return(ts.num[5]) }
-#guard decide (TsModel.after = (pure 5.0 : TsM Float))
+#guard decide (TsModel.after = (pure 5.0 : JsM Float))
 
 #eval show CoreM Unit from do
   let env ← getEnv

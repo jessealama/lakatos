@@ -1,9 +1,10 @@
 import Lean
-import ThalesDsl.FloatFacts
-import ThalesDsl.NormAttr
-import ThalesDsl.TsM
+import Js.NormAttr
+import Js.Number.FloatFacts
+import Js.Runtime
+import ThalesDsl.Binders
 
-/-! The `thales_norm` simp set: normalization lemmas that strip TsM's
+/-! The `js_norm` simp set: normalization lemmas that strip JsM's
 monadic wrapping from pure-looking goals, leaving bare Int arithmetic
 for the closers, plus the binary64 facts `FloatFacts` proves — vanilla
 Lean carries no float theory, so a residual goal about `Float` has none
@@ -12,16 +13,18 @@ until one lands here. Model definitions join the set at creation
 
 namespace ThalesDsl
 
+open Js Js.Number
+
 /-- Collapse `pure a >>= f` one bind at a time; definitional on `Except`. -/
-@[thales_norm] theorem tsm_pure_bind {α β : Type} (a : α) (f : α → TsM β) :
-    (pure a >>= f : TsM β) = f a := rfl
+@[js_norm] theorem jsm_pure_bind {α β : Type} (a : α) (f : α → JsM β) :
+    (pure a >>= f : JsM β) = f a := rfl
 
 /-- Two pure results are equal exactly when their values are. -/
-@[thales_norm] theorem tsm_pure_inj {α : Type} (a b : α) :
-    ((pure a : TsM α) = pure b) ↔ a = b :=
+@[js_norm] theorem jsm_pure_inj {α : Type} (a b : α) :
+    ((pure a : JsM α) = pure b) ↔ a = b :=
   ⟨fun h => Except.ok.inj h, fun h => h ▸ rfl⟩
 
-/-! A lowered `if` is a `cond` between two `TsM` computations. The set
+/-! A lowered `if` is a `cond` between two `JsM` computations. The set
 keeps such a branch at the top of its expression — everything downstream
 of it is pushed into both arms — and splits it into the two implications
 its arms carry, which is what hands the closers the branch condition as a
@@ -30,42 +33,42 @@ reduce: while a branch sits under an operation, neither arm is a term the
 ground evaluators can see. -/
 
 /-- What follows a branch runs in whichever arm was taken. -/
-@[thales_norm] theorem tsm_cond_bind {α β : Type} (c : Bool)
-    (x y : TsM α) (f : α → TsM β) :
+@[js_norm] theorem jsm_cond_bind {α β : Type} (c : Bool)
+    (x y : JsM α) (f : α → JsM β) :
     ((bif c then x else y) >>= f) = bif c then (x >>= f) else (y >>= f) := by
   cases c <;> rfl
 
 /-- A branch on one side of an equation is one obligation per arm. -/
-@[thales_norm] theorem tsm_cond_eq {α : Type} (c : Bool) (x y z : TsM α) :
+@[js_norm] theorem jsm_cond_eq {α : Type} (c : Bool) (x y z : JsM α) :
     ((bif c then x else y) = z) ↔ ((c = true → x = z) ∧ (c = false → y = z)) := by
   cases c <;> simp
 
 /-- The same split for a branch that reached the boolean island itself. -/
-@[thales_norm] theorem cond_eq_true_iff (c a b : Bool) :
+@[js_norm] theorem cond_eq_true_iff (c a b : Bool) :
     ((bif c then a else b) = true) ↔ ((c = true → a = true) ∧ (c = false → b = true)) := by
   cases c <;> simp
 
--- Boolean islands: after tsm_pure_inj, `decide P = true` becomes `P`.
-attribute [thales_norm] decide_eq_true_eq
+-- Boolean islands: after jsm_pure_inj, `decide P = true` becomes `P`.
+attribute [js_norm] decide_eq_true_eq
 
 -- Binary64 theory from FloatFacts. Rewriting subtraction away leaves the
 -- closers one operator fewer to reason about.
-attribute [thales_norm, grind =] ThalesDsl.FloatFacts.float_sub_eq_add_neg
+attribute [js_norm, grind =] Js.Number.FloatFacts.float_sub_eq_add_neg
 
 -- Double negation strips: reachable now that unary minus is in the
 -- expression model.
-attribute [thales_norm, grind =] ThalesDsl.FloatFacts.float_neg_neg
+attribute [js_norm, grind =] Js.Number.FloatFacts.float_neg_neg
 
 -- Commutativity of `*` and `+`: the monotonicity facts below are keyed on
 -- the right-constant orientation only; these equations let grind identify
 -- the left-constant spelling with it. Grind-only — a permutative rewrite
 -- has no place in a simp set.
-attribute [grind =] ThalesDsl.FloatFacts.float_mul_comm
-attribute [grind =] ThalesDsl.FloatFacts.float_add_comm
+attribute [grind =] Js.Number.FloatFacts.float_mul_comm
+attribute [grind =] Js.Number.FloatFacts.float_add_comm
 
 /-- Open bounded ∀s so the closers see the inequalities. Tagged for grind
 too: the grind rung shares the normalization knowledge. -/
-@[thales_norm, grind =] theorem ballIco_iff (lo hi : Int) (p : Int → Prop) :
+@[js_norm, grind =] theorem ballIco_iff (lo hi : Int) (p : Int → Prop) :
     ballIco lo hi p ↔ ∀ x : Int, lo ≤ x → x < hi → p x :=
   Iff.rfl
 

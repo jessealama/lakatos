@@ -1,74 +1,74 @@
 import ThalesDsl.Model
 
-open ThalesDsl
+open ThalesDsl Js Js.Number
 
 -- Each core constructor of the pure-arithmetic slice, elaborated by ts_def
 -- into a computable model under TsModel.*.
 
 -- ts.num literal (and zero-parameter functions).
 ts_def "answer" := ts.fn() : ts.number { ts.return(ts.num[42]) }
-#guard decide (TsModel.answer = (pure 42.0 : TsM Float))
+#guard decide (TsModel.answer = (pure 42.0 : JsM Float))
 
 -- Negative literals.
 ts_def "minus3" := ts.fn() : ts.number { ts.return(ts.num[-3]) }
-#guard decide (TsModel.minus3 = (pure (-3.0) : TsM Float))
+#guard decide (TsModel.minus3 = (pure (-3.0) : JsM Float))
 
 -- Fractional and scientific literals: the transcriber emits the shortest
 -- round-tripping decimal, and OfScientific rounds correctly, so the token
 -- reconstructs the identical double.
 ts_def "cmFactor" := ts.fn() : ts.number { ts.return(ts.num[2.54]) }
-#guard decide (TsModel.cmFactor = (pure 2.54 : TsM Float))
+#guard decide (TsModel.cmFactor = (pure 2.54 : JsM Float))
 
 ts_def "negHalf" := ts.fn() : ts.number { ts.return(ts.num[-2.5]) }
-#guard decide (TsModel.negHalf = (pure (-2.5) : TsM Float))
+#guard decide (TsModel.negHalf = (pure (-2.5) : JsM Float))
 
 ts_def "sextillion" := ts.fn() : ts.number { ts.return(ts.num[1e21]) }
-#guard decide (TsModel.sextillion = (pure 1e21 : TsM Float))
+#guard decide (TsModel.sextillion = (pure 1e21 : JsM Float))
 
 -- A source literal past the double range folds to the infinity it denotes.
 ts_def "overflowLit" := ts.fn() : ts.number { ts.return(ts.num[Infinity]) }
-#guard decide (TsModel.overflowLit = (pure floatInf : TsM Float))
+#guard decide (TsModel.overflowLit = (pure floatInf : JsM Float))
 
 -- ts.id parameter references and ts.binop "+".
 ts_def "add" := ts.fn(ts.param["a"](ts.number), ts.param["b"](ts.number)) : ts.number {
   ts.return(ts.binop["+"](ts.id["a"], ts.id["b"]))
 }
-#guard decide (TsModel.add 2.0 3.0 = (pure 5.0 : TsM Float))
+#guard decide (TsModel.add 2.0 3.0 = (pure 5.0 : JsM Float))
 
 -- ts.binop "-" and "*".
 ts_def "sub" := ts.fn(ts.param["a"](ts.number), ts.param["b"](ts.number)) : ts.number {
   ts.return(ts.binop["-"](ts.id["a"], ts.id["b"]))
 }
-#guard decide (TsModel.sub 2.0 5.0 = (pure (-3.0) : TsM Float))
+#guard decide (TsModel.sub 2.0 5.0 = (pure (-3.0) : JsM Float))
 
 ts_def "sq" := ts.fn(ts.param["x"](ts.number)) : ts.number {
   ts.return(ts.binop["*"](ts.id["x"], ts.id["x"]))
 }
-#guard decide (TsModel.sq (-4.0) = (pure 16.0 : TsM Float))
+#guard decide (TsModel.sq (-4.0) = (pure 16.0 : JsM Float))
 
 -- ts.unop "-" is IEEE negation; "+" is ToNumber on a value already a
 -- number, so it models as the identity.
 ts_def "negate" := ts.fn(ts.param["x"](ts.number)) : ts.number {
   ts.return(ts.unop["-"](ts.id["x"]))
 }
-#guard decide (TsModel.negate 4.0 = (pure (-4.0) : TsM Float))
+#guard decide (TsModel.negate 4.0 = (pure (-4.0) : JsM Float))
 -- Negation flips the sign bit even on zero.
 #guard ((TsModel.negate 0.0).toOption.map Float.toBits) == some 0x8000000000000000
 
 ts_def "posid" := ts.fn(ts.param["x"](ts.number)) : ts.number {
   ts.return(ts.unop["+"](ts.id["x"]))
 }
-#guard decide (TsModel.posid (-2.5) = (pure (-2.5) : TsM Float))
+#guard decide (TsModel.posid (-2.5) = (pure (-2.5) : JsM Float))
 
 -- ts.binop "/" — total IEEE division: finite quotients, signed infinities
 -- at zero divisors, NaN at 0/0.
 ts_def "ratio" := ts.fn(ts.param["a"](ts.number), ts.param["b"](ts.number)) : ts.number {
   ts.return(ts.binop["/"](ts.id["a"], ts.id["b"]))
 }
-#guard decide (TsModel.ratio 7.0 2.0 = (pure 3.5 : TsM Float))
-#guard decide (TsModel.ratio 1.0 0.0 = (pure (1.0 / 0.0) : TsM Float))
-#guard decide (TsModel.ratio (-1.0) 0.0 = (pure (-(1.0 / 0.0)) : TsM Float))
-#guard decide (TsModel.ratio 0.0 0.0 = (pure (0.0 / 0.0) : TsM Float))
+#guard decide (TsModel.ratio 7.0 2.0 = (pure 3.5 : JsM Float))
+#guard decide (TsModel.ratio 1.0 0.0 = (pure (1.0 / 0.0) : JsM Float))
+#guard decide (TsModel.ratio (-1.0) 0.0 = (pure (-(1.0 / 0.0)) : JsM Float))
+#guard decide (TsModel.ratio 0.0 0.0 = (pure (0.0 / 0.0) : JsM Float))
 
 -- ts.binop "%" — JavaScript's remainder is C fmod: the quotient truncates,
 -- so the sign follows the dividend, and a zero remainder keeps that sign.
@@ -153,13 +153,13 @@ run_cmd do
 ts_def "twice" := ts.fn(ts.param["x"](ts.number)) : ts.number {
   ts.return(ts.call["add"](ts.id["x"], ts.id["x"]))
 }
-#guard decide (TsModel.twice 7.0 = (pure 14.0 : TsM Float))
+#guard decide (TsModel.twice 7.0 = (pure 14.0 : JsM Float))
 
 -- Nested expressions compose.
 ts_def "affine" := ts.fn(ts.param["x"](ts.number)) : ts.number {
   ts.return(ts.binop["+"](ts.binop["*"](ts.num[2], ts.id["x"]), ts.num[1]))
 }
-#guard decide (TsModel.affine 10.0 = (pure 21.0 : TsM Float))
+#guard decide (TsModel.affine 10.0 = (pure 21.0 : JsM Float))
 
 -- `≡` is SameValue and `===` is IEEE strict equality. They disagree on
 -- exactly two families of values, and both disagreements are pinned here
@@ -174,7 +174,7 @@ ts_def "zeroOver" := ts.fn(ts.param["x"](ts.number)) : ts.number {
   ts.return(ts.binop["*"](ts.id["x"], ts.num[0]))
 }
 
--- SameValue, via Lean's `=` on TsM Float, which is what `ts.eq` (`≡`)
+-- SameValue, via Lean's `=` on JsM Float, which is what `ts.eq` (`≡`)
 -- elaborates to: NaN *is* the same value as itself.
 #guard decide (TsModel.zeroOver (1.0 / 0.0) = TsModel.zeroOver (1.0 / 0.0))
 -- SameValue: +0 and -0 are different values.
@@ -193,14 +193,14 @@ ts_def "affineConst" := ts.fn(ts.param["n"](ts.number)) : ts.number {
   ts.const["shifted"](ts.binop["+"](ts.id["doubled"], ts.num[2]))
   ts.return(ts.id["shifted"])
 }
-#guard decide (TsModel.affineConst 3.0 = (pure 8.0 : TsM Float))
+#guard decide (TsModel.affineConst 3.0 = (pure 8.0 : JsM Float))
 
 -- A binding may go unused; its initializer still elaborates.
 ts_def "ignored" := ts.fn(ts.param["a"](ts.number)) : ts.number {
   ts.const["unused"](ts.binop["/"](ts.id["a"], ts.num[0]))
   ts.return(ts.id["a"])
 }
-#guard decide (TsModel.ignored 4.0 = (pure 4.0 : TsM Float))
+#guard decide (TsModel.ignored 4.0 = (pure 4.0 : JsM Float))
 
 -- A use before its binding is an unbound identifier, contained per decl.
 ts_def "tdz" := ts.fn() : ts.number {
@@ -216,7 +216,7 @@ ts_def "deadTail" := ts.fn() : ts.number {
   ts.const["x"](ts.binop["/"](ts.num[1], ts.num[0]))
   ts.return(ts.id["x"])
 }
-#guard decide (TsModel.deadTail = (pure 1.0 : TsM Float))
+#guard decide (TsModel.deadTail = (pure 1.0 : JsM Float))
 
 open Lean in
 #eval show CoreM Unit from do

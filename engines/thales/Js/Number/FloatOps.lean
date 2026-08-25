@@ -10,7 +10,7 @@ kernel: the `decide` rung can evaluate it, and no proof that uses it
 rests on an axiom.
 -/
 
-namespace ThalesDsl.FloatOps
+namespace Js.Number.FloatOps
 
 open Float.Model Float.Model.UnpackedFloat
 
@@ -45,4 +45,4 @@ argument is carried by the bit-exact tests, not yet by a proof. -/
 def tsRem (a b : Float) : Float :=
   .ofModel (.pack (remUnpacked Format.binary64 a.toModel.unpack b.toModel.unpack))
 
-end ThalesDsl.FloatOps
+end Js.Number.FloatOps

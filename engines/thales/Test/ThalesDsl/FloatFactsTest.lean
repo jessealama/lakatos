@@ -1,7 +1,7 @@
-import ThalesDsl.FloatFacts
+import Js.Number.FloatFacts
 import ThalesDsl.Prove
 
-open ThalesDsl Lean
+open ThalesDsl Lean Js Js.Number
 open Float.Model Float.Model.UnpackedFloat
 
 -- The bridge from `UnpackedFloat` theory to a `Float` goal is the

@@ -23,7 +23,7 @@ crossing, and per-operation shape and monotonicity lemmas over the
 constructor grid.
 -/
 
-namespace ThalesDsl.FloatFacts
+namespace Js.Number.FloatFacts
 
 open Float.Model Float.Model.UnpackedFloat
 
@@ -3320,4 +3320,4 @@ theorem float_le_of_not_lt {x y : Float}
     -- definitional equality, rather than by rewriting.
     exact Bool.noConfusion (hc.symm.trans h)
 
-end ThalesDsl.FloatFacts
+end Js.Number.FloatFacts

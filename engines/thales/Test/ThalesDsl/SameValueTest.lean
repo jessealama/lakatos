@@ -1,9 +1,9 @@
 import ThalesDsl.Prove
 
-open ThalesDsl
+open ThalesDsl Js Js.Number
 
 /-! `≡` is SameValue, and `ts.eq` elaborates it to propositional equality on
-`TsM Float`. That correspondence is an assumption the equation semantics
+`JsM Float`. That correspondence is an assumption the equation semantics
 rests on, and `Float`'s equality is new enough to move, so pin it rather
 than assert it. Each fact is pinned on both evaluation paths — `example`
 for the kernel rung, `#guard` for the compiled one — because a split
@@ -38,8 +38,8 @@ example : ((-0.0 : Float) == 0.0) = true := by decide
 
 /-! ## The shape `ts.eq` builds -/
 
--- Equations compare `TsM Float`, so the correspondence has to survive the
+-- Equations compare `JsM Float`, so the correspondence has to survive the
 -- monad, and a thrown side is equal to nothing.
-#guard decide ((pure (0.0 / 0.0) : TsM Float) = pure (0.0 / 0.0))
-#guard !decide ((pure (-0.0) : TsM Float) = pure 0.0)
-#guard !decide ((pure 0.0 : TsM Float) = TsM.throw (.error "RangeError"))
+#guard decide ((pure (0.0 / 0.0) : JsM Float) = pure (0.0 / 0.0))
+#guard !decide ((pure (-0.0) : JsM Float) = pure 0.0)
+#guard !decide ((pure 0.0 : JsM Float) = JsM.throw (.error "RangeError"))

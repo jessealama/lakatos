@@ -1,11 +1,6 @@
-import ThalesDsl.TsM
+import ThalesDsl.Binders
 
 open ThalesDsl
-
--- TsM is computable and comparable: pure arithmetic runs to a value.
-#guard decide ((pure 5 : TsM Int) = .ok 5)
-#guard decide ((pure (2 + 3) : TsM Int) = (pure 5 : TsM Int))
-#guard decide ((TsM.throw (.error "boom") : TsM Int) ≠ .ok 0)
 
 -- ballIco decides bounded ∀ over half-open Int ranges.
 #guard decide (ballIco 0 3 fun x => x < 3)
