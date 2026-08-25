@@ -26,6 +26,16 @@ open Lean ThalesEmit
   (decodeBinder (Json.mkObj
     [("name", "x"), ("kind", "range"), ("lo", "0"), ("hi", "10")]))
   matches .ok (.range "x" 0 10)
+#guard
+  (decodeBinder (Json.mkObj
+    [("name", "a"), ("kind", "number"),
+     ("lower", Json.mkObj [("op", "<"), ("lit", "0")]),
+     ("upper", Json.mkObj [("op", "<="), ("lit", "1")])]))
+  matches .ok (.number "a" (some ("<", "0")) (some ("<=", "1")))
+-- An absent side is a missing field, so a rangeless binder decodes bare.
+#guard
+  (decodeBinder (Json.mkObj [("name", "a"), ("kind", "number")]))
+  matches .ok (.number "a" none none)
 #guard (decodeBinder (Json.mkObj [("name", "x"), ("kind", "real")])) matches .error _
 
 -- The pinned emissions render to the golden artifacts — files a human
@@ -126,6 +136,43 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
     throwError "the assigned parameter is not rebound:\n{rendered}"
   unless (rendered.splitOn "fun").length == 1 do
     throwError "a helper lambda leaked into the source text:\n{rendered}"
+
+-- A number binder is a Float ∀ carrying its bounds as hypotheses, lower
+-- outermost, with an infinite endpoint spelled `floatInf` — and no use of
+-- it is coerced, since it is already a double. The wide conclusion also
+-- pins the join: `return` never ends a line, which would read back as a
+-- bare return.
+#eval show CoreM Unit from do
+  let call (x : String) : JsExpr :=
+    .call "applyConversionFactors" #[.id x, .id x, .id x, .id x, .id x]
+  let e : Emission := {
+    file := "t.ts"
+    declarations := #[{ name := "applyConversionFactors",
+                        params := #["v", "sf", "so", "tf", "to"],
+                        source := "applyConversionFactors",
+                        body := #[.ret (.id "v")] }]
+    obligations := #[{ function := "applyConversionFactors", property := "p",
+                       formula := "f",
+                       payload := .structured
+                         #[.number "x" (some ("<", "0")) (some ("<", "Infinity")),
+                           .number "y" (some ("<=", "-Infinity")) none]
+                         #[] (.istrue (.binop "<=" (call "x") (call "y"))) }] }
+  let rendered ← renderEmission e
+  unless (rendered.splitOn "∀ (x : JsNumber),").length == 2 do
+    throwError "the number binder is not a JsNumber ∀:\n{rendered}"
+  -- The printer breaks after every arrow, so order is pinned by nesting:
+  -- the upper bound must sit inside the lower.
+  let underLower := rendered.splitOn "0 < x →"
+  unless underLower.length == 2 do
+    throwError "the lower bound did not render:\n{rendered}"
+  unless ((underLower[1]!).splitOn "x < floatInf →").length == 2 do
+    throwError "the upper bound is not inside the lower:\n{rendered}"
+  unless (rendered.splitOn "-floatInf ≤ y →").length == 2 do
+    throwError "the half-bounded number binder did not render:\n{rendered}"
+  unless (rendered.splitOn "Float.ofInt").length == 1 do
+    throwError "a number binder was coerced from Int:\n{rendered}"
+  unless (rendered.splitOn "return\n").length == 1 do
+    throwError "a return was split from its argument:\n{rendered}"
 
 -- A shape outside the slice is refused with a message naming the gap.
 #eval show CoreM Unit from do

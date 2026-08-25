@@ -32,18 +32,27 @@ structure EmitFn where
   body : Array JsStmt
 deriving Repr, Inhabited
 
-/-- A binder's denoted integer domain: a finite half-open `[lo, hi)`
-range, the whole int line, or the naturals. -/
+/-- A binder's denoted domain: a finite half-open `[lo, hi)` integer
+range, the whole int line, the naturals, or the doubles a `number`
+binder's bounds admit — each bound an op × endpoint-literal pair. -/
 inductive BinderIR where
   | range (name : String) (lo hi : Int)
   | int (name : String)
   | nat (name : String)
+  | number (name : String) (lower upper : Option (String × String))
 deriving Repr, Inhabited
 
 def BinderIR.name : BinderIR → String
   | .range n _ _ => n
   | .int n => n
   | .nat n => n
+  | .number n _ _ => n
+
+/-- Whether the binder enumerates `Int`s, so a use of it inside the body
+crosses to the Float world. A `number` binder is already a double. -/
+def BinderIR.isIntValued : BinderIR → Bool
+  | .number .. => false
+  | _ => true
 
 inductive Conclusion where
   | eq (left right : JsExpr)
@@ -139,6 +148,14 @@ def decodeFn (j : Json) : Except String EmitFn := do
            body := ← (← getArr j "body").mapM decodeStmt }
   | k => throw s!"unknown declaration kind '{k}'"
 
+/-- One side of a `number` binder's interval, absent when unbounded: an
+absent side is a missing field, never a null. -/
+def decodeBound (j : Json) (field : String) :
+    Except String (Option (String × String)) := do
+  match j.getObjVal? field with
+  | .error _ => pure none
+  | .ok v => pure (some (← getStr v "op", ← getStr v "lit"))
+
 def decodeBinder (j : Json) : Except String BinderIR := do
   let name ← getStr j "name"
   match ← getStr j "kind" with
@@ -147,6 +164,8 @@ def decodeBinder (j : Json) : Except String BinderIR := do
       (← decodeIntString (← getStr j "hi")))
   | "int" => pure (.int name)
   | "nat" => pure (.nat name)
+  | "number" =>
+    pure (.number name (← decodeBound j "lower") (← decodeBound j "upper"))
   | k => throw s!"unknown binder kind '{k}'"
 
 def decodeConclusion (j : Json) : Except String Conclusion := do

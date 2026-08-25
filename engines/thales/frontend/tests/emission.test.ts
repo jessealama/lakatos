@@ -441,27 +441,84 @@ describe('unary operators', () => {
   });
 });
 
-describe('emitModule degradations beyond the tracer', () => {
-  test('a formula outside the structured slice degrades to a bare payload', () => {
-    const src = [
-      '/** @ensures{big} forall (x: number ∈ [0, 1]) { f(x) >= 0 } */',
-      'export function f(x: number): number {',
-      '  return x;',
-      '}',
-      '',
-    ].join('\n');
-    const { emission, classified } = emitModule(src, 'f.ts');
-    expect(classified).toEqual([]);
-    expect(emission.obligations).toEqual([
+describe('number binders', () => {
+  test.each([
+    [
+      'finite mixed openness',
+      '(a: number ∈ (0, 1])',
       {
-        function: 'f',
-        property: 'big',
-        formula: 'forall (x: number ∈ [0, 1]) { f(x) >= 0 }',
-        payload: { kind: 'bare' },
+        name: 'a',
+        kind: 'number',
+        lower: { op: '<', lit: '0' },
+        upper: { op: '<=', lit: '1' },
       },
-    ]);
+    ],
+    [
+      'one-sided above zero',
+      '(sf: number ∈ (0, ∞))',
+      {
+        name: 'sf',
+        kind: 'number',
+        lower: { op: '<', lit: '0' },
+        upper: { op: '<', lit: 'Infinity' },
+      },
+    ],
+    [
+      'both infinite',
+      '(c: number ∈ (-∞, ∞))',
+      {
+        name: 'c',
+        kind: 'number',
+        lower: { op: '<', lit: '-Infinity' },
+        upper: { op: '<', lit: 'Infinity' },
+      },
+    ],
+    ['no range at all', '(x: number)', { name: 'x', kind: 'number' }],
+    [
+      'closed at both ends',
+      '(c: number ∈ [-100, 100])',
+      {
+        name: 'c',
+        kind: 'number',
+        lower: { op: '<=', lit: '-100' },
+        upper: { op: '<=', lit: '100' },
+      },
+    ],
+    [
+      'open at -0 below, which IEEE comparison cannot exclude',
+      '(z: number ∈ (-0, 1))',
+      {
+        name: 'z',
+        kind: 'number',
+        lower: { op: '<=', lit: '-0' },
+        upper: { op: '<', lit: '1' },
+      },
+    ],
+    [
+      'open at 0 above, which IEEE comparison cannot exclude',
+      '(w: number ∈ (-1, 0))',
+      {
+        name: 'w',
+        kind: 'number',
+        lower: { op: '<', lit: '-1' },
+        upper: { op: '<=', lit: '0' },
+      },
+    ],
+  ])('a number binder structures: %s', (_label, binder, expected) => {
+    const src = [
+      `/** @ensures{p} forall ${binder} { f(${expected.name}) >= 0 } */`,
+      'export function f(x: number): number { return x * x; }',
+    ].join('\n');
+    const { emission } = emitModule(src, 'number-binders.ts');
+    const payload = emission.obligations[0]!.payload;
+    expect(payload.kind).toBe('structured');
+    assert(payload.kind === 'structured');
+    expect(payload.binders[0]).toEqual(expected);
+    expectValidEmission(emission);
   });
+});
 
+describe('emitModule degradations beyond the tracer', () => {
   test('an istrue conclusion structures as istrue', () => {
     const src = [
       '/** @ensures{nonneg} forall (x: int ∈ [0, 5)) { f(x) >= 0 } */',

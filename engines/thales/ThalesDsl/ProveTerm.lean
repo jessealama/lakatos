@@ -50,6 +50,22 @@ partial def isGuardProp : TSyntax `term → Bool
   | `($_ = pure true) => true
   | _ => false
 
+/-- Whether a term is a `number` binder's own bound hypothesis: a `<` or
+`≤` with the binder on one side. Only the Float heads consult this, so a
+nat binder's `0 ≤ n` is never mistaken for one. -/
+def isBoundHyp (x : Name) : TSyntax `term → Bool
+  | `($a < $b) | `($a ≤ $b) =>
+    (a.raw.isIdent && a.raw.getId.eraseMacroScopes == x) ||
+      (b.raw.isIdent && b.raw.getId.eraseMacroScopes == x)
+  | _ => false
+
+/-- Steps over the bound hypotheses a `number` binder head introduces, so
+the guards under them are still recovered. -/
+partial def peelBounds (x : Name) (t : TSyntax `term) : TSyntax `term :=
+  match t with
+  | `($h → $rest) => if isBoundHyp x h then peelBounds x rest else t
+  | _ => t
+
 /-- The binder spine of a plain-Prop payload: the heads emission writes,
 outermost first, then the guard hypotheses under them, and the leaf under
 those — the same data the old grammar carried structurally, recovered here
@@ -67,10 +83,12 @@ partial def propSpine (t : TSyntax `term) : PropSpine :=
       { inner with
         binders := .ranged x.getId.toString l h :: inner.binders }
     | _, _ => ⟨[], [], t⟩
-  | `(∀ ($x:ident : Int), $body)
+  | `(∀ ($x:ident : Int), $body) =>
+    let inner := propSpine body
+    { inner with binders := .unbounded x.getId.toString :: inner.binders }
   | `(∀ ($x:ident : JsNumber), $body)
   | `(∀ ($x:ident : Float), $body) =>
-    let inner := propSpine body
+    let inner := propSpine (peelBounds x.getId.eraseMacroScopes body)
     { inner with binders := .unbounded x.getId.toString :: inner.binders }
   | `($g → $rest) =>
     if isGuardProp g then

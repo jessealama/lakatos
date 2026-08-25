@@ -30,9 +30,8 @@ const QUICK_FIXTURES = [
 ];
 
 /** The expression slice of the conformance corpus (#147): single-return
- * bodies, int/nat binders, single-atom conclusions. Fixtures with number
- * binders, imports, or unsupported ranges join the manifest with their
- * slices (#149-#151). */
+ * bodies, int/nat binders, single-atom conclusions. Fixtures with imports
+ * or unsupported ranges join the manifest with their slices (#149, #151). */
 const EXPRESSION_FIXTURES = [
   'engines/thales/tests/fixtures/operators.ts',
   `${CONFORMANCE}/theorem/add-commutes.ts`,
@@ -65,8 +64,7 @@ const EXPRESSION_FIXTURES = [
 /** The statement slice (#148): statement-bodied fixtures — const and
  * mutable locals, reassignment, branches whose arms return, throw, or
  * fall through — plus the statement-level degradations (loops, a
- * shadowing redeclaration, an uninitialized let). Statement fixtures
- * whose formulas need number binders wait for #150. */
+ * shadowing redeclaration, an uninitialized let). */
 const STATEMENT_FIXTURES = [
   'engines/thales/tests/fixtures/statements.ts',
   `${CONFORMANCE}/theorem/branch-joined-let.ts`,
@@ -79,11 +77,18 @@ const STATEMENT_FIXTURES = [
   `${CONFORMANCE}/inappropriate/uninitialized-let.ts`,
 ];
 
-/** The binder/guard slice: guard chains, number binders, and
- * guard-respecting witnesses join as their shapes land. */
+/** The binder/guard slice: guard chains, guard-respecting witnesses, and
+ * number binders — bounded, half-bounded, and rangeless. Imports and the
+ * binder degradations join as their shapes land. */
 const BINDER_FIXTURES = [
   `${CONFORMANCE}/theorem/guarded-floor.ts`,
   `${CONFORMANCE}/theorem/branch-guarded-throw.ts`,
+  `${CONFORMANCE}/theorem/number-binder.ts`,
+  `${CONFORMANCE}/theorem/branch-clamp.ts`,
+  `${CONFORMANCE}/theorem/finite-bounds.ts`,
+  `${CONFORMANCE}/theorem/left-factor.ts`,
+  `${CONFORMANCE}/theorem/literal-factor.ts`,
+  `${CONFORMANCE}/theorem/guarded-monotone-conversion.ts`,
 ];
 
 const fixtures =

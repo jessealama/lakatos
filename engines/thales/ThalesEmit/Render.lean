@@ -250,7 +250,9 @@ def obligationCommand (e : Emission) (o : Obligation) : RenderM (TSyntax `comman
   match o.payload with
   | .bare => `(#thales_prove $file $fn $prop)
   | .structured binders guards conclusion =>
-    let bound := binders.map (·.name)
+    -- Only the Int-enumerated binders coerce; a `number` binder is already
+    -- a double, the way the old pipeline's Float ∀ is.
+    let bound := (binders.filter (·.isIntValued)).map (·.name)
     let coerced := fun n => bound.contains n
     let leaf ← match conclusion with
       | .eq l r => do
@@ -277,6 +279,24 @@ def obligationCommand (e : Emission) (o : Obligation) : RenderM (TSyntax `comman
       | .nat name =>
         let xi ← scopedIdent name
         `(∀ ($xi : Int), 0 ≤ $xi → $acc)
+      | .number name lower upper =>
+        -- Never enumerated: the binder is its type plus whichever bounds it
+        -- carries as hypotheses, lower outermost — the old pipeline's shape.
+        let xi ← scopedIdent name
+        let mut body := acc
+        if let some (op, lit) := upper then
+          let e ← numTerm lit
+          body ← match op with
+            | "<" => `($xi < $e → $body)
+            | "<=" => `($xi ≤ $e → $body)
+            | _ => throw s!"unsupported upper bound '{op}'"
+        if let some (op, lit) := lower then
+          let e ← numTerm lit
+          body ← match op with
+            | "<" => `($e < $xi → $body)
+            | "<=" => `($e ≤ $xi → $body)
+            | _ => throw s!"unsupported lower bound '{op}'"
+        `(∀ ($xi : JsNumber), $body)
     `(#thales_prove $file $fn $prop := $propTerm:term)
 
 /-- The artifact's fixed header: scaffolding, not code the printer owns.
@@ -302,12 +322,27 @@ partial def unscope : Syntax → Syntax
   | .node info kind args => .node info kind (args.map unscope)
   | s => s
 
+/-- `return`'s argument is optional, so a line break between the two parses
+back as a bare `return`; the printer breaks there whenever the argument is
+too wide for the line. Rejoining them is what keeps the artifact
+re-parsable. -/
+partial def joinReturns : List String → List String
+  | line :: rest =>
+    match joinReturns rest with
+    | next :: tail =>
+      if line == "return" || line.endsWith " return" then
+        (line ++ " " ++ next.dropWhile (· == ' ')) :: tail
+      else line :: next :: tail
+    | [] => [line]
+  | [] => []
+
 /-- Formatted command text, without trailing whitespace: the printer
 leaves a dangling space after `then` when the arm breaks to its own line,
 and the artifact is plain text a person's editor would flag it in. -/
 def prettyLines (fmt : Format) : String :=
   String.intercalate "\n"
-    (((fmt.pretty 100).splitOn "\n").map (·.dropEndWhile (· == ' ') |>.toString))
+    (joinReturns
+      (((fmt.pretty 100).splitOn "\n").map (·.dropEndWhile (· == ' ') |>.toString)))
 
 /-- The full artifact text. Pretty-printing runs in `CoreM` against an
 environment that imports `ThalesDsl`, which carries every syntax the

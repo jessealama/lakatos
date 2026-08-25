@@ -13,8 +13,10 @@ import {
 } from '../../../../lemma/src/index.js';
 import {
   chainReading,
+  type FloatBound,
   isEquationGuard,
   kindName,
+  numberBounds,
   numberToken,
 } from './transcribe.js';
 
@@ -53,13 +55,15 @@ export interface EmitFunction {
   body: EmitStmt[];
 }
 
-/** A binder's denoted integer domain: a finite half-open range, the whole
- * int line, or the naturals — the same three shapes the old grammar's
- * binder constructors carry. */
+/** A binder's denoted domain: a finite half-open integer range, the whole
+ * int line, the naturals, or a `number` binder — the whole double line,
+ * narrowed by whichever bounds its interval carries. The same shapes the
+ * old grammar's binder constructors carry. */
 export type EmitBinder =
   | { name: string; kind: 'range'; lo: string; hi: string }
   | { name: string; kind: 'int' }
-  | { name: string; kind: 'nat' };
+  | { name: string; kind: 'nat' }
+  | { name: string; kind: 'number'; lower?: FloatBound; upper?: FloatBound };
 
 export interface EmitObligation {
   /** Qualified function name — the annotation identity's `function`. */
@@ -876,10 +880,21 @@ function equationSides(
 }
 
 /** A binder's emitted domain: a finite half-open range, the whole int
- * line, or the naturals — reading the domain the binder *denotes*, the
- * same folding the old transcriber applies. `bare` covers everything this
- * slice cannot express. */
+ * line, the naturals, or a bounded `number` — reading the domain the binder
+ * *denotes*, the same folding the old transcriber applies. `bare` covers
+ * everything this slice cannot express. */
 function lowerBinder(b: Binder): EmitBinder | 'bare' {
+  if (b.domain === 'number') {
+    // No safe-integer clamp: a number binder denotes binary64 values
+    // directly, so there is no representability question to answer.
+    const { lower, upper } = numberBounds(b.range);
+    return {
+      name: b.varName,
+      kind: 'number',
+      ...(lower === undefined ? {} : { lower }),
+      ...(upper === undefined ? {} : { upper }),
+    };
+  }
   if (b.domain !== 'int' && b.domain !== 'nat') return 'bare';
   if (b.range === undefined) {
     return { name: b.varName, kind: b.domain === 'nat' ? 'nat' : 'int' };
