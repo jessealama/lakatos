@@ -1,6 +1,6 @@
 import { stringMatching } from "fast-check";
 import { LemmaError } from "./errors.js";
-import type { Domain, StringPattern } from "./binder.js";
+import type { Primitive, StringPattern } from "./binder.js";
 
 // A line comment on purpose: spelling star-slash inside a block comment
 // would end it — which is exactly the hazard this hint is about. An
@@ -66,7 +66,7 @@ export function anchoredSource(source: string): string {
 
 /** The complaint a regex guard on a non-string domain raises; shared with
  * arbitraryFor's backstop so the two throw sites cannot drift apart. */
-export function regexGuardDomainError(domain: Domain): LemmaError {
+export function regexGuardDomainError(domain: Primitive): LemmaError {
   return new LemmaError(
     `domain '${domain}' does not support ∈ regex guards — only string does`,
   );
@@ -76,7 +76,10 @@ export function regexGuardDomainError(domain: Domain): LemmaError {
  * are kept verbatim; anchoring happens at lowering. Validation probes
  * fast-check itself — a peer dependency, so it resolves to the same copy
  * the generated spec runs against and the accepted subset cannot drift. */
-export function parseRegexGuard(text: string, domain: Domain): StringPattern {
+export function parseRegexGuard(
+  text: string,
+  domain: Primitive,
+): StringPattern {
   if (domain !== "string") {
     throw regexGuardDomainError(domain);
   }

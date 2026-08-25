@@ -119,3 +119,49 @@ describe("bool — per-atom boolean enforcement", () => {
     expect(() => bool("", "s")).toThrow(/not a boolean/);
   });
 });
+
+describe("runtime report — class binders", () => {
+  it("renders a class binder's counterexample as its construction", () => {
+    const issue = thrownIssue(() =>
+      report(
+        "f.ts",
+        "Point#distance",
+        "nonNegative",
+        ["p", "k"],
+        {
+          failed: true,
+          counterexample: [[0, 5], 3],
+          errorInstance: { message: "Property failed by returning false" },
+        },
+        ["Point", null],
+      ),
+    );
+    expect(issue).toEqual({
+      file: "f.ts",
+      function: "Point#distance",
+      property: "nonNegative",
+      kind: "falsified",
+      counterexample: { p: "new Point(0,5)", k: 3 },
+    });
+  });
+
+  it("renders string and bigint constructor arguments losslessly", () => {
+    const issue = thrownIssue(() =>
+      report(
+        "f.ts",
+        "describe",
+        "selfSame",
+        ["t"],
+        {
+          failed: true,
+          counterexample: [["a", 5n, true]],
+          errorInstance: { message: "Property failed by returning false" },
+        },
+        ["Tag"],
+      ),
+    );
+    expect(issue).toMatchObject({
+      counterexample: { t: 'new Tag("a",5n,true)' },
+    });
+  });
+});

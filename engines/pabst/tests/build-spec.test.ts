@@ -141,3 +141,28 @@ describe("buildSpecs — unrepresentable domains", () => {
     );
   });
 });
+
+const CLASS_BINDER = new URL(
+  "./fixtures/build-spec/class-binder.ts",
+  import.meta.url,
+).pathname;
+
+describe("buildSpecs — class binders", () => {
+  it("resolves class binders and imports the class", () => {
+    const { specs } = buildSpecs(CLASS_BINDER);
+    expect(specs).toHaveLength(1);
+    const s = specs[0]!;
+    const domain = {
+      className: "Point",
+      ctorParams: [
+        { name: "x", domain: "number" },
+        { name: "y", domain: "number" },
+      ],
+    };
+    expect(s.binders).toEqual([
+      { varName: "p", domain },
+      { varName: "q", domain },
+    ]);
+    expect(s.freeExports).toContain("Point");
+  });
+});

@@ -299,12 +299,15 @@ const COMPILE_ERROR_CASES: CompileErrorCase[] = [
     expected: ["existential quantifiers"],
   },
   {
-    name: "an unsupported domain (prefix-parser)",
+    name: "an unresolvable domain (class-domain resolution)",
     file: "baddomain.ts",
     source: `/** @ensures{rounds} forall (x: float) { rounder(x) >= 0 } */\nexport function rounder(x: number): number { return x; }\n`,
     wrapped: true,
     property: "rounds",
-    expected: ["unknown generation domain 'float'"],
+    expected: [
+      "domain 'float' is neither a primitive domain",
+      "nor an exported class declared in",
+    ],
   },
   {
     name: "an existential inside the body (formula-lexer)",

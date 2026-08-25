@@ -2,14 +2,15 @@ import {
   anchoredSource,
   bigintBounds,
   type Binder,
-  type Domain,
   intBounds,
+  isClassDomain,
   LemmaError,
   numberConstraints,
+  type Primitive,
   regexGuardDomainError,
 } from "../../../lemma/src/index.js";
 
-export const DOMAIN_TABLE: Record<Domain, string> = {
+export const DOMAIN_TABLE: Record<Primitive, string> = {
   int: "fc.integer()",
   nat: "fc.nat()",
   number: "fc.double()",
@@ -25,6 +26,17 @@ export function arbitraryFor(
   binder: Pick<Binder, "domain" | "range" | "pattern">,
 ): string {
   const { domain, range, pattern } = binder;
+  if (isClassDomain(domain)) {
+    // Generation draws the constructor's argument tuple; the emitted test
+    // runs the real constructor on it (spec/semantics.md).
+    if (domain.ctorParams === undefined) {
+      throw new LemmaError(
+        `unresolved class binder '${domain.className}' reached codegen`,
+      );
+    }
+    const args = domain.ctorParams.map((p) => DOMAIN_TABLE[p.domain]);
+    return `fc.tuple(${args.join(", ")})`;
+  }
   if (pattern) {
     if (domain !== "string") {
       // Unreachable via the parser (parseRegexGuard rejects these), kept

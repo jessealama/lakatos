@@ -2,7 +2,8 @@ import type { Binder } from "../../../lemma/src/index.js";
 
 export type {
   Binder,
-  Domain,
+  ClassDomain,
+  Primitive,
   Range,
   StringPattern,
 } from "../../../lemma/src/index.js";

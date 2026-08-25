@@ -1,7 +1,7 @@
 import ts from "typescript";
-import { isDomain } from "./domains.js";
+import { isPrimitive } from "./domains.js";
 import { LemmaError } from "./errors.js";
-import type { Binder, Range, StringPattern } from "./binder.js";
+import type { Binder, Primitive, Range, StringPattern } from "./binder.js";
 import { parseRange } from "./range.js";
 import {
   parseRegexGuard,
@@ -215,14 +215,20 @@ function parseBinderGroup(
   const member = domainToks.findIndex(isMembership);
   const nameEnd = member === -1 ? domainToks.length : member;
   const domainName = sliceText(formula, domainToks.slice(0, nameEnd)).trim();
-  if (!isDomain(domainName)) {
+  if (!isPrimitive(domainName) && !NAME.test(domainName)) {
     throw new LemmaError(
-      `unknown generation domain '${domainName}' — valid domains: int, nat, number, boolean, string, bigint`,
+      `invalid domain '${domainName}' — expected a primitive domain ` +
+        `(int, nat, number, boolean, string, bigint) or a class name`,
     );
   }
   let range: Range | undefined;
   let pattern: StringPattern | undefined;
   if (member !== -1) {
+    if (!isPrimitive(domainName)) {
+      throw new LemmaError(
+        `a class domain admits no constraint — '∈' applies to primitive domains only`,
+      );
+    }
     const guardText = formula
       .slice(domainToks[member]!.end, toks[close]!.start)
       .trim();
@@ -237,6 +243,9 @@ function parseBinderGroup(
     if (regexGuard) pattern = parseRegexGuard(guardText, domainName);
     else range = parseRange(guardText, domainName);
   }
+  const domain: Primitive | { className: string } = isPrimitive(domainName)
+    ? domainName
+    : { className: domainName };
   const names = adjacentRuns(interior.slice(0, colon), formula);
   if (names.length === 0) {
     throw new LemmaError(`binder group has no variable names: (${groupText})`);
@@ -247,7 +256,12 @@ function parseBinderGroup(
     }
   }
   return names.map((varName) => {
-    const binder: Binder = { varName, domain: domainName };
+    // A class domain is per-binder state: resolution attaches constructor
+    // parameters to it, and shared structure would alias across binders.
+    const binder: Binder = {
+      varName,
+      domain: typeof domain === "string" ? domain : { ...domain },
+    };
     if (range) binder.range = range;
     if (pattern) binder.pattern = pattern;
     return binder;

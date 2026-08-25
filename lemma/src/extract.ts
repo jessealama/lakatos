@@ -1,6 +1,8 @@
 import ts from "typescript";
 import * as fs from "node:fs";
 import { qualifiedName } from "./qualified-name.js";
+import type { ClassInfo, ClassTable } from "./class-domain.js";
+import type { CtorParam, GenerablePrimitive } from "./binder.js";
 
 export interface RawAnnotation {
   propertyName: string;
@@ -31,6 +33,8 @@ export interface InvalidAnnotation {
 export interface ExtractResult {
   file: string;
   exports: Set<string>;
+  /** Named class declarations, as class-domain resolution sees them. */
+  classes: ClassTable;
   annotations: RawAnnotation[];
   invalid: InvalidAnnotation[];
 }
@@ -95,8 +99,87 @@ export function extractFromSource(text: string, file: string): ExtractResult {
   return {
     file,
     exports: exportsSet,
+    classes: collectClasses(sf, exportsSet),
     ...resolveDuplicates(annotations, invalid, file),
   };
+}
+
+function collectClasses(
+  sf: ts.SourceFile,
+  exportsSet: Set<string>,
+): ClassTable {
+  const classes: ClassTable = new Map();
+  for (const stmt of sf.statements) {
+    if (!ts.isClassDeclaration(stmt) || stmt.name === undefined) continue;
+    const name = stmt.name.text;
+    const info: ClassInfo = {
+      exported:
+        hasModifier(stmt, ts.SyntaxKind.ExportKeyword) || exportsSet.has(name),
+      defaultExport: hasModifier(stmt, ts.SyntaxKind.DefaultKeyword),
+      ...analyzeCtor(stmt, sf),
+    };
+    classes.set(name, info);
+  }
+  return classes;
+}
+
+const PARAM_TYPES: Partial<Record<ts.SyntaxKind, GenerablePrimitive>> = {
+  [ts.SyntaxKind.NumberKeyword]: "number",
+  [ts.SyntaxKind.BooleanKeyword]: "boolean",
+  [ts.SyntaxKind.StringKeyword]: "string",
+  [ts.SyntaxKind.BigIntKeyword]: "bigint",
+};
+
+/** A constructor's parameters as generation sees them, or why it refuses.
+ * The refusal names the offending parameter: the diagnostic must let the
+ * author fix the constructor without re-deriving the analysis. */
+function analyzeCtor(
+  cls: ts.ClassDeclaration,
+  sf: ts.SourceFile,
+): { ctorParams: CtorParam[] } | { ctorProblem: string } {
+  const ctors = cls.members.filter(ts.isConstructorDeclaration);
+  if (ctors.length > 1) {
+    return {
+      ctorProblem: "overloaded constructor (no single generable signature)",
+    };
+  }
+  const ctor = ctors[0];
+  if (ctor === undefined) return { ctorParams: [] };
+  const params: CtorParam[] = [];
+  for (const p of ctor.parameters) {
+    if (!ts.isIdentifier(p.name)) {
+      return { ctorProblem: "a constructor parameter is destructured" };
+    }
+    const name = p.name.text;
+    if (p.dotDotDotToken !== undefined) {
+      return {
+        ctorProblem: `constructor parameter '${name}' is a rest parameter`,
+      };
+    }
+    if (p.questionToken !== undefined) {
+      return { ctorProblem: `constructor parameter '${name}' is optional` };
+    }
+    if (p.initializer !== undefined) {
+      return {
+        ctorProblem: `constructor parameter '${name}' has a default value`,
+      };
+    }
+    if (p.type === undefined) {
+      return {
+        ctorProblem: `constructor parameter '${name}' has no type annotation`,
+      };
+    }
+    const domain = PARAM_TYPES[p.type.kind];
+    if (domain === undefined) {
+      return {
+        ctorProblem:
+          `constructor parameter '${name}' has type '${p.type.getText(sf)}' — ` +
+          `constructor parameters must be annotated number, boolean, string, or bigint`,
+      };
+    }
+    params.push({ name, domain });
+  }
+  return { ctorParams: params };
 }
 
 /** The identity an annotation claims, as a collision key. */

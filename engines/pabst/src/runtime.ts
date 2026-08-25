@@ -63,6 +63,7 @@ export function report(
   name: string,
   varNames: string[],
   d: ReportDetails,
+  ctors?: Array<string | null>,
 ): void {
   if (!d.failed) return;
   const base = { file, function: functionName, property: name };
@@ -77,7 +78,12 @@ export function report(
 
   const counterexample: Record<string, unknown> = {};
   varNames.forEach((n, i) => {
-    counterexample[n] = encodeValue(d.counterexample![i]);
+    const ctor = ctors?.[i];
+    // A class binder's generated value is its constructor-argument tuple;
+    // the rendered construction is the instance's reproducible identity.
+    counterexample[n] = ctor
+      ? `new ${ctor}(${(d.counterexample![i] as unknown[]).map(stringify).join(",")})`
+      : encodeValue(d.counterexample![i]);
   });
 
   const err = d.errorInstance;

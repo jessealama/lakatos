@@ -1265,6 +1265,17 @@ describe('clamped ranges', () => {
     expect(lean).toContain('#thales_prove "t.ts" "f" "p"');
   });
 
+  test('a class-valued binder degrades to the bare command', () => {
+    const src = [
+      'export class Box { constructor(readonly size: number) {} }',
+      '/** @ensures{p} forall (b: Box) { volume(b) >= 0 } */',
+      'export function volume(b: Box): number { return b.size; }',
+    ].join('\n');
+    const { lean, untried } = transcribe(src, 't.ts');
+    expect(untried).toEqual([]);
+    expect(lean).toContain('#thales_prove "t.ts" "volume" "p"');
+  });
+
   test('the artifact records the untried annotation as a comment', () => {
     const src = [
       `/** @ensures{p} forall (a: int ∈ [0, ${HUGE}]) { f(a) >= 0 } */`,

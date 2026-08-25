@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import fc from "fast-check";
 import { arbitraryFor, DOMAIN_TABLE } from "../src/domains.js";
-import { isDomain } from "../../../lemma/src/index.js";
+import { isPrimitive } from "../../../lemma/src/index.js";
 
 describe("domains", () => {
   it("maps every domain to its fast-check arbitrary", () => {
@@ -13,11 +13,11 @@ describe("domains", () => {
     expect(arbitraryFor({ domain: "bigint" })).toBe("fc.bigInt()");
   });
 
-  it("recognizes known domains and rejects unknown", () => {
-    expect(isDomain("int")).toBe(true);
-    expect(isDomain("nat")).toBe(true);
-    expect(isDomain("float")).toBe(false);
-    expect(isDomain("")).toBe(false);
+  it("recognizes primitive domains and rejects other spellings", () => {
+    expect(isPrimitive("int")).toBe(true);
+    expect(isPrimitive("nat")).toBe(true);
+    expect(isPrimitive("float")).toBe(false);
+    expect(isPrimitive("")).toBe(false);
   });
 
   it("table has exactly the six MVP domains", () => {
@@ -222,5 +222,33 @@ describe("arbitraryFor — regex guards", () => {
     expect(() =>
       arbitraryFor({ domain: "int", pattern: { source: "a", flags: "" } }),
     ).toThrow(/only string/);
+  });
+});
+
+describe("arbitraryFor — class binders", () => {
+  it("emits a tuple of the bare parameter arbitraries", () => {
+    expect(
+      arbitraryFor({
+        domain: {
+          className: "Point",
+          ctorParams: [
+            { name: "x", domain: "number" },
+            { name: "y", domain: "number" },
+          ],
+        },
+      }),
+    ).toBe("fc.tuple(fc.double(), fc.double())");
+  });
+
+  it("emits an empty tuple for a parameterless constructor", () => {
+    expect(
+      arbitraryFor({ domain: { className: "Unit", ctorParams: [] } }),
+    ).toBe("fc.tuple()");
+  });
+
+  it("throws for an unresolved class binder", () => {
+    expect(() => arbitraryFor({ domain: { className: "Point" } })).toThrow(
+      /unresolved class binder/,
+    );
   });
 });
