@@ -1,0 +1,81 @@
+{
+  "file": "engines/thales/tests/fixtures/tracer.ts",
+  "declarations": [
+    {
+      "kind": "function",
+      "name": "add",
+      "params": ["a", "b"],
+      "source": "export function add(a: number, b: number): number {\n  return a + b;\n}",
+      "body": [
+        {
+          "kind": "return",
+          "expr": {
+            "kind": "binop",
+            "op": "+",
+            "left": {
+              "kind": "id",
+              "name": "a"
+            },
+            "right": {
+              "kind": "id",
+              "name": "b"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "obligations": [
+    {
+      "function": "add",
+      "property": "commutes",
+      "formula": "forall (a: int ∈ [0, 10)) (b: int ∈ [0, 10)) { add(a, b) ≡ add(b, a) }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "a",
+            "lo": "0",
+            "hi": "10"
+          },
+          {
+            "name": "b",
+            "lo": "0",
+            "hi": "10"
+          }
+        ],
+        "conclusion": {
+          "kind": "eq",
+          "left": {
+            "kind": "call",
+            "callee": "add",
+            "args": [
+              {
+                "kind": "id",
+                "name": "a"
+              },
+              {
+                "kind": "id",
+                "name": "b"
+              }
+            ]
+          },
+          "right": {
+            "kind": "call",
+            "callee": "add",
+            "args": [
+              {
+                "kind": "id",
+                "name": "b"
+              },
+              {
+                "kind": "id",
+                "name": "a"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
