@@ -44,7 +44,7 @@ for (const [name, value] of Object.entries(ts.SyntaxKind)) {
   }
 }
 
-function kindName(kind: ts.SyntaxKind): string {
+export function kindName(kind: ts.SyntaxKind): string {
   return KIND_NAMES.get(kind)!;
 }
 
@@ -72,7 +72,7 @@ function opaqueDef(
  * literal text (separators stripped, radix prefixes decimalized), and
  * toString prints the shortest round-tripping decimal, which Lean's
  * OfScientific reconstructs as the identical double. */
-function numberToken(lit: ts.NumericLiteral): string {
+export function numberToken(lit: ts.NumericLiteral): string {
   const n = Number(lit.text);
   if (!Number.isFinite(n)) return 'Infinity';
   return n.toString().replace('e+', 'e');
