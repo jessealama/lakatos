@@ -21,7 +21,7 @@ export interface FileArtifact {
  * verdicts, so no artifact is written for them. */
 export function writeArtifacts(
   files: string[],
-  outRoot = '.thales',
+  outRoot: string,
 ): FileArtifact[] {
   return files.map((file) => {
     const outFile = mirrorPath(file, outRoot, '.lean');

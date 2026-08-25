@@ -16,7 +16,7 @@ const spec: PropertySpec = {
 };
 
 describe("emit", () => {
-  const out = emit([spec], "foo.ts", ".pabst/foo.pabst.test.ts", 42);
+  const out = emit([spec], "foo.ts", "out/foo.pabst.test.ts", 42);
 
   it("imports vitest + @fast-check/vitest and the module", () => {
     expect(out).toContain('import { describe } from "vitest";');
@@ -58,7 +58,7 @@ describe("emit", () => {
     const multi = emit(
       [spec, { ...spec, name: "other" }],
       "foo.ts",
-      ".pabst/foo.pabst.test.ts",
+      "out/foo.pabst.test.ts",
       42,
     );
     const occurrences = multi.split('from "lakatos/runtime"').length - 1;
@@ -107,7 +107,7 @@ describe("emit — import path and exports", () => {
     const out = emit(
       [{ ...spec, freeExports: [] }],
       "foo.ts",
-      ".pabst/foo.pabst.test.ts",
+      "out/foo.pabst.test.ts",
       42,
     );
     expect(out).not.toContain("} = __M;");
@@ -119,7 +119,7 @@ describe("emit — class methods", () => {
     const out = emit(
       [instanceSpec],
       "counter.ts",
-      ".pabst/counter.pabst.test.ts",
+      "out/counter.pabst.test.ts",
       7,
     );
     expect(out).toContain('describe("Counter", () => {');
@@ -130,7 +130,7 @@ describe("emit — class methods", () => {
     const out = emit(
       [instanceSpec],
       "counter.ts",
-      ".pabst/counter.pabst.test.ts",
+      "out/counter.pabst.test.ts",
       7,
     );
     expect(out).toContain(
@@ -139,7 +139,7 @@ describe("emit — class methods", () => {
   });
 
   it("passes the . qualified name to the reporter for a static method", () => {
-    const out = emit([staticSpec], "arith.ts", ".pabst/arith.pabst.test.ts", 7);
+    const out = emit([staticSpec], "arith.ts", "out/arith.pabst.test.ts", 7);
     expect(out).toContain('describe("Arith", () => {');
     expect(out).toContain('describe("negate", () => {');
     expect(out).toContain(
@@ -157,14 +157,14 @@ describe("emit — bounded intervals", () => {
         { varName: "y", domain: "number", range: { min: "0", max: "1" } },
       ],
     };
-    const out = emit([bounded], "foo.ts", ".pabst/foo.pabst.test.ts", 42);
+    const out = emit([bounded], "foo.ts", "out/foo.pabst.test.ts", 42);
     expect(out).toContain(
       "test.prop([fc.integer({ min: 1, max: 30 }), fc.double({ min: 0, max: 1, noNaN: true })]",
     );
   });
 
   it("leaves unranged binders exactly as before", () => {
-    const out = emit([spec], "foo.ts", ".pabst/foo.pabst.test.ts", 42);
+    const out = emit([spec], "foo.ts", "out/foo.pabst.test.ts", 42);
     expect(out).toContain("test.prop([fc.integer(), fc.double()]");
   });
 });

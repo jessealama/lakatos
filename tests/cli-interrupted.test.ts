@@ -5,6 +5,7 @@ import { expectValidEnvelope } from "./helpers/envelope-schema.js";
 import { main } from "../src/cli.js";
 import { runTests } from "../engines/pabst/src/run.js";
 import { runLean } from "../engines/thales/frontend/src/run.js";
+import { RUN_ROOT } from "../src/run-dir.js";
 
 // An interrupted run still honors the output contract: one schema-valid
 // envelope on stdout in which every annotation the engine was to evaluate
@@ -46,7 +47,7 @@ describe("cli on an interrupted run", () => {
   afterEach(() => {
     runTestsMock.mockReset();
     runLeanMock.mockReset();
-    fs.rmSync(".thales", { recursive: true, force: true });
+    fs.rmSync(RUN_ROOT, { recursive: true, force: true });
   });
 
   it("refute: every annotation User, one diagnostic, exit 2", () => {

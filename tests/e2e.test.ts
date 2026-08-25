@@ -18,7 +18,7 @@ const enabled = process.env.LAKATOS_PROVE_E2E === "1";
 const repoRoot = process.cwd();
 
 describe.runIf(enabled)("lakatos prove end-to-end (tracer)", () => {
-  useRepoScratchDir(path.join(repoRoot, ".thales", "e2e-work"), (dir) => {
+  useRepoScratchDir(path.join(repoRoot, ".lakatos", "e2e-work"), (dir) => {
     fs.copyFileSync(
       path.join(
         repoRoot,

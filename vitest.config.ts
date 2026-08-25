@@ -8,7 +8,7 @@ export default defineConfig({
       "lemma/tests/**/*.test.ts",
       "engines/pabst/tests/**/*.test.ts",
       "engines/thales/frontend/tests/**/*.test.ts",
-      ".pabst/**/*.test.ts",
+      ".lakatos/**/*.test.ts",
     ],
     // Absolute: refute spawns vitest from a project directory that may sit
     // inside this repo, and such a run inherits this config — a relative
