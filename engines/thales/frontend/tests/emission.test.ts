@@ -96,15 +96,20 @@ describe('emitModule on the tracer fixture', () => {
     expectValidEmission(emitModule(read(), FIXTURE).emission);
   });
 
-  test('the pinned tracer emission fixture is exactly what the frontend emits', () => {
-    const pinned = JSON.parse(
-      fs.readFileSync(
-        'engines/thales/tests/fixtures/tracer.emission.json',
-        'utf8',
-      ),
-    );
-    expect(emitModule(read(), FIXTURE).emission).toEqual(pinned);
-  });
+  test.each([
+    ['engines/thales/tests/fixtures/tracer.ts', 'tracer.emission.json'],
+    ['engines/thales/tests/fixtures/operators.ts', 'operators.emission.json'],
+  ])(
+    'the pinned emission for %s is exactly what the frontend emits',
+    (fixture, pin) => {
+      const pinned = JSON.parse(
+        fs.readFileSync(`engines/thales/tests/fixtures/${pin}`, 'utf8'),
+      );
+      expect(
+        emitModule(fs.readFileSync(fixture, 'utf8'), fixture).emission,
+      ).toEqual(pinned);
+    },
+  );
 
   test('extraction results ride along', () => {
     const { annotations, invalid } = emitModule(read(), FIXTURE);

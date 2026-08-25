@@ -11,6 +11,7 @@ open Lean
 inductive JsExpr where
   | num (lit : String)
   | id (name : String)
+  | unop (op : String) (operand : JsExpr)
   | binop (op : String) (left right : JsExpr)
   | call (callee : String) (args : Array JsExpr)
 deriving Repr, Inhabited
@@ -26,11 +27,18 @@ structure EmitFn where
   body : Array JsStmt
 deriving Repr, Inhabited
 
-structure BinderIR where
-  name : String
-  lo : Int
-  hi : Int
+/-- A binder's denoted integer domain: a finite half-open `[lo, hi)`
+range, the whole int line, or the naturals. -/
+inductive BinderIR where
+  | range (name : String) (lo hi : Int)
+  | int (name : String)
+  | nat (name : String)
 deriving Repr, Inhabited
+
+def BinderIR.name : BinderIR → String
+  | .range n _ _ => n
+  | .int n => n
+  | .nat n => n
 
 inductive Conclusion where
   | eq (left right : JsExpr)
@@ -75,6 +83,9 @@ partial def decodeExpr (j : Json) : Except String JsExpr := do
   match ← getStr j "kind" with
   | "num" => pure (.num (← getStr j "lit"))
   | "id" => pure (.id (← getStr j "name"))
+  | "unop" =>
+    pure (.unop (← getStr j "op")
+      (← decodeExpr (← j.getObjVal? "operand")))
   | "binop" =>
     pure (.binop (← getStr j "op")
       (← decodeExpr (← j.getObjVal? "left"))
@@ -100,9 +111,14 @@ def decodeFn (j : Json) : Except String EmitFn := do
   | k => throw s!"unknown declaration kind '{k}'"
 
 def decodeBinder (j : Json) : Except String BinderIR := do
-  pure { name := ← getStr j "name"
-         lo := ← decodeIntString (← getStr j "lo")
-         hi := ← decodeIntString (← getStr j "hi") }
+  let name ← getStr j "name"
+  match ← getStr j "kind" with
+  | "range" =>
+    pure (.range name (← decodeIntString (← getStr j "lo"))
+      (← decodeIntString (← getStr j "hi")))
+  | "int" => pure (.int name)
+  | "nat" => pure (.nat name)
+  | k => throw s!"unknown binder kind '{k}'"
 
 def decodeConclusion (j : Json) : Except String Conclusion := do
   match ← getStr j "kind" with
