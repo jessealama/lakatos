@@ -32,6 +32,18 @@ declare_syntax_cat ts_stmt
 syntax "ts.return(" ts_expr ")" : ts_stmt
 -- A const binding: name and initializer; scope is the rest of the body.
 syntax "ts.const[" str "](" ts_expr ")" : ts_stmt
+-- A mutable local, always initialized: like a const, except later
+-- statements — including ones inside a branch — may reassign it.
+syntax "ts.let[" str "](" ts_expr ")" : ts_stmt
+-- Reassignment of a mutable local; the new value is what the rest of the
+-- enclosing statement list reads.
+syntax "ts.assign[" str "](" ts_expr ")" : ts_stmt
+-- A throw, carrying the error kind alone. The thrown message is a value
+-- the model never needs and often cannot express, so it is discarded here
+-- rather than approximated.
+syntax "ts.throw[" str "]" : ts_stmt
+-- Branching. `else if` arrives as a nested `ts.if` alone in the else arm.
+syntax "ts.if(" ts_expr ")" " {" ts_stmt* "}" (" else" " {" ts_stmt* "}")? : ts_stmt
 
 /-! Graceful degradation: a construct the front end cannot map arrives as an
 opaque node carrying the tsc SyntaxKind name and the construct's line and

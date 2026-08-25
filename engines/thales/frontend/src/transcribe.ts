@@ -135,16 +135,29 @@ function transcribeExpr(
   return opaque(e, sf);
 }
 
-/** `ts.const` lines for a const statement's declarators, or undefined
+/** Names a body binds itself, and whether each may be assigned. A branch's
+ * arm gets its own copy: a binding made inside an arm dies with it, and a
+ * redeclaration of a name from outside is refused rather than shadowed.
+ * Separate from the module's `NameMap`, which says how a name reaches the
+ * artifact rather than whether it can be written to. */
+type Locals = Map<string, 'const' | 'mutable'>;
+
+/** `ts.const`/`ts.let` lines for a declaration's declarators, or undefined
  * when any declarator falls outside the slice. `await using` shares the
- * Const flag, so the Using bit is excluded explicitly. */
-function constLines(
+ * Const flag, so the Using bit is excluded explicitly; `var` is
+ * function-scoped and hoisted, which the lowering does not model. An
+ * uninitialized `let` is left out too: reading one is only safe behind a
+ * definite-assignment analysis this slice does not perform. */
+function declarationLines(
   s: ts.VariableStatement,
   sf: ts.SourceFile,
   names: NameMap,
+  locals: Locals,
 ): string[] | undefined {
   const flags = s.declarationList.flags;
-  if ((flags & ts.NodeFlags.Const) === 0) return undefined;
+  const isConst = (flags & ts.NodeFlags.Const) !== 0;
+  const isLet = (flags & ts.NodeFlags.Let) !== 0;
+  if (!isConst && !isLet) return undefined;
   if ((flags & ts.NodeFlags.Using) !== 0) return undefined;
   // Parser recovery can yield a declarator list with no declarators.
   if (s.declarationList.declarations.length === 0) return undefined;
@@ -154,25 +167,137 @@ function constLines(
     if (d.initializer === undefined) return undefined;
     if (d.type !== undefined && d.type.kind !== ts.SyntaxKind.NumberKeyword)
       return undefined;
+    // Shadowing a name already bound here would make a join ambiguous: an
+    // arm's own binding is what the tail would read back.
+    if (locals.has(d.name.text)) return undefined;
+    const ctor = isConst ? 'ts.const' : 'ts.let';
     const init = transcribeExpr(d.initializer, sf, names);
-    lines.push(`ts.const[${leanStr(d.name.text)}](${init})`);
+    lines.push(`${ctor}[${leanStr(d.name.text)}](${init})`);
+    locals.set(d.name.text, isConst ? 'const' : 'mutable');
   }
   return lines;
 }
 
+/** The `ts.assign` line for a reassignment of a mutable local, or
+ * undefined for anything else an expression statement can be — a call for
+ * its effects, a compound assignment, a write to a const or to a name the
+ * body did not bind. */
+function assignmentLine(
+  e: ts.Expression,
+  sf: ts.SourceFile,
+  names: NameMap,
+  locals: Locals,
+): string | undefined {
+  if (!ts.isBinaryExpression(e)) return undefined;
+  if (e.operatorToken.kind !== ts.SyntaxKind.EqualsToken) return undefined;
+  const target = unwrapParens(e.left);
+  if (!ts.isIdentifier(target)) return undefined;
+  if (locals.get(target.text) !== 'mutable') return undefined;
+  const value = transcribeExpr(e.right, sf, names);
+  return `ts.assign[${leanStr(target.text)}](${value})`;
+}
+
+/** The error kind a `throw` carries. Only the constructor's name is
+ * modeled: the message is a string the value model has nothing to say
+ * about, and approximating it would put a fiction in the verdict. */
+function errorKind(e: ts.Expression): string | undefined {
+  const inner = unwrapParens(e);
+  if (!ts.isNewExpression(inner)) return undefined;
+  if (!ts.isIdentifier(inner.expression)) return undefined;
+  return inner.expression.text;
+}
+
+/** The operators whose result the boolean channel accepts. Truthiness
+ * coercion and the logical operators have no model, so a condition spelled
+ * either way degrades its declaration instead of elaborating as a number. */
+const COMPARISON_OPERATORS = new Set(['<', '<=', '>', '>=', '===', '!==']);
+
+function conditionExpr(
+  e: ts.Expression,
+  sf: ts.SourceFile,
+  names: NameMap,
+): string {
+  const inner = unwrapParens(e);
+  if (
+    ts.isBinaryExpression(inner) &&
+    COMPARISON_OPERATORS.has(inner.operatorToken.getText(sf))
+  ) {
+    return transcribeExpr(inner, sf, names);
+  }
+  return opaque(inner, sf);
+}
+
+/** An `if` arm's statements, indented. A non-block arm is the one statement
+ * it is, which is how an `else if` arrives: a nested `ts.if` alone in the
+ * else arm. The arm's locals are a copy, so its bindings do not escape it. */
+function armLines(
+  stmt: ts.Statement,
+  sf: ts.SourceFile,
+  names: NameMap,
+  locals: Locals,
+): string[] {
+  const body = ts.isBlock(stmt) ? stmt.statements : [stmt];
+  return transcribeStmts(body, sf, names, new Map(locals)).map(
+    (line) => `  ${line}`,
+  );
+}
+
+function ifLines(
+  s: ts.IfStatement,
+  sf: ts.SourceFile,
+  names: NameMap,
+  locals: Locals,
+): string[] {
+  const lines = [
+    `ts.if(${conditionExpr(s.expression, sf, names)}) {`,
+    ...armLines(s.thenStatement, sf, names, locals),
+  ];
+  if (s.elseStatement === undefined) return [...lines, '}'];
+  return [
+    ...lines,
+    '} else {',
+    ...armLines(s.elseStatement, sf, names, locals),
+    '}',
+  ];
+}
+
+/** One statement's lines. `locals` is this list's own scope, which a
+ * declaration extends in place for the statements after it. */
 function transcribeStmt(
   s: ts.Statement,
   sf: ts.SourceFile,
   names: NameMap,
+  locals: Locals,
 ): string[] {
-  if (ts.isReturnStatement(s) && s.expression !== undefined) {
+  if (ts.isReturnStatement(s)) {
+    // `return;` yields undefined, which a `number` function has no value
+    // for and this slice does not model.
+    if (s.expression === undefined) return [opaque(s, sf)];
     return [`ts.return(${transcribeExpr(s.expression, sf, names)})`];
   }
+  if (ts.isThrowStatement(s)) {
+    const kind = errorKind(s.expression);
+    if (kind !== undefined) return [`ts.throw[${leanStr(kind)}]`];
+  }
   if (ts.isVariableStatement(s)) {
-    const lines = constLines(s, sf, names);
+    const lines = declarationLines(s, sf, names, locals);
     if (lines !== undefined) return lines;
   }
+  if (ts.isExpressionStatement(s)) {
+    const line = assignmentLine(s.expression, sf, names, locals);
+    if (line !== undefined) return [line];
+  }
+  if (ts.isIfStatement(s)) return ifLines(s, sf, names, locals);
   return [opaque(s, sf)];
+}
+
+function transcribeStmts(
+  statements: readonly ts.Statement[],
+  sf: ts.SourceFile,
+  names: NameMap,
+  locals: Locals,
+): string[] {
+  return statements.flatMap((s) => transcribeStmt(s, sf, names, locals));
 }
 
 /** The node that keeps a function declaration's signature outside the
@@ -200,18 +325,29 @@ function signatureBlocker(fn: ts.FunctionDeclaration): ts.Node | undefined {
   return undefined;
 }
 
-/** The names a function body binds itself, which shadow the module's. */
+/** The names a function body binds itself, which shadow the module's. The
+ * walk goes into branches: a binding made inside an arm shadows just as
+ * one at the top of the body does. */
 function functionLocals(
   fn: ts.FunctionDeclaration,
   body: readonly ts.Statement[],
 ): Set<string> {
   const locals = new Set<string>();
   for (const p of fn.parameters) locals.add((p.name as ts.Identifier).text);
-  for (const s of body) {
-    if (!ts.isVariableStatement(s)) continue;
-    for (const d of s.declarationList.declarations)
-      for (const id of bindingIdentifiers(d.name)) locals.add(id.text);
-  }
+  const walk = (stmts: readonly ts.Statement[]): void => {
+    for (const s of stmts) {
+      if (ts.isVariableStatement(s)) {
+        for (const d of s.declarationList.declarations)
+          for (const id of bindingIdentifiers(d.name)) locals.add(id.text);
+      } else if (ts.isBlock(s)) {
+        walk(s.statements);
+      } else if (ts.isIfStatement(s)) {
+        walk([s.thenStatement]);
+        if (s.elseStatement !== undefined) walk([s.elseStatement]);
+      }
+    }
+  };
+  walk(body);
   return locals;
 }
 
@@ -231,8 +367,15 @@ function transcribeFunction(
   );
   const stmts = fn.body?.statements ?? [];
   const names = shadow(scope.names, functionLocals(fn, stmts));
-  const body = stmts.flatMap((s) =>
-    transcribeStmt(s, sf, names).map((line) => `  ${line}`),
+  // Parameters are assignable, the way JavaScript has them.
+  const locals: Locals = new Map(
+    fn.parameters.map((p) => [
+      (p.name as ts.Identifier).text,
+      'mutable' as const,
+    ]),
+  );
+  const body = transcribeStmts(stmts, sf, names, locals).map(
+    (line) => `  ${line}`,
   );
   return [
     `ts_def ${leanStr(name)} := ts.fn(${params.join(', ')}) : ts.number {`,

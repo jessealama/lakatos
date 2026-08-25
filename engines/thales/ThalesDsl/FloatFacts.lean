@@ -3287,4 +3287,37 @@ theorem float_lt_of_le_of_lt {a b c : Float} (hab : Float.le a b = true)
   exact lt_of_key (canonical_unpack _) (canonical_unpack _)
     (le_ne_nan_left hab) (lt_ne_nan_right hbc) hk
 
+/-! ## Totality at the `Float` layer
+
+IEEE comparison is total except at NaN, where every comparison is false.
+A branch condition that came back false therefore says something about the
+reverse comparison only once NaN is ruled out — which the infinity bounds
+a `number` binder emits do. -/
+
+/-- A float strictly inside the infinities is not NaN. -/
+theorem unpack_ne_nan {c : Float} (hLo : (-(1.0 / 0.0) : Float) < c)
+    (hHi : c < (1.0 / 0.0 : Float)) : c.toModel.unpack ≠ .notANumber := by
+  rcases unpack_finite_or_zero hLo hHi with ⟨s, h⟩ | ⟨s, m, e, hm, h, _⟩ <;>
+    rw [h] <;> intro hc <;> cases hc
+
+/-- A false `<` between two non-NaN floats is the reverse `≤`. -/
+theorem float_le_of_not_lt {x y : Float}
+    (hxLo : (-(1.0 / 0.0) : Float) < x) (hxHi : x < (1.0 / 0.0 : Float))
+    (hyLo : (-(1.0 / 0.0) : Float) < y) (hyHi : y < (1.0 / 0.0 : Float))
+    (h : Float.lt x y = false) : Float.le y x = true := by
+  have hxn := unpack_ne_nan hxLo hxHi
+  have hyn := unpack_ne_nan hyLo hyHi
+  rw [float_le_unpack]
+  refine le_of_key (canonical_unpack _) (canonical_unpack _) hyn hxn ?_
+  by_cases hk : key y.toModel.unpack ≤ key x.toModel.unpack
+  · exact hk
+  · exfalso
+    have hlt : key x.toModel.unpack < key y.toModel.unpack := by omega
+    have hc := lt_of_key (canonical_unpack _) (canonical_unpack _) hxn hyn hlt
+    rw [float_lt_unpack] at h
+    -- `canonical_unpack` fixes its argument in the unpack-of-bits spelling,
+    -- so the two comparisons are joined by `trans`, which unifies up to
+    -- definitional equality, rather than by rewriting.
+    exact Bool.noConfusion (hc.symm.trans h)
+
 end ThalesDsl.FloatFacts
