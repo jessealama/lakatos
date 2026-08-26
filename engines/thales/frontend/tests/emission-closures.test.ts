@@ -1,0 +1,182 @@
+import { describe, expect, test } from "vitest";
+import * as path from "node:path";
+import { emitModule } from "../src/emission.js";
+import { type ModuleReader } from "../src/module-graph.js";
+
+/** An in-memory module tree, keyed the way the walk resolves: absolute
+ * paths against the importing file's directory. */
+function reader(files: Record<string, string>): ModuleReader {
+  const abs = new Map(
+    Object.entries(files).map(([f, text]) => [path.resolve(f), text]),
+  );
+  return (file) => abs.get(file);
+}
+
+const TWICE = [
+  'import { double } from "./helper.mjs";',
+  "/** @ensures{quadruples} forall (x: int ∈ [0, 20)) { twice(x) === 4 * x } */",
+  "export function twice(x: number): number {",
+  "  return double(x) + double(x);",
+  "}",
+  "",
+].join("\n");
+
+const HELPER = [
+  "export function double(x: number): number {",
+  "  return x * 2;",
+  "}",
+  "",
+].join("\n");
+
+describe("emission import closures", () => {
+  test("a dependency is emitted under its module, before its user", () => {
+    const { emission, classified } = emitModule(
+      TWICE,
+      "main.mts",
+      reader({ "helper.mts": HELPER }),
+    );
+    expect(classified).toEqual([]);
+    expect(emission.declarations.map((d) => [d.module, d.name])).toEqual([
+      ["helper.mts", "double"],
+      [undefined, "twice"],
+    ]);
+  });
+
+  test("a call into a dependency carries the dependency's module", () => {
+    const { emission } = emitModule(
+      TWICE,
+      "main.mts",
+      reader({ "helper.mts": HELPER }),
+    );
+    const twice = emission.declarations.find((d) => d.name === "twice")!;
+    const ret = twice.body[0]!;
+    expect(ret.kind).toBe("return");
+    expect(JSON.stringify(ret)).toContain('"module":"helper.mts"');
+  });
+
+  test("only the entry's annotations become obligations", () => {
+    const annotated = [
+      "/** @ensures{pos} forall (x: int ∈ [0, 5)) { double(x) >= 0 } */",
+      "export function double(x: number): number {",
+      "  return x * 2;",
+      "}",
+      "",
+    ].join("\n");
+    const { emission } = emitModule(
+      TWICE,
+      "main.mts",
+      reader({ "helper.mts": annotated }),
+    );
+    expect(emission.obligations.map((o) => o.function)).toEqual(["twice"]);
+  });
+
+  test("the closure is transitive and each module is emitted once", () => {
+    const mid = [
+      'import { base } from "./base.js";',
+      "export function double(x: number): number {",
+      "  return base(x) + base(x);",
+      "}",
+      "",
+    ].join("\n");
+    const base = "export function base(x: number): number {\n  return x;\n}\n";
+    const { emission } = emitModule(
+      TWICE,
+      "main.mts",
+      reader({ "helper.mts": mid, "base.ts": base }),
+    );
+    expect(emission.declarations.map((d) => [d.module, d.name])).toEqual([
+      ["base.ts", "base"],
+      ["helper.mts", "double"],
+      [undefined, "twice"],
+    ]);
+  });
+
+  test("an aliased import rewrites to the exported name", () => {
+    const src = TWICE.replace(
+      'import { double } from "./helper.mjs";',
+      'import { double as twofold } from "./helper.mjs";',
+    ).replace(/double\(x\)/g, "twofold(x)");
+    const { emission, classified } = emitModule(
+      src,
+      "main.mts",
+      reader({ "helper.mts": HELPER }),
+    );
+    expect(classified).toEqual([]);
+    expect(JSON.stringify(emission)).toContain('"callee":"double"');
+  });
+
+  test("a bare specifier still degrades its bindings", () => {
+    const src = TWICE.replace('"./helper.mjs"', '"lodash"');
+    const { classified } = emitModule(src, "main.mts", reader({}));
+    expect(classified[0]?.szs).toBe("Inappropriate");
+    expect(classified[0]?.reason).toContain("ImportDeclaration");
+  });
+
+  test("a relative specifier reaching no file degrades its bindings", () => {
+    const { classified } = emitModule(TWICE, "main.mts", reader({}));
+    expect(classified[0]?.szs).toBe("Inappropriate");
+    expect(classified[0]?.reason).toContain("ImportDeclaration");
+  });
+
+  test("an import cycle degrades the cycle-closing name, not the entry's own", () => {
+    const cyclic = [
+      'import { twice } from "./main.mjs";',
+      "export function double(x: number): number {",
+      "  return twice(x);",
+      "}",
+      "",
+    ].join("\n");
+    const { classified } = emitModule(
+      TWICE,
+      "main.mts",
+      reader({ "helper.mts": cyclic }),
+    );
+    expect(classified[0]?.szs).toBe("Inappropriate");
+    expect(classified[0]?.reason).toContain("ImportDeclaration");
+  });
+
+  test("default and namespace imports stay opaque even when the module resolves", () => {
+    for (const clause of ["helper", "* as helper"]) {
+      const src = [
+        `import ${clause} from "./helper.mjs";`,
+        "/** @ensures{p} forall (x: int ∈ [0, 5)) { call(x) >= 0 } */",
+        "export function call(x: number): number {",
+        "  return helper(x);",
+        "}",
+        "",
+      ].join("\n");
+      const { classified } = emitModule(
+        src,
+        "main.mts",
+        reader({ "helper.mts": HELPER }),
+      );
+      expect(classified[0]?.szs).toBe("Inappropriate");
+    }
+  });
+
+  test("a local binding shadows an imported spelling", () => {
+    const src = [
+      'import { double } from "./helper.mjs";',
+      "function double2(x: number): number { return x; }",
+      "/** @ensures{p} forall (x: int ∈ [0, 5)) { use(x) >= 0 } */",
+      "export function use(x: number): number {",
+      "  const double = 1;",
+      "  return double2(x);",
+      "}",
+      "",
+    ].join("\n");
+    const { classified } = emitModule(
+      src,
+      "main.mts",
+      reader({ "helper.mts": HELPER }),
+    );
+    // The local const shadows the import inside the body; the call to
+    // double2 is unaffected either way.
+    expect(classified.map((c) => c.szs)).toEqual([]);
+  });
+
+  test("no reader means the disk, and a missing file degrades rather than throws", () => {
+    const { classified } = emitModule(TWICE, "/nonexistent/main.mts");
+    expect(classified[0]?.szs).toBe("Inappropriate");
+  });
+});
