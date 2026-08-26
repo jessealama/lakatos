@@ -41,6 +41,7 @@ export type LeanRunResult =
 // Exported so test timeouts can be sized from the containment budget.
 export const LEAN_TIMEOUT_MS = 300_000;
 export const BUILD_TIMEOUT_MS = 600_000;
+export const EMIT_TIMEOUT_MS = 120_000;
 
 /** Frames each verdict line: stdout is also Lean's diagnostic stream, so
  * only framed lines are part of the contract. ThalesDsl's
@@ -193,21 +194,23 @@ export function runArtifact(
  * or artifact killed by a termination signal stops the run there: the
  * artifacts after it are never started.
  */
-export function runLean(
-  leanFiles: string[],
-  engineRoot: string | undefined,
-  spawn: Spawn = spawnSync,
-): LeanRunResult {
-  if (engineRoot === undefined) {
-    return {
-      kind: 'no-project',
-      message:
-        'the Lean proof engine is not part of this installation; run prove from a lakatos checkout',
-    };
-  }
-  const opts = { cwd: engineRoot, encoding: 'utf8' } as const;
-  const build = spawn('lake', ['build'], {
-    ...opts,
+const NO_PROJECT: LeanRunResult = {
+  kind: 'no-project',
+  message:
+    'the Lean proof engine is not part of this installation; run prove from a lakatos checkout',
+};
+
+/** One `lake build` under the shared no-project / interrupt / failure
+ * discipline; undefined means the build is healthy. Extra args name
+ * further targets beyond the default ones. */
+function buildStep(
+  engineRoot: string,
+  spawn: Spawn,
+  targets: string[] = [],
+): LeanRunResult | undefined {
+  const build = spawn('lake', ['build', ...targets], {
+    cwd: engineRoot,
+    encoding: 'utf8',
     timeout: BUILD_TIMEOUT_MS,
   });
   if (isEnoent(build.error)) {
@@ -221,6 +224,26 @@ export function runLean(
   if (buildSignal !== undefined)
     return { kind: 'interrupted', signal: buildSignal };
   if (build.error !== undefined || build.status !== 0) return failed(build);
+  return undefined;
+}
+
+export function runLean(
+  leanFiles: string[],
+  engineRoot: string | undefined,
+  spawn: Spawn = spawnSync,
+): LeanRunResult {
+  if (engineRoot === undefined) return NO_PROJECT;
+  const unhealthy = buildStep(engineRoot, spawn);
+  if (unhealthy !== undefined) return unhealthy;
+  return leanPass(leanFiles, engineRoot, spawn);
+}
+
+/** The per-artifact lean pass runLean and runEmission share. */
+function leanPass(
+  leanFiles: string[],
+  engineRoot: string,
+  spawn: Spawn,
+): LeanRunResult {
   const verdicts: LeanVerdict[] = [];
   const failures: FileFailure[] = [];
   const diagnostics: string[] = [];
@@ -252,4 +275,58 @@ export function runLean(
     verdicts.push(...parsed.verdicts);
   }
   return { kind: 'completed', verdicts, failures, diagnostics };
+}
+
+/** One emission JSON and where thales-emit renders its artifact. */
+export interface EmissionJob {
+  jsonFile: string;
+  leanFile: string;
+}
+
+/**
+ * The plain-Lean emission run: build the library and the emitter, render
+ * each job's artifact with thales-emit, then run the artifacts the way
+ * runLean does. A failed emit degrades only its own file — a malformed
+ * emission fails that file's annotations, never the run — keyed by the
+ * artifact path so the caller attributes it like a failed lean run.
+ */
+export function runEmission(
+  jobs: EmissionJob[],
+  engineRoot: string | undefined,
+  spawn: Spawn = spawnSync,
+): LeanRunResult {
+  if (engineRoot === undefined) return NO_PROJECT;
+  const unhealthy =
+    buildStep(engineRoot, spawn) ??
+    buildStep(engineRoot, spawn, ['thales-emit']);
+  if (unhealthy !== undefined) return unhealthy;
+  const emitBin = path.join(engineRoot, '.lake', 'build', 'bin', 'thales-emit');
+  const failures: FileFailure[] = [];
+  const emitted: string[] = [];
+  for (const job of jobs) {
+    // lake env supplies LEAN_PATH: the emitter imports compiled modules.
+    const run = spawn('lake', ['env', emitBin, job.jsonFile, job.leanFile], {
+      cwd: engineRoot,
+      encoding: 'utf8',
+      timeout: EMIT_TIMEOUT_MS,
+    });
+    const signal = interruptedBy(run);
+    if (signal !== undefined) return { kind: 'interrupted', signal };
+    if (run.error !== undefined || run.status !== 0) {
+      failures.push({
+        file: job.leanFile,
+        messages: [
+          `thales-emit failed on ${job.jsonFile} before rendering the artifact`,
+          ...[run.stdout, run.stderr, run.error && String(run.error)].filter(
+            (s): s is string => typeof s === 'string' && s.trim() !== '',
+          ),
+        ],
+      });
+      continue;
+    }
+    emitted.push(job.leanFile);
+  }
+  const pass = leanPass(emitted, engineRoot, spawn);
+  if (pass.kind !== 'completed') return pass;
+  return { ...pass, failures: [...failures, ...pass.failures] };
 }

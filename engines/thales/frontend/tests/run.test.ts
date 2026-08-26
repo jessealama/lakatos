@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { findEngineRoot, runLean } from '../src/run.js';
+import { findEngineRoot, runEmission, runLean } from '../src/run.js';
 
 type SpawnCall = { cmd: string; args: string[]; cwd: string };
 
@@ -386,6 +386,92 @@ describe('findEngineRoot', () => {
   test('resolves the real repository engine root by default', () => {
     expect(findEngineRoot()?.endsWith(path.join('engines', 'thales'))).toBe(
       true,
+    );
+  });
+});
+
+describe('runEmission', () => {
+  const JOBS = [
+    { jsonFile: 'a.json', leanFile: 'a.lean' },
+    { jsonFile: 'b.json', leanFile: 'b.lean' },
+  ];
+  const EMIT_BIN = path.join('/engine', '.lake', 'build', 'bin', 'thales-emit');
+
+  test('builds, emits each job, then runs each artifact', () => {
+    const { spawn, calls } = fakeSpawn([
+      { status: 0 }, // lake build
+      { status: 0 }, // lake build thales-emit
+      { status: 0 }, // emit a
+      { status: 0 }, // emit b
+      { status: 0, stdout: verdictLine('f', 'Theorem') },
+      { status: 0, stdout: verdictLine('g', 'GaveUp') },
+    ]);
+    const res = runEmission(JOBS, '/engine', spawn);
+    expect(res).toEqual({
+      kind: 'completed',
+      verdicts: [
+        { identity: ['t.ts', 'f', 'p'], szs: 'Theorem', reason: 'r' },
+        { identity: ['t.ts', 'g', 'p'], szs: 'GaveUp', reason: 'r' },
+      ],
+      failures: [],
+      diagnostics: [],
+    });
+    expect(calls.map((c) => c.args.slice(0, 2))).toEqual([
+      ['build'],
+      ['build', 'thales-emit'],
+      ['env', EMIT_BIN],
+      ['env', EMIT_BIN],
+      ['env', 'lean'],
+      ['env', 'lean'],
+    ]);
+    expect(calls[2]!.args).toEqual(['env', EMIT_BIN, 'a.json', 'a.lean']);
+    expect(calls.every((c) => c.cmd === 'lake' && c.cwd === '/engine')).toBe(
+      true,
+    );
+  });
+
+  test('an emit failure degrades only its own file; siblings still run', () => {
+    const { spawn, calls } = fakeSpawn([
+      { status: 0 },
+      { status: 0 },
+      { status: 1, stderr: 'boom' }, // emit a fails
+      { status: 0 }, // emit b
+      { status: 0, stdout: verdictLine('g', 'Theorem') }, // lean b
+    ]);
+    const res = runEmission(JOBS, '/engine', spawn);
+    expect(res.kind).toBe('completed');
+    if (res.kind !== 'completed') return;
+    expect(res.failures).toHaveLength(1);
+    expect(res.failures[0]!.file).toBe('a.lean');
+    expect(res.failures[0]!.messages.join('\n')).toContain('boom');
+    expect(res.verdicts).toHaveLength(1);
+    // Only b's artifact reached the lean pass.
+    expect(calls.filter((c) => c.args[1] === 'lean')).toHaveLength(1);
+  });
+
+  test('a thales-emit build failure fails the run', () => {
+    const res = runEmission(
+      JOBS,
+      '/engine',
+      fakeSpawn([{ status: 0 }, { status: 1, stderr: 'nope' }]).spawn,
+    );
+    expect(res.kind).toBe('failed');
+  });
+
+  test('an interrupt during an emit stops the run there', () => {
+    const { spawn, calls } = fakeSpawn([
+      { status: 0 },
+      { status: 0 },
+      { status: null, signal: 'SIGINT' },
+    ]);
+    const res = runEmission(JOBS, '/engine', spawn);
+    expect(res).toEqual({ kind: 'interrupted', signal: 'SIGINT' });
+    expect(calls).toHaveLength(3);
+  });
+
+  test('missing engine root is no-project', () => {
+    expect(runEmission(JOBS, undefined, fakeSpawn([]).spawn).kind).toBe(
+      'no-project',
     );
   });
 });
