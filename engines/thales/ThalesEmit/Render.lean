@@ -96,6 +96,7 @@ partial def valueTerm (coerced : String → Bool) : JsExpr → RenderM Rendered
     | "-" => return ⟨← `(-$t), lifted⟩
     -- Unary plus is ToNumber on a value already a number: the identity.
     | "+" => return ⟨t, lifted⟩
+    | "!" => return ⟨← `((!$t)), lifted⟩
     | _ => throw s!"unary operator '{op}' is not in the emission slice yet"
   | .binop op l r => do
     let ⟨lt, ll⟩ ← valueTerm coerced l
@@ -123,6 +124,19 @@ partial def valueTerm (coerced : String → Bool) : JsExpr → RenderM Rendered
     | ">=" => flipped fun x y => `(Float.le $x $y)
     | "===" => return ⟨← `(Float.beq $lt $rt), lifted⟩
     | "!==" => return ⟨← `(!Float.beq $lt $rt), lifted⟩
+    -- JS evaluates the right operand only when the left leaves the answer
+    -- open; a lift there renders behind the choice — the nested do is the
+    -- hoist barrier — so a throw in the right arm never fires early. The
+    -- ascription is load-bearing: an unascribed nested do reads its return
+    -- type off the enclosing do, which is the function's, not Bool.
+    | "||" =>
+      if rl then
+        return ⟨← `((← if $lt then pure true else ((do return $rt) : JsM Bool))), true⟩
+      return ⟨← `(($lt || $rt)), ll⟩
+    | "&&" =>
+      if rl then
+        return ⟨← `((← if $lt then ((do return $rt) : JsM Bool) else pure false)), true⟩
+      return ⟨← `(($lt && $rt)), ll⟩
     | _ => throw s!"operator '{op}' is not in the emission slice yet"
   | .sameValue l r => do
     let ⟨lt, ll⟩ ← valueTerm coerced l
