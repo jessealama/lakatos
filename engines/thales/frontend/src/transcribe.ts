@@ -16,6 +16,12 @@ import {
   type RawAnnotation,
   unsupportedRangeReason,
 } from "../../../../lemma/src/index.js";
+import {
+  type ModuleReader,
+  diskReader,
+  moduleQualifier,
+  resolveImport,
+} from "./module-graph.js";
 
 /** Escape a string for a Lean string literal. */
 function leanStr(s: string): string {
@@ -472,55 +478,6 @@ interface ModuleScope {
   inlined: ReadonlySet<string>;
   /** The ts_def name a declaration in this module carries. */
   defName: (name: string) => string;
-}
-
-/** Reads a module's text by absolute path, or undefined when there is no
- * such file. Injectable, so a closure can be transcribed without a disk. */
-export type ModuleReader = (file: string) => string | undefined;
-
-const diskReader: ModuleReader = (file) => {
-  try {
-    return fs.readFileSync(file, "utf8");
-  } catch {
-    return undefined;
-  }
-};
-
-/** A specifier names the file nodeNext will emit; the TypeScript source it
- * was written as is what resolution wants, and it wins over a sibling
- * spelled the way the specifier is. */
-const SOURCE_EXTENSIONS: Record<string, string[]> = {
-  ".mjs": [".mts"],
-  ".cjs": [".cts"],
-  ".js": [".ts", ".tsx"],
-};
-
-/** The file a relative specifier names, or undefined for a bare specifier
- * (a package or a builtin) and for one that reaches no file. */
-function resolveImport(
-  specifier: string,
-  from: string,
-  reader: ModuleReader,
-): { file: string; text: string } | undefined {
-  if (!/^\.\.?\//.test(specifier)) return undefined;
-  const ext = path.extname(specifier);
-  const stem = specifier.slice(0, specifier.length - ext.length);
-  const spellings = [
-    ...(SOURCE_EXTENSIONS[ext] ?? []).map((e) => stem + e),
-    specifier,
-  ];
-  for (const spelling of spellings) {
-    const file = path.resolve(path.dirname(from), spelling);
-    const text = reader(file);
-    if (text !== undefined) return { file, text };
-  }
-  return undefined;
-}
-
-/** The prefix a dependency's ts_def names carry: its path relative to the
- * entry file, which is unique to it within the entry's artifact. */
-function moduleQualifier(entryDir: string, file: string): string {
-  return path.relative(entryDir, file).split(path.sep).join("/");
 }
 
 /** One entry file's dependency-closure walk. Artifacts are self-contained,

@@ -1,3 +1,4 @@
+import * as path from "node:path";
 import ts from "typescript";
 import {
   type Binder,
@@ -22,6 +23,15 @@ import {
   numberBounds,
   numberToken,
 } from "./transcribe.js";
+import {
+  type ModelRef,
+  type ModuleReader,
+  diskReader,
+  displayName,
+  modelKey,
+  moduleQualifier,
+  resolveImport,
+} from "./module-graph.js";
 
 /** A JS expression in the shapes the plain-Lean emitter renders. The
  * frontend records operator text verbatim; what an operator means is the
@@ -33,7 +43,7 @@ export type EmitExpr =
   | { kind: "id"; name: string }
   | { kind: "unop"; op: "-" | "+"; operand: EmitExpr }
   | { kind: "binop"; op: string; left: EmitExpr; right: EmitExpr }
-  | { kind: "call"; callee: string; args: EmitExpr[] };
+  | { kind: "call"; callee: string; module?: string; args: EmitExpr[] };
 
 /** A statement in the shapes the plain-Lean emitter renders as Lean
  * do-notation: `const` and mutable `let` locals, reassignment, `if`/`else`
@@ -51,6 +61,8 @@ export type EmitStmt =
 export interface EmitFunction {
   kind: "function";
   name: string;
+  /** The defining module's entry-relative path; absent for the entry. */
+  module?: string;
   /** Parameter names; every parameter is `: number`. */
   params: string[];
   /** The declaration's original text, echoed as comments above the def. */
@@ -244,11 +256,24 @@ function callNames(e: ts.Expression, into: string[] = []): string[] {
 }
 
 /** What a body or formula may reference: bound value names, the models
- * registered so far, and the declarations that failed. */
+ * registered so far, and the declarations that failed. Registries are
+ * keyed across the whole closure, so a reference resolves through
+ * `names` — which module a source spelling belongs to — before lookup. */
 interface WalkScope {
   vars: ReadonlySet<string>;
   mapped: ReadonlyMap<string, number>;
   failed: ReadonlyMap<string, FailedDecl>;
+  /** Source spellings this module binds elsewhere: imported names, and
+   * only those. A spelling absent here is this module's own. */
+  names: ReadonlyMap<string, ModelRef>;
+  /** This module's qualifier; empty for the entry file. */
+  module: string;
+}
+
+/** Where a source spelling's model lives: an imported binding names its
+ * exporting module, anything else is this module's own. */
+function refOf(scope: WalkScope, name: string): ModelRef {
+  return scope.names.get(name) ?? { module: scope.module, name };
 }
 
 /** The first callee among `names` whose own declaration failed on a named
@@ -260,12 +285,14 @@ function failedCalleeIn(
   scope: WalkScope,
 ): FailedDecl | undefined {
   for (const name of names) {
-    if (scope.mapped.has(name)) continue;
-    const failed = scope.failed.get(name);
+    const ref = refOf(scope, name);
+    const key = modelKey(ref);
+    if (scope.mapped.has(key)) continue;
+    const failed = scope.failed.get(key);
     if (failed?.construct !== undefined) {
       return {
         construct: failed.construct,
-        reason: `'${name}' could not be modeled: ${failed.reason}`,
+        reason: `'${displayName(ref)}' could not be modeled: ${failed.reason}`,
       };
     }
   }
@@ -362,10 +389,14 @@ function walkTyped(
     throw new ModelError(`operator '${op}' has no model in this slice`);
   }
   if (ts.isCallExpression(e) && ts.isIdentifier(e.expression)) {
-    const name = e.expression.text;
-    const arity = scope.mapped.get(name);
+    const ref = refOf(scope, e.expression.text);
+    const key = modelKey(ref);
+    // A dependency's model is named the way its definition is: the old
+    // pipeline never sees the importing module's spelling.
+    const name = displayName(ref);
+    const arity = scope.mapped.get(key);
     if (arity === undefined) {
-      const failed = scope.failed.get(name);
+      const failed = scope.failed.get(key);
       if (failed !== undefined) {
         throw new ModelError(`'${name}' has no model: ${failed.reason}`);
       }
@@ -382,7 +413,12 @@ function walkTyped(
       );
     }
     const args = e.arguments.map((a) => walkTyped(a, "num", scope, sf));
-    return { kind: "call", callee: name, args };
+    return {
+      kind: "call",
+      callee: ref.name,
+      ...(ref.module !== "" ? { module: ref.module } : {}),
+      args,
+    };
   }
   // Unreachable after the construct scan; degrade like an opaque node.
   throw new ModelError(constructAt(e, e.kind, sf).reason);
@@ -800,11 +836,19 @@ function walkFunction(
   sf: ts.SourceFile,
   mapped: ReadonlyMap<string, number>,
   failed: ReadonlyMap<string, FailedDecl>,
+  names: ReadonlyMap<string, ModelRef>,
+  module: string,
 ): EmitFunction | FailedDecl {
   const sig = signatureFailure(fn, sf);
   if (sig !== undefined) return sig;
   const params = fn.parameters.map((p) => (p.name as ts.Identifier).text);
-  const scope: WalkScope = { vars: new Set(params), mapped, failed };
+  const scope: WalkScope = {
+    vars: new Set(params),
+    mapped,
+    failed,
+    names,
+    module,
+  };
   // Parameters are assignable, the way JavaScript has them.
   const locals: Locals = new Map(params.map((p) => [p, "mutable" as const]));
   const tree = fn.body!.statements.flatMap((s) => structureStmt(s, sf, locals));
@@ -838,6 +882,7 @@ function walkFunction(
     return {
       kind: "function",
       name: fn.name!.text,
+      ...(module !== "" ? { module } : {}),
       params,
       source: fn.getText(sf),
       body,
@@ -942,6 +987,8 @@ function obligationPayload(
   formula: string,
   mapped: ReadonlyMap<string, number>,
   failed: ReadonlyMap<string, FailedDecl>,
+  names: ReadonlyMap<string, ModelRef>,
+  module: string,
 ): PayloadResult {
   const bare: PayloadResult = { kind: "payload", payload: { kind: "bare" } };
   try {
@@ -985,6 +1032,8 @@ function obligationPayload(
       vars: new Set(binders.map((b) => b.varName)),
       mapped,
       failed,
+      names,
+      module,
     };
     // Guards precede the conclusion in the old elaborator's tree order, so
     // the first refusal either pipeline reports is the same one.
@@ -1066,43 +1115,159 @@ function classBinderReason(formula: string): string | undefined {
   return undefined;
 }
 
-/**
- * Walk one module into the plain-Lean emission IR: mappable function
- * declarations with their bodies, one obligation per annotation on a
- * mapped function, and a frontend classification — with the old
- * pipeline's exact status and reason — for each annotation the model
- * refuses or the engine cannot attempt. Import closures are a later
- * slice; an import degrades like any other unmapped declaration.
- */
-export function emitModule(text: string, file: string): PlainEmission {
-  const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
-  const declarations: EmitFunction[] = [];
-  const mapped = new Map<string, number>();
-  const failed = new Map<string, FailedDecl>();
+/** One entry file's dependency-closure walk. Artifacts are
+ * self-contained, so every module the entry reaches contributes its
+ * declarations to the entry's own emission rather than being imported. */
+interface EmitClosure {
+  reader: ModuleReader;
+  /** What module qualifiers are relative to: the entry file's directory. */
+  entryDir: string;
+  /** Modules already walked, by absolute path, with their name maps. */
+  done: Map<string, ReadonlyMap<string, ModelRef>>;
+  /** Modules whose walk has not finished: an import reaching back into
+   * one closes a cycle. */
+  active: Set<string>;
+  declarations: EmitFunction[];
+  mapped: Map<string, number>;
+  failed: Map<string, FailedDecl>;
+}
+
+/** The top-level names a non-import declaration binds — what a reference
+ * elsewhere in the module, or an importer, can name. Class members are
+ * not among them: a member's key is synthesized, never written as an
+ * identifier. */
+function declaredNames(stmt: ts.Statement): string[] {
+  if (ts.isVariableStatement(stmt)) {
+    return stmt.declarationList.declarations.flatMap((d) =>
+      bindingIdentifiers(d.name).map((id) => id.text),
+    );
+  }
+  const name = (stmt as { name?: ts.Node }).name;
+  return name !== undefined && ts.isIdentifier(name) ? [name.text] : [];
+}
+
+/** Walk `target` if it is not already in, and answer its name map. */
+function inlineEmitModule(
+  target: { file: string; text: string },
+  c: EmitClosure,
+): ReadonlyMap<string, ModelRef> {
+  const done = c.done.get(target.file);
+  if (done !== undefined) return done;
+  c.active.add(target.file);
+  const names = walkEmitModule(
+    target.file,
+    target.file,
+    target.text,
+    moduleQualifier(c.entryDir, target.file),
+    c,
+  );
+  c.active.delete(target.file);
+  c.done.set(target.file, names);
+  return names;
+}
+
+/** Bind the names an import declaration introduces: to the exporting
+ * module's models when the specifier resolves, opaquely otherwise — a
+ * bare specifier, a relative one that reaches no file, a name that module
+ * does not declare, or a specifier reaching a module still being walked,
+ * which is an import cycle degrading at the edge that closes it. Default
+ * and namespace imports name a module object, which the model has no
+ * shape for, so they stay opaque however their specifier resolves. */
+function bindEmitImport(
+  stmt: ts.ImportDeclaration,
+  from: string,
+  names: Map<string, ModelRef>,
+  qualifier: string,
+  sf: ts.SourceFile,
+  c: EmitClosure,
+): void {
+  const clause = stmt.importClause;
+  if (clause === undefined) return;
+  const degrade = (id: ts.Identifier) => {
+    c.failed.set(
+      modelKey({ module: qualifier, name: id.text }),
+      constructAt(id, stmt.kind, sf),
+    );
+  };
+  if (clause.name !== undefined) degrade(clause.name);
+  const bindings = clause.namedBindings;
+  if (bindings === undefined) return;
+  if (ts.isNamespaceImport(bindings)) {
+    degrade(bindings.name);
+    return;
+  }
+  const specifier = stmt.moduleSpecifier;
+  const target = ts.isStringLiteral(specifier)
+    ? resolveImport(specifier.text, from, c.reader)
+    : undefined;
+  const exported =
+    target === undefined || c.active.has(target.file)
+      ? undefined
+      : inlineEmitModule(target, c);
+  for (const el of bindings.elements) {
+    const to = exported?.get((el.propertyName ?? el.name).text);
+    if (to === undefined) degrade(el.name);
+    else names.set(el.name.text, to);
+  }
+}
+
+/** Walk one module and, ahead of it, everything it imports. `label` is
+ * what positions are reported against; `qualifier` is empty for the entry
+ * file, whose names are the ones annotations are written about and so
+ * keep their source spelling. */
+function walkEmitModule(
+  file: string,
+  label: string,
+  text: string,
+  qualifier: string,
+  c: EmitClosure,
+): ReadonlyMap<string, ModelRef> {
+  const sf = ts.createSourceFile(label, text, ts.ScriptTarget.Latest, true);
+  const names = new Map<string, ModelRef>();
+  const key = (name: string) => modelKey({ module: qualifier, name });
+  // Bindings first, and dependencies with them: a call may precede the
+  // declaration it names, and every dependency's declarations must be
+  // registered before this module's bodies are walked.
+  for (const stmt of sf.statements) {
+    if (ts.isImportDeclaration(stmt)) {
+      bindEmitImport(stmt, file, names, qualifier, sf, c);
+    } else {
+      for (const name of declaredNames(stmt)) {
+        names.set(name, { module: qualifier, name });
+      }
+    }
+  }
   for (const stmt of sf.statements) {
     if (ts.isFunctionDeclaration(stmt)) {
       if (stmt.name === undefined) continue;
-      const walked = walkFunction(stmt, sf, mapped, failed);
+      const walked = walkFunction(
+        stmt,
+        sf,
+        c.mapped,
+        c.failed,
+        names,
+        qualifier,
+      );
       if ("kind" in walked && walked.kind === "function") {
-        declarations.push(walked);
-        mapped.set(stmt.name.text, walked.params.length);
+        c.declarations.push(walked);
+        c.mapped.set(key(stmt.name.text), walked.params.length);
       } else {
-        failed.set(stmt.name.text, walked as FailedDecl);
+        c.failed.set(key(stmt.name.text), walked as FailedDecl);
       }
       continue;
     }
     if (ts.isClassDeclaration(stmt)) {
       if (stmt.name === undefined) continue;
       const className = stmt.name.text;
-      failed.set(className, constructAt(stmt.name, stmt.kind, sf));
+      c.failed.set(key(className), constructAt(stmt.name, stmt.kind, sf));
       for (const member of stmt.members) {
         const name = member.name;
         if (name === undefined || !ts.isIdentifier(name)) continue;
         const isStatic = (
           ts.getModifiers(member as ts.HasModifiers) ?? []
         ).some((m) => m.kind === ts.SyntaxKind.StaticKeyword);
-        failed.set(
-          qualifiedName(name.text, className, isStatic),
+        c.failed.set(
+          key(qualifiedName(name.text, className, isStatic)),
           constructAt(name, stmt.kind, sf),
         );
       }
@@ -1113,39 +1278,53 @@ export function emitModule(text: string, file: string): PlainEmission {
     if (ts.isVariableStatement(stmt)) {
       for (const d of stmt.declarationList.declarations) {
         for (const id of bindingIdentifiers(d.name)) {
-          failed.set(id.text, constructAt(id, stmt.kind, sf));
+          c.failed.set(key(id.text), constructAt(id, stmt.kind, sf));
         }
       }
       continue;
     }
-    // No import closure yet: every import binding degrades.
-    if (ts.isImportDeclaration(stmt)) {
-      const clause = stmt.importClause;
-      if (clause === undefined) continue;
-      if (clause.name !== undefined) {
-        failed.set(clause.name.text, constructAt(clause.name, stmt.kind, sf));
-      }
-      const bindings = clause.namedBindings;
-      if (bindings !== undefined) {
-        if (ts.isNamespaceImport(bindings)) {
-          failed.set(
-            bindings.name.text,
-            constructAt(bindings.name, stmt.kind, sf),
-          );
-        } else {
-          for (const el of bindings.elements) {
-            failed.set(el.name.text, constructAt(el.name, stmt.kind, sf));
-          }
-        }
-      }
-      continue;
-    }
+    // Import bindings were settled in the bindings pass above.
+    if (ts.isImportDeclaration(stmt)) continue;
     // Any other named declaration (enum, interface, type alias, namespace).
     const name = (stmt as { name?: ts.Node }).name;
     if (name !== undefined && ts.isIdentifier(name)) {
-      failed.set(name.text, constructAt(name, stmt.kind, sf));
+      c.failed.set(key(name.text), constructAt(name, stmt.kind, sf));
     }
   }
+  return names;
+}
+
+/**
+ * Walk one module into the plain-Lean emission IR: mappable function
+ * declarations with their bodies, one obligation per annotation on a
+ * mapped function, and a frontend classification — with the old
+ * pipeline's exact status and reason — for each annotation the model
+ * refuses or the engine cannot attempt. The closure of the entry's
+ * relative imports is walked ahead of it, each dependency's models
+ * carrying their module; `file` locates the entry against the module tree
+ * `reader` reads, and labels the annotations.
+ */
+export function emitModule(
+  text: string,
+  file: string,
+  reader: ModuleReader = diskReader,
+): PlainEmission {
+  const entry = path.resolve(file);
+  const closure: EmitClosure = {
+    reader,
+    entryDir: path.dirname(entry),
+    done: new Map(),
+    active: new Set([entry]),
+    declarations: [],
+    mapped: new Map(),
+    failed: new Map(),
+  };
+  // The entry's qualifier is empty: its names are the ones annotations
+  // are written about, so they keep their source spelling.
+  const names = walkEmitModule(entry, file, text, "", closure);
+  const { declarations, mapped, failed } = closure;
+  const module = "";
+  const key = (name: string) => modelKey({ module, name });
 
   const { annotations, invalid } = extractFromSource(text, file);
   const obligations: EmitObligation[] = [];
@@ -1164,7 +1343,7 @@ export function emitModule(text: string, file: string): PlainEmission {
     // A failed declaration blocks the annotation only when nothing
     // modeled the name: an overload signature fails while the
     // implementation models.
-    const fnFailed = mapped.has(fn) ? undefined : failed.get(fn);
+    const fnFailed = mapped.has(key(fn)) ? undefined : failed.get(key(fn));
     if (fnFailed !== undefined) {
       classified.push({
         annotation: a,
@@ -1173,7 +1352,7 @@ export function emitModule(text: string, file: string): PlainEmission {
       });
       continue;
     }
-    const result = obligationPayload(a.formula, mapped, failed);
+    const result = obligationPayload(a.formula, mapped, failed, names, module);
     if (result.kind === "classified") {
       classified.push({
         annotation: a,

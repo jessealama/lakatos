@@ -5,8 +5,7 @@ import ThalesEmit.Json
 /-! IR → `TSyntax` → text. Every line of Lean code in the artifact is
 built by quotation and printed by Lean's pretty-printer; the only strings
 assembled by hand are comments and the fixed header. Shapes beyond this
-slice — module-qualified names — are refused with a message naming the
-gap, never approximated. -/
+slice are refused with a message naming the gap, never approximated. -/
 
 namespace ThalesEmit
 
@@ -30,13 +29,21 @@ partial def numTerm (lit : String) : RenderM (TSyntax `term) := do
     pure ⟨Syntax.mkNumLit lit⟩
 
 /-- A plain identifier. The IR's names come from TypeScript identifiers,
-which are Lean-atomic; anything else (a module-qualified closure name)
-waits for its slice. -/
+which are Lean-atomic; anything else is not emittable. -/
 def identTerm (name : String) : RenderM Ident := do
   unless name.length > 0 && name.front.isAlpha &&
       name.all (fun c => c.isAlphanum || c == '_') do
     throw s!"'{name}' is not an emittable identifier yet"
   return mkIdent (Name.mkSimple name)
+
+/-- A module path as one name component. It is not a Lean identifier, so
+it prints between guillemets; a path containing one, or a control
+character, would break the component when the artifact is re-parsed. -/
+def modulePathIdent (path : String) : RenderM Name := do
+  unless path.length > 0 && !("/".isPrefixOf path) &&
+      path.all (fun c => c.toNat ≥ 32 && c != '«' && c != '»') do
+    throw s!"'{path}' is not an emittable module path"
+  return Name.mkSimple path
 
 /-- The names the emitted text references unqualified. The artifact is
 re-parsed plain text, so a binder or parameter spelled like one would
@@ -55,10 +62,14 @@ def scopedIdent (name : String) : RenderM Ident := do
 
 /-- A model reference: emitted defs live under the old pipeline's
 `TsModel` namespace, so they collide with no root-level name and no
-binder can capture them. -/
-def modelIdent (name : String) : RenderM Ident := do
+binder can capture them. A dependency's models sit one component deeper,
+under their module's entry-relative path. -/
+def modelIdent (module : Option String) (name : String) : RenderM Ident := do
   let _ ← identTerm name
-  return mkIdent (`TsModel ++ Name.mkSimple name)
+  match module with
+  | none => return mkIdent (`TsModel ++ Name.mkSimple name)
+  | some m =>
+    return mkIdent (`TsModel ++ (← modulePathIdent m) ++ Name.mkSimple name)
 
 /-- A value-level rendering: a Float- or Bool-valued term that may embed
 `(← call)` lifts, and whether any lift occurred. Lifts appear left to
@@ -112,15 +123,15 @@ partial def valueTerm (coerced : String → Bool) : JsExpr → RenderM Rendered
     | "===" => return ⟨← `(Float.beq $lt $rt), lifted⟩
     | "!==" => return ⟨← `(!Float.beq $lt $rt), lifted⟩
     | _ => throw s!"operator '{op}' is not in the emission slice yet"
-  | .call callee args => do
-    let c ← callTerm coerced callee args
+  | .call callee module args => do
+    let c ← callTerm coerced callee module args
     return ⟨← `((← $c:term)), true⟩
 
 /-- A call as the `JsM` value it denotes, its arguments still
 value-level. -/
 partial def callTerm (coerced : String → Bool) (callee : String)
-    (args : Array JsExpr) : RenderM (TSyntax `term) := do
-  let f ← modelIdent callee
+    (module : Option String) (args : Array JsExpr) : RenderM (TSyntax `term) := do
+  let f ← modelIdent module callee
   let argTerms ← args.mapM (fun a => return (← valueTerm coerced a).term)
   if argTerms.isEmpty then pure f else `($f $argTerms*)
 
@@ -132,13 +143,13 @@ side), anything else lifts with `pure` or a `do return`. The flag says
 whether the term pins `JsM` on its own. -/
 def monadicTerm (coerced : String → Bool) :
     JsExpr → RenderM (TSyntax `term × Bool)
-  | .call callee args => do
+  | .call callee module args => do
     let liftedArgs ← args.anyM fun a =>
       return (← valueTerm coerced a).lifted
     if liftedArgs then
-      let ⟨t, _⟩ ← valueTerm coerced (.call callee args)
+      let ⟨t, _⟩ ← valueTerm coerced (.call callee module args)
       return (← `(do return $t), false)
-    return (← callTerm coerced callee args, true)
+    return (← callTerm coerced callee module args, true)
   | e => do
     let ⟨t, lifted⟩ ← valueTerm coerced e
     if lifted then return (← `(do return $t), false)
@@ -220,7 +231,7 @@ partial def assignedNames (s : JsStmt) : List String :=
   | _ => []
 
 def fnCommand (f : EmitFn) : RenderM (TSyntax `command) := do
-  let name ← modelIdent f.name
+  let name ← modelIdent f.module f.name
   let params ← f.params.mapM scopedIdent
   let assigned := f.body.toList.flatMap assignedNames
   let rebound ← f.params.filterMapM fun p => do
@@ -356,7 +367,14 @@ environment that imports `ThalesDsl`, which carries every syntax the
 quotations build. -/
 def renderEmission (e : Emission) : CoreM String := do
   let mut blocks : Array String := #[header e]
+  -- A dependency's declarations are contiguous and introduced by their
+  -- module, the way the old pipeline writes it; the entry's carry none.
+  let mut fromModule : Option String := none
   for f in e.declarations do
+    if f.module != fromModule then
+      fromModule := f.module
+      if let some m := f.module then
+        blocks := blocks.push s!"-- module {m}"
     let cmd ← rendered (fnCommand f)
     blocks := blocks.push
       (commentLines f.source ++ "\n" ++ prettyLines (← ppCommand cmd))

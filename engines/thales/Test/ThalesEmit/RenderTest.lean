@@ -111,8 +111,8 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
                         body := #[.ret (.binop "+" (.id "x") (.num "1"))] }]
     obligations := #[{ function := "bump", property := "p", formula := "f",
                        payload := .structured #[.int "bump"] #[]
-                         (.eq (.call "bump" #[.id "bump"])
-                              (.call "bump" #[.id "bump"])) }] }
+                         (.eq (.call "bump" none #[.id "bump"])
+                              (.call "bump" none #[.id "bump"])) }] }
   let rendered ← renderEmission e
   unless (rendered.splitOn "TsModel.bump (Float.ofInt bump)").length == 3 do
     throwError "the call is exposed to binder capture:\n{rendered}"
@@ -126,7 +126,7 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
                         body := #[.ret (.id "x")] }]
     obligations := #[{ function := "f", property := "p", formula := "f",
                        payload := .structured #[.int "pure"] #[]
-                         (.istrue (.binop ">=" (.call "f" #[.id "pure"])
+                         (.istrue (.binop ">=" (.call "f" none #[.id "pure"])
                                              (.num "0"))) }] }
   let rendered ← renderEmission e
   unless (rendered.splitOn "pure'").length == 3 do
@@ -173,7 +173,7 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
 -- bare return.
 #eval show CoreM Unit from do
   let call (x : String) : JsExpr :=
-    .call "applyConversionFactors" #[.id x, .id x, .id x, .id x, .id x]
+    .call "applyConversionFactors" none #[.id x, .id x, .id x, .id x, .id x]
   let e : Emission := {
     file := "t.ts"
     declarations := #[{ name := "applyConversionFactors",
@@ -208,6 +208,8 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
     throwError "the return and its argument are not on one line:\n{rendered}"
 
 -- A shape outside the slice is refused with a message naming the gap.
+-- Module qualification travels in the `module` field; a joined spelling
+-- in `name` is not a second way in.
 #eval show CoreM Unit from do
   let e : Emission := {
     file := "t.ts"
@@ -219,4 +221,48 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
     pure false
   catch _ => pure true
   unless refused do
-    throwError "a module-qualified name was rendered instead of refused"
+    throwError "a joined module-qualified name was rendered instead of refused"
+
+-- A dependency's models carry their module as a name component; the
+-- entry's own stay bare.
+#eval show CoreM Unit from do
+  let e : Emission := {
+    file := "main.mts"
+    declarations := #[
+      { name := "double", module := some "helper.mts", params := #["x"],
+        source := "double", body := #[.ret (.binop "*" (.id "x") (.num "2"))] },
+      { name := "twice", params := #["x"], source := "twice",
+        body := #[.ret (.call "double" (some "helper.mts") #[.id "x"])] }]
+    obligations := #[] }
+  let rendered ← renderEmission e
+  unless (rendered.splitOn "def TsModel.«helper.mts».double").length == 2 do
+    throwError "the dependency's def is not module-qualified:\n{rendered}"
+  unless (rendered.splitOn "def TsModel.twice").length == 2 do
+    throwError "the entry's def did not stay bare:\n{rendered}"
+  unless (rendered.splitOn "TsModel.«helper.mts».double x").length == 2 do
+    throwError "the call site is not module-qualified:\n{rendered}"
+  -- The dependency's block is introduced once, ahead of its def; the
+  -- entry's declarations get no separator of their own.
+  unless (rendered.splitOn "-- module helper.mts\n").length == 2 do
+    throwError "the module separator is missing or repeated:\n{rendered}"
+  let afterSep := (rendered.splitOn "-- module helper.mts\n")[1]!
+  unless (afterSep.splitOn "def TsModel.«helper.mts».double").length == 2 do
+    throwError "the module separator does not precede its def:\n{rendered}"
+  unless (rendered.splitOn "-- module ").length == 2 do
+    throwError "the entry's declarations got a separator:\n{rendered}"
+
+-- A module path that would break its own name component is refused, not
+-- approximated: the artifact is re-parsed text.
+#eval show CoreM Unit from do
+  for bad in ["a«b", "/abs.ts", ""] do
+    let e : Emission := {
+      file := "t.ts"
+      declarations := #[{ name := "double", module := some bad, params := #["x"],
+                          source := "f", body := #[.ret (.id "x")] }]
+      obligations := #[] }
+    let refused ← try
+      let _ ← renderEmission e
+      pure false
+    catch _ => pure true
+    unless refused do
+      throwError s!"module path '{bad}' was rendered instead of refused"
