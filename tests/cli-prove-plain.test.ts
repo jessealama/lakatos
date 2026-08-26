@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { announcedRunDir, runMain, useTempProject } from "./helpers/cli.js";
@@ -8,9 +8,9 @@ import type { ProveVerdict } from "../src/envelope.js";
 import type { ProveStatus } from "../src/szs.js";
 import { RUN_ROOT } from "../src/run-dir.js";
 
-// The plain-Lean emission pipeline through the CLI spine, selected by
-// LAKATOS_PROVE_PIPELINE=plain. The engine is mocked at the same module
-// seam cli-prove.test.ts uses; the containment, interrupt, and health
+// The plain-Lean emission pipeline through the CLI spine, which prove runs
+// by default — nothing needs selecting. The engine is mocked at the same
+// module seam cli-prove.test.ts uses; the containment, interrupt, and health
 // contracts must match the transcriber spine's, exit codes included.
 vi.mock("../engines/thales/frontend/src/run.js", () => ({
   runLean: vi.fn(),
@@ -59,12 +59,7 @@ describe("cli prove, plain pipeline", () => {
     ].join("\n"),
   });
 
-  beforeEach(() => {
-    process.env.LAKATOS_PROVE_PIPELINE = "plain";
-  });
-
   afterEach(() => {
-    delete process.env.LAKATOS_PROVE_PIPELINE;
     runEmissionMock.mockReset();
     fs.rmSync(RUN_ROOT, { recursive: true, force: true });
   });
