@@ -274,6 +274,8 @@ describe('obligation payload degradations', () => {
       'an unparseable guard atom',
       'forall (x: int ∈ [0, 5)) { 2x >= 0 -> f(x) >= 0 }',
     ],
+    ['a boolean binder', 'forall (b: boolean) { f(b) ≡ b }'],
+    ['a bigint binder', 'forall (b: bigint) { f(b) ≡ b }'],
   ])('%s degrades to a bare payload', (_label, formula) => {
     expect(payloadOf(formula)).toEqual({ kind: 'bare' });
   });

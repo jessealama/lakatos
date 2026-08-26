@@ -34,12 +34,10 @@ export default defineConfig({
         // upward in this file; if it drops below, the run fails. Seeded
         // from the baseline on 2026-08-17 — bump only happens via
         // autoUpdate. Re-lowered 2026-08-25: emission.ts carries two
-        // defensive branches no input can reach. Re-lowered 2026-08-26:
-        // the payload path keeps a defensive domain bail no binder can
-        // reach (class binders classify before it).
+        // defensive branches no input can reach.
         autoUpdate: true,
-        statements: 99.35,
-        branches: 98.14,
+        statements: 99.39,
+        branches: 98.19,
         functions: 100,
         lines: 99.6,
       },
