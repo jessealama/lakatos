@@ -45,4 +45,11 @@ argument is carried by the bit-exact tests, not yet by a proof. -/
 def tsRem (a b : Float) : Float :=
   .ofModel (.pack (remUnpacked Format.binary64 a.toModel.unpack b.toModel.unpack))
 
+/-- `Number::sameValue`, the meaning of `Object.is` on numbers.
+Propositional equality on `Float` is exactly SameValue — every NaN is
+one value, the zeros are two; `SameValueTest.lean` pins that
+correspondence on both evaluation paths — so the model is its `Bool`
+face. -/
+def sameValue (x y : Float) : Bool := decide (x = y)
+
 end Js.Number.FloatOps
