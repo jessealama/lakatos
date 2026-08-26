@@ -30,9 +30,8 @@ const QUICK_FIXTURES = [
 ];
 
 /** The expression slice of the conformance corpus (#147): single-return
- * bodies, int/nat binders, single-atom conclusions. Fixtures with
- * guards, number binders, imports, or unsupported ranges join the
- * manifest with their slices (#149-#151). */
+ * bodies, int/nat binders, single-atom conclusions. Fixtures with imports
+ * or unsupported ranges join the manifest with their slices (#149, #151). */
 const EXPRESSION_FIXTURES = [
   'engines/thales/tests/fixtures/operators.ts',
   `${CONFORMANCE}/theorem/add-commutes.ts`,
@@ -65,8 +64,7 @@ const EXPRESSION_FIXTURES = [
 /** The statement slice (#148): statement-bodied fixtures — const and
  * mutable locals, reassignment, branches whose arms return, throw, or
  * fall through — plus the statement-level degradations (loops, a
- * shadowing redeclaration, an uninitialized let). Statement fixtures
- * whose formulas need guards or number binders wait for #150. */
+ * shadowing redeclaration, an uninitialized let). */
 const STATEMENT_FIXTURES = [
   'engines/thales/tests/fixtures/statements.ts',
   `${CONFORMANCE}/theorem/branch-joined-let.ts`,
@@ -79,9 +77,34 @@ const STATEMENT_FIXTURES = [
   `${CONFORMANCE}/inappropriate/uninitialized-let.ts`,
 ];
 
+/** The binder/guard slice (#150): guard chains, guard-respecting
+ * witnesses, and number binders — bounded, half-bounded, and rangeless.
+ * With this slice the manifest covers every shape the emission pipeline
+ * reaches; imports (#149) and unsupported ranges (#151) are what still
+ * wait. */
+const BINDER_FIXTURES = [
+  'engines/thales/tests/fixtures/binders.ts',
+  `${CONFORMANCE}/countersatisfiable/guarded-witness.ts`,
+  `${CONFORMANCE}/countersatisfiable/reserved-binder.ts`,
+  `${CONFORMANCE}/theorem/guarded-floor.ts`,
+  `${CONFORMANCE}/theorem/branch-guarded-throw.ts`,
+  `${CONFORMANCE}/theorem/number-binder.ts`,
+  `${CONFORMANCE}/theorem/branch-clamp.ts`,
+  `${CONFORMANCE}/theorem/finite-bounds.ts`,
+  `${CONFORMANCE}/theorem/left-factor.ts`,
+  `${CONFORMANCE}/theorem/literal-factor.ts`,
+  `${CONFORMANCE}/theorem/guarded-monotone-conversion.ts`,
+  `${CONFORMANCE}/inappropriate/guarded-power.ts`,
+];
+
 const fixtures =
   process.env.LAKATOS_PROVE_E2E === '1'
-    ? [...QUICK_FIXTURES, ...EXPRESSION_FIXTURES, ...STATEMENT_FIXTURES]
+    ? [
+        ...QUICK_FIXTURES,
+        ...EXPRESSION_FIXTURES,
+        ...STATEMENT_FIXTURES,
+        ...BINDER_FIXTURES,
+      ]
     : QUICK_FIXTURES;
 
 const { check, done } = checker('parity');

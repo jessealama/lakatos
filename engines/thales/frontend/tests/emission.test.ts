@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { assert, describe, expect, test } from 'vitest';
 import * as fs from 'node:fs';
 import { schemaValidator } from '../../../../tests/helpers/schema-validator.js';
 import { emitModule } from '../src/emission.js';
@@ -95,6 +95,7 @@ describe('emitModule on the tracer fixture', () => {
   test.each([
     ['engines/thales/tests/fixtures/tracer.ts'],
     ['engines/thales/tests/fixtures/statements.ts'],
+    ['engines/thales/tests/fixtures/binders.ts'],
   ])('the emission for %s validates against the schema', (fixture) => {
     expectValidEmission(
       emitModule(fs.readFileSync(fixture, 'utf8'), fixture).emission,
@@ -105,6 +106,7 @@ describe('emitModule on the tracer fixture', () => {
     ['engines/thales/tests/fixtures/tracer.ts', 'tracer.emission.json'],
     ['engines/thales/tests/fixtures/operators.ts', 'operators.emission.json'],
     ['engines/thales/tests/fixtures/statements.ts', 'statements.emission.json'],
+    ['engines/thales/tests/fixtures/binders.ts', 'binders.emission.json'],
   ])(
     'the pinned emission for %s is exactly what the frontend emits',
     (fixture, pin) => {
@@ -251,10 +253,6 @@ describe('obligation payload degradations', () => {
       'a range past the safe integers',
       'forall (x: int ∈ [0, 99999999999999999999)) { f(x) ≡ x }',
     ],
-    [
-      'an implication body',
-      'forall (x: int ∈ [0, 5)) { f(x) >= 0 -> f(x) ≡ x }',
-    ],
     ['an unparseable atom', 'forall (x: int ∈ [0, 5)) { 2x ≡ x }'],
     [
       'an atom that is not valid JavaScript',
@@ -268,6 +266,16 @@ describe('obligation payload degradations', () => {
       'a formula the prefix parser rejects',
       'forall (x: int ∈ [0, 5)) (x: int ∈ [0, 5)) { f(x) ≡ x }',
     ],
+    [
+      'a connective outside the chain shape',
+      'forall (x: int ∈ [0, 5)) { f(x) >= 0 ∨ f(x) <= 9 }',
+    ],
+    [
+      'an unparseable guard atom',
+      'forall (x: int ∈ [0, 5)) { 2x >= 0 -> f(x) >= 0 }',
+    ],
+    ['a boolean binder', 'forall (b: boolean) { f(b) ≡ b }'],
+    ['a bigint binder', 'forall (b: bigint) { f(b) ≡ b }'],
   ])('%s degrades to a bare payload', (_label, formula) => {
     expect(payloadOf(formula)).toEqual({ kind: 'bare' });
   });
@@ -303,6 +311,69 @@ describe('obligation payload degradations', () => {
       kind: 'structured',
       binders: [binder],
     });
+  });
+
+  test('a guard chain structures with guards outermost first', () => {
+    const src = [
+      '/** @ensures{guarded} forall (x: int ∈ [0, 10)) { x >= 1 -> keep(x) >= 1 } */',
+      'export function keep(x: number): number {',
+      '  if (x < 1) {',
+      '    return 1;',
+      '  }',
+      '  return x;',
+      '}',
+      '',
+    ].join('\n');
+    const { emission } = emitModule(src, 'guarded.ts');
+    const payload = emission.obligations[0]!.payload;
+    assert(payload.kind === 'structured');
+    expect(payload.guards).toEqual([
+      {
+        kind: 'binop',
+        op: '>=',
+        left: { kind: 'id', name: 'x' },
+        right: { kind: 'num', lit: '1' },
+      },
+    ]);
+    expect(payload.conclusion.kind).toBe('istrue');
+  });
+
+  test('a two-guard chain keeps both antecedents in order', () => {
+    const payload = payloadOf(
+      'forall (x: int ∈ [0, 10)) { x >= 1 -> x >= 2 -> f(x) >= 2 }',
+    );
+    assert(payload.kind === 'structured');
+    expect(payload.guards).toEqual([
+      {
+        kind: 'binop',
+        op: '>=',
+        left: { kind: 'id', name: 'x' },
+        right: { kind: 'num', lit: '1' },
+      },
+      {
+        kind: 'binop',
+        op: '>=',
+        left: { kind: 'id', name: 'x' },
+        right: { kind: 'num', lit: '2' },
+      },
+    ]);
+  });
+
+  test('a guardless payload carries no guards field', () => {
+    expect(
+      payloadOf('forall (x: int ∈ [0, 5)) { f(x) ≡ x }'),
+    ).not.toHaveProperty('guards');
+  });
+
+  test('an equation guard degrades to bare', () => {
+    // Object.is in guard position is refused, matching the old pipeline
+    const src = [
+      '/** @ensures{eqGuard} forall (x: int ∈ [0, 10)) { f(x) ≡ x -> f(x) >= 0 } */',
+      'export function f(x: number): number { return x; }',
+      '',
+    ].join('\n');
+    const { emission } = emitModule(src, 'eq-guard.ts');
+    expect(emission.obligations[0]!.payload).toEqual({ kind: 'bare' });
   });
 
   test('bounded and unbounded binders nest in order', () => {
@@ -382,27 +453,108 @@ describe('unary operators', () => {
   });
 });
 
-describe('emitModule degradations beyond the tracer', () => {
-  test('a formula outside the structured slice degrades to a bare payload', () => {
-    const src = [
-      '/** @ensures{big} forall (x: number ∈ [0, 1]) { f(x) >= 0 } */',
-      'export function f(x: number): number {',
-      '  return x;',
-      '}',
-      '',
-    ].join('\n');
-    const { emission, classified } = emitModule(src, 'f.ts');
-    expect(classified).toEqual([]);
-    expect(emission.obligations).toEqual([
+describe('number binders', () => {
+  test.each([
+    [
+      'finite mixed openness',
+      '(a: number ∈ (0, 1])',
       {
-        function: 'f',
-        property: 'big',
-        formula: 'forall (x: number ∈ [0, 1]) { f(x) >= 0 }',
-        payload: { kind: 'bare' },
+        name: 'a',
+        kind: 'number',
+        lower: { op: '<', lit: '0' },
+        upper: { op: '<=', lit: '1' },
       },
-    ]);
+    ],
+    [
+      'one-sided above zero',
+      '(sf: number ∈ (0, ∞))',
+      {
+        name: 'sf',
+        kind: 'number',
+        lower: { op: '<', lit: '0' },
+        upper: { op: '<', lit: 'Infinity' },
+      },
+    ],
+    [
+      'both infinite',
+      '(c: number ∈ (-∞, ∞))',
+      {
+        name: 'c',
+        kind: 'number',
+        lower: { op: '<', lit: '-Infinity' },
+        upper: { op: '<', lit: 'Infinity' },
+      },
+    ],
+    ['no range at all', '(x: number)', { name: 'x', kind: 'number' }],
+    [
+      'closed at both ends',
+      '(c: number ∈ [-100, 100])',
+      {
+        name: 'c',
+        kind: 'number',
+        lower: { op: '<=', lit: '-100' },
+        upper: { op: '<=', lit: '100' },
+      },
+    ],
+    [
+      'open at -0 below, which IEEE comparison cannot exclude',
+      '(z: number ∈ (-0, 1))',
+      {
+        name: 'z',
+        kind: 'number',
+        lower: { op: '<=', lit: '-0' },
+        upper: { op: '<', lit: '1' },
+      },
+    ],
+    [
+      'open at 0 above, which IEEE comparison cannot exclude',
+      '(w: number ∈ (-1, 0))',
+      {
+        name: 'w',
+        kind: 'number',
+        lower: { op: '<', lit: '-1' },
+        upper: { op: '<=', lit: '0' },
+      },
+    ],
+  ])('a number binder structures: %s', (_label, binder, expected) => {
+    const src = [
+      `/** @ensures{p} forall ${binder} { f(${expected.name}) >= 0 } */`,
+      'export function f(x: number): number { return x * x; }',
+    ].join('\n');
+    const { emission, classified } = emitModule(src, 'number-binders.ts');
+    // A number binder is no degradation: nothing may be classified away.
+    expect(classified).toEqual([]);
+    const payload = emission.obligations[0]!.payload;
+    expect(payload.kind).toBe('structured');
+    assert(payload.kind === 'structured');
+    expect(payload.binders[0]).toEqual(expected);
+    expectValidEmission(emission);
   });
 
+  test('a multi-name number binder expands to one binder per name', () => {
+    const src = [
+      '/** @ensures{p} forall (x y: number) (sf: number ∈ (0, ∞)) { f(x) <= f(y) } */',
+      'export function f(x: number): number { return x * x; }',
+    ].join('\n');
+    const { emission, classified } = emitModule(src, 'number-binders.ts');
+    expect(classified).toEqual([]);
+    expect(emission.obligations[0]!.payload).toMatchObject({
+      kind: 'structured',
+      binders: [
+        { name: 'x', kind: 'number' },
+        { name: 'y', kind: 'number' },
+        {
+          name: 'sf',
+          kind: 'number',
+          lower: { op: '<', lit: '0' },
+          upper: { op: '<', lit: 'Infinity' },
+        },
+      ],
+    });
+  });
+});
+
+describe('emitModule degradations beyond the tracer', () => {
   test('an istrue conclusion structures as istrue', () => {
     const src = [
       '/** @ensures{nonneg} forall (x: int ∈ [0, 5)) { f(x) >= 0 } */',
@@ -919,6 +1071,40 @@ describe('formula classification parity with the old pipeline', () => {
       ],
       obligations: 0,
     });
+  });
+
+  test('** in a guard is Inappropriate with the bare reason', () => {
+    expect(
+      classifications(
+        formulaWith('forall (x: int ∈ [0, 5)) { x ** 2 >= 0 -> f(x) >= 0 }'),
+      ),
+    ).toEqual({
+      classified: [
+        [
+          'Inappropriate',
+          "'**' is implementation-approximated in JavaScript, so any model " +
+            'would certify results a conforming engine may disagree with',
+        ],
+      ],
+      obligations: 0,
+    });
+  });
+
+  // Guards precede the conclusion in the scan, so the two refusals must be
+  // distinguishable: the reported one is the guard's.
+  test('a refused guard is reported before a refused conclusion', () => {
+    expect(
+      classifications(
+        formulaWith(
+          'forall (x: int ∈ [0, 5)) { (await f(x)) >= 0 -> foo.bar(x) }',
+        ),
+      ).classified,
+    ).toEqual([
+      [
+        'Inappropriate',
+        "unmapped TypeScript construct 'AwaitExpression' at 1:3",
+      ],
+    ]);
   });
 
   test('an operator with no model fails property elaboration', () => {

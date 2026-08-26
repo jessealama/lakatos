@@ -2,18 +2,18 @@ import Lean
 import Js.NormAttr
 import Js.Number.FloatFacts
 import Js.Runtime
-import ThalesDsl.Binders
+import Js.Binders
 
 /-! The `js_norm` simp set: normalization lemmas that strip JsM's
 monadic wrapping from pure-looking goals, leaving bare Int arithmetic
 for the closers, plus the binary64 facts `FloatFacts` proves — vanilla
 Lean carries no float theory, so a residual goal about `Float` has none
-until one lands here. Model definitions join the set at creation
-(Model.lean), so goals can unfold them. -/
+until one lands here. Model definitions join the set at
+model-elaboration time, so goals can unfold them. -/
 
-namespace ThalesDsl
+namespace Js
 
-open Js Js.Number
+open Js.Number
 
 /-- Collapse `pure a >>= f` one bind at a time; definitional on `Except`. -/
 @[js_norm] theorem jsm_pure_bind {α β : Type} (a : α) (f : α → JsM β) :
@@ -189,4 +189,4 @@ grind_pattern float_gt_neg_inf_of_lt => a < b
 grind_pattern float_gt_neg_inf_of_le => a ≤ b
 grind_pattern float_le_of_not_lt => Float.lt x y
 
-end ThalesDsl
+end Js

@@ -1,8 +1,8 @@
 import Lean
 import Js.Number.FloatOps
 import Js.Runtime
+import Js.Norm
 import ThalesDsl.Binders
-import ThalesDsl.Norm
 import ThalesDsl.Syntax
 
 namespace ThalesDsl

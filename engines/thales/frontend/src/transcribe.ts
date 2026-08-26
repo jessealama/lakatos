@@ -669,55 +669,65 @@ function numberBoundOp(
   return relax ? '<=' : '<';
 }
 
-/** One side of the guard a `number` binder lowers to. */
-export interface GuardBound {
+/** One side of the bound a `number` binder lowers to: the comparison and
+ * the endpoint literal it reads against the bound variable. */
+export interface FloatBound {
   op: '<' | '<=';
+  /** The endpoint as the literal the emitted bound carries. */
+  lit: string;
+}
+
+/** One side of the guard a `number` binder lowers to. */
+export interface GuardBound extends FloatBound {
   /** The endpoint as a double, on the side the comparison reads it:
    * `lo.op` compares `lo.val` against the bound variable, `hi.op` the
    * variable against `hi.val`. */
   val: number;
-  /** The endpoint as the DSL literal the emitted bound carries. */
-  lit: string;
 }
 
-/** The guard a `number` binder's interval lowers to, as comparisons rather
- * than as DSL text. An interval guards both of its sides: an ∞ endpoint
+/** The bounds a `number` binder's interval lowers to — the single authority
+ * both pipelines read. An interval bounds both of its sides: an ∞ endpoint
  * bounds against the literal infinity — strictly when open, so that sign's
  * infinity is excluded, non-strictly when closed, which IEEE comparison
  * still refuses for NaN. That makes any interval NaN-free, matching the
- * refuter's unconditional noNaN, and reporting the guard this way is what
- * lets a test pin the two engines' domains against each other. Only a
- * binder with no interval at all is unguarded. */
+ * refuter's unconditional noNaN. Only a binder with no interval at all is
+ * unbounded, and it quantifies over every double. */
+export function numberBounds(range: Binder['range']): {
+  lower?: FloatBound;
+  upper?: FloatBound;
+} {
+  if (range === undefined) return {};
+  const lower: FloatBound =
+    range.min !== undefined
+      ? {
+          op: numberBoundOp(range.min, 'lower', range.minOpen),
+          lit: range.min,
+        }
+      : { op: range.minOpen ? '<' : '<=', lit: '-Infinity' };
+  const upper: FloatBound =
+    range.max !== undefined
+      ? {
+          op: numberBoundOp(range.max, 'upper', range.maxOpen),
+          lit: range.max,
+        }
+      : { op: range.maxOpen ? '<' : '<=', lit: 'Infinity' };
+  return { lower, upper };
+}
+
+/** The guard a `number` binder's interval lowers to, as comparisons rather
+ * than as DSL text — `numberBounds` with each endpoint's double alongside
+ * it. Reporting the guard this way is what lets a test pin the two engines'
+ * domains against each other. */
 export function numberGuard(range: Binder['range']): {
   lo?: GuardBound;
   hi?: GuardBound;
 } {
-  if (range === undefined) return {};
-  const lo =
-    range.min !== undefined
-      ? {
-          op: numberBoundOp(range.min, 'lower', range.minOpen),
-          val: Number(range.min),
-          lit: range.min,
-        }
-      : {
-          op: range.minOpen ? ('<' as const) : ('<=' as const),
-          val: Number.NEGATIVE_INFINITY,
-          lit: '-Infinity',
-        };
-  const hi =
-    range.max !== undefined
-      ? {
-          op: numberBoundOp(range.max, 'upper', range.maxOpen),
-          val: Number(range.max),
-          lit: range.max,
-        }
-      : {
-          op: range.maxOpen ? ('<' as const) : ('<=' as const),
-          val: Number.POSITIVE_INFINITY,
-          lit: 'Infinity',
-        };
-  return { lo, hi };
+  const { lower, upper } = numberBounds(range);
+  if (lower === undefined || upper === undefined) return {};
+  return {
+    lo: { op: lower.op, val: Number(lower.lit), lit: lower.lit },
+    hi: { op: upper.op, val: Number(upper.lit), lit: upper.lit },
+  };
 }
 
 /** The `ballIco`-style lowering of a binder: inclusive lo, exclusive hi.
@@ -728,18 +738,14 @@ function binderConstructor(b: Binder): BinderLowering {
     // A number interval's openness cannot be normalized away the way an
     // integer one's can, so each side keeps its own comparison; an absent
     // endpoint bounds against the literal infinity, and only an absent
-    // interval is unguarded. The comparisons come from numberGuard so that
+    // interval is unguarded. The comparisons come from numberBounds so that
     // what is emitted and what is checked cannot drift.
-    const guard = numberGuard(b.range);
+    const { lower, upper } = numberBounds(b.range);
     const bounds: string[] = [];
-    if (guard.lo)
-      bounds.push(
-        `ts.lower[${leanStr(guard.lo.op)}](ts.fnum[${guard.lo.lit}])`,
-      );
-    if (guard.hi)
-      bounds.push(
-        `ts.upper[${leanStr(guard.hi.op)}](ts.fnum[${guard.hi.lit}])`,
-      );
+    if (lower)
+      bounds.push(`ts.lower[${leanStr(lower.op)}](ts.fnum[${lower.lit}])`);
+    if (upper)
+      bounds.push(`ts.upper[${leanStr(upper.op)}](ts.fnum[${upper.lit}])`);
     // No safe-integer clamp here: a number binder denotes binary64 values
     // directly, so there is no representability question to answer.
     return {
@@ -824,7 +830,7 @@ function equationSides(
  * semantics only — SameValue has no node there — and emitting the call
  * opaquely would misreport an in-spec formula as Inappropriate, so an
  * equation guard degrades the property to bare instead. */
-function isEquationGuard(e: ts.Expression): boolean {
+export function isEquationGuard(e: ts.Expression): boolean {
   const inner = unwrapParens(e);
   if (
     ts.isPrefixUnaryExpression(inner) &&
@@ -845,7 +851,7 @@ type PropReading =
  * conclusion atom: a bare atom, or a top-level implication chain whose
  * antecedents and conclusion are all atoms — exactly the shape the refuter
  * lowers to fc.pre discards. Any other connective is undefined (bare). */
-function chainReading(
+export function chainReading(
   ast: Formula,
 ): { guards: string[]; conclusion: string } | undefined {
   if (ast.kind === 'atom') return { guards: [], conclusion: ast.js };

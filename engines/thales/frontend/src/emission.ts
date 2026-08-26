@@ -11,7 +11,14 @@ import {
   qualifiedName,
   type RawAnnotation,
 } from '../../../../lemma/src/index.js';
-import { kindName, numberToken } from './transcribe.js';
+import {
+  chainReading,
+  type FloatBound,
+  isEquationGuard,
+  kindName,
+  numberBounds,
+  numberToken,
+} from './transcribe.js';
 
 /** A JS expression in the shapes the plain-Lean emitter renders. The
  * frontend records operator text verbatim; what an operator means is the
@@ -48,13 +55,15 @@ export interface EmitFunction {
   body: EmitStmt[];
 }
 
-/** A binder's denoted integer domain: a finite half-open range, the whole
- * int line, or the naturals — the same three shapes the old grammar's
- * binder constructors carry. */
+/** A binder's denoted domain: a finite half-open integer range, the whole
+ * int line, the naturals, or a `number` binder — the whole double line,
+ * narrowed by whichever bounds its interval carries. The same shapes the
+ * old grammar's binder constructors carry. */
 export type EmitBinder =
   | { name: string; kind: 'range'; lo: string; hi: string }
   | { name: string; kind: 'int' }
-  | { name: string; kind: 'nat' };
+  | { name: string; kind: 'nat' }
+  | { name: string; kind: 'number'; lower?: FloatBound; upper?: FloatBound };
 
 export interface EmitObligation {
   /** Qualified function name — the annotation identity's `function`. */
@@ -67,6 +76,9 @@ export interface EmitObligation {
         kind: 'structured';
         /** Nested binders, outermost first. */
         binders: EmitBinder[];
+        /** Guard antecedents, outermost first, inside every binder. Absent
+         * rather than empty when the formula has none. */
+        guards?: EmitExpr[];
         conclusion:
           | { kind: 'eq'; left: EmitExpr; right: EmitExpr }
           | { kind: 'istrue'; expr: EmitExpr };
@@ -371,22 +383,28 @@ function walkTyped(
   throw new ModelError(constructAt(e, e.kind, sf).reason);
 }
 
+/** One scanned expression with the file it was parsed from: each formula
+ * atom parses on its own, so positions are only meaningful against it. */
+interface ScanRoot {
+  expr: ts.Expression;
+  sf: ts.SourceFile;
+}
+
 /** The old elaborator's pre-scans — opaque constructs, then refused
  * operators, then construct-failed callees — each across every root
  * before the next begins. */
 function prescanFailure(
-  roots: readonly ts.Expression[],
+  roots: readonly ScanRoot[],
   scope: WalkScope,
-  sf: ts.SourceFile,
 ): FailedDecl | undefined {
   const scans = [
-    (e: ts.Expression) => findConstruct(e, sf),
-    findRefusedOp,
-    (e: ts.Expression) => findFailedCallee(e, scope),
+    (r: ScanRoot) => findConstruct(r.expr, r.sf),
+    (r: ScanRoot) => findRefusedOp(r.expr),
+    (r: ScanRoot) => findFailedCallee(r.expr, scope),
   ];
   for (const scan of scans) {
-    for (const e of roots) {
-      const found = scan(e);
+    for (const r of roots) {
+      const found = scan(r);
       if (found !== undefined) return found;
     }
   }
@@ -862,10 +880,21 @@ function equationSides(
 }
 
 /** A binder's emitted domain: a finite half-open range, the whole int
- * line, or the naturals — reading the domain the binder *denotes*, the
- * same folding the old transcriber applies. `bare` covers everything this
- * slice cannot express. */
+ * line, the naturals, or a bounded `number` — reading the domain the binder
+ * *denotes*, the same folding the old transcriber applies. `bare` covers
+ * everything this slice cannot express. */
 function lowerBinder(b: Binder): EmitBinder | 'bare' {
+  if (b.domain === 'number') {
+    // No safe-integer clamp: a number binder denotes binary64 values
+    // directly, so there is no representability question to answer.
+    const { lower, upper } = numberBounds(b.range);
+    return {
+      name: b.varName,
+      kind: 'number',
+      ...(lower === undefined ? {} : { lower }),
+      ...(upper === undefined ? {} : { upper }),
+    };
+  }
   if (b.domain !== 'int' && b.domain !== 'nat') return 'bare';
   if (b.range === undefined) {
     return { name: b.varName, kind: b.domain === 'nat' ? 'nat' : 'int' };
@@ -890,12 +919,13 @@ type PayloadResult =
   | { kind: 'classified'; szs: 'Inappropriate' | 'Error'; reason: string };
 
 /** The structured reading of an annotation formula: int/nat binders and a
- * single conclusion atom — guards and every other connective wait for
- * their slices and degrade to bare. A formula the model refuses (an
- * opaque construct, a refused operator, a construct-failed callee)
- * classifies `Inappropriate` with the old pipeline's reason; one the
- * typed walk fails classifies `Error` the way a failed property
- * elaboration does. */
+ * top-level implication chain of atoms — guard antecedents around one
+ * conclusion atom. Every other connective degrades to bare, as does an
+ * equation guard, which the boolean guard slot has no node for. A formula
+ * the model refuses (an opaque construct, a refused operator, a
+ * construct-failed callee) classifies `Inappropriate` with the old
+ * pipeline's reason; one the typed walk fails classifies `Error` the way a
+ * failed property elaboration does. */
 function obligationPayload(
   formula: string,
   mapped: ReadonlyMap<string, number>,
@@ -910,9 +940,20 @@ function obligationPayload(
       if (lowered === 'bare') return bare;
       loweredBinders.push(lowered);
     }
-    const ast = parseBody(body);
-    if (ast.kind !== 'atom') return bare;
-    const parsed = parseAtomExpr(ast.js);
+    const chain = chainReading(parseBody(body));
+    if (chain === undefined) return bare;
+    const guardRoots: (ScanRoot & { expected: Expected })[] = [];
+    for (const g of chain.guards) {
+      const gp = parseAtomExpr(g);
+      if (gp === undefined) return bare;
+      if (isEquationGuard(gp.expr)) return bare;
+      guardRoots.push({
+        expr: unwrapParens(gp.expr),
+        sf: gp.sf,
+        expected: 'bool',
+      });
+    }
+    const parsed = parseAtomExpr(chain.conclusion);
     if (parsed === undefined) return bare;
     const expr = unwrapParens(parsed.expr);
     const sides = equationSides(expr);
@@ -921,26 +962,26 @@ function obligationPayload(
       mapped,
       failed,
     };
-    const roots: [ts.Expression, Expected][] =
-      sides !== undefined
+    // Guards precede the conclusion in the old elaborator's tree order, so
+    // the first refusal either pipeline reports is the same one.
+    const roots: (ScanRoot & { expected: Expected })[] = [
+      ...guardRoots,
+      ...(sides !== undefined
         ? [
-            [sides[0], 'num'],
-            [sides[1], 'num'],
+            { expr: sides[0]!, sf: parsed.sf, expected: 'num' as Expected },
+            { expr: sides[1]!, sf: parsed.sf, expected: 'num' as Expected },
           ]
-        : [[expr, 'bool']];
+        : [{ expr, sf: parsed.sf, expected: 'bool' as Expected }]),
+    ];
     // A property the model refuses is `Inappropriate`; one the typed walk
     // fails is a failed property elaboration, the engine's `Error`.
-    const found = prescanFailure(
-      roots.map(([root]) => root),
-      scope,
-      parsed.sf,
-    );
+    const found = prescanFailure(roots, scope);
     if (found !== undefined) {
       return { kind: 'classified', szs: 'Inappropriate', reason: found.reason };
     }
     const walkedRoots: EmitExpr[] = [];
-    for (const [root, expected] of roots) {
-      const walked = typedOrFailure(root, expected, scope, parsed.sf);
+    for (const root of roots) {
+      const walked = typedOrFailure(root.expr, root.expected, scope, root.sf);
       if (!('expr' in walked)) {
         return {
           kind: 'classified',
@@ -950,15 +991,23 @@ function obligationPayload(
       }
       walkedRoots.push(walked.expr);
     }
+    const walkedGuards = walkedRoots.slice(0, guardRoots.length);
+    const walkedConclusion = walkedRoots.slice(guardRoots.length);
     return {
       kind: 'payload',
       payload: {
         kind: 'structured',
         binders: loweredBinders,
+        // Absent, not empty, when the formula has no guards.
+        ...(walkedGuards.length > 0 ? { guards: walkedGuards } : {}),
         conclusion:
           sides !== undefined
-            ? { kind: 'eq', left: walkedRoots[0]!, right: walkedRoots[1]! }
-            : { kind: 'istrue', expr: walkedRoots[0]! },
+            ? {
+                kind: 'eq',
+                left: walkedConclusion[0]!,
+                right: walkedConclusion[1]!,
+              }
+            : { kind: 'istrue', expr: walkedConclusion[0]! },
       },
     };
   } catch {

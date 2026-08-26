@@ -42,6 +42,35 @@ const FIXTURES = [
     ],
   },
   {
+    // Binder heads the emission pipeline writes that the old grammar's
+    // spine also produces; each row is the verdict the old pipeline gives
+    // the same property.
+    file: 'binder-shapes-plain.lean',
+    expected: [
+      ['ident', 'CounterSatisfiable', /false on its bounded domain/, { x: -3 }],
+      ['ident', 'GaveUp', /unsolved goal:[\s\S]*Float\.ofInt x = 0/],
+      ['ident', 'GaveUp', /unsolved goal:[\s\S]*0 ≤ n →/],
+      // A ranged binder over an unbounded one: both survive into the goal.
+      ['ident', 'GaveUp', /unsolved goal:[\s\S]*x < 3 → ∀ \(n : Int\)/],
+    ],
+  },
+  {
+    // Guard chains in the plain-Prop payload: the same five behaviors the
+    // old grammar's guard-chain.lean pins, verdict for verdict.
+    file: 'guard-chain-plain.lean',
+    expected: [
+      ['idg', 'Theorem', /decision procedure over the bounded domain/],
+      ['idg', 'Theorem', /decision procedure over the bounded domain/],
+      // A constant-false guard: vacuous truth, still a Theorem.
+      ['idg', 'Theorem', /decision procedure over the bounded domain/],
+      // A guard under a number binder reaches the symbolic rungs, which
+      // close the identity case from the guard hypothesis.
+      ['idg', 'Theorem', /generic proof search/],
+      // The witness respects the guard: never x = 0.
+      ['idg', 'CounterSatisfiable', /false/, { x: 5 }],
+    ],
+  },
+  {
     file: 'theorem-arith.lean',
     expected: [
       ...Array.from({ length: 7 }, () => [

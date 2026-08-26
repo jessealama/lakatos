@@ -25,6 +25,16 @@
       "type": "string",
       "pattern": "^[$A-Za-z_][$A-Za-z0-9_]*$"
     },
+    "floatBound": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "lit"],
+      "description": "One side of a number binder's interval: the comparison against the bound variable, and the endpoint literal — a finite double, or Infinity / -Infinity for an unbounded side.",
+      "properties": {
+        "op": { "enum": ["<", "<="] },
+        "lit": { "type": "string" }
+      }
+    },
     "expr": {
       "oneOf": [
         {
@@ -217,7 +227,7 @@
                 "kind": { "const": "structured" },
                 "binders": {
                   "type": "array",
-                  "description": "Nested Int binders, outermost first: a half-open [lo, hi) range with decimal-string endpoints, the whole int line, or the naturals.",
+                  "description": "Nested binders, outermost first: a half-open [lo, hi) Int range with decimal-string endpoints, the whole int line, the naturals, or a number binder over the doubles its bounds admit.",
                   "items": {
                     "oneOf": [
                       {
@@ -239,9 +249,26 @@
                           "name": { "$ref": "#/definitions/identifier" },
                           "kind": { "enum": ["int", "nat"] }
                         }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["name", "kind"],
+                        "properties": {
+                          "name": { "$ref": "#/definitions/identifier" },
+                          "kind": { "const": "number" },
+                          "lower": { "$ref": "#/definitions/floatBound" },
+                          "upper": { "$ref": "#/definitions/floatBound" }
+                        }
                       }
                     ]
                   }
+                },
+                "guards": {
+                  "type": "array",
+                  "minItems": 1,
+                  "description": "Guard antecedents, outermost first, inside every binder; each must evaluate to true for the conclusion to be claimed. Absent when the formula has none.",
+                  "items": { "$ref": "#/definitions/expr" }
                 },
                 "conclusion": {
                   "oneOf": [
