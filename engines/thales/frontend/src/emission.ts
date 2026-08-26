@@ -12,6 +12,7 @@ import {
   type RawAnnotation,
 } from '../../../../lemma/src/index.js';
 import {
+  bindingIdentifiers,
   chainReading,
   type FloatBound,
   isEquationGuard,
@@ -1074,7 +1075,39 @@ export function emitModule(text: string, file: string): PlainEmission {
       }
       continue;
     }
-    // Any other named declaration binds outside the model.
+    // Every other name a declaration binds degrades to the old pipeline's
+    // opaque failure, position on the binding identifier.
+    if (ts.isVariableStatement(stmt)) {
+      for (const d of stmt.declarationList.declarations) {
+        for (const id of bindingIdentifiers(d.name)) {
+          failed.set(id.text, constructAt(id, stmt.kind, sf));
+        }
+      }
+      continue;
+    }
+    // No import closure yet: every import binding degrades.
+    if (ts.isImportDeclaration(stmt)) {
+      const clause = stmt.importClause;
+      if (clause === undefined) continue;
+      if (clause.name !== undefined) {
+        failed.set(clause.name.text, constructAt(clause.name, stmt.kind, sf));
+      }
+      const bindings = clause.namedBindings;
+      if (bindings !== undefined) {
+        if (ts.isNamespaceImport(bindings)) {
+          failed.set(
+            bindings.name.text,
+            constructAt(bindings.name, stmt.kind, sf),
+          );
+        } else {
+          for (const el of bindings.elements) {
+            failed.set(el.name.text, constructAt(el.name, stmt.kind, sf));
+          }
+        }
+      }
+      continue;
+    }
+    // Any other named declaration (enum, interface, type alias, namespace).
     const name = (stmt as { name?: ts.Node }).name;
     if (name !== undefined && ts.isIdentifier(name)) {
       failed.set(name.text, constructAt(name, stmt.kind, sf));

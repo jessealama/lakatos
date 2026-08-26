@@ -1240,3 +1240,72 @@ describe('class-valued binders classify Inappropriate (#158)', () => {
     ]);
   });
 });
+
+describe('non-function declarations degrade before emission', () => {
+  test('a caller of a top-level const classifies Inappropriate naming VariableStatement', () => {
+    const src = [
+      'const double = (x: number): number => x * 2;',
+      '/** @ensures{pos} forall (n: int ∈ [0, 4)) { applyDouble(n) >= 0 } */',
+      'export function applyDouble(n: number): number {',
+      '  return double(n);',
+      '}',
+      '',
+    ].join('\n');
+    const { emission, classified } = emitModule(src, 'consts.ts');
+    expect(emission.declarations).toEqual([]);
+    expect(classified).toHaveLength(1);
+    expect(classified[0]!.szs).toBe('Inappropriate');
+    expect(classified[0]!.reason).toBe(
+      "'applyDouble' could not be modeled: 'double' could not be modeled: " +
+        "unmapped TypeScript construct 'VariableStatement' at 1:7",
+    );
+  });
+
+  test('a formula mentioning a top-level const classifies Inappropriate', () => {
+    const src = [
+      'const scale = (x: number): number => x * 2;',
+      '/** @ensures{eq} forall (n: int ∈ [0, 4)) { keep(n) === scale(n) } */',
+      'export function keep(n: number): number {',
+      '  return n;',
+      '}',
+      '',
+    ].join('\n');
+    const { classified } = emitModule(src, 'consts.ts');
+    expect(classified).toHaveLength(1);
+    expect(classified[0]!.szs).toBe('Inappropriate');
+    expect(classified[0]!.reason).toBe(
+      "'scale' could not be modeled: " +
+        "unmapped TypeScript construct 'VariableStatement' at 1:7",
+    );
+  });
+
+  test('destructuring declarators register every bound name', () => {
+    const src = [
+      'const { lo, hi } = { lo: 1, hi: 2 };',
+      '/** @ensures{pos} forall (n: int ∈ [0, 4)) { f(n) >= 0 } */',
+      'export function f(n: number): number {',
+      '  return lo(n);',
+      '}',
+      '',
+    ].join('\n');
+    const { classified } = emitModule(src, 'destructure.ts');
+    expect(classified[0]!.szs).toBe('Inappropriate');
+    expect(classified[0]!.reason).toContain("'VariableStatement' at 1:9");
+  });
+
+  test('import bindings register as failed with ImportDeclaration', () => {
+    const src = [
+      "import { g } from 'somepkg';",
+      '/** @ensures{pos} forall (n: int ∈ [0, 4)) { h(n) >= 0 } */',
+      'export function h(n: number): number {',
+      '  return g(n);',
+      '}',
+      '',
+    ].join('\n');
+    const { classified } = emitModule(src, 'imports.ts');
+    expect(classified[0]!.szs).toBe('Inappropriate');
+    expect(classified[0]!.reason).toContain(
+      "unmapped TypeScript construct 'ImportDeclaration' at 1:10",
+    );
+  });
+});
