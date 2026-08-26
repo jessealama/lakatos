@@ -64,3 +64,10 @@ export interface ModelRef {
 export function modelKey(ref: ModelRef): string {
   return `${ref.module}\0${ref.name}`;
 }
+
+/** How a model is named in a diagnostic: the entry's own by its source
+ * spelling, a dependency's by its module, the way a reader would have to
+ * name it to find the declaration. */
+export function displayName(ref: ModelRef): string {
+  return ref.module === "" ? ref.name : `${ref.module}::${ref.name}`;
+}

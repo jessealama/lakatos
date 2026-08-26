@@ -31,7 +31,7 @@ const QUICK_FIXTURES = [
 
 /** The expression slice of the conformance corpus (#147): single-return
  * bodies, int/nat binders, single-atom conclusions. Fixtures with imports
- * or unsupported ranges join the manifest with their slices (#149, #151). */
+ * or unsupported ranges join the manifest with their own slices. */
 const EXPRESSION_FIXTURES = [
   "engines/thales/tests/fixtures/operators.ts",
   `${CONFORMANCE}/theorem/add-commutes.ts`,
@@ -80,8 +80,7 @@ const STATEMENT_FIXTURES = [
 /** The binder/guard slice (#150): guard chains, guard-respecting
  * witnesses, and number binders — bounded, half-bounded, and rangeless.
  * With this slice the manifest covers every shape the emission pipeline
- * reaches; imports (#149) and unsupported ranges (#151) are what still
- * wait. */
+ * reaches. */
 const BINDER_FIXTURES = [
   "engines/thales/tests/fixtures/binders.ts",
   `${CONFORMANCE}/countersatisfiable/guarded-witness.ts`,
@@ -100,12 +99,20 @@ const BINDER_FIXTURES = [
 
 /** The degradation slice (#151): unsupported ranges and the names
  * non-function declarations bind, mixed with healthy annotations in one
- * file. Imports stay out until their slice restores them. */
+ * file. */
 const DEGRADATION_FIXTURES = [
   "engines/thales/tests/fixtures/degradations.ts",
   `${CONFORMANCE}/nottried/empty-after-clamp.ts`,
   `${CONFORMANCE}/nottried/half-bounded-int.ts`,
   `${CONFORMANCE}/nottried/huge-range.ts`,
+];
+
+/** The import slice: the closure fixtures the switchover carved out — a
+ * followed closure, and the two edges that stay opaque. */
+const IMPORT_FIXTURES = [
+  `${CONFORMANCE}/theorem/imported-scale/main.ts`,
+  `${CONFORMANCE}/inappropriate/bare-import.ts`,
+  `${CONFORMANCE}/inappropriate/import-cycle/main.ts`,
 ];
 
 const fixtures =
@@ -116,6 +123,7 @@ const fixtures =
         ...STATEMENT_FIXTURES,
         ...BINDER_FIXTURES,
         ...DEGRADATION_FIXTURES,
+        ...IMPORT_FIXTURES,
       ]
     : QUICK_FIXTURES;
 

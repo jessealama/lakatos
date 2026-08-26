@@ -27,6 +27,7 @@ import {
   type ModelRef,
   type ModuleReader,
   diskReader,
+  displayName,
   modelKey,
   moduleQualifier,
   resolveImport,
@@ -284,13 +285,14 @@ function failedCalleeIn(
   scope: WalkScope,
 ): FailedDecl | undefined {
   for (const name of names) {
-    const key = modelKey(refOf(scope, name));
+    const ref = refOf(scope, name);
+    const key = modelKey(ref);
     if (scope.mapped.has(key)) continue;
     const failed = scope.failed.get(key);
     if (failed?.construct !== undefined) {
       return {
         construct: failed.construct,
-        reason: `'${name}' could not be modeled: ${failed.reason}`,
+        reason: `'${displayName(ref)}' could not be modeled: ${failed.reason}`,
       };
     }
   }
@@ -387,9 +389,11 @@ function walkTyped(
     throw new ModelError(`operator '${op}' has no model in this slice`);
   }
   if (ts.isCallExpression(e) && ts.isIdentifier(e.expression)) {
-    const name = e.expression.text;
-    const ref = refOf(scope, name);
+    const ref = refOf(scope, e.expression.text);
     const key = modelKey(ref);
+    // A dependency's model is named the way its definition is: the old
+    // pipeline never sees the importing module's spelling.
+    const name = displayName(ref);
     const arity = scope.mapped.get(key);
     if (arity === undefined) {
       const failed = scope.failed.get(key);
