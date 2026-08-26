@@ -1101,17 +1101,6 @@ function sqrtArg(e: ts.Expression): ts.Expression | undefined {
   return e.arguments[0]!;
 }
 
-/** A desugared `≢`: `!Object.is(…)`. The positive equation is a modeled
- * boolean atom now; the negation waits on `!` itself. */
-function isNegatedEquation(e: ts.Expression): boolean {
-  const inner = unwrapParens(e);
-  return (
-    ts.isPrefixUnaryExpression(inner) &&
-    inner.operator === ts.SyntaxKind.ExclamationToken &&
-    equationSides(unwrapParens(inner.operand)) !== undefined
-  );
-}
-
 /** A binder's emitted domain: a finite half-open range, the whole int
  * line, the naturals, or a bounded `number` — reading the domain the binder
  * *denotes*, the same folding the old transcriber applies. `bare` covers
@@ -1160,8 +1149,7 @@ type PayloadResult =
 
 /** The structured reading of an annotation formula: int/nat binders and a
  * top-level implication chain of atoms — guard antecedents around one
- * conclusion atom. Every other connective degrades to bare, as does an
- * equation guard, which the boolean guard slot has no node for. A formula
+ * conclusion atom. Every other connective degrades to bare. A formula
  * the model refuses (an opaque construct, a refused operator, a
  * construct-failed callee) classifies `Inappropriate` with the old
  * pipeline's reason; one the typed walk fails classifies `Error` the way a
@@ -1190,7 +1178,6 @@ function obligationPayload(
     for (const g of chain.guards) {
       const gp = parseAtomExpr(g);
       if (gp === undefined) return bare;
-      if (isNegatedEquation(gp.expr)) return bare;
       guardRoots.push({
         expr: unwrapParens(gp.expr),
         sf: gp.sf,

@@ -1566,13 +1566,29 @@ describe("equation guards", () => {
     ]);
   });
 
-  test("a ≢ guard still degrades the property to bare", () => {
+  test("a ≢ guard walks to a negated same-value hypothesis", () => {
     const { emission } = emitModule(
       src("forall (n: int ∈ [0, 2)) { n ≢ 1 -> pick(n) === 1 }"),
       FILE,
     );
+    expectValidEmission(emission);
     expect(emission.obligations).toEqual([
-      expect.objectContaining({ payload: { kind: "bare" } }),
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          kind: "structured",
+          guards: [
+            {
+              kind: "unop",
+              op: "!",
+              operand: {
+                kind: "same-value",
+                left: { kind: "id", name: "n" },
+                right: { kind: "num", lit: "1" },
+              },
+            },
+          ],
+        }),
+      }),
     ]);
   });
 
