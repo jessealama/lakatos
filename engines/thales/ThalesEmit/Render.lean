@@ -128,6 +128,9 @@ partial def valueTerm (coerced : String → Bool) : JsExpr → RenderM Rendered
     let ⟨lt, ll⟩ ← valueTerm coerced l
     let ⟨rt, rl⟩ ← valueTerm coerced r
     return ⟨← `(Number.FloatOps.sameValue $lt $rt), ll || rl⟩
+  | .mathSqrt a => do
+    let ⟨t, lifted⟩ ← valueTerm coerced a
+    return ⟨← `(Float.sqrt $t), lifted⟩
   | .call callee module args => do
     let c ← callTerm coerced callee module args
     return ⟨← `((← $c:term)), true⟩

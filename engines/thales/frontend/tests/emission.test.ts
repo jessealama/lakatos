@@ -1761,3 +1761,131 @@ describe("NaN and Infinity resolve as expression atoms", () => {
     ]);
   });
 });
+
+describe("Math.sqrt models as Float.sqrt", () => {
+  const FILE = "engines/thales/tests/fixtures/tracer.ts"; // any resolvable path; no imports are followed
+
+  test("a returned Math.sqrt walks to a math-sqrt node", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 3)) { root(n) >= 0 } */",
+      "export function root(x: number): number {",
+      "  return Math.sqrt(x);",
+      "}",
+    ].join("\n");
+    const { emission } = emitModule(src, FILE);
+    expectValidEmission(emission);
+    expect(emission.declarations).toEqual([
+      expect.objectContaining({
+        name: "root",
+        body: [
+          {
+            kind: "return",
+            expr: { kind: "math-sqrt", arg: { kind: "id", name: "x" } },
+          },
+        ],
+      }),
+    ]);
+  });
+
+  test("a formula atom calls Math.sqrt directly", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 3)) { Math.sqrt(n) >= 0 } */",
+      "export function root(x: number): number {",
+      "  return Math.sqrt(x);",
+      "}",
+    ].join("\n");
+    const { emission } = emitModule(src, FILE);
+    expectValidEmission(emission);
+    expect(emission.obligations[0]!.payload).toEqual(
+      expect.objectContaining({
+        conclusion: expect.objectContaining({
+          expr: expect.objectContaining({
+            left: { kind: "math-sqrt", arg: { kind: "id", name: "n" } },
+          }),
+        }),
+      }),
+    );
+  });
+
+  test("Math.sqrt is numeric-shaped inside Object.is", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [1, 3)) { Object.is(negRoot(n), NaN) } */",
+      "export function negRoot(x: number): number {",
+      "  return Math.sqrt(-x);",
+      "}",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, FILE);
+    expect(classified).toEqual([]);
+    expectValidEmission(emission);
+  });
+
+  test("a boolean position rejects the call as a number", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 3)) { Math.sqrt(n) } */",
+      "export function root(x: number): number {",
+      "  return Math.sqrt(x);",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Error",
+        reason: expect.stringContaining(
+          "a call to 'Math.sqrt' yields a number, not",
+        ),
+      }),
+    ]);
+  });
+
+  test("Math.pow keeps the unmapped-construct refusal", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 3)) { square(n) >= 0 } */",
+      "export function square(x: number): number {",
+      "  return Math.pow(x, 2);",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining(
+          "unmapped TypeScript construct 'CallExpression'",
+        ),
+      }),
+    ]);
+  });
+
+  test("a wrong-arity Math.sqrt stays an unmapped construct", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 3)) { two(n) >= 0 } */",
+      "export function two(x: number): number {",
+      "  return Math.sqrt(x, 2);",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining(
+          "unmapped TypeScript construct 'CallExpression'",
+        ),
+      }),
+    ]);
+  });
+
+  test("a refused operator inside the argument is still found", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 3)) { f(n) >= 0 } */",
+      "export function f(x: number): number {",
+      "  return Math.sqrt(x ** 2);",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining("**"),
+      }),
+    ]);
+  });
+});
