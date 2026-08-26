@@ -85,6 +85,7 @@ const STATEMENT_FIXTURES = [
 const BINDER_FIXTURES = [
   'engines/thales/tests/fixtures/binders.ts',
   `${CONFORMANCE}/countersatisfiable/guarded-witness.ts`,
+  `${CONFORMANCE}/countersatisfiable/reserved-binder.ts`,
   `${CONFORMANCE}/theorem/guarded-floor.ts`,
   `${CONFORMANCE}/theorem/branch-guarded-throw.ts`,
   `${CONFORMANCE}/theorem/number-binder.ts`,

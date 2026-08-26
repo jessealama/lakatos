@@ -33,6 +33,13 @@ inductive SpineBinder where
 def SpineBinder.name : SpineBinder → String
   | .ranged n .. | .unbounded n => n
 
+/-- The renderer primes a binder spelled like the artifact's reserved
+vocabulary (`pure` → `pure'`); no TS identifier contains a prime, so a
+trailing one is always the renderer's, and the witness must report the
+source spelling the annotation wrote. -/
+def SpineBinder.sourceName (b : SpineBinder) : String :=
+  if b.name.endsWith "'" then b.name.dropRight 1 else b.name
+
 structure PropSpine where
   binders : List SpineBinder
   /-- Guard hypotheses in outer-to-inner order, each the full
@@ -133,7 +140,9 @@ elab_rules : command
     let verdict : Verdict ←
       try
         let spine : PropSpine := propSpine p
-        let names := spine.binders.map (·.name)
+        -- Witness keys carry source names; the search term below keeps the
+        -- artifact's primed spellings, which the leaf references.
+        let names := spine.binders.map (·.sourceName)
         -- Bounded whenever every recovered binder is (an empty spine is a
         -- closed leaf, domain size 1, like the old grammar's bare islands).
         -- A leaf the decide rungs cannot handle falls through them the way
