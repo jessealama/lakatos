@@ -3,13 +3,11 @@ import { parseArgs } from "node:util";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { writeArtifacts } from "../engines/thales/frontend/src/artifacts.js";
 import { writeEmissionArtifacts } from "../engines/thales/frontend/src/emission-artifacts.js";
 import {
   findEngineRoot,
   type LeanRunResult,
   runEmission,
-  runLean,
 } from "../engines/thales/frontend/src/run.js";
 import { generate } from "../engines/pabst/src/codegen.js";
 import { runTests } from "../engines/pabst/src/run.js";
@@ -234,7 +232,7 @@ const USAGE =
 const HELP = `${USAGE}
 
 commands:
-  prove   transcribe each file to Lean and attempt a proof per annotation;
+  prove   emit Lean for each file and attempt a proof per annotation;
           artifacts land in .lakatos/<run>/thales/ (requires the Lean
           toolchain)
   refute  generate property tests from @ensures annotations, run them, and
@@ -301,7 +299,7 @@ export function main(argv: string[] = process.argv.slice(2)): number {
             values.seed !== undefined ? parseSeed(values.seed) : randomSeed(),
           )
         : command === "prove"
-          ? proveSpine()
+          ? plainProveSpine()
           : stubSpine(command as Command);
     return runCommand(spine, patterns);
   } catch (e) {
@@ -478,88 +476,6 @@ function leanRunOutcome(
     meta: {},
     degraded: result.failures.length > 0,
     refuted: join.annotations.some((a) => a.szs === "CounterSatisfiable"),
-  };
-}
-
-function proveSpine(): Spine {
-  // The transcriber spine stays selectable as the import-following
-  // reference until the old elaborator is deleted.
-  return process.env.LAKATOS_PROVE_PIPELINE === "transcriber"
-    ? transcriberProveSpine()
-    : plainProveSpine();
-}
-
-function transcriberProveSpine(): Spine {
-  // The transcriber's per-artifact source mapping, needed by the run to
-  // attribute a failed artifact back to the file its annotations came from.
-  const sourceOf = new Map<string, string>();
-  return {
-    plan(files, runDir) {
-      const outRoot = path.join(runDir, "thales");
-      const artifacts = writeArtifacts(files, outRoot);
-      const inputErrors = inputErrorResults(
-        artifacts.map((a) => ({ file: a.sourceFile, invalid: a.invalid })),
-      );
-      // Partition each artifact's annotations once, by object identity:
-      // untried ones (the transcriber emitted no prove command) become
-      // NotTried entries here and are never expected in the verdict join;
-      // the rest are the identities the join must account for. An artifact
-      // with no prove command at all has nothing for Lean to report.
-      const tried: PropertyIdentity[] = [];
-      const untriedResults: AnnotationResult[] = [];
-      const proveFiles: string[] = [];
-      for (const a of artifacts) {
-        const untried = new Map(a.untried.map((u) => [u.annotation, u]));
-        for (const r of a.annotations) {
-          const identity = {
-            file: a.sourceFile,
-            function: qualifiedName(r.functionName, r.className, r.isStatic),
-            property: r.propertyName,
-          };
-          const u = untried.get(r);
-          if (u === undefined) tried.push(identity);
-          else if (u.kind === "class-binder")
-            // Outside the model, not a missing shape: the frontend already
-            // named the construct, so the verdict is Inappropriate.
-            untriedResults.push({
-              ...identity,
-              szs: "Inappropriate",
-              reason: u.reason,
-            });
-          else
-            untriedResults.push({
-              ...identity,
-              szs: "NotTried",
-              kind: u.kind,
-              reason: u.reason,
-            });
-        }
-        if (a.outFile !== undefined) sourceOf.set(a.outFile, a.sourceFile);
-        if (a.outFile !== undefined && a.annotations.length > untried.size)
-          proveFiles.push(a.outFile);
-      }
-      const n = tried.length;
-      console.error(
-        `lakatos: transcribed ${n} annotation${n === 1 ? "" : "s"} across ${artifacts.length} file(s) into ${outRoot}/`,
-      );
-      return {
-        identities: tried,
-        untried: untriedResults,
-        inputErrors,
-        outFiles: proveFiles,
-        meta: {},
-        emptyMeta: {},
-        emptyExit: 0,
-      };
-    },
-
-    run(plan) {
-      return leanRunOutcome(
-        runLean(plan.outFiles, findEngineRoot()),
-        plan,
-        sourceOf,
-      );
-    },
   };
 }
 

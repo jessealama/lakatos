@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { findEngineRoot, runEmission, runLean } from "../src/run.js";
+import { findEngineRoot, runEmission } from "../src/run.js";
 
 type SpawnCall = { cmd: string; args: string[]; cwd: string };
 
@@ -41,17 +41,30 @@ const verdictLine = (fn: string, szs: string) =>
   JSON.stringify({ identity: ["t.ts", fn, "p"], szs, reason: "r" }) +
   "\n";
 
-describe("runLean", () => {
+describe("the lean pass, through runEmission", () => {
+  /** One emission job per artifact: the emit steps all succeed here, so
+   * what these cases exercise is the lean pass behind them. */
+  const jobsOf = (leanFiles: string[]) =>
+    leanFiles.map((leanFile) => ({
+      jsonFile: leanFile.replace(/\.lean$/, ".json"),
+      leanFile,
+    }));
+
+  /** The two build steps plus one successful emit per artifact, which is
+   * what a spawn script must clear before the first lean call. */
+  const beforeLean = (jobs: number) =>
+    Array.from({ length: jobs + 2 }, () => ({ status: 0 }));
+
   test("collects verdict lines across files in order", () => {
     const { spawn, calls } = fakeSpawn([
-      { status: 0 }, // lake build
+      ...beforeLean(2),
       { status: 0, stdout: verdictLine("f", "Theorem") },
       {
         status: 0,
         stdout: verdictLine("g", "GaveUp") + verdictLine("h", "Inappropriate"),
       },
     ]);
-    const res = runLean(["a.lean", "b.lean"], "/engine", spawn);
+    const res = runEmission(jobsOf(["a.lean", "b.lean"]), "/engine", spawn);
     expect(res).toEqual({
       kind: "completed",
       verdicts: [
@@ -62,7 +75,7 @@ describe("runLean", () => {
       failures: [],
       diagnostics: [],
     });
-    expect(calls.map((c) => c.args[0])).toEqual(["build", "env", "env"]);
+    expect(calls.slice(-2).map((c) => c.args[1])).toEqual(["lean", "lean"]);
     expect(calls.every((c) => c.cmd === "lake" && c.cwd === "/engine")).toBe(
       true,
     );
@@ -72,10 +85,10 @@ describe("runLean", () => {
     const line =
       'thales-verdict:{"identity":["t.ts","f","p"],"szs":"CounterSatisfiable",' +
       '"reason":"r","counterexample":{"x":0,"y":"9007199254740992"}}\n';
-    const res = runLean(
-      ["a.lean"],
+    const res = runEmission(
+      jobsOf(["a.lean"]),
       "/engine",
-      fakeSpawn([{ status: 0 }, { status: 0, stdout: line }]).spawn,
+      fakeSpawn([...beforeLean(1), { status: 0, stdout: line }]).spawn,
     );
     expect(res).toMatchObject({
       kind: "completed",
@@ -91,17 +104,12 @@ describe("runLean", () => {
     });
   });
 
-  test("missing engine root is no-project", () => {
-    const res = runLean(["a.lean"], undefined, fakeSpawn([]).spawn);
-    expect(res.kind).toBe("no-project");
-  });
-
   test("lake absent from PATH is no-project with install guidance", () => {
     const enoent = Object.assign(new Error("spawn lake ENOENT"), {
       code: "ENOENT",
     });
-    const res = runLean(
-      ["a.lean"],
+    const res = runEmission(
+      jobsOf(["a.lean"]),
       "/engine",
       fakeSpawn([{ error: enoent, status: null }]).spawn,
     );
@@ -110,8 +118,8 @@ describe("runLean", () => {
   });
 
   test("a spawn-level error on lake build that is not ENOENT is failed", () => {
-    const res = runLean(
-      ["a.lean"],
+    const res = runEmission(
+      jobsOf(["a.lean"]),
       "/engine",
       fakeSpawn([{ status: null, error: new Error("EACCES") }]).spawn,
     );
@@ -122,8 +130,8 @@ describe("runLean", () => {
   });
 
   test("a failing lake build is failed with its output", () => {
-    const res = runLean(
-      ["a.lean"],
+    const res = runEmission(
+      jobsOf(["a.lean"]),
       "/engine",
       fakeSpawn([{ status: 1, stderr: "boom" }]).spawn,
     );
@@ -134,11 +142,11 @@ describe("runLean", () => {
   });
 
   test("a failing lean run is contained: other files still report", () => {
-    const res = runLean(
-      ["a.lean", "b.lean"],
+    const res = runEmission(
+      jobsOf(["a.lean", "b.lean"]),
       "/engine",
       fakeSpawn([
-        { status: 0 },
+        ...beforeLean(2),
         { status: 1, stderr: "elab error" },
         { status: 0, stdout: verdictLine("g", "Theorem") },
       ]).spawn,
@@ -158,11 +166,11 @@ describe("runLean", () => {
   });
 
   test("a spawn-level error (timeout) on one file is contained", () => {
-    const res = runLean(
-      ["a.lean", "b.lean"],
+    const res = runEmission(
+      jobsOf(["a.lean", "b.lean"]),
       "/engine",
       fakeSpawn([
-        { status: 0 },
+        ...beforeLean(2),
         { status: null, error: new Error("ETIMEDOUT") },
         { status: 0, stdout: verdictLine("g", "GaveUp") },
       ]).spawn,
@@ -186,27 +194,29 @@ describe("runLean", () => {
       { status: null, signal: "SIGINT" },
       { status: 0, stdout: verdictLine("f", "Theorem") },
     ]);
-    const res = runLean(["a.lean"], "/engine", spawn);
+    const res = runEmission(jobsOf(["a.lean"]), "/engine", spawn);
     expect(res).toEqual({ kind: "interrupted", signal: "SIGINT" });
     expect(calls).toHaveLength(1);
   });
 
   test("an interrupted artifact stops the run: later files are not started", () => {
     const { spawn, calls } = fakeSpawn([
-      { status: 0 }, // lake build
+      ...beforeLean(3),
       { status: 0, stdout: verdictLine("f", "Theorem") },
       { status: null, signal: "SIGTERM" },
       { status: 0, stdout: verdictLine("h", "Theorem") },
     ]);
-    const res = runLean(["a.lean", "b.lean", "c.lean"], "/engine", spawn);
+    const res = runEmission(
+      jobsOf(["a.lean", "b.lean", "c.lean"]),
+      "/engine",
+      spawn,
+    );
     // Verdicts a completed artifact already reported go down with the run:
     // the CLI reports every annotation it planned to attempt as User.
     expect(res).toEqual({ kind: "interrupted", signal: "SIGTERM" });
-    expect(calls.map((c) => c.args.at(-1))).toEqual([
-      "build",
-      path.resolve("a.lean"),
-      path.resolve("b.lean"),
-    ]);
+    expect(
+      calls.filter((c) => c.args[1] === "lean").map((c) => c.args.at(-1)),
+    ).toEqual([path.resolve("a.lean"), path.resolve("b.lean")]);
   });
 
   test("malformed framed lines fail only their own file", () => {
@@ -228,11 +238,11 @@ describe("runLean", () => {
       'thales-verdict:{"identity":["f.ts","f","p"],"szs":"Theorem","reason":"r","axioms":[1]}',
       'thales-verdict:{"identity":["f.ts","f","p"],"szs":"Theorem","reason":"r","axioms":[""]}',
     ];
-    const res = runLean(
-      ["a.lean", "b.lean"],
+    const res = runEmission(
+      jobsOf(["a.lean", "b.lean"]),
       "/engine",
       fakeSpawn([
-        { status: 0 },
+        ...beforeLean(2),
         { status: 0, stdout: malformed.join("\n") + "\n" },
         { status: 0, stdout: verdictLine("g", "Theorem") },
       ]).spawn,
@@ -248,11 +258,11 @@ describe("runLean", () => {
   });
 
   test("a Theorem verdict keeps the axioms its proof rests on", () => {
-    const res = runLean(
-      ["a.lean"],
+    const res = runEmission(
+      jobsOf(["a.lean"]),
       "/engine",
       fakeSpawn([
-        { status: 0 },
+        ...beforeLean(1),
         {
           status: 0,
           stdout:
@@ -273,11 +283,11 @@ describe("runLean", () => {
   });
 
   test("a verdict must explain itself: an empty reason is malformed", () => {
-    const res = runLean(
-      ["a.lean"],
+    const res = runEmission(
+      jobsOf(["a.lean"]),
       "/engine",
       fakeSpawn([
-        { status: 0 },
+        ...beforeLean(1),
         {
           status: 0,
           stdout:
@@ -298,10 +308,10 @@ describe("runLean", () => {
   });
 
   test("a healthy run with no stdout at all yields no verdicts", () => {
-    const res = runLean(
-      ["a.lean"],
+    const res = runEmission(
+      jobsOf(["a.lean"]),
       "/engine",
-      fakeSpawn([{ status: 0 }, { status: 0 }]).spawn,
+      fakeSpawn([...beforeLean(1), { status: 0 }]).spawn,
     );
     expect(res).toEqual({
       kind: "completed",
@@ -318,10 +328,10 @@ describe("runLean", () => {
   });
 
   test("forwards LAKATOS_PROVE_HEARTBEATS to lean as a weak option", () => {
-    const { spawn, calls } = fakeSpawn([{ status: 0 }, { status: 0 }]);
+    const { spawn, calls } = fakeSpawn([...beforeLean(1), { status: 0 }]);
     vi.stubEnv("LAKATOS_PROVE_HEARTBEATS", "7");
-    runLean(["a.lean"], "/engine", spawn);
-    const leanCall = calls.find((c) => c.args[0] === "env");
+    runEmission(jobsOf(["a.lean"]), "/engine", spawn);
+    const leanCall = calls.find((c) => c.args[1] === "lean");
     expect(leanCall?.args).toContain("-Dweak.thales.heartbeats=7");
   });
 
@@ -332,20 +342,20 @@ describe("runLean", () => {
     ["zero", "0"],
     ["zero-padded", "000"],
   ])("ignores a %s LAKATOS_PROVE_HEARTBEATS", (_label, value) => {
-    const { spawn, calls } = fakeSpawn([{ status: 0 }, { status: 0 }]);
+    const { spawn, calls } = fakeSpawn([...beforeLean(1), { status: 0 }]);
     vi.stubEnv("LAKATOS_PROVE_HEARTBEATS", value);
-    runLean(["a.lean"], "/engine", spawn);
+    runEmission(jobsOf(["a.lean"]), "/engine", spawn);
     expect(calls.flatMap((c) => c.args).join(" ")).not.toContain(
       "thales.heartbeats",
     );
   });
 
   test("unframed stdout lines are diagnostics, not failures", () => {
-    const res = runLean(
-      ["a.lean"],
+    const res = runEmission(
+      jobsOf(["a.lean"]),
       "/engine",
       fakeSpawn([
-        { status: 0 },
+        ...beforeLean(1),
         {
           status: 0,
           stdout: "note: some linter chatter\n" + verdictLine("f", "Theorem"),

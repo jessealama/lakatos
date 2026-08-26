@@ -158,8 +158,9 @@ function verdictResult(
 
 /**
  * Join the extracted identities against the prover's verdict lines. The
- * transcriber emits exactly one #thales_prove per valid annotation, so a
- * missing, duplicate, or surplus verdict means the run cannot be trusted.
+ * emitter writes exactly one #thales_prove per annotation it does not
+ * classify itself, so a missing, duplicate, or surplus verdict means the
+ * run cannot be trusted.
  */
 export function joinProveVerdicts(
   identities: PropertyIdentity[],

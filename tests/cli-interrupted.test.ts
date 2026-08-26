@@ -1,10 +1,10 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import * as fs from "node:fs";
 import { runMain, useTempProject } from "./helpers/cli.js";
 import { expectValidEnvelope } from "./helpers/envelope-schema.js";
 import { main } from "../src/cli.js";
 import { runTests } from "../engines/pabst/src/run.js";
-import { runLean } from "../engines/thales/frontend/src/run.js";
+import { runEmission } from "../engines/thales/frontend/src/run.js";
 import { RUN_ROOT } from "../src/run-dir.js";
 
 // An interrupted run still honors the output contract: one schema-valid
@@ -14,11 +14,11 @@ import { RUN_ROOT } from "../src/run-dir.js";
 // here; tests/interrupt-e2e.test.ts covers the real thing.
 vi.mock("../engines/pabst/src/run.js", () => ({ runTests: vi.fn() }));
 vi.mock("../engines/thales/frontend/src/run.js", () => ({
-  runLean: vi.fn(),
+  runEmission: vi.fn(),
   findEngineRoot: vi.fn(),
 }));
 const runTestsMock = vi.mocked(runTests);
-const runLeanMock = vi.mocked(runLean);
+const runEmissionMock = vi.mocked(runEmission);
 
 describe("cli on an interrupted run", () => {
   useTempProject("lakatos-cli-interrupted-", {
@@ -44,16 +44,9 @@ describe("cli on an interrupted run", () => {
     ].join("\n"),
   });
 
-  // The prove cases here exercise the transcriber spine's runner seam; the
-  // spine must be selected now that the plain pipeline is the default.
-  beforeEach(() => {
-    process.env.LAKATOS_PROVE_PIPELINE = "transcriber";
-  });
-
   afterEach(() => {
-    delete process.env.LAKATOS_PROVE_PIPELINE;
     runTestsMock.mockReset();
-    runLeanMock.mockReset();
+    runEmissionMock.mockReset();
     fs.rmSync(RUN_ROOT, { recursive: true, force: true });
   });
 
@@ -140,7 +133,7 @@ describe("cli on an interrupted run", () => {
   });
 
   it("prove: the same contract through the Lean runner", () => {
-    runLeanMock.mockReturnValue({ kind: "interrupted", signal: "SIGINT" });
+    runEmissionMock.mockReturnValue({ kind: "interrupted", signal: "SIGINT" });
     const { code, stdout, stderr } = runMain(["prove", "annotated.ts"]);
     expect(code).toBe(2);
     expect(stdout).toHaveLength(1);
