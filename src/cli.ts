@@ -482,9 +482,11 @@ function leanRunOutcome(
 }
 
 function proveSpine(): Spine {
-  return process.env.LAKATOS_PROVE_PIPELINE === "plain"
-    ? plainProveSpine()
-    : transcriberProveSpine();
+  // The transcriber spine stays selectable as the import-following
+  // reference until the old elaborator is deleted.
+  return process.env.LAKATOS_PROVE_PIPELINE === "transcriber"
+    ? transcriberProveSpine()
+    : plainProveSpine();
 }
 
 function transcriberProveSpine(): Spine {

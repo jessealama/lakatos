@@ -305,11 +305,13 @@ export function runEmission(
   const emitted: string[] = [];
   for (const job of jobs) {
     // lake env supplies LEAN_PATH: the emitter imports compiled modules.
-    const run = spawn("lake", ["env", emitBin, job.jsonFile, job.leanFile], {
-      cwd: engineRoot,
-      encoding: "utf8",
-      timeout: EMIT_TIMEOUT_MS,
-    });
+    // The job's paths are relative to the caller's cwd, not the engine
+    // root the emitter runs in — resolve them the way runArtifact does.
+    const run = spawn(
+      "lake",
+      ["env", emitBin, path.resolve(job.jsonFile), path.resolve(job.leanFile)],
+      { cwd: engineRoot, encoding: "utf8", timeout: EMIT_TIMEOUT_MS },
+    );
     const signal = interruptedBy(run);
     if (signal !== undefined) return { kind: "interrupted", signal };
     if (run.error !== undefined || run.status !== 0) {

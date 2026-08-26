@@ -29,12 +29,12 @@ the business of the e2e and unit suites.
   reason with, so falsity on an unbounded domain has no counterexample to
   ship either. Also a bounded claim shown false whose witness the prover
   could not read back, which ships the falsity without the illustration.
-- `nottried/` — the transcriber degrades the property (`NotTried`): it has
+- `nottried/` — the pipeline degrades the property (`NotTried`): it has
   no structured reading (a half-bounded range the DSL has no binder shape
   for, a connective other than a top-level implication chain of atoms), or
   a range endpoint exceeds the safe integer range.
 - `inappropriate/` — the annotation is outside the model: the function uses
-  a construct the transcriber cannot map, or an operator the model refuses
+  a construct the pipeline cannot map, or an operator the model refuses
   on the merits (`Inappropriate`).
 - `error/` — the attempt fails on the engine's own gaps (`Error`): an
   operator with no model in the slice, an unbound identifier — the input

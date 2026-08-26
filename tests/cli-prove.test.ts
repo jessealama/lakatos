@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { announcedRunDir, runMain, useTempProject } from "./helpers/cli.js";
@@ -47,7 +47,14 @@ describe("cli prove", () => {
     ].join("\n"),
   });
 
+  // This file exercises the transcriber spine's CLI contract; the spine
+  // must be selected now that the plain pipeline is the default.
+  beforeEach(() => {
+    process.env.LAKATOS_PROVE_PIPELINE = "transcriber";
+  });
+
   afterEach(() => {
+    delete process.env.LAKATOS_PROVE_PIPELINE;
     runLeanMock.mockReset();
     fs.rmSync(RUN_ROOT, { recursive: true, force: true });
   });

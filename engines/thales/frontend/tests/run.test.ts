@@ -424,10 +424,41 @@ describe("runEmission", () => {
       ["env", "lean"],
       ["env", "lean"],
     ]);
-    expect(calls[2]!.args).toEqual(["env", EMIT_BIN, "a.json", "a.lean"]);
+    expect(calls[2]!.args).toEqual([
+      "env",
+      EMIT_BIN,
+      path.resolve("a.json"),
+      path.resolve("a.lean"),
+    ]);
     expect(calls.every((c) => c.cmd === "lake" && c.cwd === "/engine")).toBe(
       true,
     );
+  });
+
+  test("job paths resolve against the caller's cwd, not the engine root", () => {
+    // The emitter runs with cwd=engineRoot, but jobs name run-directory
+    // paths relative to where lakatos was invoked.
+    const { spawn, calls } = fakeSpawn([
+      { status: 0 },
+      { status: 0 },
+      { status: 0 },
+      { status: 0, stdout: verdictLine("f", "Theorem") },
+    ]);
+    runEmission(
+      [
+        {
+          jsonFile: ".lakatos/run/t.ts.json",
+          leanFile: ".lakatos/run/t.ts.lean",
+        },
+      ],
+      "/engine",
+      spawn,
+    );
+    expect(calls[2]!.args.slice(2)).toEqual([
+      path.resolve(".lakatos/run/t.ts.json"),
+      path.resolve(".lakatos/run/t.ts.lean"),
+    ]);
+    expect(calls[3]!.args.at(-1)).toBe(path.resolve(".lakatos/run/t.ts.lean"));
   });
 
   test("an emit failure degrades only its own file; siblings still run", () => {
