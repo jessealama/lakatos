@@ -22,8 +22,8 @@ the conjecture to be repaired. That loop is exactly what this tool runs.
 
 Both engines work end to end. `lakatos refute` scrapes `@ensures`
 annotations, generates fast-check property tests, runs them, and prints a
-per-annotation JSON report. `lakatos prove` transcribes each file into a
-`.lean` artifact under the run directory, runs it through the Lean engine
+per-annotation JSON report. `lakatos prove` emits a `.lean`
+artifact per file under the run directory, runs it through the Lean engine
 (`lake env lean`), and assembles the same per-annotation envelope from the
 prover's verdicts; it requires the Lean toolchain (elan/lake) on PATH and,
 for now, a lakatos checkout — the npm package does not yet ship the Lean

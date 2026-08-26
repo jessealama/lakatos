@@ -1,8 +1,9 @@
+import Js
 import ThalesDsl.Prove
 
 open ThalesDsl Js Js.Number
 
-/-! `≡` is SameValue, and `ts.eq` elaborates it to propositional equality on
+/-! `≡` is SameValue, and an emitted equation is propositional equality on
 `JsM Float`. That correspondence is an assumption the equation semantics
 rests on, and `Float`'s equality is new enough to move, so pin it rather
 than assert it. Each fact is pinned on both evaluation paths — `example`
@@ -36,7 +37,7 @@ example : ((0.0 / 0.0 : Float) == 0.0 / 0.0) = false := by decide
 example : ((-0.0 : Float) == 0.0) = true := by decide
 #guard ((-0.0 : Float) == 0.0)
 
-/-! ## The shape `ts.eq` builds -/
+/-! ## The shape an emitted equation builds -/
 
 -- Equations compare `JsM Float`, so the correspondence has to survive the
 -- monad, and a thrown side is equal to nothing.

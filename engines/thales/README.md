@@ -16,14 +16,14 @@ The engine is elaboration-based, in the language-oriented-programming
 tradition:
 
 1. **Front end (TypeScript).** The TS compiler API parses the target file;
-   the entire program is transcribed into a `.lean` file of core DSL
-   constructors mirroring the tsc AST. Unmappable constructs become opaque
-   nodes. Acceptance is universal by construction.
-2. **ThalesDsl (Lean).** Elab rules assign meaning: `ts_def` commands
-   elaborate each declaration into a Lean model in a computable monad;
-   `#thales_prove` commands state per-annotation theorems, run the proof
-   ladder (`decide` over bounded domains, then generic tactics), and print
-   one JSON verdict line to stdout.
+   each declaration it can model becomes per-declaration JSON, which the
+   `thales-emit` executable renders as ordinary Lean — a `def` per function
+   in a computable monad, a `#thales_prove` command per annotation. What it
+   cannot model it classifies itself, naming the offending construct, so
+   nothing unmappable reaches Lean.
+2. **ThalesDsl (Lean).** `#thales_prove` states each annotation's theorem,
+   runs the proof ladder (`decide` over bounded domains, then generic
+   tactics), and prints one JSON verdict line to stdout.
 3. **CLI (`lakatos prove`).** Collects the verdict lines and assembles the
    standard per-annotation envelope.
 

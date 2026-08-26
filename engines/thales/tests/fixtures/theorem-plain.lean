@@ -9,8 +9,7 @@ set_option autoImplicit false
 
 -- The plain-Lean emission shape: ordinary defs over the Js library, and a
 -- #thales_prove whose payload is an ordinary Prop. The ballIco spine is
--- recovered syntactically, so the decide rung runs exactly as it does for
--- the constructor grammar.
+-- recovered syntactically, which is what puts the decide rung in reach.
 def add (a b : JsNumber) : JsM JsNumber := do
   return a + b
 
@@ -25,9 +24,5 @@ def double (x : JsNumber) : JsM JsNumber := do
 #thales_prove "plain.ts" "double" "fixed" :=
   ballIco 0 10 fun a => double (Float.ofInt a) = pure (Float.ofInt a)
 
--- The old constructor grammar parses unchanged in the same file, its bare
--- form included.
-ts_def "dbl" := ts.fn(ts.param["x"](ts.number)) : ts.number {
-  ts.return(ts.binop["*"](ts.id["x"], ts.num[2]))
-}
+-- The bare form: an obligation emitted with no structured payload.
 #thales_prove "plain.ts" "dbl" "stub"

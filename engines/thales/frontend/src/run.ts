@@ -227,18 +227,7 @@ function buildStep(
   return undefined;
 }
 
-export function runLean(
-  leanFiles: string[],
-  engineRoot: string | undefined,
-  spawn: Spawn = spawnSync,
-): LeanRunResult {
-  if (engineRoot === undefined) return NO_PROJECT;
-  const unhealthy = buildStep(engineRoot, spawn);
-  if (unhealthy !== undefined) return unhealthy;
-  return leanPass(leanFiles, engineRoot, spawn);
-}
-
-/** The per-artifact lean pass runLean and runEmission share. */
+/** The per-artifact lean pass the emission run performs. */
 function leanPass(
   leanFiles: string[],
   engineRoot: string,
@@ -286,7 +275,7 @@ export interface EmissionJob {
 /**
  * The plain-Lean emission run: build the library and the emitter, render
  * each job's artifact with thales-emit, then run the artifacts the way
- * runLean does. A failed emit degrades only its own file — a malformed
+ * the lean pass does. A failed emit degrades only its own file — a malformed
  * emission fails that file's annotations, never the run — keyed by the
  * artifact path so the caller attributes it like a failed lean run.
  */

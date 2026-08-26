@@ -21,15 +21,13 @@ const FIXTURES = [
     expected: [
       ["add", "NotTried"],
       ["sub", "NotTried"],
-      ["bad", "Error"],
-      ["opq", "Inappropriate", /YieldExpression.*3:14/],
+      ["bad", "Error", /^property elaboration failed/],
       ["tail", "NotTried"],
-      ["viaAw", "Inappropriate", /AwaitExpression/],
     ],
   },
   {
-    // The plain-Prop payload the emission pipeline writes, sharing a file
-    // with the old grammar's structured and bare forms.
+    // The plain-Prop payload the emission pipeline writes, structured and
+    // bare forms alike.
     file: "theorem-plain.lean",
     expected: [
       [
@@ -42,9 +40,8 @@ const FIXTURES = [
     ],
   },
   {
-    // Binder heads the emission pipeline writes that the old grammar's
-    // spine also produces; each row is the verdict the old pipeline gives
-    // the same property.
+    // Binder heads the emission pipeline writes: each row is the verdict
+    // the ladder gives that binder shape.
     file: "binder-shapes-plain.lean",
     expected: [
       ["ident", "CounterSatisfiable", /false on its bounded domain/, { x: -3 }],
@@ -55,8 +52,7 @@ const FIXTURES = [
     ],
   },
   {
-    // Guard chains in the plain-Prop payload: the same five behaviors the
-    // old grammar's guard-chain.lean pins, verdict for verdict.
+    // Guard chains in the plain-Prop payload.
     file: "guard-chain-plain.lean",
     expected: [
       ["idg", "Theorem", /decision procedure over the bounded domain/],
@@ -110,20 +106,6 @@ const FIXTURES = [
       ["bump", "GaveUp", /^the property is false on its bounded domain$/],
     ],
   },
-  {
-    file: "guard-chain.lean",
-    expected: [
-      ["idg", "Theorem", /decision procedure over the bounded domain/],
-      ["idg", "Theorem", /decision procedure over the bounded domain/],
-      // A constant-false guard: vacuous truth, still a Theorem.
-      ["idg", "Theorem", /decision procedure over the bounded domain/],
-      // A guard under a number binder reaches the symbolic rungs, which
-      // close the identity case from the guard hypothesis.
-      ["idg", "Theorem", /generic proof search/],
-      // The witness respects the guard: never x = 0.
-      ["idg", "CounterSatisfiable", /false/, { x: 5 }],
-    ],
-  },
   // The symbolic rungs have no binary64 theory to work with yet, so an
   // unbounded binder leaves a residual goal rather than a proof. The
   // residual is the point: it names the fact the theory worklist needs.
@@ -168,16 +150,6 @@ const FIXTURES = [
   {
     file: "theorem-rescue.lean",
     expected: [["dbl", "Theorem"]],
-  },
-  {
-    file: "theorem-inappropriate.lean",
-    expected: [
-      ["add", "Theorem"],
-      ["fetchTotal", "Inappropriate", /AwaitExpression/],
-      ["spin", "Inappropriate", /WhileStatement/],
-      ["sq", "Theorem"],
-      ["dup", "Theorem"],
-    ],
   },
 ];
 

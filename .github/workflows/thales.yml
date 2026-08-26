@@ -91,7 +91,7 @@ jobs:
         run: lake build
 
       - name: Build thales-emit
-        # A lean_exe is not a default target; the parity check runs it.
+        # A lean_exe is not a default target; the checks below run it.
         run: lake build thales-emit
 
       - name: Lean tests
@@ -100,11 +100,8 @@ jobs:
       - name: Verdict channel
         run: npm run check:verdict-channel
 
-      - name: Transcriber end-to-end
-        run: npm run check:transcriber
-
-      - name: Pipeline parity
-        run: npm run check:parity
+      - name: Envelope expectations
+        run: npm run check:envelopes
         env:
           LAKATOS_PROVE_E2E: "1"
 

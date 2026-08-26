@@ -6,7 +6,6 @@
   "type": "module",
   "scripts": {
     "check:verdict-channel": "node scripts/check-verdict-channel.js",
-    "check:transcriber": "node scripts/check-transcriber.js",
-    "check:parity": "node scripts/check-parity.js"
+    "check:envelopes": "node scripts/check-envelopes.js"
   }
 }

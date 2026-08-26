@@ -52,6 +52,8 @@ describe("cli prove, plain pipeline", () => {
       "export function volume(b: Box): number { return b.size; }",
       "",
     ].join("\n"),
+    "plain.ts": "export const x = 1;\n",
+    "invalid.ts": `class Hidden {\n  /** @ensures{p} forall (x: int) { id(x) === x } */\n  static id(x: number): number { return x; }\n}\n`,
     "unregistered.ts": [
       "/** @ensures{pos} forall (n: int ∈ [0, 4)) { caller(n) >= 0 } */",
       "export function caller(n: number): number { return mystery(n); }",
@@ -282,5 +284,162 @@ describe("cli prove, plain pipeline", () => {
         szs: "NotTried",
       },
     ]);
+  });
+
+  it("verdict fields map through: an Inappropriate reason survives", () => {
+    runEmissionMock.mockReturnValue({
+      kind: "completed",
+      verdicts: [
+        {
+          identity: ["annotated.ts", "annotated", "pos"],
+          szs: "Inappropriate",
+          reason: "AwaitExpression at 2:10",
+        },
+      ],
+      failures: [],
+      diagnostics: [],
+    });
+    const { code, stdout } = runMain(["prove", "annotated.ts"]);
+    expect(code).toBe(0);
+    const env = JSON.parse(stdout[0]!);
+    expectValidEnvelope(env);
+    expect(env.annotations[0]).toMatchObject({
+      szs: "Inappropriate",
+      reason: "AwaitExpression at 2:10",
+    });
+  });
+
+  it("a refuted property ships falsified and exits 1, like refute", () => {
+    runEmissionMock.mockReturnValue({
+      kind: "completed",
+      verdicts: [
+        {
+          ...verdict("annotated.ts", "annotated", "pos", "CounterSatisfiable"),
+          counterexample: { n: 0 },
+        },
+      ],
+      failures: [],
+      diagnostics: [],
+    });
+    const { code, stdout } = runMain(["prove", "annotated.ts"]);
+    expect(code).toBe(1);
+    const env = JSON.parse(stdout[0]!);
+    expectValidEnvelope(env);
+    expect(env.annotations[0]).toMatchObject({
+      szs: "CounterSatisfiable",
+      kind: "falsified",
+      counterexample: { n: 0 },
+    });
+  });
+
+  it("an unhealthy run keeps the unsupported-range metadata", () => {
+    runEmissionMock.mockReturnValue({ kind: "failed", stdout: "", stderr: "" });
+    const { code, stdout } = runMain(["prove", "mixed.ts"]);
+    expect(code).toBe(2);
+    const env = JSON.parse(stdout[0]!);
+    expectValidEnvelope(env);
+    expect(env.annotations).toEqual(
+      expect.arrayContaining([
+        {
+          file: "mixed.ts",
+          function: "huge",
+          property: "big",
+          szs: "NotTried",
+          kind: "unsupported-range",
+          reason:
+            "endpoint 1000000000000000000000000000000 exceeds the safe integer range (±9007199254740991)",
+        },
+        {
+          file: "mixed.ts",
+          function: "small",
+          property: "pos",
+          szs: "NotTried",
+        },
+      ]),
+    );
+    expect(env.annotations).toHaveLength(2);
+  });
+
+  it("input errors join the envelope and force exit 2", () => {
+    const { code, stdout, stderr } = runMain(["prove", "invalid.ts"]);
+    expect(code).toBe(2);
+    const env = JSON.parse(stdout[0]!);
+    expectValidEnvelope(env);
+    expect(env.annotations).toEqual([
+      {
+        file: "invalid.ts",
+        function: "Hidden.id",
+        property: "p",
+        szs: "InputError",
+        error: expect.stringMatching(/^invalid\.ts:2: /),
+      },
+    ]);
+    // No valid annotations -> nothing to emit -> the prover never runs.
+    expect(runEmissionMock).not.toHaveBeenCalled();
+    expect(stderr.join("\n")).toContain("invalid.ts:2: ");
+  });
+
+  it("no annotations at all: empty envelope, no prover run, exit 0", () => {
+    const { code, stdout } = runMain(["prove", "plain.ts"]);
+    expect(code).toBe(0);
+    const env = JSON.parse(stdout[0]!);
+    expectValidEnvelope(env);
+    expect(env.annotations).toEqual([]);
+    expect(runEmissionMock).not.toHaveBeenCalled();
+  });
+
+  it("failed: raw output on stderr, NotTried envelope, exit 2", () => {
+    runEmissionMock.mockReturnValue({
+      kind: "failed",
+      stdout: "raw lake stdout\n",
+      stderr: "raw lake stderr\n",
+    });
+    const writes: string[] = [];
+    const writeSpy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation((chunk) => {
+        writes.push(String(chunk));
+        return true;
+      });
+    try {
+      const { code, stdout } = runMain(["prove", "annotated.ts"]);
+      expect(code).toBe(2);
+      const env = JSON.parse(stdout[0]!);
+      expectValidEnvelope(env);
+      expect(env.annotations[0].szs).toBe("NotTried");
+      expect(writes.join("")).toContain("raw lake stdout");
+      expect(writes.join("")).toContain("raw lake stderr");
+    } finally {
+      writeSpy.mockRestore();
+    }
+  });
+
+  it("join mismatches surface as unhealthy exit 2", () => {
+    // A healthy Lean run whose verdicts do not cover the annotations is
+    // untrustworthy: it indicates an emitter or engine bug.
+    runEmissionMock.mockReturnValue({
+      kind: "completed",
+      verdicts: [],
+      failures: [],
+      diagnostics: [],
+    });
+    const missing = runMain(["prove", "annotated.ts"]);
+    expect(missing.code).toBe(2);
+    expect(missing.stderr.join("\n")).toContain("no verdict for");
+    const env = JSON.parse(missing.stdout[0]!);
+    expectValidEnvelope(env);
+    expect(env.annotations[0].szs).toBe("NotTried");
+  });
+
+  it("Lean diagnostics pass through to stderr on a healthy run", () => {
+    runEmissionMock.mockReturnValue({
+      kind: "completed",
+      verdicts: [verdict("annotated.ts", "annotated", "pos", "Theorem")],
+      failures: [],
+      diagnostics: ["note: some linter chatter"],
+    });
+    const { code, stderr } = runMain(["prove", "annotated.ts"]);
+    expect(code).toBe(0);
+    expect(stderr.join("\n")).toContain("note: some linter chatter");
   });
 });
