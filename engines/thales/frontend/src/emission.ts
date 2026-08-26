@@ -43,6 +43,7 @@ export type EmitExpr =
   | { kind: "unop"; op: "-" | "+"; operand: EmitExpr }
   | { kind: "binop"; op: string; left: EmitExpr; right: EmitExpr }
   | { kind: "same-value"; left: EmitExpr; right: EmitExpr }
+  | { kind: "math-sqrt"; arg: EmitExpr }
   | { kind: "call"; callee: string; module?: string; args: EmitExpr[] };
 
 /** A statement in the shapes the plain-Lean emitter renders as Lean
@@ -207,6 +208,7 @@ function numericShaped(e: ts.Expression): boolean {
   if (isUnaryArith(u)) return true;
   if (ts.isBinaryExpression(u))
     return ARITH_OPERATORS.has(u.operatorToken.getText());
+  if (sqrtArg(u) !== undefined) return true;
   return ts.isCallExpression(u) && ts.isIdentifier(u.expression);
 }
 
@@ -244,6 +246,8 @@ function findConstruct(
     }
     return findConstruct(sides[0]!, sf) ?? findConstruct(sides[1]!, sf);
   }
+  const sqrt = sqrtArg(e);
+  if (sqrt !== undefined) return findConstruct(sqrt, sf);
   if (ts.isCallExpression(e) && ts.isIdentifier(e.expression)) {
     for (const a of e.arguments) {
       const found = findConstruct(a, sf);
@@ -290,6 +294,9 @@ function callNames(e: ts.Expression, into: string[] = []): string[] {
     callNames(sides[0], into);
     return callNames(sides[1], into);
   }
+  const sqrt = sqrtArg(e);
+  // `Math.sqrt` has no user callee; its argument carries them.
+  if (sqrt !== undefined) return callNames(sqrt, into);
   if (ts.isCallExpression(e) && ts.isIdentifier(e.expression)) {
     into.push(e.expression.text);
     for (const a of e.arguments) callNames(a, into);
@@ -453,6 +460,17 @@ function walkTyped(
       );
     }
     return { kind: "same-value", left, right };
+  }
+  const sqrt = sqrtArg(e);
+  if (sqrt !== undefined) {
+    // The argument is typed before the position is, mirroring the binops.
+    const arg = walkTyped(sqrt, "num", scope, sf);
+    if (expected !== "num") {
+      throw new ModelError(
+        `a call to 'Math.sqrt' yields a number, not ${describeTy(expected)}`,
+      );
+    }
+    return { kind: "math-sqrt", arg };
   }
   if (ts.isCallExpression(e) && ts.isIdentifier(e.expression)) {
     const ref = refOf(scope, e.expression.text);
@@ -994,6 +1012,22 @@ function equationSides(
     return undefined;
   }
   return [e.arguments[0]!, e.arguments[1]!];
+}
+
+/** The argument of a `Math.sqrt` call — the one `Math.*` name with a
+ * model. `Math.pow` and the rest stay unmapped constructs. */
+function sqrtArg(e: ts.Expression): ts.Expression | undefined {
+  if (!ts.isCallExpression(e) || e.arguments.length !== 1) return undefined;
+  const callee = e.expression;
+  if (
+    !ts.isPropertyAccessExpression(callee) ||
+    !ts.isIdentifier(callee.expression) ||
+    callee.expression.text !== "Math" ||
+    callee.name.text !== "sqrt"
+  ) {
+    return undefined;
+  }
+  return e.arguments[0]!;
 }
 
 /** A desugared `≢`: `!Object.is(…)`. The positive equation is a modeled
