@@ -13,6 +13,7 @@ inductive JsExpr where
   | id (name : String)
   | unop (op : String) (operand : JsExpr)
   | binop (op : String) (left right : JsExpr)
+  | sameValue (left right : JsExpr)
   | call (callee : String) (module : Option String) (args : Array JsExpr)
 deriving Repr, Inhabited
 
@@ -117,6 +118,9 @@ partial def decodeExpr (j : Json) : Except String JsExpr := do
   | "binop" =>
     pure (.binop (← getStr j "op")
       (← decodeExpr (← j.getObjVal? "left"))
+      (← decodeExpr (← j.getObjVal? "right")))
+  | "same-value" =>
+    pure (.sameValue (← decodeExpr (← j.getObjVal? "left"))
       (← decodeExpr (← j.getObjVal? "right")))
   | "call" =>
     pure (.call (← getStr j "callee") (← getStrOpt j "module")

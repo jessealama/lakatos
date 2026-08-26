@@ -366,17 +366,6 @@ describe("obligation payload degradations", () => {
     ).not.toHaveProperty("guards");
   });
 
-  test("an equation guard degrades to bare", () => {
-    // Object.is in guard position is refused, matching the old pipeline
-    const src = [
-      "/** @ensures{eqGuard} forall (x: int ∈ [0, 10)) { f(x) ≡ x -> f(x) >= 0 } */",
-      "export function f(x: number): number { return x; }",
-      "",
-    ].join("\n");
-    const { emission } = emitModule(src, "eq-guard.ts");
-    expect(emission.obligations[0]!.payload).toEqual({ kind: "bare" });
-  });
-
   test("bounded and unbounded binders nest in order", () => {
     const src =
       "/** @ensures{p} forall (a: int ∈ [0, 5)) (x: int) { f(a) ≡ f(x) } */\n" +
@@ -1386,6 +1375,222 @@ describe("unsupported ranges classify NotTried before emission", () => {
         kind: "unsupported-range",
         reason:
           "endpoints 1000000000000000000000000000000 and 10000000000000000000000000000000 exceed the safe integer range (±9007199254740991)",
+      }),
+    ]);
+  });
+});
+
+describe("Object.is models as SameValue", () => {
+  const FILE = "engines/thales/tests/fixtures/tracer.ts"; // any resolvable path; no imports are followed
+
+  test("a branch condition walks to a same-value node", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 2)) { canon(n) === 0 } */",
+      "export function canon(x: number): number {",
+      "  if (Object.is(x, -0)) {",
+      "    return 0;",
+      "  }",
+      "  return 0;",
+      "}",
+    ].join("\n");
+    const { emission } = emitModule(src, FILE);
+    expectValidEmission(emission);
+    expect(emission.declarations).toEqual([
+      expect.objectContaining({
+        name: "canon",
+        body: [
+          {
+            kind: "if",
+            cond: {
+              kind: "same-value",
+              left: { kind: "id", name: "x" },
+              right: { kind: "num", lit: "-0" },
+            },
+            then: [{ kind: "return", expr: { kind: "num", lit: "0" } }],
+          },
+          { kind: "return", expr: { kind: "num", lit: "0" } },
+        ],
+      }),
+    ]);
+  });
+
+  test("a negated identifier argument is numeric-shaped and walks", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 2)) { canon(n) === 0 } */",
+      "export function canon(x: number): number {",
+      "  if (Object.is(-x, 0)) {",
+      "    return 0;",
+      "  }",
+      "  return 0;",
+      "}",
+    ].join("\n");
+    const { emission } = emitModule(src, FILE);
+    expectValidEmission(emission);
+    expect(emission.declarations[0]!.body[0]).toEqual(
+      expect.objectContaining({
+        cond: {
+          kind: "same-value",
+          left: { kind: "unop", op: "-", operand: { kind: "id", name: "x" } },
+          right: { kind: "num", lit: "0" },
+        },
+      }),
+    );
+  });
+
+  test("a non-numeric argument refuses the declaration naming the call", () => {
+    const src = [
+      "/** @ensures{p} forall (x: number) { pick(x) === 1 } */",
+      "export function pick(x: number): number {",
+      '  if (Object.is(x, "zero")) {',
+      "    return 0;",
+      "  }",
+      "  return 1;",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining(
+          "'Object.is' models numbers only; argument 2 is not a number",
+        ),
+      }),
+    ]);
+  });
+
+  test("a bool-valued argument refuses the same way", () => {
+    const src = [
+      "/** @ensures{p} forall (x: number) { pick(x) === 1 } */",
+      "export function pick(x: number): number {",
+      "  if (Object.is(x < 1, 0)) {",
+      "    return 0;",
+      "  }",
+      "  return 1;",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining(
+          "'Object.is' models numbers only; argument 1 is not a number",
+        ),
+      }),
+    ]);
+  });
+
+  test("Object.is in a num position is a type mismatch, the engine's Error", () => {
+    const src = [
+      "/** @ensures{p} forall (x: number) { toBit(x) === 1 } */",
+      "export function toBit(x: number): number {",
+      "  return Object.is(x, 0);",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Error",
+        reason: expect.stringContaining(
+          "a call to 'Object.is' yields a boolean, not a number",
+        ),
+      }),
+    ]);
+  });
+
+  test("a failed callee inside an Object.is argument still travels", () => {
+    const src = [
+      "/** @ensures{p} forall (x: number) { pick(x) === 1 } */",
+      "export function broken(x: number): number {",
+      "  while (true) {}",
+      "}",
+      "export function pick(x: number): number {",
+      "  if (Object.is(broken(x), 0)) {",
+      "    return 0;",
+      "  }",
+      "  return 1;",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining("'broken' could not be modeled"),
+      }),
+    ]);
+  });
+
+  test("a wrong-arity Object.is stays the unmapped call it was", () => {
+    const src = [
+      "/** @ensures{p} forall (x: number) { pick(x) === 1 } */",
+      "export function pick(x: number): number {",
+      "  if (Object.is(x)) {",
+      "    return 0;",
+      "  }",
+      "  return 1;",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining("unmapped TypeScript construct"),
+      }),
+    ]);
+  });
+});
+
+describe("equation guards", () => {
+  const FILE = "engines/thales/tests/fixtures/tracer.ts";
+  const src = (formula: string) =>
+    [
+      `/** @ensures{p} ${formula} */`,
+      "export function pick(x: number): number {",
+      "  return x;",
+      "}",
+    ].join("\n");
+
+  test("an ≡ guard walks to a same-value hypothesis", () => {
+    const { emission } = emitModule(
+      src("forall (n: int ∈ [0, 2)) { n ≡ 1 -> pick(n) === 1 }"),
+      FILE,
+    );
+    expectValidEmission(emission);
+    expect(emission.obligations).toEqual([
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          kind: "structured",
+          guards: [
+            {
+              kind: "same-value",
+              left: { kind: "id", name: "n" },
+              right: { kind: "num", lit: "1" },
+            },
+          ],
+        }),
+      }),
+    ]);
+  });
+
+  test("a ≢ guard still degrades the property to bare", () => {
+    const { emission } = emitModule(
+      src("forall (n: int ∈ [0, 2)) { n ≢ 1 -> pick(n) === 1 }"),
+      FILE,
+    );
+    expect(emission.obligations).toEqual([
+      expect.objectContaining({ payload: { kind: "bare" } }),
+    ]);
+  });
+
+  test("a top-level equation conclusion still maps to eq, not same-value", () => {
+    const { emission } = emitModule(
+      src("forall (n: int ∈ [0, 2)) { pick(n) ≡ n }"),
+      FILE,
+    );
+    expect(emission.obligations).toEqual([
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          conclusion: expect.objectContaining({ kind: "eq" }),
+        }),
       }),
     ]);
   });

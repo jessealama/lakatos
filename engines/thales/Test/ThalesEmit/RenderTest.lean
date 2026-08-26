@@ -17,6 +17,12 @@ open Lean ThalesEmit
     [("kind", "unop"), ("op", "-"), ("operand", Json.mkObj [("kind", "id"), ("name", "x")])]))
   matches .ok (.unop "-" (.id "x"))
 #guard
+  (decodeExpr (Json.mkObj
+    [("kind", "same-value"),
+     ("left", Json.mkObj [("kind", "id"), ("name", "x")]),
+     ("right", Json.mkObj [("kind", "num"), ("lit", "-0")])]))
+  matches .ok (.sameValue (.id "x") (.num "-0"))
+#guard
   (decodeBinder (Json.mkObj [("name", "x"), ("kind", "int")]))
   matches .ok (.int "x")
 #guard
@@ -266,3 +272,23 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
     catch _ => pure true
     unless refused do
       throwError s!"module path '{bad}' was rendered instead of refused"
+
+-- `Object.is` is a pure Bool application: no `←` on the call itself,
+-- and an Int-binder argument still crosses to Float.
+#eval show CoreM Unit from do
+  let e : Emission := {
+    file := "t.ts"
+    declarations := #[{ name := "canon", params := #["x"], source := "canon",
+                        body := #[
+                          .ite (.sameValue (.id "x") (.num "-0"))
+                            #[.ret (.num "0")] none,
+                          .ret (.id "x")] }]
+    obligations := #[{ function := "canon", property := "p", formula := "f",
+                       payload := .structured #[.range "n" 0 2]
+                         #[.sameValue (.id "n") (.num "1")]
+                         (.istrue (.binop "===" (.call "canon" none #[.id "n"]) (.num "1"))) }] }
+  let rendered ← renderEmission e
+  unless (rendered.splitOn "if Number.FloatOps.sameValue x (-0) then").length == 2 do
+    throwError "the branch condition did not render as sameValue:\n{rendered}"
+  unless (rendered.splitOn "Number.FloatOps.sameValue (Float.ofInt n) 1").length == 2 do
+    throwError "the guard argument was not coerced:\n{rendered}"

@@ -18,7 +18,6 @@ import {
   bindingIdentifiers,
   chainReading,
   type FloatBound,
-  isEquationGuard,
   kindName,
   numberBounds,
   numberToken,
@@ -43,6 +42,7 @@ export type EmitExpr =
   | { kind: "id"; name: string }
   | { kind: "unop"; op: "-" | "+"; operand: EmitExpr }
   | { kind: "binop"; op: string; left: EmitExpr; right: EmitExpr }
+  | { kind: "same-value"; left: EmitExpr; right: EmitExpr }
   | { kind: "call"; callee: string; module?: string; args: EmitExpr[] };
 
 /** A statement in the shapes the plain-Lean emitter renders as Lean
@@ -193,6 +193,19 @@ function isUnaryArith(e: ts.Expression): e is ts.PrefixUnaryExpression {
   );
 }
 
+/** Whether an expression's own shape can denote a number in this slice —
+ * the shapes the typed walk accepts at `num`. Top-level shape only:
+ * deeper offenders keep their own refusals. */
+function numericShaped(e: ts.Expression): boolean {
+  const u = unwrapParens(e);
+  if (ts.isNumericLiteral(u) || negatedLiteral(u) !== undefined) return true;
+  if (ts.isIdentifier(u)) return true;
+  if (isUnaryArith(u)) return true;
+  if (ts.isBinaryExpression(u))
+    return ARITH_OPERATORS.has(u.operatorToken.getText());
+  return ts.isCallExpression(u) && ts.isIdentifier(u.expression);
+}
+
 /** The first construct in tree order the old transcriber would have made
  * opaque: anything outside identifiers, numeric literals, unary ±,
  * parentheses, binary operators (any operator — meaning is checked
@@ -207,6 +220,25 @@ function findConstruct(
   if (isUnaryArith(e)) return findConstruct(e.operand, sf);
   if (ts.isBinaryExpression(e)) {
     return findConstruct(e.left, sf) ?? findConstruct(e.right, sf);
+  }
+  const sides = equationSides(e);
+  if (sides !== undefined) {
+    // `Object.is` compares JS values of one type; only numbers have a
+    // model here, so a non-numeric argument is refused on the merits.
+    const offender = sides.findIndex((s) => !numericShaped(s));
+    if (offender !== -1) {
+      const arg = unwrapParens(sides[offender]!);
+      const { line, character } = sf.getLineAndCharacterOfPosition(
+        arg.getStart(sf),
+      );
+      return {
+        construct: "Object.is",
+        reason:
+          `'Object.is' models numbers only; argument ${offender + 1} is ` +
+          `not a number (${kindName(arg.kind)} at ${line + 1}:${character + 1})`,
+      };
+    }
+    return findConstruct(sides[0]!, sf) ?? findConstruct(sides[1]!, sf);
   }
   if (ts.isCallExpression(e) && ts.isIdentifier(e.expression)) {
     for (const a of e.arguments) {
@@ -247,6 +279,12 @@ function callNames(e: ts.Expression, into: string[] = []): string[] {
   if (ts.isBinaryExpression(e)) {
     callNames(e.left, into);
     return callNames(e.right, into);
+  }
+  const sides = equationSides(e);
+  if (sides !== undefined) {
+    // `Object.is` has no callee of its own; its arguments carry them.
+    callNames(sides[0], into);
+    return callNames(sides[1], into);
   }
   if (ts.isCallExpression(e) && ts.isIdentifier(e.expression)) {
     into.push(e.expression.text);
@@ -387,6 +425,18 @@ function walkTyped(
     const refused = REFUSED_OPERATORS.get(op);
     if (refused !== undefined) throw new ModelError(refused);
     throw new ModelError(`operator '${op}' has no model in this slice`);
+  }
+  const sides = equationSides(e);
+  if (sides !== undefined) {
+    // Operands are typed before the position is, mirroring the binops.
+    const left = walkTyped(sides[0], "num", scope, sf);
+    const right = walkTyped(sides[1], "num", scope, sf);
+    if (expected !== "bool") {
+      throw new ModelError(
+        `a call to 'Object.is' yields a boolean, not ${describeTy(expected)}`,
+      );
+    }
+    return { kind: "same-value", left, right };
   }
   if (ts.isCallExpression(e) && ts.isIdentifier(e.expression)) {
     const ref = refOf(scope, e.expression.text);
@@ -603,12 +653,13 @@ function structureStmt(
     if (stmt !== undefined) return [stmt];
   }
   if (ts.isIfStatement(s)) {
-    // The condition must be a comparison: truthiness coercion and the
-    // logical operators have no model.
     const inner = unwrapParens(s.expression);
+    // The condition must be a comparison or an `Object.is` call:
+    // truthiness coercion and the logical operators have no model.
     const cond =
-      ts.isBinaryExpression(inner) &&
-      COMPARISON_OPERATORS.has(inner.operatorToken.getText(sf))
+      (ts.isBinaryExpression(inner) &&
+        COMPARISON_OPERATORS.has(inner.operatorToken.getText(sf))) ||
+      equationSides(inner) !== undefined
         ? { expr: inner }
         : { opaque: constructAt(inner, inner.kind, sf) };
     // An arm's locals are a copy, so its bindings do not escape it. A
@@ -929,6 +980,17 @@ function equationSides(
   return [e.arguments[0]!, e.arguments[1]!];
 }
 
+/** A desugared `≢`: `!Object.is(…)`. The positive equation is a modeled
+ * boolean atom now; the negation waits on `!` itself. */
+function isNegatedEquation(e: ts.Expression): boolean {
+  const inner = unwrapParens(e);
+  return (
+    ts.isPrefixUnaryExpression(inner) &&
+    inner.operator === ts.SyntaxKind.ExclamationToken &&
+    equationSides(unwrapParens(inner.operand)) !== undefined
+  );
+}
+
 /** A binder's emitted domain: a finite half-open range, the whole int
  * line, the naturals, or a bounded `number` — reading the domain the binder
  * *denotes*, the same folding the old transcriber applies. `bare` covers
@@ -1007,7 +1069,7 @@ function obligationPayload(
     for (const g of chain.guards) {
       const gp = parseAtomExpr(g);
       if (gp === undefined) return bare;
-      if (isEquationGuard(gp.expr)) return bare;
+      if (isNegatedEquation(gp.expr)) return bare;
       guardRoots.push({
         expr: unwrapParens(gp.expr),
         sf: gp.sf,

@@ -43,3 +43,16 @@ example : ((-0.0 : Float) == 0.0) = true := by decide
 #guard decide ((pure (0.0 / 0.0) : JsM Float) = pure (0.0 / 0.0))
 #guard !decide ((pure (-0.0) : JsM Float) = pure 0.0)
 #guard !decide ((pure 0.0 : JsM Float) = JsM.throw (.error "RangeError"))
+
+/-! ## The Bool face the artifacts call -/
+
+-- `Object.is` renders as `sameValue`, `=`'s decide: the corners above
+-- must survive the wrapping, on both evaluation paths.
+example : Number.FloatOps.sameValue (-0.0) 0.0 = false := by decide
+#guard !(Number.FloatOps.sameValue (-0.0) 0.0)
+
+example : Number.FloatOps.sameValue (0.0 / 0.0) (0.0 / 0.0) = true := by decide
+#guard Number.FloatOps.sameValue (0.0 / 0.0) (0.0 / 0.0)
+
+example : Number.FloatOps.sameValue 1.5 1.5 = true := by decide
+#guard Number.FloatOps.sameValue 1.5 1.5

@@ -37,9 +37,9 @@ export default defineConfig({
         // defensive branches no input can reach.
         autoUpdate: true,
         statements: 99.43,
-        branches: 98.29,
+        branches: 98.32,
         functions: 100,
-        lines: 99.62,
+        lines: 99.63,
       },
     },
   },
