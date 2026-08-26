@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// The envelope-diff parity harness (#146): run the old transcriber
-// pipeline and the new plain-Lean emission pipeline over the fixture
-// manifest, project both to per-annotation envelope entries, and require
-// them identical. Both sides share one projection, so a diff here is a
-// pipeline divergence, never a harness artifact. Breadth slices extend
-// the manifest; without LAKATOS_PROVE_E2E=1 only the quick fixtures run,
+// The envelope-expectation harness, successor to the two-arm parity
+// harness: run the emission pipeline over the fixture manifest, project
+// the verdicts to per-annotation envelope entries, and require them equal
+// to the stored expectations. Regenerate with UPDATE_ENVELOPES=1 (which
+// requires the full manifest, LAKATOS_PROVE_E2E=1, so the store never
+// goes partial); without LAKATOS_PROVE_E2E=1 only the quick fixtures run,
 // the same gate the prove e2e uses.
 
 import { spawnSync } from "node:child_process";
@@ -13,7 +13,6 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { checker, engineRoot, frontend, repoRoot } from "./harness.js";
 
-const { transcribe } = await frontend("transcribe");
 const { emitModule } = await frontend("emission");
 const { parseVerdicts, runArtifact } = await frontend("run");
 const { qualifiedName } = await import(
@@ -22,8 +21,7 @@ const { qualifiedName } = await import(
 
 const CONFORMANCE = "engines/thales/tests/conformance";
 
-/** Always checked: the tracer bullet and the frontend-classified twin of
- * the old pipeline's class-binder refusal. */
+/** Always checked: the tracer bullet and a frontend-classified refusal. */
 const QUICK_FIXTURES = [
   "engines/thales/tests/fixtures/tracer.ts",
   `${CONFORMANCE}/inappropriate/class-binder.ts`,
@@ -127,10 +125,25 @@ const fixtures =
       ]
     : QUICK_FIXTURES;
 
-const { check, done } = checker("parity");
+const EXPECTED_FILE = path.join(
+  engineRoot,
+  "tests",
+  "fixtures",
+  "envelopes.expected.json",
+);
+const updating = process.env.UPDATE_ENVELOPES === "1";
+
+const { check, done } = checker("envelopes");
+check(
+  !updating || process.env.LAKATOS_PROVE_E2E === "1",
+  "UPDATE_ENVELOPES=1 needs LAKATOS_PROVE_E2E=1: a quick-only regeneration would drop the corpus slices from the store",
+);
+const expectedStore = updating
+  ? {}
+  : JSON.parse(fs.readFileSync(EXPECTED_FILE, "utf8"));
 
 process.chdir(repoRoot); // the fixture path is the annotations' identity file
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "thales-parity-"));
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "thales-envelopes-"));
 
 // One lake build settles the emitter; each fixture then pays only the
 // process spawn, with lake's search path captured once.
@@ -151,15 +164,15 @@ const leanPath = spawnSync("lake", ["env", "printenv", "LEAN_PATH"], {
 }).stdout?.trim();
 check(Boolean(leanPath), "lake env yielded no LEAN_PATH");
 
-/** One envelope entry, as both pipelines must produce it. `kind` rides
- * only on the refusals that carry one into the envelope. */
+/** One envelope entry, as the CLI ships it. `kind` rides only on the
+ * refusals that carry one into the envelope. */
 function entry(fn, property, szs, reason, axioms, counterexample, kind) {
   return { function: fn, property, szs, reason, axioms, counterexample, kind };
 }
 
 /** A native_decide axiom's ordinal is a per-file gensym — it counts the
- * elaborator's attempts, not anything about the annotation — so the
- * comparison masks it; the axiom's identity is the rest of the name. */
+ * elaborator's attempts, not anything about the annotation — so the store
+ * masks it; the axiom's identity is the rest of the name. */
 function maskAxiom(name) {
   return name.replace(/native_decide\.ax_\d+$/, "native_decide.ax_N");
 }
@@ -172,28 +185,6 @@ function projectVerdict(v) {
     v.reason,
     v.axioms?.map(maskAxiom),
     v.counterexample,
-  );
-}
-
-/** An annotation the old transcriber deliberately emitted no command for,
- * as the CLI reports it from the untried kind. */
-function projectUntried(u) {
-  const fn = qualifiedName(
-    u.annotation.functionName,
-    u.annotation.className,
-    u.annotation.isStatic,
-  );
-  const szs = u.kind === "class-binder" ? "Inappropriate" : "NotTried";
-  // The CLI carries the kind into the envelope only for NotTried refusals.
-  const kind = u.kind === "class-binder" ? undefined : u.kind;
-  return entry(
-    fn,
-    u.annotation.propertyName,
-    szs,
-    u.reason,
-    undefined,
-    undefined,
-    kind,
   );
 }
 
@@ -219,99 +210,87 @@ for (const [i, fixture] of fixtures.entries()) {
 
   // Timeout fixtures are graded the way the corpus harness grades them:
   // under a reduced heartbeat budget, where Timeout is deterministic and
-  // cheap. Both pipelines see the same budget, so parity still binds.
+  // cheap.
   if (fixture.includes("/timeout/")) {
     process.env.LAKATOS_PROVE_HEARTBEATS = "1";
   } else {
     delete process.env.LAKATOS_PROVE_HEARTBEATS;
   }
 
-  // Old pipeline: transcribe, run, one verdict line per annotation that
-  // got a command; untried annotations are reported the way the CLI does.
-  const oldSide = (() => {
-    const { lean, annotations, untried } = transcribe(text, fixture);
-    const leanFile = path.join(tmp, `old-${i}.lean`);
-    fs.writeFileSync(leanFile, lean);
-    const byIdentity = new Map(
-      verdictsOf(leanFile, `${fixture}: old pipeline`).map((v) => [
-        `${v.identity[1]} ${v.identity[2]}`,
-        projectVerdict(v),
-      ]),
+  // Emit JSON, render with thales-emit, run the artifact, and join the
+  // Lean verdicts with the frontend's own classifications in annotation
+  // order.
+  const { emission, annotations, classified } = emitModule(text, fixture);
+  const jsonFile = path.join(tmp, `emission-${i}.json`);
+  const leanFile = path.join(tmp, `artifact-${i}.lean`);
+  fs.writeFileSync(jsonFile, JSON.stringify(emission));
+  const emit = spawnSync(emitBin, [jsonFile, leanFile], {
+    cwd: engineRoot,
+    encoding: "utf8",
+    timeout: 120_000,
+    env: { ...process.env, LEAN_PATH: leanPath },
+  });
+  check(
+    emit.status === 0,
+    `${fixture}: thales-emit failed (${emit.status}):\n${emit.stderr}`,
+  );
+  if (emit.status !== 0) continue;
+  const byIdentity = new Map(
+    verdictsOf(leanFile, fixture).map((v) => [
+      `${v.identity[1]} ${v.identity[2]}`,
+      projectVerdict(v),
+    ]),
+  );
+  for (const c of classified) {
+    const fn = qualifiedName(
+      c.annotation.functionName,
+      c.annotation.className,
+      c.annotation.isStatic,
     );
-    for (const u of untried) {
-      byIdentity.set(identityOf(u.annotation), projectUntried(u));
-    }
-    return {
-      annotations,
-      entries: annotations.map((a) => byIdentity.get(identityOf(a))),
-    };
-  })();
+    byIdentity.set(
+      `${fn} ${c.annotation.propertyName}`,
+      entry(
+        fn,
+        c.annotation.propertyName,
+        c.szs,
+        c.reason,
+        undefined,
+        undefined,
+        c.kind,
+      ),
+    );
+  }
 
-  // New pipeline: emit JSON, render with thales-emit, run the artifact,
-  // and join the Lean verdicts with the frontend's own classifications in
-  // annotation order.
-  const newSide = (() => {
-    const { emission, annotations, classified } = emitModule(text, fixture);
-    const jsonFile = path.join(tmp, `emission-${i}.json`);
-    const leanFile = path.join(tmp, `new-${i}.lean`);
-    fs.writeFileSync(jsonFile, JSON.stringify(emission));
-    const emit = spawnSync(emitBin, [jsonFile, leanFile], {
-      cwd: engineRoot,
-      encoding: "utf8",
-      timeout: 120_000,
-      env: { ...process.env, LEAN_PATH: leanPath },
-    });
-    check(
-      emit.status === 0,
-      `${fixture}: thales-emit failed (${emit.status}):\n${emit.stderr}`,
-    );
-    if (emit.status !== 0) return { annotations, entries: [] };
-    const byIdentity = new Map(
-      verdictsOf(leanFile, `${fixture}: new pipeline`).map((v) => [
-        `${v.identity[1]} ${v.identity[2]}`,
-        projectVerdict(v),
-      ]),
-    );
-    for (const c of classified) {
-      const fn = qualifiedName(
-        c.annotation.functionName,
-        c.annotation.className,
-        c.annotation.isStatic,
-      );
-      byIdentity.set(
-        `${fn} ${c.annotation.propertyName}`,
-        entry(
-          fn,
-          c.annotation.propertyName,
-          c.szs,
-          c.reason,
-          undefined,
-          undefined,
-          c.kind,
-        ),
-      );
-    }
-    return {
-      annotations,
-      entries: annotations.map((a) => byIdentity.get(identityOf(a))),
-    };
-  })();
+  const entries = annotations.map((a) => byIdentity.get(identityOf(a)));
 
   check(
-    oldSide.annotations.length === newSide.annotations.length,
-    `${fixture}: the two pipelines extracted different annotation sets`,
+    entries.every((e) => e !== undefined),
+    `${fixture}: annotations left unaccounted for\n${JSON.stringify(entries, null, 2)}`,
+  );
+  if (updating) {
+    expectedStore[fixture] = entries;
+    continue;
+  }
+  const want = expectedStore[fixture];
+  check(
+    want !== undefined,
+    `${fixture}: no stored envelope — regenerate with UPDATE_ENVELOPES=1 LAKATOS_PROVE_E2E=1`,
   );
   check(
-    oldSide.entries.every((e) => e !== undefined) &&
-      newSide.entries.every((e) => e !== undefined),
-    `${fixture}: a pipeline left annotations unaccounted for\nold:\n${JSON.stringify(oldSide.entries, null, 2)}\nnew:\n${JSON.stringify(newSide.entries, null, 2)}`,
-  );
-  check(
-    JSON.stringify(oldSide.entries) === JSON.stringify(newSide.entries),
-    `${fixture}: envelope entries diverge\nold:\n${JSON.stringify(oldSide.entries, null, 2)}\nnew:\n${JSON.stringify(newSide.entries, null, 2)}`,
+    JSON.stringify(entries) === JSON.stringify(want),
+    `${fixture}: envelope entries diverge from stored\ngot:\n${JSON.stringify(entries, null, 2)}\nstored:\n${JSON.stringify(want, null, 2)}`,
   );
 }
 
+if (updating) {
+  fs.writeFileSync(
+    EXPECTED_FILE,
+    JSON.stringify(expectedStore, null, 2) + "\n",
+  );
+}
 fs.rmSync(tmp, { recursive: true, force: true });
-
-done(`${fixtures.length} fixtures, both pipelines`);
+done(
+  updating
+    ? `${fixtures.length} fixtures regenerated`
+    : `${fixtures.length} fixtures against stored expectations`,
+);

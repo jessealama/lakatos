@@ -1,0 +1,675 @@
+{
+  "engines/thales/tests/fixtures/tracer.ts": [
+    {
+      "function": "add",
+      "property": "commutes",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_7656563329800182644",
+      "axioms": []
+    },
+    {
+      "function": "fetchTotal",
+      "property": "nonNegative",
+      "szs": "Inappropriate",
+      "reason": "'fetchTotal' could not be modeled: unmapped TypeScript construct 'AwaitExpression' at 8:10"
+    },
+    {
+      "function": "Counter#bump",
+      "property": "bumps",
+      "szs": "Inappropriate",
+      "reason": "'Counter#bump' could not be modeled: unmapped TypeScript construct 'ClassDeclaration' at 13:3"
+    }
+  ],
+  "engines/thales/tests/conformance/inappropriate/class-binder.ts": [
+    {
+      "function": "scale",
+      "property": "scaled",
+      "szs": "Inappropriate",
+      "reason": "class-valued binder 'Box' is not yet modeled"
+    }
+  ],
+  "engines/thales/tests/fixtures/operators.ts": [
+    {
+      "function": "rem7",
+      "property": "belowSeven",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_8937081173447341818",
+      "axioms": []
+    },
+    {
+      "function": "neg",
+      "property": "nonPositive",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_2237132027483086755",
+      "axioms": []
+    },
+    {
+      "function": "plus",
+      "property": "same",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_12026409853353351138",
+      "axioms": []
+    },
+    {
+      "function": "bump",
+      "property": "grows",
+      "szs": "GaveUp",
+      "reason": "unsolved goal: ∀ (n : Int), 0 ≤ n → (Float.ofInt n).lt (Float.ofInt n + 1) = true"
+    },
+    {
+      "function": "bump",
+      "property": "hits",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_9109818429266532170",
+      "axioms": []
+    },
+    {
+      "function": "bump",
+      "property": "misses",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_12087489793076990324",
+      "axioms": []
+    },
+    {
+      "function": "chain",
+      "property": "shifts",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_8475325979719138379",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/add-commutes.ts": [
+    {
+      "function": "add",
+      "property": "commutes",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_10727127495014843871",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/bounded-double.ts": [
+    {
+      "function": "dbl",
+      "property": "doubling",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, admitted as TsProof.thm_2612393272425420034_2; the result is trusted from evaluation rather than checked by the kernel",
+      "axioms": ["_private._stdin.0._native.native_decide.ax_N"]
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/endpoints.ts": [
+    {
+      "function": "keep",
+      "property": "positive",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_7370705651873818601",
+      "axioms": []
+    },
+    {
+      "function": "shift",
+      "property": "bounded",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_14687757469974126822",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/halve-double.ts": [
+    {
+      "function": "halve",
+      "property": "halving",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, admitted as TsProof.thm_7654245159813493106_2; the result is trusted from evaluation rather than checked by the kernel",
+      "axioms": ["_private._stdin.0._native.native_decide.ax_N"]
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/mul-associates.ts": [
+    {
+      "function": "mul",
+      "property": "associates",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_3367129611640936577",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/nat-double.ts": [
+    {
+      "function": "double",
+      "property": "growsOrEqual",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_1496658057965878978",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/nat-open-below.ts": [
+    {
+      "function": "triple",
+      "property": "grows",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_14380430182505911180",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/negate-involution.ts": [
+    {
+      "function": "negate",
+      "property": "involutive",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_13777570818677599858",
+      "axioms": []
+    },
+    {
+      "function": "negate",
+      "property": "involutiveEverywhere",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_12359782839691381455",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/remainder.ts": [
+    {
+      "function": "rem",
+      "property": "belowDivisor",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_4819265494664644932",
+      "axioms": []
+    },
+    {
+      "function": "rem",
+      "property": "dividendSign",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_17198352415149732621",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/succ-monotone.ts": [
+    {
+      "function": "succ",
+      "property": "monotone",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_4344074700374870006",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/twice-parity.ts": [
+    {
+      "function": "twice",
+      "property": "hits",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_5083685025745825498",
+      "axioms": []
+    },
+    {
+      "function": "shadow",
+      "property": "misses",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_18269505627459601464",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/unbounded-mul-commutes.ts": [
+    {
+      "function": "mul",
+      "property": "commutes",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_15299433214859265151",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/countersatisfiable/commutes.ts": [
+    {
+      "function": "f",
+      "property": "commutes",
+      "szs": "CounterSatisfiable",
+      "reason": "the property is false on its bounded domain",
+      "counterexample": {
+        "a": 0,
+        "b": 1
+      }
+    }
+  ],
+  "engines/thales/tests/conformance/countersatisfiable/off-by-one.ts": [
+    {
+      "function": "bump",
+      "property": "unchanged",
+      "szs": "CounterSatisfiable",
+      "reason": "the property is false on its bounded domain",
+      "counterexample": {
+        "x": 0
+      }
+    }
+  ],
+  "engines/thales/tests/conformance/countersatisfiable/zero-edge.ts": [
+    {
+      "function": "square",
+      "property": "positive",
+      "szs": "CounterSatisfiable",
+      "reason": "the property is false on its bounded domain",
+      "counterexample": {
+        "x": 0
+      }
+    }
+  ],
+  "engines/thales/tests/conformance/gaveup/float-assoc.ts": [
+    {
+      "function": "assoc3",
+      "property": "assoc",
+      "szs": "GaveUp",
+      "reason": "the property is false on its bounded domain"
+    }
+  ],
+  "engines/thales/tests/conformance/gaveup/nonneg-int-range.ts": [
+    {
+      "function": "scale",
+      "property": "grows",
+      "szs": "GaveUp",
+      "reason": "unsolved goal: ∀ (x : Int), 0 ≤ x → (Float.ofInt x).le (Float.ofInt x * 2) = true"
+    }
+  ],
+  "engines/thales/tests/conformance/gaveup/unbounded-double.ts": [
+    {
+      "function": "dbl",
+      "property": "doubles",
+      "szs": "GaveUp",
+      "reason": "unsolved goal: ∀ (x : Int), Float.ofInt x * 2 = Float.ofInt x + Float.ofInt x"
+    }
+  ],
+  "engines/thales/tests/conformance/gaveup/unbounded-false.ts": [
+    {
+      "function": "bump",
+      "property": "unchanged",
+      "szs": "GaveUp",
+      "reason": "unsolved goal: ∀ (x : Int), Float.ofInt x + 1 = Float.ofInt x"
+    }
+  ],
+  "engines/thales/tests/conformance/gaveup/unbounded-nat.ts": [
+    {
+      "function": "dbl",
+      "property": "grows",
+      "szs": "GaveUp",
+      "reason": "unsolved goal: ∀ (x : Int), 0 ≤ x → (Float.ofInt x).le (Float.ofInt x * 2) = true"
+    }
+  ],
+  "engines/thales/tests/conformance/inappropriate/await-remote.ts": [
+    {
+      "function": "fetchTotal",
+      "property": "nonNegative",
+      "szs": "Inappropriate",
+      "reason": "'fetchTotal' could not be modeled: unmapped TypeScript construct 'AwaitExpression' at 3:10"
+    }
+  ],
+  "engines/thales/tests/conformance/inappropriate/class-method.ts": [
+    {
+      "function": "Counter#bump",
+      "property": "bumps",
+      "szs": "Inappropriate",
+      "reason": "'Counter#bump' could not be modeled: unmapped TypeScript construct 'ClassDeclaration' at 3:3"
+    }
+  ],
+  "engines/thales/tests/conformance/inappropriate/exponentiation.ts": [
+    {
+      "function": "square",
+      "property": "nonNegative",
+      "szs": "Inappropriate",
+      "reason": "'square' could not be modeled: '**' is implementation-approximated in JavaScript, so any model would certify results a conforming engine may disagree with"
+    }
+  ],
+  "engines/thales/tests/conformance/error/unmodeled-operator.ts": [
+    {
+      "function": "masked",
+      "property": "stuck",
+      "szs": "Error",
+      "reason": "'masked' could not be modeled: operator '&' has no model in this slice"
+    }
+  ],
+  "engines/thales/tests/conformance/timeout/big-domain.ts": [
+    {
+      "function": "sq",
+      "property": "nonneg",
+      "szs": "Timeout",
+      "reason": "the attempt exceeded the per-annotation heartbeat budget (thales.heartbeats = 1)"
+    }
+  ],
+  "engines/thales/tests/fixtures/statements.ts": [
+    {
+      "function": "floorAtOne",
+      "property": "floorsAtOne",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_15032238715317258942",
+      "axioms": []
+    },
+    {
+      "function": "grade",
+      "property": "nonNegative",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_982085356102224528",
+      "axioms": []
+    },
+    {
+      "function": "clampUp",
+      "property": "atLeastOne",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_15474500488315725548",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/branch-joined-let.ts": [
+    {
+      "function": "floorAtOne",
+      "property": "atLeastOne",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_17778910188219414359",
+      "axioms": []
+    },
+    {
+      "function": "bucket",
+      "property": "inRange",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_10223196661361641369",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/const-chain.ts": [
+    {
+      "function": "affine",
+      "property": "affine",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_10258141367570319451",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/let-binding.ts": [
+    {
+      "function": "shifted",
+      "property": "nonNegative",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_4816651976620892758",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/countersatisfiable/branch-throw.ts": [
+    {
+      "function": "reciprocal",
+      "property": "positive",
+      "szs": "CounterSatisfiable",
+      "reason": "the property is false on its bounded domain",
+      "counterexample": {
+        "x": 0
+      }
+    }
+  ],
+  "engines/thales/tests/conformance/inappropriate/branch-loop.ts": [
+    {
+      "function": "countDown",
+      "property": "nonNegative",
+      "szs": "Inappropriate",
+      "reason": "'countDown' could not be modeled: unmapped TypeScript construct 'WhileStatement' at 5:5"
+    }
+  ],
+  "engines/thales/tests/conformance/inappropriate/for-loop.ts": [
+    {
+      "function": "sumTo",
+      "property": "nonNegative",
+      "szs": "Inappropriate",
+      "reason": "'sumTo' could not be modeled: unmapped TypeScript construct 'ForStatement' at 4:3"
+    }
+  ],
+  "engines/thales/tests/conformance/inappropriate/shadowed-const.ts": [
+    {
+      "function": "rebound",
+      "property": "nonNegative",
+      "szs": "Inappropriate",
+      "reason": "'rebound' could not be modeled: unmapped TypeScript construct 'VariableStatement' at 5:5"
+    }
+  ],
+  "engines/thales/tests/conformance/inappropriate/uninitialized-let.ts": [
+    {
+      "function": "assigned",
+      "property": "nonNegative",
+      "szs": "Inappropriate",
+      "reason": "'assigned' could not be modeled: unmapped TypeScript construct 'VariableStatement' at 3:3"
+    }
+  ],
+  "engines/thales/tests/fixtures/binders.ts": [
+    {
+      "function": "keep",
+      "property": "chained",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_16665433242243709579",
+      "axioms": []
+    },
+    {
+      "function": "keep",
+      "property": "guardedWitness",
+      "szs": "CounterSatisfiable",
+      "reason": "the property is false on its bounded domain",
+      "counterexample": {
+        "x": 5
+      }
+    },
+    {
+      "function": "twice",
+      "property": "negativeFloor",
+      "szs": "CounterSatisfiable",
+      "reason": "the property is false on its bounded domain",
+      "counterexample": {
+        "x": -3
+      }
+    },
+    {
+      "function": "scale",
+      "property": "scaled",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_13783157952832155551",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/countersatisfiable/guarded-witness.ts": [
+    {
+      "function": "floorAtOne",
+      "property": "aboveThreshold",
+      "szs": "CounterSatisfiable",
+      "reason": "the property is false on its bounded domain",
+      "counterexample": {
+        "x": 4
+      }
+    }
+  ],
+  "engines/thales/tests/conformance/countersatisfiable/reserved-binder.ts": [
+    {
+      "function": "double",
+      "property": "reachesOne",
+      "szs": "CounterSatisfiable",
+      "reason": "the property is false on its bounded domain",
+      "counterexample": {
+        "pure": 0
+      }
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/guarded-floor.ts": [
+    {
+      "function": "keep",
+      "property": "guardedFloor",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_5570450698527889483",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/branch-guarded-throw.ts": [
+    {
+      "function": "reciprocal",
+      "property": "positive",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_13349018165081788856",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/number-binder.ts": [
+    {
+      "function": "echo",
+      "property": "identity",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_15122936341925823225",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/branch-clamp.ts": [
+    {
+      "function": "clamp",
+      "property": "nonNegative",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_18300775819719473678",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/finite-bounds.ts": [
+    {
+      "function": "scaleBounded",
+      "property": "monotone",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_16793980386474816089",
+      "axioms": []
+    },
+    {
+      "function": "shiftBounded",
+      "property": "monotone",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_9970751921105495709",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/left-factor.ts": [
+    {
+      "function": "scale",
+      "property": "monotone",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_4862902284498011863",
+      "axioms": []
+    },
+    {
+      "function": "shift",
+      "property": "monotone",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_1549537485750401697",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/literal-factor.ts": [
+    {
+      "function": "cmToInch",
+      "property": "monotone",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_11869050921746311936",
+      "axioms": []
+    },
+    {
+      "function": "triple",
+      "property": "monotone",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_5249912509161409326",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/guarded-monotone-conversion.ts": [
+    {
+      "function": "applyConversionFactors",
+      "property": "monotone",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_1989665277801488196",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/gaveup/scale-identity.ts": [
+    {
+      "function": "scale",
+      "property": "fixed",
+      "szs": "GaveUp",
+      "reason": "unsolved goal: ∀ (x : JsNumber), 0 < x → x < floatInf → x * 2 = x"
+    }
+  ],
+  "engines/thales/tests/conformance/inappropriate/guarded-power.ts": [
+    {
+      "function": "keep",
+      "property": "guardedPower",
+      "szs": "Inappropriate",
+      "reason": "'**' is implementation-approximated in JavaScript, so any model would certify results a conforming engine may disagree with"
+    }
+  ],
+  "engines/thales/tests/fixtures/degradations.ts": [
+    {
+      "function": "twice",
+      "property": "doubles",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_4804950525424429924",
+      "axioms": []
+    },
+    {
+      "function": "applyDouble",
+      "property": "viaConst",
+      "szs": "Inappropriate",
+      "reason": "'applyDouble' could not be modeled: 'double' could not be modeled: unmapped TypeScript construct 'VariableStatement' at 6:14"
+    },
+    {
+      "function": "keep",
+      "property": "viaFormula",
+      "szs": "Inappropriate",
+      "reason": "'double' could not be modeled: unmapped TypeScript construct 'VariableStatement' at 6:14"
+    },
+    {
+      "function": "lone",
+      "property": "huge",
+      "szs": "NotTried",
+      "reason": "endpoint 1000000000000000000000000000000 exceeds the safe integer range (±9007199254740991)",
+      "kind": "unsupported-range"
+    }
+  ],
+  "engines/thales/tests/conformance/nottried/empty-after-clamp.ts": [
+    {
+      "function": "vac",
+      "property": "vacuous",
+      "szs": "NotTried",
+      "reason": "endpoints 1000000000000000000000000000000 and 10000000000000000000000000000000 exceed the safe integer range (±9007199254740991)",
+      "kind": "unsupported-range"
+    }
+  ],
+  "engines/thales/tests/conformance/nottried/half-bounded-int.ts": [
+    {
+      "function": "cap",
+      "property": "nonpos",
+      "szs": "NotTried",
+      "reason": "stub: no structured property provided"
+    }
+  ],
+  "engines/thales/tests/conformance/nottried/huge-range.ts": [
+    {
+      "function": "keep",
+      "property": "nonneg",
+      "szs": "NotTried",
+      "reason": "endpoint 1000000000000000000000000000000 exceeds the safe integer range (±9007199254740991)",
+      "kind": "unsupported-range"
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/imported-scale/main.ts": [
+    {
+      "function": "twice",
+      "property": "quadruples",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_14107606089966151410",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/inappropriate/bare-import.ts": [
+    {
+      "function": "grow",
+      "property": "nonNegative",
+      "szs": "Inappropriate",
+      "reason": "'grow' could not be modeled: 'scale' could not be modeled: unmapped TypeScript construct 'ImportDeclaration' at 1:10"
+    }
+  ],
+  "engines/thales/tests/conformance/inappropriate/import-cycle/main.ts": [
+    {
+      "function": "total",
+      "property": "nonNegative",
+      "szs": "Inappropriate",
+      "reason": "'total' could not be modeled: 'cycle.ts::scaled' could not be modeled: 'cycle.ts::base' could not be modeled: unmapped TypeScript construct 'ImportDeclaration' at 1:10"
+    }
+  ]
+}
