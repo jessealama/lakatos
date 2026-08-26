@@ -367,7 +367,14 @@ environment that imports `ThalesDsl`, which carries every syntax the
 quotations build. -/
 def renderEmission (e : Emission) : CoreM String := do
   let mut blocks : Array String := #[header e]
+  -- A dependency's declarations are contiguous and introduced by their
+  -- module, the way the old pipeline writes it; the entry's carry none.
+  let mut fromModule : Option String := none
   for f in e.declarations do
+    if f.module != fromModule then
+      fromModule := f.module
+      if let some m := f.module then
+        blocks := blocks.push s!"-- module {m}"
     let cmd ← rendered (fnCommand f)
     blocks := blocks.push
       (commentLines f.source ++ "\n" ++ prettyLines (← ppCommand cmd))

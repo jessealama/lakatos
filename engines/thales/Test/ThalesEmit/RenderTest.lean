@@ -241,6 +241,15 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
     throwError "the entry's def did not stay bare:\n{rendered}"
   unless (rendered.splitOn "TsModel.«helper.mts».double x").length == 2 do
     throwError "the call site is not module-qualified:\n{rendered}"
+  -- The dependency's block is introduced once, ahead of its def; the
+  -- entry's declarations get no separator of their own.
+  unless (rendered.splitOn "-- module helper.mts\n").length == 2 do
+    throwError "the module separator is missing or repeated:\n{rendered}"
+  let afterSep := (rendered.splitOn "-- module helper.mts\n")[1]!
+  unless (afterSep.splitOn "def TsModel.«helper.mts».double").length == 2 do
+    throwError "the module separator does not precede its def:\n{rendered}"
+  unless (rendered.splitOn "-- module ").length == 2 do
+    throwError "the entry's declarations got a separator:\n{rendered}"
 
 -- A module path that would break its own name component is refused, not
 -- approximated: the artifact is re-parsed text.

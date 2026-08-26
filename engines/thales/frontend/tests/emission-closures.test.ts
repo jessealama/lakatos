@@ -91,6 +91,55 @@ describe("emission import closures", () => {
     ]);
   });
 
+  test("a module two importers reach is walked once", () => {
+    const entry = [
+      'import { a } from "./a.js";',
+      'import { b } from "./b.js";',
+      "/** @ensures{p} forall (x: int ∈ [0, 5)) { both(x) >= 0 } */",
+      "export function both(x: number): number {",
+      "  return a(x) + b(x);",
+      "}",
+      "",
+    ].join("\n");
+    const via = (name: string) =>
+      [
+        'import { base } from "./base.js";',
+        `export function ${name}(x: number): number {`,
+        "  return base(x);",
+        "}",
+        "",
+      ].join("\n");
+    const { emission, classified } = emitModule(
+      entry,
+      "main.mts",
+      reader({
+        "a.ts": via("a"),
+        "b.ts": via("b"),
+        "base.ts":
+          "export function base(x: number): number {\n  return x;\n}\n",
+      }),
+    );
+    expect(classified).toEqual([]);
+    expect(emission.declarations.map((d) => [d.module, d.name])).toEqual([
+      ["base.ts", "base"],
+      ["a.ts", "a"],
+      ["b.ts", "b"],
+      [undefined, "both"],
+    ]);
+  });
+
+  test("a specifier that is not a string literal degrades its bindings", () => {
+    // Parse recovery admits one: the specifier is typed as an expression.
+    const src = TWICE.replace('"./helper.mjs"', "`./helper.mjs`");
+    const { classified } = emitModule(
+      src,
+      "main.mts",
+      reader({ "helper.mts": HELPER }),
+    );
+    expect(classified[0]?.szs).toBe("Inappropriate");
+    expect(classified[0]?.reason).toContain("ImportDeclaration");
+  });
+
   test("an aliased import rewrites to the exported name", () => {
     const src = TWICE.replace(
       'import { double } from "./helper.mjs";',
