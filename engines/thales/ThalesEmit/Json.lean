@@ -14,6 +14,7 @@ inductive JsExpr where
   | unop (op : String) (operand : JsExpr)
   | binop (op : String) (left right : JsExpr)
   | sameValue (left right : JsExpr)
+  | mathSqrt (arg : JsExpr)
   | call (callee : String) (module : Option String) (args : Array JsExpr)
 deriving Repr, Inhabited
 
@@ -122,6 +123,8 @@ partial def decodeExpr (j : Json) : Except String JsExpr := do
   | "same-value" =>
     pure (.sameValue (← decodeExpr (← j.getObjVal? "left"))
       (← decodeExpr (← j.getObjVal? "right")))
+  | "math-sqrt" =>
+    pure (.mathSqrt (← decodeExpr (← j.getObjVal? "arg")))
   | "call" =>
     pure (.call (← getStr j "callee") (← getStrOpt j "module")
       (← (← getArr j "args").mapM decodeExpr))

@@ -23,6 +23,11 @@ open Lean ThalesEmit
      ("right", Json.mkObj [("kind", "num"), ("lit", "-0")])]))
   matches .ok (.sameValue (.id "x") (.num "-0"))
 #guard
+  (decodeExpr (Json.mkObj
+    [("kind", "math-sqrt"),
+     ("arg", Json.mkObj [("kind", "id"), ("name", "x")])]))
+  matches .ok (.mathSqrt (.id "x"))
+#guard
   (decodeBinder (Json.mkObj [("name", "x"), ("kind", "int")]))
   matches .ok (.int "x")
 #guard
@@ -316,3 +321,20 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
     throwError "the parameter spelled floatNaN was not primed:\n{rendered}"
   unless (rendered.splitOn "floatInf").length == 2 do
     throwError "Infinity did not render as floatInf in a comparison:\n{rendered}"
+
+-- `Math.sqrt` is a pure application: no `←` of its own, and an
+-- Int-binder argument still crosses to Float.
+#eval show CoreM Unit from do
+  let e : Emission := {
+    file := "t.ts"
+    declarations := #[{ name := "root", params := #["x"], source := "root",
+                        body := #[.ret (.mathSqrt (.id "x"))] }]
+    obligations := #[{ function := "root", property := "p", formula := "f",
+                       payload := .structured #[.range "n" 0 2] #[]
+                         (.istrue (.binop ">="
+                           (.mathSqrt (.id "n")) (.num "0"))) }] }
+  let rendered ← renderEmission e
+  unless (rendered.splitOn "Float.sqrt x").length == 2 do
+    throwError "the body did not render as Float.sqrt:\n{rendered}"
+  unless (rendered.splitOn "Float.sqrt (Float.ofInt n)").length == 2 do
+    throwError "the formula argument was not coerced:\n{rendered}"

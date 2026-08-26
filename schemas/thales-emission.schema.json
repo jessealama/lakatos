@@ -111,6 +111,16 @@
         },
         {
           "type": "object",
+          "description": "Math.sqrt: ECMA-262's correctly rounded square root.",
+          "additionalProperties": false,
+          "required": ["kind", "arg"],
+          "properties": {
+            "kind": { "const": "math-sqrt" },
+            "arg": { "$ref": "#/definitions/expr" }
+          }
+        },
+        {
+          "type": "object",
           "additionalProperties": false,
           "required": ["kind", "callee", "args"],
           "properties": {
