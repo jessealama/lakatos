@@ -40,7 +40,7 @@ import {
 export type EmitExpr =
   | { kind: "num"; lit: string }
   | { kind: "id"; name: string }
-  | { kind: "unop"; op: "-" | "+"; operand: EmitExpr }
+  | { kind: "unop"; op: "-" | "+" | "!"; operand: EmitExpr }
   | { kind: "binop"; op: string; left: EmitExpr; right: EmitExpr }
   | { kind: "same-value"; left: EmitExpr; right: EmitExpr }
   | { kind: "math-sqrt"; arg: EmitExpr }
@@ -153,6 +153,7 @@ const GLOBAL_NUMBER_ATOMS = new Set(["NaN", "Infinity"]);
 
 const ARITH_OPERATORS = new Set(["+", "-", "*", "/", "%"]);
 const COMPARISON_OPERATORS = new Set(["<", "<=", ">", ">=", "===", "!=="]);
+const LOGICAL_OPERATORS = new Set(["||", "&&"]);
 
 function unmappedMsg(construct: string, pos: string): string {
   return `unmapped TypeScript construct '${construct}' at ${pos}`;
@@ -198,6 +199,13 @@ function isUnaryArith(e: ts.Expression): e is ts.PrefixUnaryExpression {
   );
 }
 
+function isPrefixNot(e: ts.Expression): e is ts.PrefixUnaryExpression {
+  return (
+    ts.isPrefixUnaryExpression(e) &&
+    e.operator === ts.SyntaxKind.ExclamationToken
+  );
+}
+
 /** Whether an expression's own shape can denote a number in this slice —
  * the shapes the typed walk accepts at `num`. Top-level shape only:
  * deeper offenders keep their own refusals. */
@@ -210,6 +218,39 @@ function numericShaped(e: ts.Expression): boolean {
     return ARITH_OPERATORS.has(u.operatorToken.getText());
   if (sqrtArg(u) !== undefined) return true;
   return ts.isCallExpression(u) && ts.isIdentifier(u.expression);
+}
+
+/** Whether an expression's own shape can denote a boolean in this slice:
+ * a comparison, a SameValue call, or a logical combination of them.
+ * Top-level shape only: deeper offenders keep their own refusals. */
+function booleanShaped(e: ts.Expression): boolean {
+  const u = unwrapParens(e);
+  if (ts.isBinaryExpression(u)) {
+    const op = u.operatorToken.getText();
+    return COMPARISON_OPERATORS.has(op) || LOGICAL_OPERATORS.has(op);
+  }
+  if (isPrefixNot(u)) return true;
+  return equationSides(u) !== undefined;
+}
+
+/** Truthiness has no model: a logical operator is admitted only over
+ * operands that are themselves modeled booleans. */
+function nonBooleanOperand(
+  op: string,
+  which: string,
+  operand: ts.Expression,
+  sf: ts.SourceFile,
+): FailedDecl {
+  const inner = unwrapParens(operand);
+  const { line, character } = sf.getLineAndCharacterOfPosition(
+    inner.getStart(sf),
+  );
+  return {
+    construct: op,
+    reason:
+      `'${op}' models boolean operands only; ${which} is not a boolean ` +
+      `(${kindName(inner.kind)} at ${line + 1}:${character + 1})`,
+  };
 }
 
 /** The first construct in tree order the old transcriber would have made
@@ -225,7 +266,19 @@ function findConstruct(
   if (negatedLiteral(e) !== undefined) return undefined;
   if (isUnaryArith(e)) return findConstruct(e.operand, sf);
   if (ts.isBinaryExpression(e)) {
+    const op = e.operatorToken.getText();
+    if (LOGICAL_OPERATORS.has(op)) {
+      if (!booleanShaped(e.left))
+        return nonBooleanOperand(op, "the left operand", e.left, sf);
+      if (!booleanShaped(e.right))
+        return nonBooleanOperand(op, "the right operand", e.right, sf);
+    }
     return findConstruct(e.left, sf) ?? findConstruct(e.right, sf);
+  }
+  if (isPrefixNot(e)) {
+    if (!booleanShaped(e.operand))
+      return nonBooleanOperand("!", "the operand", e.operand, sf);
+    return findConstruct(e.operand, sf);
   }
   const sides = equationSides(e);
   if (sides !== undefined) {
@@ -265,6 +318,7 @@ function findRefusedOp(e: ts.Expression): FailedDecl | undefined {
   if (isUnaryArith(e) && negatedLiteral(e) === undefined) {
     return findRefusedOp(e.operand);
   }
+  if (isPrefixNot(e)) return findRefusedOp(e.operand);
   if (ts.isBinaryExpression(e)) {
     const op = e.operatorToken.getText();
     const reason = REFUSED_OPERATORS.get(op);
@@ -284,6 +338,7 @@ function findRefusedOp(e: ts.Expression): FailedDecl | undefined {
 function callNames(e: ts.Expression, into: string[] = []): string[] {
   if (ts.isParenthesizedExpression(e)) return callNames(e.expression, into);
   if (isUnaryArith(e)) return callNames(e.operand, into);
+  if (isPrefixNot(e)) return callNames(e.operand, into);
   if (ts.isBinaryExpression(e)) {
     callNames(e.left, into);
     return callNames(e.right, into);
@@ -423,8 +478,27 @@ function walkTyped(
     }
     return { kind: "unop", op, operand };
   }
+  if (isPrefixNot(e)) {
+    const operand = walkTyped(e.operand, "bool", scope, sf);
+    if (expected !== "bool") {
+      throw new ModelError(
+        `operator '!' yields a boolean, not ${describeTy(expected)}`,
+      );
+    }
+    return { kind: "unop", op: "!", operand };
+  }
   if (ts.isBinaryExpression(e)) {
     const op = e.operatorToken.getText(sf);
+    if (LOGICAL_OPERATORS.has(op)) {
+      const left = walkTyped(e.left, "bool", scope, sf);
+      const right = walkTyped(e.right, "bool", scope, sf);
+      if (expected !== "bool") {
+        throw new ModelError(
+          `operator '${op}' yields a boolean, not ${describeTy(expected)}`,
+        );
+      }
+      return { kind: "binop", op, left, right };
+    }
     const left = walkTyped(e.left, "num", scope, sf);
     const right = walkTyped(e.right, "num", scope, sf);
     if (ARITH_OPERATORS.has(op)) {
@@ -688,14 +762,11 @@ function structureStmt(
   }
   if (ts.isIfStatement(s)) {
     const inner = unwrapParens(s.expression);
-    // The condition must be a comparison or an `Object.is` call:
-    // truthiness coercion and the logical operators have no model.
-    const cond =
-      (ts.isBinaryExpression(inner) &&
-        COMPARISON_OPERATORS.has(inner.operatorToken.getText(sf))) ||
-      equationSides(inner) !== undefined
-        ? { expr: inner }
-        : { opaque: constructAt(inner, inner.kind, sf) };
+    // The condition must be boolean-shaped — a comparison, an `Object.is`
+    // call, or a logical combination of them: truthiness has no model.
+    const cond = booleanShaped(inner)
+      ? { expr: inner }
+      : { opaque: constructAt(inner, inner.kind, sf) };
     // An arm's locals are a copy, so its bindings do not escape it. A
     // non-block arm is the one statement it is, which is how an `else if`
     // arrives: a nested if alone in the else arm.

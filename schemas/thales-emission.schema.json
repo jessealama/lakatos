@@ -69,7 +69,7 @@
           "required": ["kind", "op", "operand"],
           "properties": {
             "kind": { "const": "unop" },
-            "op": { "enum": ["-", "+"] },
+            "op": { "enum": ["-", "+", "!"] },
             "operand": { "$ref": "#/definitions/expr" }
           }
         },
@@ -91,7 +91,9 @@
                 ">",
                 ">=",
                 "===",
-                "!=="
+                "!==",
+                "||",
+                "&&"
               ]
             },
             "left": { "$ref": "#/definitions/expr" },
@@ -215,7 +217,7 @@
             "kind": { "const": "if" },
             "cond": {
               "$ref": "#/definitions/expr",
-              "description": "A boolean-valued comparison; truthiness has no model."
+              "description": "A boolean-valued expression: a comparison, a SameValue call, or a logical combination of them; truthiness has no model."
             },
             "then": {
               "type": "array",

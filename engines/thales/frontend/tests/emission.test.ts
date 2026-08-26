@@ -907,11 +907,6 @@ describe("statement bodies (#148)", () => {
       "Identifier",
     ],
     [
-      "a logical-operator condition",
-      "export function f(x: number): number { if (x < 1 && x > 0) { return 1; } return 0; }",
-      "BinaryExpression",
-    ],
-    [
       "a throw of a non-constructor value",
       "export function f(x: number): number { throw x; }",
       "ThrowStatement",
@@ -1885,6 +1880,214 @@ describe("Math.sqrt models as Float.sqrt", () => {
       expect.objectContaining({
         szs: "Inappropriate",
         reason: expect.stringContaining("**"),
+      }),
+    ]);
+  });
+});
+
+describe("logical operators on boolean operands", () => {
+  const FILE = "engines/thales/tests/fixtures/tracer.ts";
+
+  test("|| over comparisons models in a branch condition", () => {
+    const { emission, classified } = emitModule(
+      [
+        "/** @ensures{p} forall (x: int in [0, 4)) { pick(x) >= 0 } */",
+        "export function pick(x: number): number {",
+        "  if (x === 0 || x === 1) {",
+        "    return 0;",
+        "  }",
+        "  return 1;",
+        "}",
+      ].join("\n"),
+      FILE,
+    );
+    expect(classified).toEqual([]);
+    expectValidEmission(emission);
+    expect(emission.declarations[0]!.body[0]).toMatchObject({
+      kind: "if",
+      cond: {
+        kind: "binop",
+        op: "||",
+        left: { kind: "binop", op: "===" },
+        right: { kind: "binop", op: "===" },
+      },
+    });
+  });
+
+  test("&& and ! compose in a branch condition", () => {
+    const { emission, classified } = emitModule(
+      [
+        "/** @ensures{p} forall (x: int in [0, 4)) { pick(x) >= 0 } */",
+        "export function pick(x: number): number {",
+        "  if (!(x === 0) && x < 3) {",
+        "    return 0;",
+        "  }",
+        "  return 1;",
+        "}",
+      ].join("\n"),
+      FILE,
+    );
+    expect(classified).toEqual([]);
+    expectValidEmission(emission);
+    expect(emission.declarations[0]!.body[0]).toMatchObject({
+      kind: "if",
+      cond: {
+        kind: "binop",
+        op: "&&",
+        left: { kind: "unop", op: "!", operand: { kind: "binop", op: "===" } },
+        right: { kind: "binop", op: "<" },
+      },
+    });
+  });
+
+  test("! over Object.is models in a branch condition", () => {
+    const { emission, classified } = emitModule(
+      [
+        "/** @ensures{p} forall (x: int in [0, 4)) { pick(x) >= 0 } */",
+        "export function pick(x: number): number {",
+        "  if (!Object.is(x, NaN)) {",
+        "    return 0;",
+        "  }",
+        "  return 1;",
+        "}",
+      ].join("\n"),
+      FILE,
+    );
+    expect(classified).toEqual([]);
+    expectValidEmission(emission);
+    expect(emission.declarations[0]!.body[0]).toMatchObject({
+      kind: "if",
+      cond: { kind: "unop", op: "!", operand: { kind: "same-value" } },
+    });
+  });
+
+  test("a truthiness left operand refuses naming ||", () => {
+    const { classified } = emitModule(
+      [
+        "/** @ensures{p} forall (x: int in [0, 4)) { pick(x) >= 0 } */",
+        "export function pick(x: number): number {",
+        "  if (x || 1) {",
+        "    return 0;",
+        "  }",
+        "  return 1;",
+        "}",
+      ].join("\n"),
+      FILE,
+    );
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason:
+          "'pick' could not be modeled: '||' models boolean operands only; " +
+          "the left operand is not a boolean (Identifier at 3:7)",
+      }),
+    ]);
+  });
+
+  test("a truthiness right operand refuses naming &&", () => {
+    const { classified } = emitModule(
+      [
+        "/** @ensures{p} forall (x: int in [0, 4)) { pick(x) >= 0 } */",
+        "export function pick(x: number): number {",
+        "  if (x === 0 && 1) {",
+        "    return 0;",
+        "  }",
+        "  return 1;",
+        "}",
+      ].join("\n"),
+      FILE,
+    );
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason:
+          "'pick' could not be modeled: '&&' models boolean operands only; " +
+          "the right operand is not a boolean (NumericLiteral at 3:18)",
+      }),
+    ]);
+  });
+
+  test("a numeric ! operand refuses naming !", () => {
+    const { classified } = emitModule(
+      [
+        "/** @ensures{p} forall (x: int in [0, 4)) { pick(x) >= 0 } */",
+        "export function pick(x: number): number {",
+        "  if (!x) {",
+        "    return 0;",
+        "  }",
+        "  return 1;",
+        "}",
+      ].join("\n"),
+      FILE,
+    );
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason:
+          "'pick' could not be modeled: '!' models boolean operands only; " +
+          "the operand is not a boolean (Identifier at 3:8)",
+      }),
+    ]);
+  });
+
+  test("a boolean disjunction in a numeric position is the engine's Error", () => {
+    const { classified } = emitModule(
+      [
+        "/** @ensures{p} forall (x: int in [0, 4)) { pick(x) >= 0 } */",
+        "export function pick(x: number): number {",
+        "  return (x === 0 || x === 1);",
+        "}",
+      ].join("\n"),
+      FILE,
+    );
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Error",
+        reason:
+          "'pick' could not be modeled: operator '||' yields a boolean, not a number",
+      }),
+    ]);
+  });
+
+  test("a refused operator inside a logical operand still refuses as itself", () => {
+    const { classified } = emitModule(
+      [
+        "/** @ensures{p} forall (x: int in [0, 4)) { pick(x) >= 0 } */",
+        "export function pick(x: number): number {",
+        "  if (!(x ** 2 === 0)) {",
+        "    return 0;",
+        "  }",
+        "  return 1;",
+        "}",
+      ].join("\n"),
+      FILE,
+    );
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining("'**' is implementation-approximated"),
+      }),
+    ]);
+  });
+
+  test("a construct-failed callee inside ! travels with the call", () => {
+    const { classified } = emitModule(
+      [
+        "const g = (x: number): number => x;",
+        "/** @ensures{p} forall (x: int in [0, 4)) { pick(x) >= 0 } */",
+        "export function pick(x: number): number {",
+        "  if (!(g(x) === 0)) {",
+        "    return 0;",
+        "  }",
+        "  return 1;",
+        "}",
+      ].join("\n"),
+      FILE,
+    );
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining("'g' could not be modeled"),
       }),
     ]);
   });
