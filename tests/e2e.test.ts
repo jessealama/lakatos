@@ -71,6 +71,19 @@ describe.runIf(enabled)("lakatos prove end-to-end (tracer)", () => {
       ),
       path.join(dir, "conversion.ts"),
     );
+    // The class-binder flagship (Point#distance non-negativity), pinned at
+    // today's honest refusal; class modeling landing flips this to Theorem.
+    fs.copyFileSync(
+      path.join(
+        repoRoot,
+        "spec",
+        "fixtures",
+        "binder",
+        "accept",
+        "class-binder.ts",
+      ),
+      path.join(dir, "point.ts"),
+    );
   });
 
   it(
@@ -143,6 +156,21 @@ describe.runIf(enabled)("lakatos prove end-to-end (tracer)", () => {
         property: "monotone",
         szs: "Theorem",
         axioms: [],
+      });
+    },
+  );
+
+  it(
+    "the class-valued Point binder reports the honest refusal",
+    { timeout: proveTimeoutMs(1) },
+    () => {
+      const env = runForEnvelope(["prove", "point.ts"]);
+      expect(env.annotations).toHaveLength(1);
+      expect(env.annotations[0]).toMatchObject({
+        function: "Point#distance",
+        property: "nonNegative",
+        szs: "Inappropriate",
+        reason: "class-valued binder 'Point' is not yet modeled",
       });
     },
   );
