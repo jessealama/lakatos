@@ -13,7 +13,7 @@ inductive JsExpr where
   | id (name : String)
   | unop (op : String) (operand : JsExpr)
   | binop (op : String) (left right : JsExpr)
-  | call (callee : String) (args : Array JsExpr)
+  | call (callee : String) (module : Option String) (args : Array JsExpr)
 deriving Repr, Inhabited
 
 inductive JsStmt where
@@ -27,6 +27,8 @@ deriving Repr, Inhabited
 
 structure EmitFn where
   name : String
+  /-- The defining module's entry-relative path; none for the entry. -/
+  module : Option String := none
   params : Array String
   source : String
   body : Array JsStmt
@@ -85,6 +87,15 @@ def getStr (j : Json) (field : String) : Except String String := do
   | .ok s => pure s
   | .error _ => throw s!"field '{field}' is not a string"
 
+/-- An optional string field: an absent field decodes as none, a present
+non-string is an error. -/
+def getStrOpt (j : Json) (field : String) : Except String (Option String) :=
+  match j.getObjVal? field with
+  | .error _ => pure none
+  | .ok v => match v.getStr? with
+    | .ok s => pure (some s)
+    | .error _ => throw s!"field '{field}' is not a string"
+
 def getArr (j : Json) (field : String) : Except String (Array Json) := do
   match (← j.getObjVal? field).getArr? with
   | .ok a => pure a
@@ -108,7 +119,7 @@ partial def decodeExpr (j : Json) : Except String JsExpr := do
       (← decodeExpr (← j.getObjVal? "left"))
       (← decodeExpr (← j.getObjVal? "right")))
   | "call" =>
-    pure (.call (← getStr j "callee")
+    pure (.call (← getStr j "callee") (← getStrOpt j "module")
       (← (← getArr j "args").mapM decodeExpr))
   | k => throw s!"unknown expression kind '{k}'"
 
@@ -142,6 +153,7 @@ def decodeFn (j : Json) : Except String EmitFn := do
   match ← getStr j "kind" with
   | "function" =>
     pure { name := ← getStr j "name"
+           module := ← getStrOpt j "module"
            params := ← (← getArr j "params").mapM fun p =>
              p.getStr?.mapError fun _ => "a parameter name is not a string"
            source := ← getStr j "source"
