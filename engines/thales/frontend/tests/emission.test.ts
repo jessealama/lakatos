@@ -249,10 +249,6 @@ describe('signature and body blockers', () => {
 describe('obligation payload degradations', () => {
   test.each([
     ['a half-bounded range', 'forall (x: int ∈ (-∞, 10]) { f(x) ≡ x }'],
-    [
-      'a range past the safe integers',
-      'forall (x: int ∈ [0, 99999999999999999999)) { f(x) ≡ x }',
-    ],
     ['an unparseable atom', 'forall (x: int ∈ [0, 5)) { 2x ≡ x }'],
     [
       'an atom that is not valid JavaScript',
@@ -1307,5 +1303,49 @@ describe('non-function declarations degrade before emission', () => {
     expect(classified[0]!.reason).toContain(
       "unmapped TypeScript construct 'ImportDeclaration' at 1:10",
     );
+  });
+});
+
+describe('unsupported ranges classify NotTried before emission', () => {
+  const HUGE =
+    '/** @ensures{nonneg} forall (x: int ∈ [0, 1000000000000000000000000000000]) { keep(x) >= 0 } */\n' +
+    'export function keep(x: number): number {\n  return x;\n}\n';
+
+  test('a clamped endpoint classifies NotTried with the old reason', () => {
+    const { classified, emission } = emitModule(HUGE, 'huge.ts');
+    expect(emission.obligations).toEqual([]);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: 'NotTried',
+        kind: 'unsupported-range',
+        reason:
+          'endpoint 1000000000000000000000000000000 exceeds the safe integer range (±9007199254740991)',
+      }),
+    ]);
+  });
+
+  test('a clamp that is not the sole blocker degrades to bare', () => {
+    // The conjunction keeps the body unstructurable, so the clamp never wins.
+    const src =
+      '/** @ensures{p} forall (x: int ∈ [0, 1000000000000000000000000000000]) { keep(x) >= 0 && keep(x) <= x } */\n' +
+      'export function keep(x: number): number {\n  return x;\n}\n';
+    const { classified, emission } = emitModule(src, 'huge-bare.ts');
+    expect(classified).toEqual([]);
+    expect(emission.obligations[0]!.payload).toEqual({ kind: 'bare' });
+  });
+
+  test('an interval the clamp empties is unsupported-range whatever the body', () => {
+    const src =
+      '/** @ensures{p} forall (x: int ∈ [1000000000000000000000000000000, 10000000000000000000000000000000]) { keep(x) >= 0 && keep(x) <= x } */\n' +
+      'export function keep(x: number): number {\n  return x;\n}\n';
+    const { classified } = emitModule(src, 'empty.ts');
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: 'NotTried',
+        kind: 'unsupported-range',
+        reason:
+          'endpoints 1000000000000000000000000000000 and 10000000000000000000000000000000 exceed the safe integer range (±9007199254740991)',
+      }),
+    ]);
   });
 });

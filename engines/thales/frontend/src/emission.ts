@@ -2,6 +2,7 @@ import ts from 'typescript';
 import {
   type Binder,
   clampedEndpoints,
+  EmptyAfterClampError,
   extractFromSource,
   intInterval,
   type InvalidAnnotation,
@@ -10,6 +11,7 @@ import {
   parsePrefix,
   qualifiedName,
   type RawAnnotation,
+  unsupportedRangeReason,
 } from '../../../../lemma/src/index.js';
 import {
   bindingIdentifiers,
@@ -101,7 +103,9 @@ export interface Emission {
  * harness pins. */
 export interface ClassifiedAnnotation {
   annotation: RawAnnotation;
-  szs: 'Inappropriate' | 'Error';
+  szs: 'Inappropriate' | 'Error' | 'NotTried';
+  /** NotTried only: the envelope kind the CLI reports alongside. */
+  kind?: 'unsupported-range';
   reason: string;
 }
 
@@ -883,8 +887,9 @@ function equationSides(
 /** A binder's emitted domain: a finite half-open range, the whole int
  * line, the naturals, or a bounded `number` — reading the domain the binder
  * *denotes*, the same folding the old transcriber applies. `bare` covers
- * everything this slice cannot express. */
-function lowerBinder(b: Binder): EmitBinder | 'bare' {
+ * everything this slice cannot express; a safe-integer clamp reports its
+ * offending endpoints instead, for the unsupported-range refusal. */
+function lowerBinder(b: Binder): EmitBinder | 'bare' | { clamped: string[] } {
   if (b.domain === 'number') {
     // No safe-integer clamp: a number binder denotes binary64 values
     // directly, so there is no representability question to answer.
@@ -906,7 +911,8 @@ function lowerBinder(b: Binder): EmitBinder | 'bare' {
     return lo === 0n ? { name: b.varName, kind: 'nat' } : 'bare';
   }
   if (lo === undefined) return 'bare';
-  if (clampedEndpoints(b).length > 0) return 'bare';
+  const clamped = clampedEndpoints(b);
+  if (clamped.length > 0) return { clamped };
   return {
     name: b.varName,
     kind: 'range',
@@ -917,7 +923,12 @@ function lowerBinder(b: Binder): EmitBinder | 'bare' {
 
 type PayloadResult =
   | { kind: 'payload'; payload: EmitObligation['payload'] }
-  | { kind: 'classified'; szs: 'Inappropriate' | 'Error'; reason: string };
+  | {
+      kind: 'classified';
+      szs: 'Inappropriate' | 'Error' | 'NotTried';
+      classifiedKind?: 'unsupported-range';
+      reason: string;
+    };
 
 /** The structured reading of an annotation formula: int/nat binders and a
  * top-level implication chain of atoms — guard antecedents around one
@@ -936,10 +947,12 @@ function obligationPayload(
   try {
     const { binders, body } = parsePrefix(formula);
     const loweredBinders: EmitBinder[] = [];
+    const clamped: string[] = [];
     for (const b of binders) {
       const lowered = lowerBinder(b);
       if (lowered === 'bare') return bare;
-      loweredBinders.push(lowered);
+      if ('clamped' in lowered) clamped.push(...lowered.clamped);
+      else loweredBinders.push(lowered);
     }
     const chain = chainReading(parseBody(body));
     if (chain === undefined) return bare;
@@ -956,6 +969,16 @@ function obligationPayload(
     }
     const parsed = parseAtomExpr(chain.conclusion);
     if (parsed === undefined) return bare;
+    // A clamp is reported only when it is the sole structuring blocker:
+    // proving over the clamped domain would be a narrower statement.
+    if (clamped.length > 0) {
+      return {
+        kind: 'classified',
+        szs: 'NotTried',
+        classifiedKind: 'unsupported-range',
+        reason: unsupportedRangeReason(clamped),
+      };
+    }
     const expr = unwrapParens(parsed.expr);
     const sides = equationSides(expr);
     const scope: WalkScope = {
@@ -1011,7 +1034,17 @@ function obligationPayload(
             : { kind: 'istrue', expr: walkedConclusion[0]! },
       },
     };
-  } catch {
+  } catch (e) {
+    // A clamp-emptied interval leaves no domain to prove over, whatever
+    // the body: unsupported-range, like its merely-clamped kin.
+    if (e instanceof EmptyAfterClampError) {
+      return {
+        kind: 'classified',
+        szs: 'NotTried',
+        classifiedKind: 'unsupported-range',
+        reason: unsupportedRangeReason(e.endpoints),
+      };
+    }
     return bare;
   }
 }
@@ -1145,6 +1178,9 @@ export function emitModule(text: string, file: string): PlainEmission {
       classified.push({
         annotation: a,
         szs: result.szs,
+        ...(result.classifiedKind !== undefined
+          ? { kind: result.classifiedKind }
+          : {}),
         reason: result.reason,
       });
       continue;
