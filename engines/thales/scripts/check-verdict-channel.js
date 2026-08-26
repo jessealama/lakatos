@@ -6,10 +6,10 @@
 // invocation and its timeout — comes from the built frontend, so this
 // checks production's reader rather than a second copy of it.
 
-import * as path from 'node:path';
-import { checker, engineRoot, frontend } from './harness.js';
+import * as path from "node:path";
+import { checker, engineRoot, frontend } from "./harness.js";
 
-const { parseVerdicts, runArtifact } = await frontend('run');
+const { parseVerdicts, runArtifact } = await frontend("run");
 
 // Expected [function, szs, reasonPattern?, counterexample?] sequence per
 // fixture, in command order; reasonPattern, when present, must match the
@@ -17,176 +17,176 @@ const { parseVerdicts, runArtifact } = await frontend('run');
 // (and only expected entries may carry one).
 const FIXTURES = [
   {
-    file: 'verdict-channel.lean',
+    file: "verdict-channel.lean",
     expected: [
-      ['add', 'NotTried'],
-      ['sub', 'NotTried'],
-      ['bad', 'Error'],
-      ['opq', 'Inappropriate', /YieldExpression.*3:14/],
-      ['tail', 'NotTried'],
-      ['viaAw', 'Inappropriate', /AwaitExpression/],
+      ["add", "NotTried"],
+      ["sub", "NotTried"],
+      ["bad", "Error"],
+      ["opq", "Inappropriate", /YieldExpression.*3:14/],
+      ["tail", "NotTried"],
+      ["viaAw", "Inappropriate", /AwaitExpression/],
     ],
   },
   {
     // The plain-Prop payload the emission pipeline writes, sharing a file
     // with the old grammar's structured and bare forms.
-    file: 'theorem-plain.lean',
+    file: "theorem-plain.lean",
     expected: [
       [
-        'add',
-        'Theorem',
+        "add",
+        "Theorem",
         /proved by a decision procedure over the bounded domain, kernel-checked as/,
       ],
-      ['double', 'CounterSatisfiable', /false on its bounded domain/, { a: 1 }],
-      ['dbl', 'NotTried'],
+      ["double", "CounterSatisfiable", /false on its bounded domain/, { a: 1 }],
+      ["dbl", "NotTried"],
     ],
   },
   {
     // Binder heads the emission pipeline writes that the old grammar's
     // spine also produces; each row is the verdict the old pipeline gives
     // the same property.
-    file: 'binder-shapes-plain.lean',
+    file: "binder-shapes-plain.lean",
     expected: [
-      ['ident', 'CounterSatisfiable', /false on its bounded domain/, { x: -3 }],
-      ['ident', 'GaveUp', /unsolved goal:[\s\S]*Float\.ofInt x = 0/],
-      ['ident', 'GaveUp', /unsolved goal:[\s\S]*0 ≤ n →/],
+      ["ident", "CounterSatisfiable", /false on its bounded domain/, { x: -3 }],
+      ["ident", "GaveUp", /unsolved goal:[\s\S]*Float\.ofInt x = 0/],
+      ["ident", "GaveUp", /unsolved goal:[\s\S]*0 ≤ n →/],
       // A ranged binder over an unbounded one: both survive into the goal.
-      ['ident', 'GaveUp', /unsolved goal:[\s\S]*x < 3 → ∀ \(n : Int\)/],
+      ["ident", "GaveUp", /unsolved goal:[\s\S]*x < 3 → ∀ \(n : Int\)/],
     ],
   },
   {
     // Guard chains in the plain-Prop payload: the same five behaviors the
     // old grammar's guard-chain.lean pins, verdict for verdict.
-    file: 'guard-chain-plain.lean',
+    file: "guard-chain-plain.lean",
     expected: [
-      ['idg', 'Theorem', /decision procedure over the bounded domain/],
-      ['idg', 'Theorem', /decision procedure over the bounded domain/],
+      ["idg", "Theorem", /decision procedure over the bounded domain/],
+      ["idg", "Theorem", /decision procedure over the bounded domain/],
       // A constant-false guard: vacuous truth, still a Theorem.
-      ['idg', 'Theorem', /decision procedure over the bounded domain/],
+      ["idg", "Theorem", /decision procedure over the bounded domain/],
       // A guard under a number binder reaches the symbolic rungs, which
       // close the identity case from the guard hypothesis.
-      ['idg', 'Theorem', /generic proof search/],
+      ["idg", "Theorem", /generic proof search/],
       // The witness respects the guard: never x = 0.
-      ['idg', 'CounterSatisfiable', /false/, { x: 5 }],
+      ["idg", "CounterSatisfiable", /false/, { x: 5 }],
     ],
   },
   {
-    file: 'theorem-arith.lean',
+    file: "theorem-arith.lean",
     expected: [
       ...Array.from({ length: 7 }, () => [
-        'add',
-        'Theorem',
+        "add",
+        "Theorem",
         /proved by a decision procedure over the bounded domain, kernel-checked as/,
       ]),
       // Integer binder values coerced into a binary64 body: narrow enough
       // for the kernel to enumerate, then wide enough that only evaluation
       // can. The trust wording is read off each proof's axioms.
       [
-        'dbl',
-        'Theorem',
+        "dbl",
+        "Theorem",
         /proved by a decision procedure over the bounded domain, kernel-checked as/,
       ],
       [
-        'dbl',
-        'Theorem',
+        "dbl",
+        "Theorem",
         /trusted from evaluation rather than checked by the kernel/,
       ],
       [
-        'add',
-        'Theorem',
+        "add",
+        "Theorem",
         /proved by a decision procedure over the bounded domain, kernel-checked as/,
       ],
     ],
   },
   {
-    file: 'countersatisfiable.lean',
+    file: "countersatisfiable.lean",
     expected: [
-      ['bump', 'CounterSatisfiable', /false/, { x: 0 }],
-      ['sq', 'CounterSatisfiable', /false/, { x: 0 }],
-      ['comm', 'CounterSatisfiable', /false/, { a: 0, b: 1 }],
-      ['bump', 'GaveUp', /^the property is false on its bounded domain$/],
+      ["bump", "CounterSatisfiable", /false/, { x: 0 }],
+      ["sq", "CounterSatisfiable", /false/, { x: 0 }],
+      ["comm", "CounterSatisfiable", /false/, { a: 0, b: 1 }],
+      ["bump", "GaveUp", /^the property is false on its bounded domain$/],
       // Falsity outlives the witness search that ran out of budget: the
       // counterexample is gone, the verdict is not, and it is not a Timeout.
-      ['bump', 'GaveUp', /^the property is false on its bounded domain$/],
+      ["bump", "GaveUp", /^the property is false on its bounded domain$/],
     ],
   },
   {
-    file: 'guard-chain.lean',
+    file: "guard-chain.lean",
     expected: [
-      ['idg', 'Theorem', /decision procedure over the bounded domain/],
-      ['idg', 'Theorem', /decision procedure over the bounded domain/],
+      ["idg", "Theorem", /decision procedure over the bounded domain/],
+      ["idg", "Theorem", /decision procedure over the bounded domain/],
       // A constant-false guard: vacuous truth, still a Theorem.
-      ['idg', 'Theorem', /decision procedure over the bounded domain/],
+      ["idg", "Theorem", /decision procedure over the bounded domain/],
       // A guard under a number binder reaches the symbolic rungs, which
       // close the identity case from the guard hypothesis.
-      ['idg', 'Theorem', /generic proof search/],
+      ["idg", "Theorem", /generic proof search/],
       // The witness respects the guard: never x = 0.
-      ['idg', 'CounterSatisfiable', /false/, { x: 5 }],
+      ["idg", "CounterSatisfiable", /false/, { x: 5 }],
     ],
   },
   // The symbolic rungs have no binary64 theory to work with yet, so an
   // unbounded binder leaves a residual goal rather than a proof. The
   // residual is the point: it names the fact the theory worklist needs.
   {
-    file: 'gaveup-generic.lean',
+    file: "gaveup-generic.lean",
     expected: [
-      ['dbl', 'GaveUp', /unsolved goal:[\s\S]*Float\.ofInt/],
-      ['dbl', 'GaveUp', /unsolved goal:[\s\S]*Float\.ofInt/],
-      ['dbl', 'GaveUp', /unsolved goal:[\s\S]*Float\.ofInt/],
+      ["dbl", "GaveUp", /unsolved goal:[\s\S]*Float\.ofInt/],
+      ["dbl", "GaveUp", /unsolved goal:[\s\S]*Float\.ofInt/],
+      ["dbl", "GaveUp", /unsolved goal:[\s\S]*Float\.ofInt/],
     ],
   },
   {
-    file: 'gaveup-grind.lean',
-    expected: [['mul', 'GaveUp', /unsolved goal:[\s\S]*Float\.ofInt/]],
+    file: "gaveup-grind.lean",
+    expected: [["mul", "GaveUp", /unsolved goal:[\s\S]*Float\.ofInt/]],
   },
   {
-    file: 'gaveup-goal.lean',
+    file: "gaveup-goal.lean",
     expected: [
-      ['bump', 'GaveUp', /unsolved goal:[\s\S]*\+ 1 = /],
+      ["bump", "GaveUp", /unsolved goal:[\s\S]*\+ 1 = /],
       // Bounded, but past the evaluation cap: no tier can settle it inside
       // the annotation's budget, so the attempt reports as budget-bound.
-      ['wide', 'Timeout', /heartbeat budget/],
+      ["wide", "Timeout", /heartbeat budget/],
     ],
   },
   {
-    file: 'recdepth.lean',
+    file: "recdepth.lean",
     expected: [
-      ['bump', 'GaveUp', /^unsolved goal:[\s\S]*bump/],
-      ['bump', 'Error', /^property elaboration failed/],
-      ['bump', 'Theorem'],
+      ["bump", "GaveUp", /^unsolved goal:[\s\S]*bump/],
+      ["bump", "Error", /^property elaboration failed/],
+      ["bump", "Theorem"],
     ],
   },
   {
-    file: 'timeout.lean',
+    file: "timeout.lean",
     expected: [
-      ['slow', 'Timeout', /heartbeat budget/],
-      ['add', 'Theorem'],
-      ['slow', 'Timeout', /heartbeat budget/],
-      ['slow', 'Timeout', /thales\.heartbeats = 1\)$/],
+      ["slow", "Timeout", /heartbeat budget/],
+      ["add", "Theorem"],
+      ["slow", "Timeout", /heartbeat budget/],
+      ["slow", "Timeout", /thales\.heartbeats = 1\)$/],
     ],
   },
   {
-    file: 'theorem-rescue.lean',
-    expected: [['dbl', 'Theorem']],
+    file: "theorem-rescue.lean",
+    expected: [["dbl", "Theorem"]],
   },
   {
-    file: 'theorem-inappropriate.lean',
+    file: "theorem-inappropriate.lean",
     expected: [
-      ['add', 'Theorem'],
-      ['fetchTotal', 'Inappropriate', /AwaitExpression/],
-      ['spin', 'Inappropriate', /WhileStatement/],
-      ['sq', 'Theorem'],
-      ['dup', 'Theorem'],
+      ["add", "Theorem"],
+      ["fetchTotal", "Inappropriate", /AwaitExpression/],
+      ["spin", "Inappropriate", /WhileStatement/],
+      ["sq", "Theorem"],
+      ["dup", "Theorem"],
     ],
   },
 ];
 
-const { check, done } = checker('verdict-channel');
+const { check, done } = checker("verdict-channel");
 
 for (const { file, expected } of FIXTURES) {
   const run = runArtifact(
     engineRoot,
-    path.join(engineRoot, 'tests', 'fixtures', file),
+    path.join(engineRoot, "tests", "fixtures", file),
   );
 
   check(run.error === undefined, `${file}: failed to run lake: ${run.error}`);
@@ -195,10 +195,10 @@ for (const { file, expected } of FIXTURES) {
     `${file}: expected exit 0, got ${run.status}\nstderr:\n${run.stderr}`,
   );
 
-  const { verdicts, diagnostics, messages } = parseVerdicts(run.stdout ?? '');
+  const { verdicts, diagnostics, messages } = parseVerdicts(run.stdout ?? "");
   check(
     diagnostics.length === 0,
-    `${file}: unframed stdout line(s):\n${diagnostics.join('\n')}`,
+    `${file}: unframed stdout line(s):\n${diagnostics.join("\n")}`,
   );
   for (const m of messages) check(false, `${file}: ${m}`);
   check(
@@ -233,7 +233,7 @@ for (const { file, expected } of FIXTURES) {
   // evaluation-trusted one admits exactly its native-evaluation axiom.
   // Nothing but a Theorem carries the field.
   for (const [i, v] of verdicts.entries()) {
-    if (v.szs !== 'Theorem') {
+    if (v.szs !== "Theorem") {
       check(
         v.axioms === undefined,
         `${file}: verdict ${i} (${v.szs}) carries axioms ${JSON.stringify(v.axioms)}`,

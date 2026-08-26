@@ -1,12 +1,12 @@
-import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   interruptedBy,
   type InterruptSignal,
-} from '../../../../src/interrupt.js';
-import { isProveStatus, type ProveStatus } from '../../../../src/szs.js';
+} from "../../../../src/interrupt.js";
+import { isProveStatus, type ProveStatus } from "../../../../src/szs.js";
 
 /** One #thales_prove verdict line: the contract printed by ThalesDsl.
  * Counterexample values outside the JS safe-integer range travel as
@@ -29,14 +29,14 @@ export interface FileFailure {
 
 export type LeanRunResult =
   | {
-      kind: 'completed';
+      kind: "completed";
       verdicts: LeanVerdict[];
       failures: FileFailure[];
       diagnostics: string[];
     }
-  | { kind: 'no-project'; message: string }
-  | { kind: 'failed'; stdout: string; stderr: string }
-  | { kind: 'interrupted'; signal: InterruptSignal };
+  | { kind: "no-project"; message: string }
+  | { kind: "failed"; stdout: string; stderr: string }
+  | { kind: "interrupted"; signal: InterruptSignal };
 
 // Exported so test timeouts can be sized from the containment budget.
 export const LEAN_TIMEOUT_MS = 300_000;
@@ -46,7 +46,7 @@ export const EMIT_TIMEOUT_MS = 120_000;
 /** Frames each verdict line: stdout is also Lean's diagnostic stream, so
  * only framed lines are part of the contract. ThalesDsl's
  * `Verdict.sentinel` prints it. */
-export const VERDICT_SENTINEL = 'thales-verdict:';
+export const VERDICT_SENTINEL = "thales-verdict:";
 
 /** Locate the ThalesDsl lake project: walk up from this module looking for
  * a lakefile here or under engines/thales — covers the source tree, the
@@ -56,8 +56,8 @@ export function findEngineRoot(
 ): string | undefined {
   let dir = path.dirname(from);
   for (;;) {
-    for (const c of [dir, path.join(dir, 'engines', 'thales')]) {
-      if (existsSync(path.join(c, 'lakefile.lean'))) return c;
+    for (const c of [dir, path.join(dir, "engines", "thales")]) {
+      if (existsSync(path.join(c, "lakefile.lean"))) return c;
     }
     const parent = path.dirname(dir);
     if (parent === dir) return undefined;
@@ -77,16 +77,16 @@ export interface SpawnOutcome {
 type Spawn = (
   cmd: string,
   args: string[],
-  opts: { cwd: string; encoding: 'utf8'; timeout: number },
+  opts: { cwd: string; encoding: "utf8"; timeout: number },
 ) => SpawnOutcome;
 
 function isCounterexample(c: unknown): c is Record<string, number | string> {
   return (
-    typeof c === 'object' &&
+    typeof c === "object" &&
     c !== null &&
     !Array.isArray(c) &&
     Object.values(c).every(
-      (x) => typeof x === 'number' || typeof x === 'string',
+      (x) => typeof x === "number" || typeof x === "string",
     )
   );
 }
@@ -95,20 +95,20 @@ function isCounterexample(c: unknown): c is Record<string, number | string> {
  * CounterSatisfiable carries its reason into the envelope, and the two that
  * drop it are no cheaper for the engine to fill in. */
 function isVerdict(v: unknown): v is LeanVerdict {
-  if (typeof v !== 'object' || v === null) return false;
+  if (typeof v !== "object" || v === null) return false;
   const o = v as Record<string, unknown>;
   return (
     Array.isArray(o.identity) &&
     o.identity.length === 3 &&
-    o.identity.every((s) => typeof s === 'string') &&
-    typeof o.szs === 'string' &&
+    o.identity.every((s) => typeof s === "string") &&
+    typeof o.szs === "string" &&
     isProveStatus(o.szs) &&
-    typeof o.reason === 'string' &&
+    typeof o.reason === "string" &&
     o.reason.length > 0 &&
     (o.counterexample === undefined || isCounterexample(o.counterexample)) &&
     (o.axioms === undefined ||
       (Array.isArray(o.axioms) &&
-        o.axioms.every((a) => typeof a === 'string' && a.length > 0)))
+        o.axioms.every((a) => typeof a === "string" && a.length > 0)))
   );
 }
 
@@ -123,8 +123,8 @@ export function parseVerdicts(stdout: string): {
   const verdicts: LeanVerdict[] = [];
   const diagnostics: string[] = [];
   const messages: string[] = [];
-  for (const line of stdout.split('\n')) {
-    if (line.trim() === '') continue;
+  for (const line of stdout.split("\n")) {
+    if (line.trim() === "") continue;
     if (!line.startsWith(VERDICT_SENTINEL)) {
       diagnostics.push(line);
       continue;
@@ -146,14 +146,14 @@ export function parseVerdicts(stdout: string): {
 }
 
 function isEnoent(e: Error | undefined): boolean {
-  return e !== undefined && (e as NodeJS.ErrnoException).code === 'ENOENT';
+  return e !== undefined && (e as NodeJS.ErrnoException).code === "ENOENT";
 }
 
 function failed(r: SpawnOutcome): LeanRunResult {
   return {
-    kind: 'failed',
-    stdout: r.stdout ?? '',
-    stderr: (r.stderr ?? '') + (r.error ? `${String(r.error)}\n` : ''),
+    kind: "failed",
+    stdout: r.stdout ?? "",
+    stderr: (r.stderr ?? "") + (r.error ? `${String(r.error)}\n` : ""),
   };
 }
 
@@ -177,9 +177,9 @@ export function runArtifact(
   spawn: Spawn = spawnSync,
 ): SpawnOutcome {
   return spawn(
-    'lake',
-    ['env', 'lean', ...heartbeatArgs(), path.resolve(file)],
-    { cwd: engineRoot, encoding: 'utf8', timeout: LEAN_TIMEOUT_MS },
+    "lake",
+    ["env", "lean", ...heartbeatArgs(), path.resolve(file)],
+    { cwd: engineRoot, encoding: "utf8", timeout: LEAN_TIMEOUT_MS },
   );
 }
 
@@ -195,9 +195,9 @@ export function runArtifact(
  * artifacts after it are never started.
  */
 const NO_PROJECT: LeanRunResult = {
-  kind: 'no-project',
+  kind: "no-project",
   message:
-    'the Lean proof engine is not part of this installation; run prove from a lakatos checkout',
+    "the Lean proof engine is not part of this installation; run prove from a lakatos checkout",
 };
 
 /** One `lake build` under the shared no-project / interrupt / failure
@@ -208,21 +208,21 @@ function buildStep(
   spawn: Spawn,
   targets: string[] = [],
 ): LeanRunResult | undefined {
-  const build = spawn('lake', ['build', ...targets], {
+  const build = spawn("lake", ["build", ...targets], {
     cwd: engineRoot,
-    encoding: 'utf8',
+    encoding: "utf8",
     timeout: BUILD_TIMEOUT_MS,
   });
   if (isEnoent(build.error)) {
     return {
-      kind: 'no-project',
+      kind: "no-project",
       message:
-        'lake was not found on PATH; install the Lean toolchain via elan (https://leanprover-community.github.io/get_started/) and re-run',
+        "lake was not found on PATH; install the Lean toolchain via elan (https://leanprover-community.github.io/get_started/) and re-run",
     };
   }
   const buildSignal = interruptedBy(build);
   if (buildSignal !== undefined)
-    return { kind: 'interrupted', signal: buildSignal };
+    return { kind: "interrupted", signal: buildSignal };
   if (build.error !== undefined || build.status !== 0) return failed(build);
   return undefined;
 }
@@ -252,7 +252,7 @@ function leanPass(
     // The signal that killed this artifact killed the run: stop here
     // rather than starting artifacts nobody is waiting for any more.
     const signal = interruptedBy(run);
-    if (signal !== undefined) return { kind: 'interrupted', signal };
+    if (signal !== undefined) return { kind: "interrupted", signal };
     if (run.error !== undefined || run.status !== 0) {
       // A hung or crashed artifact degrades only its own annotations.
       failures.push({
@@ -260,13 +260,13 @@ function leanPass(
         messages: [
           `the Lean run on ${file} failed before reporting its verdicts`,
           ...[run.stdout, run.stderr, run.error && String(run.error)].filter(
-            (s): s is string => typeof s === 'string' && s.trim() !== '',
+            (s): s is string => typeof s === "string" && s.trim() !== "",
           ),
         ],
       });
       continue;
     }
-    const parsed = parseVerdicts(run.stdout ?? '');
+    const parsed = parseVerdicts(run.stdout ?? "");
     diagnostics.push(...parsed.diagnostics);
     if (parsed.messages.length > 0) {
       failures.push({ file, messages: parsed.messages });
@@ -274,7 +274,7 @@ function leanPass(
     }
     verdicts.push(...parsed.verdicts);
   }
-  return { kind: 'completed', verdicts, failures, diagnostics };
+  return { kind: "completed", verdicts, failures, diagnostics };
 }
 
 /** One emission JSON and where thales-emit renders its artifact. */
@@ -298,27 +298,27 @@ export function runEmission(
   if (engineRoot === undefined) return NO_PROJECT;
   const unhealthy =
     buildStep(engineRoot, spawn) ??
-    buildStep(engineRoot, spawn, ['thales-emit']);
+    buildStep(engineRoot, spawn, ["thales-emit"]);
   if (unhealthy !== undefined) return unhealthy;
-  const emitBin = path.join(engineRoot, '.lake', 'build', 'bin', 'thales-emit');
+  const emitBin = path.join(engineRoot, ".lake", "build", "bin", "thales-emit");
   const failures: FileFailure[] = [];
   const emitted: string[] = [];
   for (const job of jobs) {
     // lake env supplies LEAN_PATH: the emitter imports compiled modules.
-    const run = spawn('lake', ['env', emitBin, job.jsonFile, job.leanFile], {
+    const run = spawn("lake", ["env", emitBin, job.jsonFile, job.leanFile], {
       cwd: engineRoot,
-      encoding: 'utf8',
+      encoding: "utf8",
       timeout: EMIT_TIMEOUT_MS,
     });
     const signal = interruptedBy(run);
-    if (signal !== undefined) return { kind: 'interrupted', signal };
+    if (signal !== undefined) return { kind: "interrupted", signal };
     if (run.error !== undefined || run.status !== 0) {
       failures.push({
         file: job.leanFile,
         messages: [
           `thales-emit failed on ${job.jsonFile} before rendering the artifact`,
           ...[run.stdout, run.stderr, run.error && String(run.error)].filter(
-            (s): s is string => typeof s === 'string' && s.trim() !== '',
+            (s): s is string => typeof s === "string" && s.trim() !== "",
           ),
         ],
       });
@@ -327,6 +327,6 @@ export function runEmission(
     emitted.push(job.leanFile);
   }
   const pass = leanPass(emitted, engineRoot, spawn);
-  if (pass.kind !== 'completed') return pass;
+  if (pass.kind !== "completed") return pass;
   return { ...pass, failures: [...failures, ...pass.failures] };
 }

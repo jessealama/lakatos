@@ -1,6 +1,6 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import ts from 'typescript';
+import * as fs from "node:fs";
+import * as path from "node:path";
+import ts from "typescript";
 import {
   type Binder,
   clampedEndpoints,
@@ -15,7 +15,7 @@ import {
   qualifiedName,
   type RawAnnotation,
   unsupportedRangeReason,
-} from '../../../../lemma/src/index.js';
+} from "../../../../lemma/src/index.js";
 
 /** Escape a string for a Lean string literal. */
 function leanStr(s: string): string {
@@ -36,7 +36,7 @@ function positionArgs(node: ts.Node, sf: ts.SourceFile): string {
 const KIND_NAMES = new Map<number, string>();
 for (const [name, value] of Object.entries(ts.SyntaxKind)) {
   if (
-    typeof value === 'number' &&
+    typeof value === "number" &&
     !/^(First|Last)[A-Z]/.test(name) &&
     !KIND_NAMES.has(value)
   ) {
@@ -74,8 +74,8 @@ function opaqueDef(
  * OfScientific reconstructs as the identical double. */
 export function numberToken(lit: ts.NumericLiteral): string {
   const n = Number(lit.text);
-  if (!Number.isFinite(n)) return 'Infinity';
-  return n.toString().replace('e+', 'e');
+  if (!Number.isFinite(n)) return "Infinity";
+  return n.toString().replace("e+", "e");
 }
 
 /** How a module's names reach the artifact: a name as written, mapped to
@@ -131,7 +131,7 @@ function transcribeExpr(
   if (ts.isCallExpression(e) && ts.isIdentifier(e.expression)) {
     const args = e.arguments.map((a) => transcribeExpr(a, sf, names));
     const callee = leanStr(ref(e.expression.text, names));
-    return `ts.call[${callee}](${args.join(', ')})`;
+    return `ts.call[${callee}](${args.join(", ")})`;
   }
   return opaque(e, sf);
 }
@@ -141,7 +141,7 @@ function transcribeExpr(
  * redeclaration of a name from outside is refused rather than shadowed.
  * Separate from the module's `NameMap`, which says how a name reaches the
  * artifact rather than whether it can be written to. */
-type Locals = Map<string, 'const' | 'mutable'>;
+type Locals = Map<string, "const" | "mutable">;
 
 /** `ts.const`/`ts.let` lines for a declaration's declarators, or undefined
  * when any declarator falls outside the slice. `await using` shares the
@@ -171,10 +171,10 @@ function declarationLines(
     // Shadowing a name already bound here would make a join ambiguous: an
     // arm's own binding is what the tail would read back.
     if (locals.has(d.name.text)) return undefined;
-    const ctor = isConst ? 'ts.const' : 'ts.let';
+    const ctor = isConst ? "ts.const" : "ts.let";
     const init = transcribeExpr(d.initializer, sf, names);
     lines.push(`${ctor}[${leanStr(d.name.text)}](${init})`);
-    locals.set(d.name.text, isConst ? 'const' : 'mutable');
+    locals.set(d.name.text, isConst ? "const" : "mutable");
   }
   return lines;
 }
@@ -193,7 +193,7 @@ function assignmentLine(
   if (e.operatorToken.kind !== ts.SyntaxKind.EqualsToken) return undefined;
   const target = unwrapParens(e.left);
   if (!ts.isIdentifier(target)) return undefined;
-  if (locals.get(target.text) !== 'mutable') return undefined;
+  if (locals.get(target.text) !== "mutable") return undefined;
   const value = transcribeExpr(e.right, sf, names);
   return `ts.assign[${leanStr(target.text)}](${value})`;
 }
@@ -211,7 +211,7 @@ function errorKind(e: ts.Expression): string | undefined {
 /** The operators whose result the boolean channel accepts. Truthiness
  * coercion and the logical operators have no model, so a condition spelled
  * either way degrades its declaration instead of elaborating as a number. */
-const COMPARISON_OPERATORS = new Set(['<', '<=', '>', '>=', '===', '!==']);
+const COMPARISON_OPERATORS = new Set(["<", "<=", ">", ">=", "===", "!=="]);
 
 function conditionExpr(
   e: ts.Expression,
@@ -253,12 +253,12 @@ function ifLines(
     `ts.if(${conditionExpr(s.expression, sf, names)}) {`,
     ...armLines(s.thenStatement, sf, names, locals),
   ];
-  if (s.elseStatement === undefined) return [...lines, '}'];
+  if (s.elseStatement === undefined) return [...lines, "}"];
   return [
     ...lines,
-    '} else {',
+    "} else {",
     ...armLines(s.elseStatement, sf, names, locals),
-    '}',
+    "}",
   ];
 }
 
@@ -372,16 +372,16 @@ function transcribeFunction(
   const locals: Locals = new Map(
     fn.parameters.map((p) => [
       (p.name as ts.Identifier).text,
-      'mutable' as const,
+      "mutable" as const,
     ]),
   );
   const body = transcribeStmts(stmts, sf, names, locals).map(
     (line) => `  ${line}`,
   );
   return [
-    `ts_def ${leanStr(name)} := ts.fn(${params.join(', ')}) : ts.number {`,
+    `ts_def ${leanStr(name)} := ts.fn(${params.join(", ")}) : ts.number {`,
     ...body,
-    '}',
+    "}",
   ];
 }
 
@@ -480,7 +480,7 @@ export type ModuleReader = (file: string) => string | undefined;
 
 const diskReader: ModuleReader = (file) => {
   try {
-    return fs.readFileSync(file, 'utf8');
+    return fs.readFileSync(file, "utf8");
   } catch {
     return undefined;
   }
@@ -490,9 +490,9 @@ const diskReader: ModuleReader = (file) => {
  * was written as is what resolution wants, and it wins over a sibling
  * spelled the way the specifier is. */
 const SOURCE_EXTENSIONS: Record<string, string[]> = {
-  '.mjs': ['.mts'],
-  '.cjs': ['.cts'],
-  '.js': ['.ts', '.tsx'],
+  ".mjs": [".mts"],
+  ".cjs": [".cts"],
+  ".js": [".ts", ".tsx"],
 };
 
 /** The file a relative specifier names, or undefined for a bare specifier
@@ -520,7 +520,7 @@ function resolveImport(
 /** The prefix a dependency's ts_def names carry: its path relative to the
  * entry file, which is unique to it within the entry's artifact. */
 function moduleQualifier(entryDir: string, file: string): string {
-  return path.relative(entryDir, file).split(path.sep).join('/');
+  return path.relative(entryDir, file).split(path.sep).join("/");
 }
 
 /** One entry file's dependency-closure walk. Artifacts are self-contained,
@@ -618,7 +618,7 @@ function walkModule(
 ): NameMap {
   const sf = ts.createSourceFile(label, text, ts.ScriptTarget.Latest, true);
   const defName = (name: string) =>
-    qualifier === '' ? name : `${qualifier}::${name}`;
+    qualifier === "" ? name : `${qualifier}::${name}`;
   const names = new Map<string, string>();
   const inlined = new Set<string>();
   // Bindings first, and dependencies with them: a call may precede the
@@ -632,7 +632,7 @@ function walkModule(
     }
   }
   const scope: ModuleScope = { names, inlined, defName };
-  if (qualifier !== '') c.blocks.push([`-- module ${qualifier}`]);
+  if (qualifier !== "") c.blocks.push([`-- module ${qualifier}`]);
   for (const stmt of sf.statements) {
     const defs = ts.isFunctionDeclaration(stmt)
       ? transcribeFunction(stmt, sf, scope)
@@ -644,13 +644,13 @@ function walkModule(
 
 type BinderLowering =
   /** The bounded ∀-binder constructor for this binder. */
-  | { kind: 'ctor'; ctor: string }
+  | { kind: "ctor"; ctor: string }
   /** The range only fits after the safe-integer clamp; proving over the
    * clamped domain would be a narrower statement than the user wrote.
    * Carries the offending endpoint literals as the user wrote them. */
-  | { kind: 'clamped'; endpoints: string[] }
+  | { kind: "clamped"; endpoints: string[] }
   /** No `ts.range` reading at all (non-integer domain, unbounded side). */
-  | { kind: 'bare' };
+  | { kind: "bare" };
 
 /** The comparison a `number` bound lowers to. An interval excludes an endpoint
  * by adjacency in an ordering where -0 sits below 0, which IEEE comparison
@@ -659,20 +659,20 @@ type BinderLowering =
  * superset of the refuter's, which is the safe direction to diverge in. */
 function numberBoundOp(
   endpoint: string,
-  side: 'lower' | 'upper',
+  side: "lower" | "upper",
   open: boolean | undefined,
-): '<' | '<=' {
-  if (!open) return '<=';
+): "<" | "<=" {
+  if (!open) return "<=";
   const v = Number(endpoint);
   // Object.is separates the zeros where === does not.
-  const relax = side === 'lower' ? Object.is(v, -0) : Object.is(v, 0);
-  return relax ? '<=' : '<';
+  const relax = side === "lower" ? Object.is(v, -0) : Object.is(v, 0);
+  return relax ? "<=" : "<";
 }
 
 /** One side of the bound a `number` binder lowers to: the comparison and
  * the endpoint literal it reads against the bound variable. */
 export interface FloatBound {
-  op: '<' | '<=';
+  op: "<" | "<=";
   /** The endpoint as the literal the emitted bound carries. */
   lit: string;
 }
@@ -692,7 +692,7 @@ export interface GuardBound extends FloatBound {
  * still refuses for NaN. That makes any interval NaN-free, matching the
  * refuter's unconditional noNaN. Only a binder with no interval at all is
  * unbounded, and it quantifies over every double. */
-export function numberBounds(range: Binder['range']): {
+export function numberBounds(range: Binder["range"]): {
   lower?: FloatBound;
   upper?: FloatBound;
 } {
@@ -700,17 +700,17 @@ export function numberBounds(range: Binder['range']): {
   const lower: FloatBound =
     range.min !== undefined
       ? {
-          op: numberBoundOp(range.min, 'lower', range.minOpen),
+          op: numberBoundOp(range.min, "lower", range.minOpen),
           lit: range.min,
         }
-      : { op: range.minOpen ? '<' : '<=', lit: '-Infinity' };
+      : { op: range.minOpen ? "<" : "<=", lit: "-Infinity" };
   const upper: FloatBound =
     range.max !== undefined
       ? {
-          op: numberBoundOp(range.max, 'upper', range.maxOpen),
+          op: numberBoundOp(range.max, "upper", range.maxOpen),
           lit: range.max,
         }
-      : { op: range.maxOpen ? '<' : '<=', lit: 'Infinity' };
+      : { op: range.maxOpen ? "<" : "<=", lit: "Infinity" };
   return { lower, upper };
 }
 
@@ -718,7 +718,7 @@ export function numberBounds(range: Binder['range']): {
  * than as DSL text — `numberBounds` with each endpoint's double alongside
  * it. Reporting the guard this way is what lets a test pin the two engines'
  * domains against each other. */
-export function numberGuard(range: Binder['range']): {
+export function numberGuard(range: Binder["range"]): {
   lo?: GuardBound;
   hi?: GuardBound;
 } {
@@ -734,7 +734,7 @@ export function numberGuard(range: Binder['range']): {
  * Lowering reads the domain the binder *denotes*, so `int ∈ [0, ∞)` and
  * `nat` — or `nat ∈ (-∞, 10]` and `nat ∈ [0, 10]` — cannot diverge. */
 function binderConstructor(b: Binder): BinderLowering {
-  if (b.domain === 'number') {
+  if (b.domain === "number") {
     // A number interval's openness cannot be normalized away the way an
     // integer one's can, so each side keeps its own comparison; an absent
     // endpoint bounds against the literal infinity, and only an absent
@@ -749,36 +749,36 @@ function binderConstructor(b: Binder): BinderLowering {
     // No safe-integer clamp here: a number binder denotes binary64 values
     // directly, so there is no representability question to answer.
     return {
-      kind: 'ctor',
-      ctor: `ts.binder[${leanStr(b.varName)}](ts.number${bounds.map((x) => `, ${x}`).join('')})`,
+      kind: "ctor",
+      ctor: `ts.binder[${leanStr(b.varName)}](ts.number${bounds.map((x) => `, ${x}`).join("")})`,
     };
   }
-  if (b.domain !== 'int' && b.domain !== 'nat') return { kind: 'bare' };
+  if (b.domain !== "int" && b.domain !== "nat") return { kind: "bare" };
   const named = (ty: string) =>
     ({
-      kind: 'ctor',
+      kind: "ctor",
       ctor: `ts.binder[${leanStr(b.varName)}](${ty})`,
     }) as const;
   const r = b.range;
   // No interval at all: the whole domain, which the generic proof stage
   // can attempt — nat keeps its nonnegativity in the binder.
-  if (r === undefined) return named(b.domain === 'nat' ? 'ts.nat' : 'ts.int');
+  if (r === undefined) return named(b.domain === "nat" ? "ts.nat" : "ts.int");
   // Lemma guarantees integer endpoint text for int/nat; a surprise still
   // cannot abort transcription — structuredProp's catch degrades it.
   const { lo, hi } = intInterval(b.domain, r);
   if (hi === undefined) {
     // Unbounded above: the DSL's only shapes are the whole int line and
     // the naturals. Any other floor would need a one-sided binder.
-    if (lo === undefined) return named('ts.int');
-    return lo === 0n ? named('ts.nat') : { kind: 'bare' };
+    if (lo === undefined) return named("ts.int");
+    return lo === 0n ? named("ts.nat") : { kind: "bare" };
   }
   // Unbounded below with a finite ceiling: substituting the safe-range
   // floor would prove a narrower statement than written.
-  if (lo === undefined) return { kind: 'bare' };
+  if (lo === undefined) return { kind: "bare" };
   const clamped = clampedEndpoints(b);
-  if (clamped.length > 0) return { kind: 'clamped', endpoints: clamped };
+  if (clamped.length > 0) return { kind: "clamped", endpoints: clamped };
   return {
-    kind: 'ctor',
+    kind: "ctor",
     ctor: `ts.binder[${leanStr(b.varName)}](ts.int, ts.range(${lo}, ${hi + 1n}))`,
   };
 }
@@ -789,7 +789,7 @@ function parseAtomExpr(
   js: string,
 ): { sf: ts.SourceFile; expr: ts.Expression } | undefined {
   const sf = ts.createSourceFile(
-    'atom.ts',
+    "atom.ts",
     `(${js});`,
     ts.ScriptTarget.Latest,
     true,
@@ -817,8 +817,8 @@ function equationSides(
   if (
     !ts.isPropertyAccessExpression(callee) ||
     !ts.isIdentifier(callee.expression) ||
-    callee.expression.text !== 'Object' ||
-    callee.name.text !== 'is'
+    callee.expression.text !== "Object" ||
+    callee.name.text !== "is"
   ) {
     return undefined;
   }
@@ -842,10 +842,10 @@ export function isEquationGuard(e: ts.Expression): boolean {
 }
 
 type PropReading =
-  | { kind: 'structured'; binders: string[]; body: string }
-  | { kind: 'unsupported-range'; reason: string }
-  | { kind: 'class-binder'; reason: string }
-  | { kind: 'bare' };
+  | { kind: "structured"; binders: string[]; body: string }
+  | { kind: "unsupported-range"; reason: string }
+  | { kind: "class-binder"; reason: string }
+  | { kind: "bare" };
 
 /** The body shapes this slice can structure, as guard atoms around a
  * conclusion atom: a bare atom, or a top-level implication chain whose
@@ -854,12 +854,12 @@ type PropReading =
 export function chainReading(
   ast: Formula,
 ): { guards: string[]; conclusion: string } | undefined {
-  if (ast.kind === 'atom') return { guards: [], conclusion: ast.js };
-  if (ast.kind !== 'implication') return undefined;
-  if (ast.consequent.kind !== 'atom') return undefined;
+  if (ast.kind === "atom") return { guards: [], conclusion: ast.js };
+  if (ast.kind !== "implication") return undefined;
+  if (ast.consequent.kind !== "atom") return undefined;
   const guards: string[] = [];
   for (const a of ast.antecedents) {
-    if (a.kind !== 'atom') return undefined;
+    if (a.kind !== "atom") return undefined;
     guards.push(a.js);
   }
   return { guards, conclusion: ast.consequent.js };
@@ -883,7 +883,7 @@ function structuredProp(formula: string, moduleNames: NameMap): PropReading {
     const classBinder = binders.find((b) => isClassDomain(b.domain));
     if (classBinder !== undefined && isClassDomain(classBinder.domain)) {
       return {
-        kind: 'class-binder',
+        kind: "class-binder",
         reason: `class-valued binder '${classBinder.domain.className}' is not yet modeled`,
       };
     }
@@ -892,24 +892,24 @@ function structuredProp(formula: string, moduleNames: NameMap): PropReading {
     const clamped: string[] = [];
     for (const b of binders) {
       const lowered = binderConstructor(b);
-      if (lowered.kind === 'bare') return { kind: 'bare' };
-      if (lowered.kind === 'clamped') clamped.push(...lowered.endpoints);
+      if (lowered.kind === "bare") return { kind: "bare" };
+      if (lowered.kind === "clamped") clamped.push(...lowered.endpoints);
       else binderCtors.push(lowered.ctor);
     }
     const chain = chainReading(parseBody(body));
-    if (chain === undefined) return { kind: 'bare' };
+    if (chain === undefined) return { kind: "bare" };
     const parsed = parseAtomExpr(chain.conclusion);
-    if (parsed === undefined) return { kind: 'bare' };
+    if (parsed === undefined) return { kind: "bare" };
     const guardCtors: string[] = [];
     for (const g of chain.guards) {
       const gp = parseAtomExpr(g);
-      if (gp === undefined) return { kind: 'bare' };
-      if (isEquationGuard(gp.expr)) return { kind: 'bare' };
+      if (gp === undefined) return { kind: "bare" };
+      if (isEquationGuard(gp.expr)) return { kind: "bare" };
       guardCtors.push(transcribeExpr(unwrapParens(gp.expr), gp.sf, names));
     }
     if (clamped.length > 0) {
       return {
-        kind: 'unsupported-range',
+        kind: "unsupported-range",
         reason: unsupportedRangeReason(clamped),
       };
     }
@@ -924,19 +924,19 @@ function structuredProp(formula: string, moduleNames: NameMap): PropReading {
       (acc, g) => `ts.imp(${g}) { ${acc} }`,
       conclusionCtor,
     );
-    return { kind: 'structured', binders: binderCtors, body: bodyCtor };
+    return { kind: "structured", binders: binderCtors, body: bodyCtor };
   } catch (e) {
     // A clamp-emptied interval leaves no domain to prove over, whatever
     // the body: unsupported-range, like its merely-clamped kin.
     if (e instanceof EmptyAfterClampError) {
       return {
-        kind: 'unsupported-range',
+        kind: "unsupported-range",
         reason: unsupportedRangeReason(e.endpoints),
       };
     }
     // Transcription never aborts on a formula: anything else the Lemma
     // parsers reject degrades to the bare (NotTried) form.
-    return { kind: 'bare' };
+    return { kind: "bare" };
   }
 }
 
@@ -945,7 +945,7 @@ function structuredProp(formula: string, moduleNames: NameMap): PropReading {
  * Inappropriate for class-binder — with this reason. */
 export interface UntriedAnnotation {
   annotation: RawAnnotation;
-  kind: 'unsupported-range' | 'class-binder';
+  kind: "unsupported-range" | "class-binder";
   reason: string;
 }
 
@@ -964,9 +964,9 @@ function proveBlock(
     `#thales_prove ${leanStr(file)} ${leanStr(fnName)} ` +
     leanStr(a.propertyName);
   const comment =
-    `-- @ensures{${a.propertyName}} ` + a.formula.replace(/\s+/g, ' ').trim();
+    `-- @ensures{${a.propertyName}} ` + a.formula.replace(/\s+/g, " ").trim();
   const reading = structuredProp(a.formula, names);
-  if (reading.kind === 'unsupported-range') {
+  if (reading.kind === "unsupported-range") {
     return {
       lines: [
         comment,
@@ -975,7 +975,7 @@ function proveBlock(
       untried: { annotation: a, ...reading },
     };
   }
-  if (reading.kind === 'class-binder') {
+  if (reading.kind === "class-binder") {
     return {
       lines: [
         comment,
@@ -984,14 +984,14 @@ function proveBlock(
       untried: { annotation: a, ...reading },
     };
   }
-  if (reading.kind === 'bare') return { lines: [comment, head] };
+  if (reading.kind === "bare") return { lines: [comment, head] };
   return {
     lines: [
       comment,
       `${head} :=`,
-      `  ts.forall(${reading.binders.join(', ')}) {`,
+      `  ts.forall(${reading.binders.join(", ")}) {`,
       `    ${reading.body}`,
-      '  }',
+      "  }",
     ],
   };
 }
@@ -1007,8 +1007,8 @@ function skippedComment(i: InvalidAnnotation, file: string): string {
 function sourceComments(stmt: ts.Statement, sf: ts.SourceFile): string[] {
   return stmt
     .getText(sf)
-    .split('\n')
-    .map((line) => (line === '' ? '--' : `-- ${line}`));
+    .split("\n")
+    .map((line) => (line === "" ? "--" : `-- ${line}`));
 }
 
 /** A transcribed program plus what extraction found (and rejected) in it.
@@ -1039,9 +1039,9 @@ export function transcribe(
     entryDir: path.dirname(entry),
     done: new Map(),
     active: new Set([entry]),
-    blocks: [['import ThalesDsl']],
+    blocks: [["import ThalesDsl"]],
   };
-  const names = walkModule(entry, file, text, '', closure);
+  const names = walkModule(entry, file, text, "", closure);
   const { annotations, invalid } = extractFromSource(text, file);
   const untried: UntriedAnnotation[] = [];
   for (const a of annotations) {
@@ -1052,7 +1052,7 @@ export function transcribe(
   if (invalid.length > 0)
     closure.blocks.push(invalid.map((i) => skippedComment(i, file)));
   return {
-    lean: closure.blocks.map((b) => b.join('\n')).join('\n\n') + '\n',
+    lean: closure.blocks.map((b) => b.join("\n")).join("\n\n") + "\n",
     annotations,
     invalid,
     untried,
@@ -1071,5 +1071,5 @@ export function transcribeSource(
 /** Read a `.ts` file from disk and transcribe it; the path (as given) is
  * the annotations' identity `file`. */
 export function transcribeFile(file: string): string {
-  return transcribeSource(fs.readFileSync(file, 'utf8'), file);
+  return transcribeSource(fs.readFileSync(file, "utf8"), file);
 }

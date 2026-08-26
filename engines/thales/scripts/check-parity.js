@@ -7,25 +7,25 @@
 // the manifest; without LAKATOS_PROVE_E2E=1 only the quick fixtures run,
 // the same gate the prove e2e uses.
 
-import { spawnSync } from 'node:child_process';
-import * as fs from 'node:fs';
-import * as os from 'node:os';
-import * as path from 'node:path';
-import { checker, engineRoot, frontend, repoRoot } from './harness.js';
+import { spawnSync } from "node:child_process";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { checker, engineRoot, frontend, repoRoot } from "./harness.js";
 
-const { transcribe } = await frontend('transcribe');
-const { emitModule } = await frontend('emission');
-const { parseVerdicts, runArtifact } = await frontend('run');
+const { transcribe } = await frontend("transcribe");
+const { emitModule } = await frontend("emission");
+const { parseVerdicts, runArtifact } = await frontend("run");
 const { qualifiedName } = await import(
-  path.join(repoRoot, 'dist', 'lemma', 'src', 'index.js')
+  path.join(repoRoot, "dist", "lemma", "src", "index.js")
 );
 
-const CONFORMANCE = 'engines/thales/tests/conformance';
+const CONFORMANCE = "engines/thales/tests/conformance";
 
 /** Always checked: the tracer bullet and the frontend-classified twin of
  * the old pipeline's class-binder refusal. */
 const QUICK_FIXTURES = [
-  'engines/thales/tests/fixtures/tracer.ts',
+  "engines/thales/tests/fixtures/tracer.ts",
   `${CONFORMANCE}/inappropriate/class-binder.ts`,
 ];
 
@@ -33,7 +33,7 @@ const QUICK_FIXTURES = [
  * bodies, int/nat binders, single-atom conclusions. Fixtures with imports
  * or unsupported ranges join the manifest with their slices (#149, #151). */
 const EXPRESSION_FIXTURES = [
-  'engines/thales/tests/fixtures/operators.ts',
+  "engines/thales/tests/fixtures/operators.ts",
   `${CONFORMANCE}/theorem/add-commutes.ts`,
   `${CONFORMANCE}/theorem/bounded-double.ts`,
   `${CONFORMANCE}/theorem/endpoints.ts`,
@@ -66,7 +66,7 @@ const EXPRESSION_FIXTURES = [
  * fall through — plus the statement-level degradations (loops, a
  * shadowing redeclaration, an uninitialized let). */
 const STATEMENT_FIXTURES = [
-  'engines/thales/tests/fixtures/statements.ts',
+  "engines/thales/tests/fixtures/statements.ts",
   `${CONFORMANCE}/theorem/branch-joined-let.ts`,
   `${CONFORMANCE}/theorem/const-chain.ts`,
   `${CONFORMANCE}/theorem/let-binding.ts`,
@@ -83,7 +83,7 @@ const STATEMENT_FIXTURES = [
  * reaches; imports (#149) and unsupported ranges (#151) are what still
  * wait. */
 const BINDER_FIXTURES = [
-  'engines/thales/tests/fixtures/binders.ts',
+  "engines/thales/tests/fixtures/binders.ts",
   `${CONFORMANCE}/countersatisfiable/guarded-witness.ts`,
   `${CONFORMANCE}/countersatisfiable/reserved-binder.ts`,
   `${CONFORMANCE}/theorem/guarded-floor.ts`,
@@ -102,14 +102,14 @@ const BINDER_FIXTURES = [
  * non-function declarations bind, mixed with healthy annotations in one
  * file. Imports stay out until their slice restores them. */
 const DEGRADATION_FIXTURES = [
-  'engines/thales/tests/fixtures/degradations.ts',
+  "engines/thales/tests/fixtures/degradations.ts",
   `${CONFORMANCE}/nottried/empty-after-clamp.ts`,
   `${CONFORMANCE}/nottried/half-bounded-int.ts`,
   `${CONFORMANCE}/nottried/huge-range.ts`,
 ];
 
 const fixtures =
-  process.env.LAKATOS_PROVE_E2E === '1'
+  process.env.LAKATOS_PROVE_E2E === "1"
     ? [
         ...QUICK_FIXTURES,
         ...EXPRESSION_FIXTURES,
@@ -119,29 +119,29 @@ const fixtures =
       ]
     : QUICK_FIXTURES;
 
-const { check, done } = checker('parity');
+const { check, done } = checker("parity");
 
 process.chdir(repoRoot); // the fixture path is the annotations' identity file
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'thales-parity-'));
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "thales-parity-"));
 
 // One lake build settles the emitter; each fixture then pays only the
 // process spawn, with lake's search path captured once.
-const emitBin = path.join(engineRoot, '.lake', 'build', 'bin', 'thales-emit');
-const emitBuild = spawnSync('lake', ['build', 'thales-emit'], {
+const emitBin = path.join(engineRoot, ".lake", "build", "bin", "thales-emit");
+const emitBuild = spawnSync("lake", ["build", "thales-emit"], {
   cwd: engineRoot,
-  encoding: 'utf8',
+  encoding: "utf8",
   timeout: 600_000,
 });
 check(
   emitBuild.status === 0,
   `lake build thales-emit failed (${emitBuild.status}):\n${emitBuild.stderr}`,
 );
-const leanPath = spawnSync('lake', ['env', 'printenv', 'LEAN_PATH'], {
+const leanPath = spawnSync("lake", ["env", "printenv", "LEAN_PATH"], {
   cwd: engineRoot,
-  encoding: 'utf8',
+  encoding: "utf8",
   timeout: 600_000,
 }).stdout?.trim();
-check(Boolean(leanPath), 'lake env yielded no LEAN_PATH');
+check(Boolean(leanPath), "lake env yielded no LEAN_PATH");
 
 /** One envelope entry, as both pipelines must produce it. `kind` rides
  * only on the refusals that carry one into the envelope. */
@@ -153,7 +153,7 @@ function entry(fn, property, szs, reason, axioms, counterexample, kind) {
  * elaborator's attempts, not anything about the annotation — so the
  * comparison masks it; the axiom's identity is the rest of the name. */
 function maskAxiom(name) {
-  return name.replace(/native_decide\.ax_\d+$/, 'native_decide.ax_N');
+  return name.replace(/native_decide\.ax_\d+$/, "native_decide.ax_N");
 }
 
 function projectVerdict(v) {
@@ -175,9 +175,9 @@ function projectUntried(u) {
     u.annotation.className,
     u.annotation.isStatic,
   );
-  const szs = u.kind === 'class-binder' ? 'Inappropriate' : 'NotTried';
+  const szs = u.kind === "class-binder" ? "Inappropriate" : "NotTried";
   // The CLI carries the kind into the envelope only for NotTried refusals.
-  const kind = u.kind === 'class-binder' ? undefined : u.kind;
+  const kind = u.kind === "class-binder" ? undefined : u.kind;
   return entry(
     fn,
     u.annotation.propertyName,
@@ -201,19 +201,19 @@ function verdictsOf(leanFile, label) {
     run.status === 0,
     `${label}: expected exit 0, got ${run.status}\nstderr:\n${run.stderr}`,
   );
-  const { verdicts, messages } = parseVerdicts(run.stdout ?? '');
+  const { verdicts, messages } = parseVerdicts(run.stdout ?? "");
   for (const m of messages) check(false, `${label}: ${m}`);
   return verdicts;
 }
 
 for (const [i, fixture] of fixtures.entries()) {
-  const text = fs.readFileSync(fixture, 'utf8');
+  const text = fs.readFileSync(fixture, "utf8");
 
   // Timeout fixtures are graded the way the corpus harness grades them:
   // under a reduced heartbeat budget, where Timeout is deterministic and
   // cheap. Both pipelines see the same budget, so parity still binds.
-  if (fixture.includes('/timeout/')) {
-    process.env.LAKATOS_PROVE_HEARTBEATS = '1';
+  if (fixture.includes("/timeout/")) {
+    process.env.LAKATOS_PROVE_HEARTBEATS = "1";
   } else {
     delete process.env.LAKATOS_PROVE_HEARTBEATS;
   }
@@ -249,7 +249,7 @@ for (const [i, fixture] of fixtures.entries()) {
     fs.writeFileSync(jsonFile, JSON.stringify(emission));
     const emit = spawnSync(emitBin, [jsonFile, leanFile], {
       cwd: engineRoot,
-      encoding: 'utf8',
+      encoding: "utf8",
       timeout: 120_000,
       env: { ...process.env, LEAN_PATH: leanPath },
     });
