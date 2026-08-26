@@ -266,6 +266,14 @@ describe('obligation payload degradations', () => {
       'a formula the prefix parser rejects',
       'forall (x: int ∈ [0, 5)) (x: int ∈ [0, 5)) { f(x) ≡ x }',
     ],
+    [
+      'a connective outside the chain shape',
+      'forall (x: int ∈ [0, 5)) { f(x) >= 0 ∨ f(x) <= 9 }',
+    ],
+    [
+      'an unparseable guard atom',
+      'forall (x: int ∈ [0, 5)) { 2x >= 0 -> f(x) >= 0 }',
+    ],
   ])('%s degrades to a bare payload', (_label, formula) => {
     expect(payloadOf(formula)).toEqual({ kind: 'bare' });
   });
