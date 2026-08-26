@@ -276,10 +276,10 @@ here for clarity.
 
 - **`Integer + Integer`, `Integer - Integer`, `Integer * Integer`,
   `Nat + Nat`, `Nat * Nat`, `Nat ** Nat`** — none of these are
-closed under the safe-integer predicate; obligations would
-correctly fail for some operands in range. The sound thing for
-users is to widen parameters to a smaller refinement (`Byte`) or
-accept widening to `number`.
+  closed under the safe-integer predicate; obligations would
+  correctly fail for some operands in range. The sound thing for
+  users is to widen parameters to a smaller refinement (`Byte`) or
+  accept widening to `number`.
 - **`Integer % Integer`** — `5 % 0 = NaN`;
   `Number.isInteger(NaN)` is `false`. Closure requires the divisor
   be provably nonzero, which is not free. Widens to `number`; the
@@ -1151,7 +1151,7 @@ the earliest version where the example becomes a corpus fixture.
    /** @throws RangeError */
    function fromUnknown(raw: number): Integer {
      if (isInteger(raw)) return raw;
-     throw new RangeError('not a safe integer');
+     throw new RangeError("not a safe integer");
    }
    ```
 
@@ -1233,10 +1233,10 @@ the earliest version where the example becomes a corpus fixture.
     `[ships in: 0.6]`
 
     ```ts
-    import { Integer as PreludeInteger } from '@thales/prelude';
+    import { Integer as PreludeInteger } from "@thales/prelude";
 
     type Integer = string; // user's own; no conflict
-    const a: Integer = 'hello';
+    const a: Integer = "hello";
     const b: PreludeInteger = 42;
     ```
 
@@ -1248,13 +1248,13 @@ the earliest version where the example becomes a corpus fixture.
     `[ships in: 0.6]`
 
     ```ts
-    import { Integer } from '@thales/prelude';
+    import { Integer } from "@thales/prelude";
 
     const outer: Integer = 42; // prelude's Integer
 
     function localOverride(): string {
       type Integer = string; // shadows the import in this scope
-      const inner: Integer = 'hello';
+      const inner: Integer = "hello";
       return inner;
     }
     ```
@@ -1266,7 +1266,7 @@ the earliest version where the example becomes a corpus fixture.
     `[ships in: 0.6]`
 
     ```ts
-    import { Integer } from '@thales/prelude';
+    import { Integer } from "@thales/prelude";
     // @ts-expect-error TS2440
     type Integer = string; // duplicate identifier
     ```
@@ -1351,7 +1351,7 @@ function takeInteger(x: number): Integer {
   if (isInteger(x)) {
     return x;
   }
-  throw new RangeError('not a safe integer');
+  throw new RangeError("not a safe integer");
 }
 ```
 
@@ -1739,7 +1739,7 @@ rejected with `TH0081`).
 ```ts
 // 0.6: refinement types as documentation primitives.
 
-import type { Integer, Nat, Byte } from './prelude';
+import type { Integer, Nat, Byte } from "./prelude";
 
 // `Math.abs` overload: type-checker special-case returns Nat.
 function magnitude(n: Integer): Nat {
@@ -1821,8 +1821,8 @@ rejected.
 // 0.7: arithmetic on the static table preserves refinement;
 // narrowing recognizes prelude guards.
 
-import type { Integer, Nat, Byte, Bit } from './prelude';
-import { isInteger, isByte } from './prelude';
+import type { Integer, Nat, Byte, Bit } from "./prelude";
+import { isInteger, isByte } from "./prelude";
 
 // Static table: Byte + Byte = Nat.
 function sumBytes(a: Byte, b: Byte): Nat {
@@ -1843,7 +1843,7 @@ function byteWithFlag(b: Byte, flag: Bit): Nat {
 // throwing on failure. Requires D0.5 (post-throw narrowing).
 /** @throws RangeError */
 function asInteger(raw: number): Integer {
-  if (!isInteger(raw)) throw new RangeError('not a safe integer');
+  if (!isInteger(raw)) throw new RangeError("not a safe integer");
   return raw; // raw: Integer here, by D0.5 narrowing
 }
 
@@ -1902,7 +1902,7 @@ recognized.
 ```ts
 // 0.8: verification pipeline ships. Obligations get checked.
 
-import type { Integer, Nat, Byte } from './prelude';
+import type { Integer, Nat, Byte } from "./prelude";
 
 // Now possible because the verifier sees the ternary's hypothesis
 // and discharges the obligation Integer → Nat under `n < 0`.
@@ -2825,18 +2825,18 @@ imported are not in scope. Mirroring tsc:
   uses an `import as` rename, which `tsc` accepts cleanly:
 
   ```ts
-  import { Integer as PreludeInteger } from '@thales/prelude';
+  import { Integer as PreludeInteger } from "@thales/prelude";
   type Integer = string; // user's own; no conflict
   ```
 
 - Inner-scope shadowing always works (TS scoping rule):
 
   ```ts
-  import { Integer } from '@thales/prelude';
+  import { Integer } from "@thales/prelude";
 
   function localOverride(): string {
     type Integer = string; // shadows the import inside this scope
-    const x: Integer = 'hello';
+    const x: Integer = "hello";
     return x;
   }
   ```
@@ -2873,7 +2873,7 @@ export type Integer = bigint; // my domain wants arbitrary-precision
 export type Nat = bigint;
 
 // rest-of-app.ts — uses my types, not the prelude
-import type { Integer, Nat } from './my-domain-types';
+import type { Integer, Nat } from "./my-domain-types";
 ```
 
 #### How Thales handles a user-shadowed prelude type

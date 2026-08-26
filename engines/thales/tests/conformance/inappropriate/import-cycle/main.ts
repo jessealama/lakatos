@@ -1,4 +1,4 @@
-import { scaled } from './cycle.js';
+import { scaled } from "./cycle.js";
 
 // Modeled: the cycle degrades the names on the edge that closes it, not
 // the entry file's own declarations.

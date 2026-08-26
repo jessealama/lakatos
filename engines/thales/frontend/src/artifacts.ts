@@ -1,11 +1,11 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
+import * as fs from "node:fs";
+import * as path from "node:path";
 import {
   type InvalidAnnotation,
   mirrorPath,
   type RawAnnotation,
-} from '../../../../lemma/src/index.js';
-import { transcribe, type UntriedAnnotation } from './transcribe.js';
+} from "../../../../lemma/src/index.js";
+import { transcribe, type UntriedAnnotation } from "./transcribe.js";
 
 export interface FileArtifact {
   sourceFile: string;
@@ -24,16 +24,16 @@ export function writeArtifacts(
   outRoot: string,
 ): FileArtifact[] {
   return files.map((file) => {
-    const outFile = mirrorPath(file, outRoot, '.lean');
+    const outFile = mirrorPath(file, outRoot, ".lean");
     const { lean, annotations, invalid, untried } = transcribe(
-      fs.readFileSync(file, 'utf8'),
+      fs.readFileSync(file, "utf8"),
       file,
     );
     if (annotations.length === 0) {
       return { sourceFile: file, annotations, invalid, untried };
     }
     fs.mkdirSync(path.dirname(outFile), { recursive: true });
-    fs.writeFileSync(outFile, lean, 'utf8');
+    fs.writeFileSync(outFile, lean, "utf8");
     return { sourceFile: file, outFile, annotations, invalid, untried };
   });
 }

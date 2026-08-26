@@ -1,4 +1,4 @@
-import ts from 'typescript';
+import ts from "typescript";
 import {
   type Binder,
   clampedEndpoints,
@@ -12,7 +12,7 @@ import {
   qualifiedName,
   type RawAnnotation,
   unsupportedRangeReason,
-} from '../../../../lemma/src/index.js';
+} from "../../../../lemma/src/index.js";
 import {
   bindingIdentifiers,
   chainReading,
@@ -21,7 +21,7 @@ import {
   kindName,
   numberBounds,
   numberToken,
-} from './transcribe.js';
+} from "./transcribe.js";
 
 /** A JS expression in the shapes the plain-Lean emitter renders. The
  * frontend records operator text verbatim; what an operator means is the
@@ -29,11 +29,11 @@ import {
  * emitter renders and classifies everything else the way the old
  * pipeline's elaborator does. */
 export type EmitExpr =
-  | { kind: 'num'; lit: string }
-  | { kind: 'id'; name: string }
-  | { kind: 'unop'; op: '-' | '+'; operand: EmitExpr }
-  | { kind: 'binop'; op: string; left: EmitExpr; right: EmitExpr }
-  | { kind: 'call'; callee: string; args: EmitExpr[] };
+  | { kind: "num"; lit: string }
+  | { kind: "id"; name: string }
+  | { kind: "unop"; op: "-" | "+"; operand: EmitExpr }
+  | { kind: "binop"; op: string; left: EmitExpr; right: EmitExpr }
+  | { kind: "call"; callee: string; args: EmitExpr[] };
 
 /** A statement in the shapes the plain-Lean emitter renders as Lean
  * do-notation: `const` and mutable `let` locals, reassignment, `if`/`else`
@@ -41,15 +41,15 @@ export type EmitExpr =
  * `throw` carries the error's constructor name alone — the message is a
  * string the value model has nothing to say about. */
 export type EmitStmt =
-  | { kind: 'return'; expr: EmitExpr }
-  | { kind: 'throw'; error: string }
-  | { kind: 'const'; name: string; init: EmitExpr }
-  | { kind: 'let'; name: string; init: EmitExpr }
-  | { kind: 'assign'; name: string; expr: EmitExpr }
-  | { kind: 'if'; cond: EmitExpr; then: EmitStmt[]; else?: EmitStmt[] };
+  | { kind: "return"; expr: EmitExpr }
+  | { kind: "throw"; error: string }
+  | { kind: "const"; name: string; init: EmitExpr }
+  | { kind: "let"; name: string; init: EmitExpr }
+  | { kind: "assign"; name: string; expr: EmitExpr }
+  | { kind: "if"; cond: EmitExpr; then: EmitStmt[]; else?: EmitStmt[] };
 
 export interface EmitFunction {
-  kind: 'function';
+  kind: "function";
   name: string;
   /** Parameter names; every parameter is `: number`. */
   params: string[];
@@ -63,10 +63,10 @@ export interface EmitFunction {
  * narrowed by whichever bounds its interval carries. The same shapes the
  * old grammar's binder constructors carry. */
 export type EmitBinder =
-  | { name: string; kind: 'range'; lo: string; hi: string }
-  | { name: string; kind: 'int' }
-  | { name: string; kind: 'nat' }
-  | { name: string; kind: 'number'; lower?: FloatBound; upper?: FloatBound };
+  | { name: string; kind: "range"; lo: string; hi: string }
+  | { name: string; kind: "int" }
+  | { name: string; kind: "nat" }
+  | { name: string; kind: "number"; lower?: FloatBound; upper?: FloatBound };
 
 export interface EmitObligation {
   /** Qualified function name — the annotation identity's `function`. */
@@ -76,17 +76,17 @@ export interface EmitObligation {
   formula: string;
   payload:
     | {
-        kind: 'structured';
+        kind: "structured";
         /** Nested binders, outermost first. */
         binders: EmitBinder[];
         /** Guard antecedents, outermost first, inside every binder. Absent
          * rather than empty when the formula has none. */
         guards?: EmitExpr[];
         conclusion:
-          | { kind: 'eq'; left: EmitExpr; right: EmitExpr }
-          | { kind: 'istrue'; expr: EmitExpr };
+          | { kind: "eq"; left: EmitExpr; right: EmitExpr }
+          | { kind: "istrue"; expr: EmitExpr };
       }
-    | { kind: 'bare' };
+    | { kind: "bare" };
 }
 
 /** What thales-emit consumes: one module's mappable declarations and the
@@ -103,9 +103,9 @@ export interface Emission {
  * harness pins. */
 export interface ClassifiedAnnotation {
   annotation: RawAnnotation;
-  szs: 'Inappropriate' | 'Error' | 'NotTried';
+  szs: "Inappropriate" | "Error" | "NotTried";
   /** NotTried only: the envelope kind the CLI reports alongside. */
-  kind?: 'unsupported-range';
+  kind?: "unsupported-range";
   reason: string;
 }
 
@@ -128,14 +128,14 @@ interface FailedDecl {
  * `unmodeledOperator?` in Model.lean, byte for byte. */
 const REFUSED_OPERATORS = new Map<string, string>([
   [
-    '**',
+    "**",
     "'**' is implementation-approximated in JavaScript, so any model would " +
-      'certify results a conforming engine may disagree with',
+      "certify results a conforming engine may disagree with",
   ],
 ]);
 
-const ARITH_OPERATORS = new Set(['+', '-', '*', '/', '%']);
-const COMPARISON_OPERATORS = new Set(['<', '<=', '>', '>=', '===', '!==']);
+const ARITH_OPERATORS = new Set(["+", "-", "*", "/", "%"]);
+const COMPARISON_OPERATORS = new Set(["<", "<=", ">", ">=", "===", "!=="]);
 
 function unmappedMsg(construct: string, pos: string): string {
   return `unmapped TypeScript construct '${construct}' at ${pos}`;
@@ -279,10 +279,10 @@ function findFailedCallee(
   return failedCalleeIn(callNames(e), scope);
 }
 
-type Expected = 'num' | 'bool';
+type Expected = "num" | "bool";
 
 function describeTy(t: Expected): string {
-  return t === 'num' ? 'a number' : 'a boolean';
+  return t === "num" ? "a number" : "a boolean";
 }
 
 /** An engine-route failure: the walk found something with no model, or a
@@ -303,7 +303,7 @@ function walkTyped(
   }
   const negated = negatedLiteral(e);
   if (ts.isNumericLiteral(e) || negated !== undefined) {
-    if (expected !== 'num') {
+    if (expected !== "num") {
       throw new ModelError(
         `a numeric literal cannot be ${describeTy(expected)}`,
       );
@@ -312,48 +312,48 @@ function walkTyped(
       negated !== undefined
         ? `-${numberToken(negated)}`
         : numberToken(e as ts.NumericLiteral);
-    return { kind: 'num', lit };
+    return { kind: "num", lit };
   }
   if (ts.isIdentifier(e)) {
     if (!scope.vars.has(e.text)) {
       throw new ModelError(`unbound identifier '${e.text}'`);
     }
-    if (expected !== 'num') {
+    if (expected !== "num") {
       throw new ModelError(
         `identifier '${e.text}' is a number, not ${describeTy(expected)}`,
       );
     }
-    return { kind: 'id', name: e.text };
+    return { kind: "id", name: e.text };
   }
   if (isUnaryArith(e)) {
-    const operand = walkTyped(e.operand, 'num', scope, sf);
-    const op = e.operator === ts.SyntaxKind.MinusToken ? '-' : '+';
-    if (expected !== 'num') {
+    const operand = walkTyped(e.operand, "num", scope, sf);
+    const op = e.operator === ts.SyntaxKind.MinusToken ? "-" : "+";
+    if (expected !== "num") {
       throw new ModelError(
         `operator '${op}' yields a number, not ${describeTy(expected)}`,
       );
     }
-    return { kind: 'unop', op, operand };
+    return { kind: "unop", op, operand };
   }
   if (ts.isBinaryExpression(e)) {
     const op = e.operatorToken.getText(sf);
-    const left = walkTyped(e.left, 'num', scope, sf);
-    const right = walkTyped(e.right, 'num', scope, sf);
+    const left = walkTyped(e.left, "num", scope, sf);
+    const right = walkTyped(e.right, "num", scope, sf);
     if (ARITH_OPERATORS.has(op)) {
-      if (expected !== 'num') {
+      if (expected !== "num") {
         throw new ModelError(
           `operator '${op}' yields a number, not ${describeTy(expected)}`,
         );
       }
-      return { kind: 'binop', op, left, right };
+      return { kind: "binop", op, left, right };
     }
     if (COMPARISON_OPERATORS.has(op)) {
-      if (expected !== 'bool') {
+      if (expected !== "bool") {
         throw new ModelError(
           `operator '${op}' yields a boolean, not ${describeTy(expected)}`,
         );
       }
-      return { kind: 'binop', op, left, right };
+      return { kind: "binop", op, left, right };
     }
     // A refused operator the pre-scans missed still refuses; anything
     // else has no model, which is the engine's problem.
@@ -376,13 +376,13 @@ function walkTyped(
         `'${name}' expects ${arity} argument(s), got ${e.arguments.length}`,
       );
     }
-    if (expected !== 'num') {
+    if (expected !== "num") {
       throw new ModelError(
         `a call to '${name}' yields a number, not ${describeTy(expected)}`,
       );
     }
-    const args = e.arguments.map((a) => walkTyped(a, 'num', scope, sf));
-    return { kind: 'call', callee: name, args };
+    const args = e.arguments.map((a) => walkTyped(a, "num", scope, sf));
+    return { kind: "call", callee: name, args };
   }
   // Unreachable after the construct scan; degrade like an opaque node.
   throw new ModelError(constructAt(e, e.kind, sf).reason);
@@ -467,23 +467,23 @@ function signatureFailure(
  * transcriber's `Locals`, with the same discipline: a branch's arm gets
  * its own copy, and a redeclaration of a name from an enclosing scope is
  * refused rather than shadowed. */
-type Locals = Map<string, 'const' | 'mutable'>;
+type Locals = Map<string, "const" | "mutable">;
 
 /** The statement tree as the old transcriber would have rendered it: each
  * node is either a mapped statement (its expressions still tsc nodes) or
  * the opaque failure the transcriber would have emitted in its place. */
 type TStmt =
-  | { t: 'return'; expr: ts.Expression }
-  | { t: 'throw'; error: string }
-  | { t: 'decl'; mutable: boolean; name: string; init: ts.Expression }
-  | { t: 'assign'; name: string; expr: ts.Expression }
+  | { t: "return"; expr: ts.Expression }
+  | { t: "throw"; error: string }
+  | { t: "decl"; mutable: boolean; name: string; init: ts.Expression }
+  | { t: "assign"; name: string; expr: ts.Expression }
   | {
-      t: 'if';
+      t: "if";
       cond: { expr: ts.Expression } | { opaque: FailedDecl };
       then: TStmt[];
       else?: TStmt[];
     }
-  | { t: 'opaque'; failure: FailedDecl };
+  | { t: "opaque"; failure: FailedDecl };
 
 /** The error kind a `throw` carries — the constructor's name, exactly as
  * the old transcriber reads it; the message is discarded. */
@@ -519,12 +519,12 @@ function declStmts(
     // arm's own binding is what the tail would read back.
     if (locals.has(d.name.text)) return undefined;
     stmts.push({
-      t: 'decl',
+      t: "decl",
       mutable: !isConst,
       name: d.name.text,
       init: d.initializer,
     });
-    locals.set(d.name.text, isConst ? 'const' : 'mutable');
+    locals.set(d.name.text, isConst ? "const" : "mutable");
   }
   return stmts;
 }
@@ -536,8 +536,8 @@ function assignStmt(e: ts.Expression, locals: Locals): TStmt | undefined {
   if (e.operatorToken.kind !== ts.SyntaxKind.EqualsToken) return undefined;
   const target = unwrapParens(e.left);
   if (!ts.isIdentifier(target)) return undefined;
-  if (locals.get(target.text) !== 'mutable') return undefined;
-  return { t: 'assign', name: target.text, expr: e.right };
+  if (locals.get(target.text) !== "mutable") return undefined;
+  return { t: "assign", name: target.text, expr: e.right };
 }
 
 /** One statement's `TStmt`s, mirroring the old transcriber's fallthrough:
@@ -551,12 +551,12 @@ function structureStmt(
     // `return;` yields undefined, which a `number` function has no value
     // for and this slice does not model.
     if (s.expression === undefined)
-      return [{ t: 'opaque', failure: constructAt(s, s.kind, sf) }];
-    return [{ t: 'return', expr: s.expression }];
+      return [{ t: "opaque", failure: constructAt(s, s.kind, sf) }];
+    return [{ t: "return", expr: s.expression }];
   }
   if (ts.isThrowStatement(s)) {
     const kind = errorKind(s.expression);
-    if (kind !== undefined) return [{ t: 'throw', error: kind }];
+    if (kind !== undefined) return [{ t: "throw", error: kind }];
   }
   if (ts.isVariableStatement(s)) {
     const stmts = declStmts(s, locals);
@@ -585,10 +585,10 @@ function structureStmt(
     };
     const thenArm = arm(s.thenStatement);
     if (s.elseStatement === undefined)
-      return [{ t: 'if', cond, then: thenArm }];
-    return [{ t: 'if', cond, then: thenArm, else: arm(s.elseStatement) }];
+      return [{ t: "if", cond, then: thenArm }];
+    return [{ t: "if", cond, then: thenArm, else: arm(s.elseStatement) }];
   }
-  return [{ t: 'opaque', failure: constructAt(s, s.kind, sf) }];
+  return [{ t: "opaque", failure: constructAt(s, s.kind, sf) }];
 }
 
 /** The mapped expressions of a statement tree in tree order — the order
@@ -601,19 +601,19 @@ function treeExprs(
 ): ts.Expression[] {
   for (const s of stmts) {
     switch (s.t) {
-      case 'return':
+      case "return":
         into.push(s.expr);
         break;
-      case 'decl':
+      case "decl":
         into.push(s.init);
         break;
-      case 'assign':
+      case "assign":
         into.push(s.expr);
         break;
-      case 'if':
+      case "if":
         // An opaque condition never reaches this scan: the construct scan
         // runs first and returns it as the declaration's failure.
-        if ('expr' in s.cond) into.push(s.cond.expr);
+        if ("expr" in s.cond) into.push(s.cond.expr);
         treeExprs(s.then, into);
         if (s.else !== undefined) treeExprs(s.else, into);
         break;
@@ -633,25 +633,25 @@ function treeConstruct(
 ): FailedDecl | undefined {
   for (const s of stmts) {
     switch (s.t) {
-      case 'opaque':
+      case "opaque":
         return s.failure;
-      case 'return': {
+      case "return": {
         const found = findConstruct(s.expr, sf);
         if (found !== undefined) return found;
         break;
       }
-      case 'decl': {
+      case "decl": {
         const found = findConstruct(s.init, sf);
         if (found !== undefined) return found;
         break;
       }
-      case 'assign': {
+      case "assign": {
         const found = findConstruct(s.expr, sf);
         if (found !== undefined) return found;
         break;
       }
-      case 'if': {
-        if ('opaque' in s.cond) return s.cond.opaque;
+      case "if": {
+        if ("opaque" in s.cond) return s.cond.opaque;
         const found =
           findConstruct(s.cond.expr, sf) ??
           treeConstruct(s.then, sf) ??
@@ -659,7 +659,7 @@ function treeConstruct(
         if (found !== undefined) return found;
         break;
       }
-      case 'throw':
+      case "throw":
         break;
     }
   }
@@ -670,10 +670,10 @@ function treeConstruct(
  * lowering's `stmtLeaves`/`stmtsLeave`, verbatim. */
 function stmtLeaves(s: TStmt): boolean {
   switch (s.t) {
-    case 'return':
-    case 'throw':
+    case "return":
+    case "throw":
       return true;
-    case 'if':
+    case "if":
       return s.else !== undefined && stmtsLeave(s.then) && stmtsLeave(s.else);
     default:
       return false;
@@ -715,34 +715,34 @@ function lowerTree(
   const [s, ...rest] = stmts as [TStmt, ...TStmt[]];
   switch (s.t) {
     // A return or a throw ends this path; whatever follows is unreachable.
-    case 'return':
-      return [{ kind: 'return', expr: walk(s.expr, 'num', vars) }];
-    case 'throw':
-      return [{ kind: 'throw', error: s.error }];
-    case 'decl': {
+    case "return":
+      return [{ kind: "return", expr: walk(s.expr, "num", vars) }];
+    case "throw":
+      return [{ kind: "throw", error: s.error }];
+    case "decl": {
       // A binding whose scope is the rest of the list; a bind rather than
       // a substitution, so an unused initializer still evaluates.
-      const init = walk(s.init, 'num', vars);
+      const init = walk(s.init, "num", vars);
       const tail = lowerTree(rest, [...vars, s.name], k, scope, sf);
       return [
-        { kind: s.mutable ? 'let' : 'const', name: s.name, init },
+        { kind: s.mutable ? "let" : "const", name: s.name, init },
         ...tail,
       ];
     }
-    case 'assign': {
-      const expr = walk(s.expr, 'num', vars);
+    case "assign": {
+      const expr = walk(s.expr, "num", vars);
       const tail = lowerTree(rest, vars, k, scope, sf);
-      return [{ kind: 'assign', name: s.name, expr }, ...tail];
+      return [{ kind: "assign", name: s.name, expr }, ...tail];
     }
     /* v8 ignore start -- an opaque statement or condition is unreachable
        here: the construct scan already degraded the declaration. The throw
        mirrors the old elaborator's, kept for the same defense. */
-    case 'opaque':
+    case "opaque":
       throw new ModelError(s.failure.reason);
-    case 'if': {
-      if ('opaque' in s.cond) throw new ModelError(s.cond.opaque.reason);
+    case "if": {
+      if ("opaque" in s.cond) throw new ModelError(s.cond.opaque.reason);
       /* v8 ignore stop */
-      const cond = walk(s.cond.expr, 'bool', vars);
+      const cond = walk(s.cond.expr, "bool", vars);
       const elseArm = s.else ?? [];
       // What an arm that falls through continues into: the rest of this
       // list, and only then the enclosing continuation.
@@ -759,7 +759,7 @@ function lowerTree(
          continuation: an arm the leave-analysis proved leaving never
          invokes it, so it exists only to fail loudly on a bug. */
       const ruledOut: Cont = () => {
-        throw new ModelError('the lowering reached an arm it had ruled out');
+        throw new ModelError("the lowering reached an arm it had ruled out");
       };
       /* v8 ignore stop */
       const thenLeaves = stmtsLeave(s.then);
@@ -785,8 +785,8 @@ function lowerTree(
       const elseIR = lowerTree(elseArm, vars, elseK, scope, sf);
       const stmt: EmitStmt =
         s.else !== undefined && elseIR.length > 0
-          ? { kind: 'if', cond, then: thenIR, else: elseIR }
-          : { kind: 'if', cond, then: thenIR };
+          ? { kind: "if", cond, then: thenIR, else: elseIR }
+          : { kind: "if", cond, then: thenIR };
       return deadTail ? [stmt] : [stmt, ...tail];
     }
   }
@@ -806,7 +806,7 @@ function walkFunction(
   const params = fn.parameters.map((p) => (p.name as ts.Identifier).text);
   const scope: WalkScope = { vars: new Set(params), mapped, failed };
   // Parameters are assignable, the way JavaScript has them.
-  const locals: Locals = new Map(params.map((p) => [p, 'mutable' as const]));
+  const locals: Locals = new Map(params.map((p) => [p, "mutable" as const]));
   const tree = fn.body!.statements.flatMap((s) => structureStmt(s, sf, locals));
   // The pre-scans cover the whole body in the old elaborator's order —
   // opaque constructs, then refused operators, then construct-failed
@@ -830,13 +830,13 @@ function walkFunction(
       () => {
         // A `number` function that runs off the end returns undefined,
         // which this slice has no value for.
-        throw new ModelError('the body must return on every path');
+        throw new ModelError("the body must return on every path");
       },
       scope,
       sf,
     );
     return {
-      kind: 'function',
+      kind: "function",
       name: fn.name!.text,
       params,
       source: fn.getText(sf),
@@ -855,7 +855,7 @@ function parseAtomExpr(
   js: string,
 ): { sf: ts.SourceFile; expr: ts.Expression } | undefined {
   const sf = ts.createSourceFile(
-    'atom.ts',
+    "atom.ts",
     `(${js});`,
     ts.ScriptTarget.Latest,
     true,
@@ -876,8 +876,8 @@ function equationSides(
   if (
     !ts.isPropertyAccessExpression(callee) ||
     !ts.isIdentifier(callee.expression) ||
-    callee.expression.text !== 'Object' ||
-    callee.name.text !== 'is'
+    callee.expression.text !== "Object" ||
+    callee.name.text !== "is"
   ) {
     return undefined;
   }
@@ -889,44 +889,44 @@ function equationSides(
  * *denotes*, the same folding the old transcriber applies. `bare` covers
  * everything this slice cannot express; a safe-integer clamp reports its
  * offending endpoints instead, for the unsupported-range refusal. */
-function lowerBinder(b: Binder): EmitBinder | 'bare' | { clamped: string[] } {
-  if (b.domain === 'number') {
+function lowerBinder(b: Binder): EmitBinder | "bare" | { clamped: string[] } {
+  if (b.domain === "number") {
     // No safe-integer clamp: a number binder denotes binary64 values
     // directly, so there is no representability question to answer.
     const { lower, upper } = numberBounds(b.range);
     return {
       name: b.varName,
-      kind: 'number',
+      kind: "number",
       ...(lower === undefined ? {} : { lower }),
       ...(upper === undefined ? {} : { upper }),
     };
   }
-  if (b.domain !== 'int' && b.domain !== 'nat') return 'bare';
+  if (b.domain !== "int" && b.domain !== "nat") return "bare";
   if (b.range === undefined) {
-    return { name: b.varName, kind: b.domain === 'nat' ? 'nat' : 'int' };
+    return { name: b.varName, kind: b.domain === "nat" ? "nat" : "int" };
   }
   const { lo, hi } = intInterval(b.domain, b.range);
   if (hi === undefined) {
-    if (lo === undefined) return { name: b.varName, kind: 'int' };
-    return lo === 0n ? { name: b.varName, kind: 'nat' } : 'bare';
+    if (lo === undefined) return { name: b.varName, kind: "int" };
+    return lo === 0n ? { name: b.varName, kind: "nat" } : "bare";
   }
-  if (lo === undefined) return 'bare';
+  if (lo === undefined) return "bare";
   const clamped = clampedEndpoints(b);
   if (clamped.length > 0) return { clamped };
   return {
     name: b.varName,
-    kind: 'range',
+    kind: "range",
     lo: lo.toString(),
     hi: (hi + 1n).toString(),
   };
 }
 
 type PayloadResult =
-  | { kind: 'payload'; payload: EmitObligation['payload'] }
+  | { kind: "payload"; payload: EmitObligation["payload"] }
   | {
-      kind: 'classified';
-      szs: 'Inappropriate' | 'Error' | 'NotTried';
-      classifiedKind?: 'unsupported-range';
+      kind: "classified";
+      szs: "Inappropriate" | "Error" | "NotTried";
+      classifiedKind?: "unsupported-range";
       reason: string;
     };
 
@@ -943,15 +943,15 @@ function obligationPayload(
   mapped: ReadonlyMap<string, number>,
   failed: ReadonlyMap<string, FailedDecl>,
 ): PayloadResult {
-  const bare: PayloadResult = { kind: 'payload', payload: { kind: 'bare' } };
+  const bare: PayloadResult = { kind: "payload", payload: { kind: "bare" } };
   try {
     const { binders, body } = parsePrefix(formula);
     const loweredBinders: EmitBinder[] = [];
     const clamped: string[] = [];
     for (const b of binders) {
       const lowered = lowerBinder(b);
-      if (lowered === 'bare') return bare;
-      if ('clamped' in lowered) clamped.push(...lowered.clamped);
+      if (lowered === "bare") return bare;
+      if ("clamped" in lowered) clamped.push(...lowered.clamped);
       else loweredBinders.push(lowered);
     }
     const chain = chainReading(parseBody(body));
@@ -964,7 +964,7 @@ function obligationPayload(
       guardRoots.push({
         expr: unwrapParens(gp.expr),
         sf: gp.sf,
-        expected: 'bool',
+        expected: "bool",
       });
     }
     const parsed = parseAtomExpr(chain.conclusion);
@@ -973,9 +973,9 @@ function obligationPayload(
     // proving over the clamped domain would be a narrower statement.
     if (clamped.length > 0) {
       return {
-        kind: 'classified',
-        szs: 'NotTried',
-        classifiedKind: 'unsupported-range',
+        kind: "classified",
+        szs: "NotTried",
+        classifiedKind: "unsupported-range",
         reason: unsupportedRangeReason(clamped),
       };
     }
@@ -992,24 +992,24 @@ function obligationPayload(
       ...guardRoots,
       ...(sides !== undefined
         ? [
-            { expr: sides[0]!, sf: parsed.sf, expected: 'num' as Expected },
-            { expr: sides[1]!, sf: parsed.sf, expected: 'num' as Expected },
+            { expr: sides[0]!, sf: parsed.sf, expected: "num" as Expected },
+            { expr: sides[1]!, sf: parsed.sf, expected: "num" as Expected },
           ]
-        : [{ expr, sf: parsed.sf, expected: 'bool' as Expected }]),
+        : [{ expr, sf: parsed.sf, expected: "bool" as Expected }]),
     ];
     // A property the model refuses is `Inappropriate`; one the typed walk
     // fails is a failed property elaboration, the engine's `Error`.
     const found = prescanFailure(roots, scope);
     if (found !== undefined) {
-      return { kind: 'classified', szs: 'Inappropriate', reason: found.reason };
+      return { kind: "classified", szs: "Inappropriate", reason: found.reason };
     }
     const walkedRoots: EmitExpr[] = [];
     for (const root of roots) {
       const walked = typedOrFailure(root.expr, root.expected, scope, root.sf);
-      if (!('expr' in walked)) {
+      if (!("expr" in walked)) {
         return {
-          kind: 'classified',
-          szs: 'Error',
+          kind: "classified",
+          szs: "Error",
           reason: `property elaboration failed: ${walked.reason}`,
         };
       }
@@ -1018,20 +1018,20 @@ function obligationPayload(
     const walkedGuards = walkedRoots.slice(0, guardRoots.length);
     const walkedConclusion = walkedRoots.slice(guardRoots.length);
     return {
-      kind: 'payload',
+      kind: "payload",
       payload: {
-        kind: 'structured',
+        kind: "structured",
         binders: loweredBinders,
         // Absent, not empty, when the formula has no guards.
         ...(walkedGuards.length > 0 ? { guards: walkedGuards } : {}),
         conclusion:
           sides !== undefined
             ? {
-                kind: 'eq',
+                kind: "eq",
                 left: walkedConclusion[0]!,
                 right: walkedConclusion[1]!,
               }
-            : { kind: 'istrue', expr: walkedConclusion[0]! },
+            : { kind: "istrue", expr: walkedConclusion[0]! },
       },
     };
   } catch (e) {
@@ -1039,9 +1039,9 @@ function obligationPayload(
     // the body: unsupported-range, like its merely-clamped kin.
     if (e instanceof EmptyAfterClampError) {
       return {
-        kind: 'classified',
-        szs: 'NotTried',
-        classifiedKind: 'unsupported-range',
+        kind: "classified",
+        szs: "NotTried",
+        classifiedKind: "unsupported-range",
         reason: unsupportedRangeReason(e.endpoints),
       };
     }
@@ -1083,7 +1083,7 @@ export function emitModule(text: string, file: string): PlainEmission {
     if (ts.isFunctionDeclaration(stmt)) {
       if (stmt.name === undefined) continue;
       const walked = walkFunction(stmt, sf, mapped, failed);
-      if ('kind' in walked && walked.kind === 'function') {
+      if ("kind" in walked && walked.kind === "function") {
         declarations.push(walked);
         mapped.set(stmt.name.text, walked.params.length);
       } else {
@@ -1156,7 +1156,7 @@ export function emitModule(text: string, file: string): PlainEmission {
     if (classBinder !== undefined) {
       classified.push({
         annotation: a,
-        szs: 'Inappropriate',
+        szs: "Inappropriate",
         reason: classBinder,
       });
       continue;
@@ -1168,13 +1168,13 @@ export function emitModule(text: string, file: string): PlainEmission {
     if (fnFailed !== undefined) {
       classified.push({
         annotation: a,
-        szs: fnFailed.construct !== undefined ? 'Inappropriate' : 'Error',
+        szs: fnFailed.construct !== undefined ? "Inappropriate" : "Error",
         reason: `'${fn}' could not be modeled: ${fnFailed.reason}`,
       });
       continue;
     }
     const result = obligationPayload(a.formula, mapped, failed);
-    if (result.kind === 'classified') {
+    if (result.kind === "classified") {
       classified.push({
         annotation: a,
         szs: result.szs,
@@ -1188,7 +1188,7 @@ export function emitModule(text: string, file: string): PlainEmission {
     obligations.push({
       function: fn,
       property: a.propertyName,
-      formula: a.formula.replace(/\s+/g, ' ').trim(),
+      formula: a.formula.replace(/\s+/g, " ").trim(),
       payload: result.payload,
     });
   }

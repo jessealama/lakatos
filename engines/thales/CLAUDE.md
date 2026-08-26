@@ -28,7 +28,6 @@ npm run check:verdict-channel    # verdict-line contract over tests/fixtures/*.l
 npm run check:transcriber        # transcribe tracer.ts, run it, assert verdicts
 npm run check:parity             # old and new pipelines produce one envelope
                                  # (LAKATOS_PROVE_E2E=1 adds the corpus manifest)
-npm run format:check             # prettier (this directory has its own pin)
 ```
 
 From the repo root (the frontend is root-package code):
@@ -36,6 +35,7 @@ From the repo root (the frontend is root-package code):
 ```bash
 npx tsc -p tsconfig.json                      # build (check:transcriber needs this first)
 npx vitest run engines/thales/frontend/tests  # frontend unit tests
+npm run format:check                          # prettier, whole repo, one config
 LAKATOS_PROVE_E2E=1 npx vitest run tests/e2e.test.ts   # full prove e2e (needs Lean)
 ```
 
@@ -107,7 +107,7 @@ CI: `.github/workflows/thales.yml` runs lake build, the Lean tests, both check s
 - **`autoImplicit` is off** project-wide (`lakefile.lean`); bind all implicit/universe variables explicitly.
 - **Failure containment over abortion.** A construct the engine can't handle degrades that declaration (opaque node → `failedExt`), that annotation (`NotTried`/`Inappropriate`), or that artifact (`FileFailure`) — never the whole run. New frontend features should preserve this.
 - **One verdict line per `#thales_prove`, always** — even for failures the elaborator can see. The check scripts enforce ordering and framing. Annotations the transcriber deliberately emits no command for (unsupported ranges) never enter the verdict channel; the CLI reports them from the transcription's `untried` list.
-- **The Lean library builds here; the frontend builds at the root.** This directory's npm package (`thales-dev`) exists only for the check scripts and its own prettier pin.
+- **The Lean library builds here; the frontend builds at the root.** This directory's npm package (`thales-dev`) exists only for the check scripts; it has no dependencies. Formatting is a root-only operation: one prettier pin, one config, covering this directory too.
 
 ## Agent skills
 

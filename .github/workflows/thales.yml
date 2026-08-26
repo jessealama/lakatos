@@ -63,14 +63,9 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: |
-            engines/thales/package-lock.json
-            package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: npm install
-        run: npm ci
-
-      - name: npm install (root)
         run: npm ci
         working-directory: .
 
@@ -80,6 +75,7 @@ jobs:
 
       - name: Format check
         run: npm run format:check
+        working-directory: .
 
       - name: Cache Lake build artifacts
         uses: actions/cache@v6
