@@ -51,10 +51,7 @@ ts_def "idf" := ts.fn(ts.param["a"](ts.number)) : ts.number {
 
 -- What the infinity guards admit, decided on the comparisons the
 -- hypotheses use: a strict bound rejects its own infinity and NaN; a
--- closed bound admits its infinity and still rejects NaN. Core names
--- neither special value, so NaN is constructed the way floatInf is.
-private def floatNaN : Float := 0.0 / 0.0
-
+-- closed bound admits its infinity and still rejects NaN.
 example : ¬ (floatInf < floatInf) := by decide
 example : ¬ (floatNaN < floatInf) := by decide
 example : floatInf ≤ floatInf := by decide
