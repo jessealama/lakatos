@@ -366,17 +366,6 @@ describe("obligation payload degradations", () => {
     ).not.toHaveProperty("guards");
   });
 
-  test("an equation guard degrades to bare", () => {
-    // Object.is in guard position is refused, matching the old pipeline
-    const src = [
-      "/** @ensures{eqGuard} forall (x: int ∈ [0, 10)) { f(x) ≡ x -> f(x) >= 0 } */",
-      "export function f(x: number): number { return x; }",
-      "",
-    ].join("\n");
-    const { emission } = emitModule(src, "eq-guard.ts");
-    expect(emission.obligations[0]!.payload).toEqual({ kind: "bare" });
-  });
-
   test("bounded and unbounded binders nest in order", () => {
     const src =
       "/** @ensures{p} forall (a: int ∈ [0, 5)) (x: int) { f(a) ≡ f(x) } */\n" +
@@ -1522,6 +1511,63 @@ describe("Object.is models as SameValue", () => {
       expect.objectContaining({
         szs: "Inappropriate",
         reason: expect.stringContaining("unmapped TypeScript construct"),
+      }),
+    ]);
+  });
+});
+
+describe("equation guards", () => {
+  const FILE = "engines/thales/tests/fixtures/tracer.ts";
+  const src = (formula: string) =>
+    [
+      `/** @ensures{p} ${formula} */`,
+      "export function pick(x: number): number {",
+      "  return x;",
+      "}",
+    ].join("\n");
+
+  test("an ≡ guard walks to a same-value hypothesis", () => {
+    const { emission } = emitModule(
+      src("forall (n: int ∈ [0, 2)) { n ≡ 1 -> pick(n) === 1 }"),
+      FILE,
+    );
+    expectValidEmission(emission);
+    expect(emission.obligations).toEqual([
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          kind: "structured",
+          guards: [
+            {
+              kind: "same-value",
+              left: { kind: "id", name: "n" },
+              right: { kind: "num", lit: "1" },
+            },
+          ],
+        }),
+      }),
+    ]);
+  });
+
+  test("a ≢ guard still degrades the property to bare", () => {
+    const { emission } = emitModule(
+      src("forall (n: int ∈ [0, 2)) { n ≢ 1 -> pick(n) === 1 }"),
+      FILE,
+    );
+    expect(emission.obligations).toEqual([
+      expect.objectContaining({ payload: { kind: "bare" } }),
+    ]);
+  });
+
+  test("a top-level equation conclusion still maps to eq, not same-value", () => {
+    const { emission } = emitModule(
+      src("forall (n: int ∈ [0, 2)) { pick(n) ≡ n }"),
+      FILE,
+    );
+    expect(emission.obligations).toEqual([
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          conclusion: expect.objectContaining({ kind: "eq" }),
+        }),
       }),
     ]);
   });

@@ -18,7 +18,6 @@ import {
   bindingIdentifiers,
   chainReading,
   type FloatBound,
-  isEquationGuard,
   kindName,
   numberBounds,
   numberToken,
@@ -983,6 +982,17 @@ function equationSides(
   return [e.arguments[0]!, e.arguments[1]!];
 }
 
+/** A desugared `≢`: `!Object.is(…)`. The positive equation is a modeled
+ * boolean atom now; the negation waits on `!` itself. */
+function isNegatedEquation(e: ts.Expression): boolean {
+  const inner = unwrapParens(e);
+  return (
+    ts.isPrefixUnaryExpression(inner) &&
+    inner.operator === ts.SyntaxKind.ExclamationToken &&
+    equationSides(unwrapParens(inner.operand)) !== undefined
+  );
+}
+
 /** A binder's emitted domain: a finite half-open range, the whole int
  * line, the naturals, or a bounded `number` — reading the domain the binder
  * *denotes*, the same folding the old transcriber applies. `bare` covers
@@ -1061,7 +1071,7 @@ function obligationPayload(
     for (const g of chain.guards) {
       const gp = parseAtomExpr(g);
       if (gp === undefined) return bare;
-      if (isEquationGuard(gp.expr)) return bare;
+      if (isNegatedEquation(gp.expr)) return bare;
       guardRoots.push({
         expr: unwrapParens(gp.expr),
         sf: gp.sf,
