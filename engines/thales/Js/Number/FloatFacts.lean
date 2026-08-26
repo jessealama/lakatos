@@ -3320,4 +3320,398 @@ theorem float_le_of_not_lt {x y : Float}
     -- definitional equality, rather than by rewriting.
     exact Bool.noConfusion (hc.symm.trans h)
 
+/-! ## The non-negativity chain: square, sum, sqrt
+
+A distance-style conclusion `0 ≤ √(dx·dx + dy·dy)` needs each link stated
+over `Float`: a square is non-negative whatever the operand's sign, a sum
+of non-negatives stays non-negative, and `sqrt` preserves the bound.
+Overflow lands on `+∞`, which the chain absorbs; the NaN hazards — a NaN
+operand, subtraction's opposite infinities, the square root of a negative
+— are each excluded by the link's own hypothesis. -/
+
+/-- Every accuracy the operations produce is some fraction of an ulp. -/
+theorem accuracyOfFraction_repr (a : Accuracy) :
+    ∃ num den, 0 < den ∧ num < den ∧ a = accuracyOfFraction num den := by
+  cases a with
+  | exact => exact ⟨0, 1, by omega, by omega, rfl⟩
+  | inexact o =>
+    cases o with
+    | lt => exact ⟨1, 4, by omega, by omega, rfl⟩
+    | eq => exact ⟨1, 2, by omega, by omega, rfl⟩
+    | gt => exact ⟨3, 4, by omega, by omega, rfl⟩
+
+/-- A finite float with a non-negative key carries the positive sign. -/
+theorem sign_of_key_nonneg {s : Sign} {m : Nat} {e : Int} {h : 0 < m}
+    (hk : 0 ≤ key (.finite s m e h)) : s = .positive := by
+  cases s
+  · exfalso
+    rw [key_finite_cast] at hk
+    have hpos : 0 < m * 2 ^ (e + 1074).toNat := Nat.mul_pos h (Nat.two_pow_pos _)
+    simp only [Sign.apply] at hk
+    omega
+  · rfl
+
+/-- An infinity with a non-negative key is the positive one. -/
+theorem sign_of_inf_key_nonneg {s : Sign} (hk : 0 ≤ key (.infinity s)) :
+    s = .positive := by
+  cases s
+  · exfalso
+    have := HUGE_pos
+    simp only [key, Sign.apply] at hk
+    omega
+  · rfl
+
+/-- A non-negative round shape stays non-negative across the pack
+crossing. -/
+theorem nonneg_after_pack {w : UnpackedFloat} (hw : RoundShape w)
+    (hn : w ≠ .notANumber) (hk : 0 ≤ key w) :
+    UnpackedFloat.le (.zero .positive)
+      (unpack .binary64 (UnpackedFloat.pack .binary64 w)) = true := by
+  have hmono := key_unpack_pack_mono (.canonical (.zero .positive)) hw
+    (fun hc => UnpackedFloat.noConfusion hc) hn (by simpa [key] using hk)
+  rw [unpack_pack_of_canonical (.zero .positive)] at hmono
+  exact le_of_key (.zero .positive) (canonical_unpack _)
+    (fun hc => UnpackedFloat.noConfusion hc) (unpack_pack_ne_nan hw hn)
+    (by simpa [key] using hmono)
+
+/-- The square's finite arm: an exact product rounded on the positive
+sign, whatever the operand's sign. -/
+theorem sq_finite_shape (s : Sign) {m : Nat} (hm : 0 < m) {e : Int}
+    (hmHi : m < 2 ^ 53) (hn : 2 ^ 52 ≤ m ∨ e = -1074) (heHi : e ≤ 971) :
+    RoundShape (UnpackedFloat.mul .binary64 (.finite s m e hm) (.finite s m e hm))
+      ∧ UnpackedFloat.mul .binary64 (.finite s m e hm) (.finite s m e hm) ≠ .notANumber
+      ∧ 0 ≤ key (UnpackedFloat.mul .binary64 (.finite s m e hm) (.finite s m e hm)) := by
+  have hw := mul_wellPlaced hm hm hn hn
+  have hcap : totalExponent (m * m) (e + e) ≤ 3900 := by
+    have h1 := log2_mul_le hm hm
+    have h2 : m.log2 ≤ 52 := by
+      have := (Nat.log2_lt (by omega)).mpr hmHi
+      omega
+    simp only [totalExponent]
+    omega
+  have hcore : RoundShape (roundWithAccuracy .binary64 .positive (m * m) (e + e)
+        (accuracyOfFraction 0 1))
+      ∧ roundWithAccuracy .binary64 .positive (m * m) (e + e)
+          (accuracyOfFraction 0 1) ≠ .notANumber
+      ∧ 0 ≤ key (roundWithAccuracy .binary64 .positive (m * m) (e + e)
+          (accuracyOfFraction 0 1)) :=
+    ⟨roundShape_roundWA _ _ _ 0 1 hw Nat.one_pos Nat.zero_lt_one hcap,
+      roundWA_ne_nan _ _ _ 0 1 hw Nat.one_pos Nat.zero_lt_one,
+      by rw [key_roundWA_pos _ _ 0 1 hw Nat.one_pos Nat.zero_lt_one]
+         exact natCast_mul_intPow_nonneg _ _⟩
+  cases s <;> exact hcore
+
+/-- A square is a round shape with a non-negative key: the sign multiplies
+out positive whatever the operand's sign, and the special cases never pair
+an infinity with a zero. -/
+theorem sq_shape {u : UnpackedFloat} (hu : Canonical u) (hun : u ≠ .notANumber) :
+    RoundShape (UnpackedFloat.mul .binary64 u u)
+      ∧ UnpackedFloat.mul .binary64 u u ≠ .notANumber
+      ∧ 0 ≤ key (UnpackedFloat.mul .binary64 u u) := by
+  cases hu with
+  | notANumber => exact absurd rfl hun
+  | infinity s =>
+    cases s <;>
+      exact ⟨.canonical (.infinity .positive), fun hc => UnpackedFloat.noConfusion hc,
+        Int.le_of_lt HUGE_pos⟩
+  | zero s =>
+    cases s <;>
+      exact ⟨.canonical (.zero .positive), fun hc => UnpackedFloat.noConfusion hc,
+        Int.le_refl 0⟩
+  | subnormal s m hm hmlt =>
+    exact sq_finite_shape s hm (Nat.lt_trans hmlt pow52_lt_53) (Or.inr rfl) (by omega)
+  | normal s m e hm hlo hhi helo hehi =>
+    exact sq_finite_shape s hm hhi (Or.inl hlo) hehi
+
+/-- The sum's finite arm on positive signs: the aligned sum is positive,
+so `normalize` rounds on the positive sign. -/
+theorem add_pos_finite_shape {m₁ m₂ : Nat} (h₁ : 0 < m₁) (h₂ : 0 < m₂) {e₁ e₂ : Int}
+    (hm₁ : m₁ < 2 ^ 53) (hm₂ : m₂ < 2 ^ 53)
+    (hlo₁ : -1074 ≤ e₁) (hhi₁ : e₁ ≤ 971) (hlo₂ : -1074 ≤ e₂) (hhi₂ : e₂ ≤ 971) :
+    RoundShape (UnpackedFloat.add .binary64
+        (.finite .positive m₁ e₁ h₁) (.finite .positive m₂ e₂ h₂))
+      ∧ UnpackedFloat.add .binary64
+          (.finite .positive m₁ e₁ h₁) (.finite .positive m₂ e₂ h₂) ≠ .notANumber
+      ∧ 0 ≤ key (UnpackedFloat.add .binary64
+          (.finite .positive m₁ e₁ h₁) (.finite .positive m₂ e₂ h₂)) := by
+  rw [add_finite_unfold]
+  obtain ⟨hshape, hnn⟩ :=
+    normalize_shape _ _ _ (add_cap .positive .positive hm₁ hm₂ hlo₁ hhi₁ hlo₂ hhi₂)
+  refine ⟨hshape, hnn, ?_⟩
+  have hM : 0 < Sign.apply .positive ((m₁ <<< (e₁ - min e₁ e₂).toNat : Nat) : Int)
+      + Sign.apply .positive ((m₂ <<< (e₂ - min e₁ e₂).toNat : Nat) : Int) := by
+    have hp₁ : 0 < m₁ <<< (e₁ - min e₁ e₂).toNat := by
+      rw [Nat.shiftLeft_eq]
+      exact Nat.mul_pos h₁ (Nat.two_pow_pos _)
+    have hp₂ : 0 < m₂ <<< (e₂ - min e₁ e₂).toNat := by
+      rw [Nat.shiftLeft_eq]
+      exact Nat.mul_pos h₂ (Nat.two_pow_pos _)
+    simp only [Sign.apply]
+    omega
+  rw [normalize_eq_of_pos _ _ hM]
+  exact key_round_pos_nonneg _ (by omega) _
+
+/-- A sum of non-negative floats is a round shape with a non-negative key:
+the only NaN-producing pairing, opposite infinities, needs a negative
+operand. -/
+theorem add_nonneg_shape {u v : UnpackedFloat} (hu : Canonical u) (hv : Canonical v)
+    (hun : u ≠ .notANumber) (hvn : v ≠ .notANumber)
+    (hku : 0 ≤ key u) (hkv : 0 ≤ key v) :
+    RoundShape (UnpackedFloat.add .binary64 u v)
+      ∧ UnpackedFloat.add .binary64 u v ≠ .notANumber
+      ∧ 0 ≤ key (UnpackedFloat.add .binary64 u v) := by
+  cases hu with
+  | notANumber => exact absurd rfl hun
+  | infinity s =>
+    obtain rfl := sign_of_inf_key_nonneg hku
+    cases hv with
+    | notANumber => exact absurd rfl hvn
+    | infinity t =>
+      obtain rfl := sign_of_inf_key_nonneg hkv
+      exact ⟨.canonical (.infinity .positive), fun hc => UnpackedFloat.noConfusion hc,
+        Int.le_of_lt HUGE_pos⟩
+    | zero t =>
+      exact ⟨.canonical (.infinity .positive), fun hc => UnpackedFloat.noConfusion hc,
+        Int.le_of_lt HUGE_pos⟩
+    | subnormal t m hm hmlt =>
+      exact ⟨.canonical (.infinity .positive), fun hc => UnpackedFloat.noConfusion hc,
+        Int.le_of_lt HUGE_pos⟩
+    | normal t m e hm hlo hhi helo hehi =>
+      exact ⟨.canonical (.infinity .positive), fun hc => UnpackedFloat.noConfusion hc,
+        Int.le_of_lt HUGE_pos⟩
+  | zero s =>
+    cases hv with
+    | notANumber => exact absurd rfl hvn
+    | infinity t =>
+      obtain rfl := sign_of_inf_key_nonneg hkv
+      exact ⟨.canonical (.infinity .positive), fun hc => UnpackedFloat.noConfusion hc,
+        Int.le_of_lt HUGE_pos⟩
+    | zero t =>
+      cases s <;> cases t <;>
+        exact ⟨.canonical (.zero _), fun hc => UnpackedFloat.noConfusion hc, Int.le_refl 0⟩
+    | subnormal t m hm hmlt =>
+      exact ⟨.canonical (.subnormal t m hm hmlt),
+        fun hc => UnpackedFloat.noConfusion hc, hkv⟩
+    | normal t m e hm hlo hhi helo hehi =>
+      exact ⟨.canonical (.normal t m e hm hlo hhi helo hehi),
+        fun hc => UnpackedFloat.noConfusion hc, hkv⟩
+  | subnormal s m hm hmlt =>
+    obtain rfl := sign_of_key_nonneg hku
+    cases hv with
+    | notANumber => exact absurd rfl hvn
+    | infinity t =>
+      obtain rfl := sign_of_inf_key_nonneg hkv
+      exact ⟨.canonical (.infinity .positive), fun hc => UnpackedFloat.noConfusion hc,
+        Int.le_of_lt HUGE_pos⟩
+    | zero t =>
+      exact ⟨.canonical (.subnormal .positive m hm hmlt),
+        fun hc => UnpackedFloat.noConfusion hc, hku⟩
+    | subnormal t m' hm' hmlt' =>
+      obtain rfl := sign_of_key_nonneg hkv
+      exact add_pos_finite_shape hm hm' (Nat.lt_trans hmlt pow52_lt_53)
+        (Nat.lt_trans hmlt' pow52_lt_53) (by omega) (by omega) (by omega) (by omega)
+    | normal t m' e' hm' hlo' hhi' helo' hehi' =>
+      obtain rfl := sign_of_key_nonneg hkv
+      exact add_pos_finite_shape hm hm' (Nat.lt_trans hmlt pow52_lt_53) hhi'
+        (by omega) (by omega) helo' hehi'
+  | normal s m e hm hlo hhi helo hehi =>
+    obtain rfl := sign_of_key_nonneg hku
+    cases hv with
+    | notANumber => exact absurd rfl hvn
+    | infinity t =>
+      obtain rfl := sign_of_inf_key_nonneg hkv
+      exact ⟨.canonical (.infinity .positive), fun hc => UnpackedFloat.noConfusion hc,
+        Int.le_of_lt HUGE_pos⟩
+    | zero t =>
+      exact ⟨.canonical (.normal .positive m e hm hlo hhi helo hehi),
+        fun hc => UnpackedFloat.noConfusion hc, hku⟩
+    | subnormal t m' hm' hmlt' =>
+      obtain rfl := sign_of_key_nonneg hkv
+      exact add_pos_finite_shape hm hm' hhi (Nat.lt_trans hmlt' pow52_lt_53)
+        helo hehi (by omega) (by omega)
+    | normal t m' e' hm' hlo' hhi' helo' hehi' =>
+      obtain rfl := sign_of_key_nonneg hkv
+      exact add_pos_finite_shape hm hm' hhi hhi' helo hehi helo' hehi'
+
+theorem nat_sqrt_le_self (n : Nat) : Nat.sqrt n ≤ n := by
+  rcases Nat.eq_zero_or_pos (Nat.sqrt n) with h0 | h0
+  · omega
+  · exact Nat.le_trans (Nat.le_mul_of_pos_left _ h0) (Nat.sqrt_le n)
+
+theorem nat_le_sqrt {a n : Nat} (h : a * a ≤ n) : a ≤ Nat.sqrt n := by
+  rcases Nat.lt_or_ge (Nat.sqrt n) a with hlt | hge
+  · exfalso
+    have hs := Nat.lt_succ_sqrt n
+    rw [Nat.succ_eq_add_one] at hs
+    have hsq : (Nat.sqrt n + 1) * (Nat.sqrt n + 1) ≤ a * a :=
+      Nat.mul_le_mul (by omega) (by omega)
+    omega
+  · exact hge
+
+/-- The square root's finite arm: `sqrtCore`'s target exponent pads the
+radicand to at least 104 bits whenever the target sits above the subnormal
+floor, so the root lands in normal position and the rounding input is
+well-placed. -/
+theorem sqrt_finite_shape {m : Nat} (hm : 0 < m) {e : Int} (hmHi : m < 2 ^ 53)
+    (heLo : -1074 ≤ e) (heHi : e ≤ 971) :
+    RoundShape (UnpackedFloat.sqrt .binary64 (.finite .positive m e hm))
+      ∧ UnpackedFloat.sqrt .binary64 (.finite .positive m e hm) ≠ .notANumber
+      ∧ 0 ≤ key (UnpackedFloat.sqrt .binary64 (.finite .positive m e hm)) := by
+  have h2 : (sqrtCore .binary64 m e).2.1
+      = min (e / 2) (max ((totalExponent m e + 1) / 2 - 53) (-1074)) := by
+    show min (e.ediv 2) (Format.binary64.targetExponent ((totalExponent m e + 1).ediv 2)) = _
+    rw [targetExponent_binary64]
+    rfl
+  have h1 : (sqrtCore .binary64 m e).1
+      = Nat.sqrt (m * 2 ^ (e - 2 * (sqrtCore .binary64 m e).2.1).toNat) := by
+    rw [← Nat.shiftLeft_eq]
+    rfl
+  obtain ⟨num, den, hden, hnum, hacc⟩ := accuracyOfFraction_repr (sqrtCore .binary64 m e).2.2
+  have hunfold : UnpackedFloat.sqrt .binary64 (.finite .positive m e hm)
+      = roundWithAccuracy .binary64 .positive (sqrtCore .binary64 m e).1
+          (sqrtCore .binary64 m e).2.1 (accuracyOfFraction num den) := by
+    rw [← hacc]
+    rfl
+  have hL : m.log2 ≤ 52 := by
+    have := (Nat.log2_lt (by omega)).mpr hmHi
+    omega
+  simp only [totalExponent] at h2
+  have hrlog : (sqrtCore .binary64 m e).1.log2
+      ≤ m.log2 + (e - 2 * (sqrtCore .binary64 m e).2.1).toNat := by
+    have hrle : (sqrtCore .binary64 m e).1
+        ≤ m * 2 ^ (e - 2 * (sqrtCore .binary64 m e).2.1).toNat := by
+      rw [h1]
+      exact nat_sqrt_le_self _
+    have hmono := log2_mono hrle
+    rw [log2_mul_pow hm] at hmono
+    exact hmono
+  have hw : WellPlaced (sqrtCore .binary64 m e).1 (sqrtCore .binary64 m e).2.1 := by
+    simp only [WellPlaced, grid, totalExponent]
+    rcases Int.lt_or_le (-1074) ((sqrtCore .binary64 m e).2.1) with htGt | htLe
+    · -- above the floor: the radicand carries at least 104 bits
+      have hsh : 104 ≤ m.log2 + (e - 2 * (sqrtCore .binary64 m e).2.1).toNat := by
+        omega
+      have hpad : (2 : Nat) ^ 104
+          ≤ m * 2 ^ (e - 2 * (sqrtCore .binary64 m e).2.1).toNat := by
+        calc (2 : Nat) ^ 104
+            ≤ 2 ^ (m.log2 + (e - 2 * (sqrtCore .binary64 m e).2.1).toNat) :=
+              Nat.pow_le_pow_right (by omega) hsh
+          _ = 2 ^ m.log2 * 2 ^ (e - 2 * (sqrtCore .binary64 m e).2.1).toNat :=
+              Nat.pow_add 2 _ _
+          _ ≤ m * 2 ^ (e - 2 * (sqrtCore .binary64 m e).2.1).toNat :=
+              Nat.mul_le_mul_right _ (Nat.log2_self_le (by omega))
+      have hroot52 : (2 : Nat) ^ 52 ≤ (sqrtCore .binary64 m e).1 := by
+        rw [h1]
+        refine nat_le_sqrt ?_
+        calc (2 : Nat) ^ 52 * 2 ^ 52 = 2 ^ 104 := by rw [← Nat.pow_add]
+          _ ≤ _ := hpad
+      have h52 : 52 ≤ (sqrtCore .binary64 m e).1.log2 :=
+        (Nat.le_log2 (Nat.pos_iff_ne_zero.mp
+          (Nat.lt_of_lt_of_le (Nat.two_pow_pos 52) hroot52))).mpr hroot52
+      omega
+    · omega
+  have hcap : totalExponent (sqrtCore .binary64 m e).1 (sqrtCore .binary64 m e).2.1
+      ≤ 3900 := by
+    simp only [totalExponent]
+    omega
+  rw [hunfold]
+  exact ⟨roundShape_roundWA _ _ _ num den hw hden hnum hcap,
+    roundWA_ne_nan _ _ _ num den hw hden hnum,
+    by rw [key_roundWA_pos _ _ num den hw hden hnum]
+       exact natCast_mul_intPow_nonneg _ _⟩
+
+/-- The square root of a non-negative float is a round shape with a
+non-negative key: a negative operand is ruled out by the key hypothesis,
+and the finite arm rounds with the positive sign. -/
+theorem sqrt_shape {u : UnpackedFloat} (hu : Canonical u) (hun : u ≠ .notANumber)
+    (hk : 0 ≤ key u) :
+    RoundShape (UnpackedFloat.sqrt .binary64 u)
+      ∧ UnpackedFloat.sqrt .binary64 u ≠ .notANumber
+      ∧ 0 ≤ key (UnpackedFloat.sqrt .binary64 u) := by
+  cases hu with
+  | notANumber => exact absurd rfl hun
+  | infinity s =>
+    obtain rfl := sign_of_inf_key_nonneg hk
+    exact ⟨.canonical (.infinity .positive), fun hc => UnpackedFloat.noConfusion hc,
+      Int.le_of_lt HUGE_pos⟩
+  | zero s =>
+    exact ⟨.canonical (.zero s), fun hc => UnpackedFloat.noConfusion hc, Int.le_refl 0⟩
+  | subnormal s m hm hmlt =>
+    obtain rfl := sign_of_key_nonneg hk
+    exact sqrt_finite_shape hm (Nat.lt_trans hmlt pow52_lt_53) (by omega) (by omega)
+  | normal s m e hm hlo hhi helo hehi =>
+    obtain rfl := sign_of_key_nonneg hk
+    exact sqrt_finite_shape hm hhi helo hehi
+
+/-! The chain at the `Float` layer. A true `Float.le 0 _` both asserts
+non-negativity and rules out NaN, so the conclusions chain directly into
+each other's hypotheses. -/
+
+/-- Subtraction of floats strictly inside the infinities never produces a
+NaN — it may overflow to an infinity, which the rest of the chain
+absorbs. -/
+theorem float_sub_ne_nan {a b : Float}
+    (haLo : (-(1.0 / 0.0) : Float) < a) (haHi : a < (1.0 / 0.0 : Float))
+    (hbLo : (-(1.0 / 0.0) : Float) < b) (hbHi : b < (1.0 / 0.0 : Float)) :
+    (a - b).toModel.unpack ≠ .notANumber := by
+  rw [show a - b = a + (-b) from float_sub_eq_add_neg a b]
+  have hac : Canonical a.toModel.unpack := canonical_unpack _
+  have han : a.toModel.unpack ≠ .notANumber := unpack_ne_nan haLo haHi
+  have hg : (a + (-b)).toModel.unpack
+      = unpack .binary64 (UnpackedFloat.pack .binary64
+          (UnpackedFloat.add .binary64 a.toModel.unpack ((-b)).toModel.unpack)) := rfl
+  rw [hg, show ((-b)).toModel.unpack = b.toModel.unpack.neg from model_unpack_pack_neg _]
+  rcases unpack_finite_or_zero hbLo hbHi with ⟨s, hcu⟩ | ⟨s, m, e, hmm, hcu, hcan⟩
+  · rw [hcu]
+    obtain ⟨_, hshape, hnn⟩ := add_zero_key hac han (-s)
+    exact unpack_pack_ne_nan hshape hnn
+  · rw [hcu]
+    obtain ⟨hshape, hnn⟩ := add_shape hac han (hc := hmm) (canonical_neg hcan)
+    exact unpack_pack_ne_nan hshape hnn
+
+/-- A square is non-negative, overflow to `+∞` included. -/
+theorem float_sq_nonneg {x : Float} (hx : x.toModel.unpack ≠ .notANumber) :
+    Float.le 0 (x * x) = true := by
+  have hsq := sq_shape (canonical_unpack _) hx
+  rw [float_le_unpack,
+    show (0 : Float).toModel.unpack = UnpackedFloat.zero .positive from rfl,
+    show (x * x).toModel.unpack
+      = unpack .binary64 (UnpackedFloat.pack .binary64
+          (UnpackedFloat.mul .binary64 x.toModel.unpack x.toModel.unpack)) from rfl]
+  exact nonneg_after_pack hsq.1 hsq.2.1 hsq.2.2
+
+/-- A sum of non-negatives is non-negative, `+∞` included. -/
+theorem float_add_nonneg {a b : Float}
+    (ha : Float.le 0 a = true) (hb : Float.le 0 b = true) :
+    Float.le 0 (a + b) = true := by
+  rw [float_le_unpack,
+    show (0 : Float).toModel.unpack = UnpackedFloat.zero .positive from rfl] at ha hb
+  have hka : 0 ≤ key a.toModel.unpack :=
+    key_of_le (.zero .positive) (canonical_unpack _) ha
+  have hkb : 0 ≤ key b.toModel.unpack :=
+    key_of_le (.zero .positive) (canonical_unpack _) hb
+  have hadd := add_nonneg_shape (canonical_unpack _) (canonical_unpack _)
+    (le_ne_nan_right ha) (le_ne_nan_right hb) hka hkb
+  rw [float_le_unpack,
+    show (0 : Float).toModel.unpack = UnpackedFloat.zero .positive from rfl,
+    show (a + b).toModel.unpack
+      = unpack .binary64 (UnpackedFloat.pack .binary64
+          (UnpackedFloat.add .binary64 a.toModel.unpack b.toModel.unpack)) from rfl]
+  exact nonneg_after_pack hadd.1 hadd.2.1 hadd.2.2
+
+/-- The square root of a non-negative float is non-negative. -/
+theorem float_sqrt_nonneg {x : Float} (hx : Float.le 0 x = true) :
+    Float.le 0 (Float.sqrt x) = true := by
+  rw [float_le_unpack,
+    show (0 : Float).toModel.unpack = UnpackedFloat.zero .positive from rfl] at hx
+  have hkx : 0 ≤ key x.toModel.unpack :=
+    key_of_le (.zero .positive) (canonical_unpack _) hx
+  have hs := sqrt_shape (canonical_unpack _) (le_ne_nan_right hx) hkx
+  rw [float_le_unpack,
+    show (0 : Float).toModel.unpack = UnpackedFloat.zero .positive from rfl,
+    show (Float.sqrt x).toModel.unpack
+      = unpack .binary64 (UnpackedFloat.pack .binary64
+          (UnpackedFloat.sqrt .binary64 x.toModel.unpack)) from rfl]
+  exact nonneg_after_pack hs.1 hs.2.1 hs.2.2
+
 end Js.Number.FloatFacts
