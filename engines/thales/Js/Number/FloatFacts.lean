@@ -3294,6 +3294,10 @@ A branch condition that came back false therefore says something about the
 reverse comparison only once NaN is ruled out — which the infinity bounds
 a `number` binder emits do. -/
 
+-- Bound-shaped hypotheses here are spelled `1.0 / 0.0`: `floatInf` lives
+-- in `Js/Binders`, which this file does not import. `Js/Norm` restates
+-- these on that spelling for the search.
+
 /-- A float strictly inside the infinities is not NaN. -/
 theorem unpack_ne_nan {c : Float} (hLo : (-(1.0 / 0.0) : Float) < c)
     (hHi : c < (1.0 / 0.0 : Float)) : c.toModel.unpack ≠ .notANumber := by
