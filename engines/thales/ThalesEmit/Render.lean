@@ -20,6 +20,7 @@ def RenderM.run {α : Type} (x : RenderM α) : Except String α :=
 
 partial def numTerm (lit : String) : RenderM (TSyntax `term) := do
   if lit == "Infinity" then `(floatInf)
+  else if lit == "NaN" then `(floatNaN)
   else if lit.startsWith "-" then
     let inner ← numTerm (lit.drop 1).toString
     `(-$inner)
@@ -49,7 +50,7 @@ def modulePathIdent (path : String) : RenderM Name := do
 re-parsed plain text, so a binder or parameter spelled like one would
 capture the reference. -/
 def reservedNames : List String :=
-  ["pure", "ballIco", "floatInf", "Float", "Number", "Int",
+  ["pure", "ballIco", "floatInf", "floatNaN", "Float", "Number", "Int",
    "JsM", "JsNumber", "Bool", "TsModel", "JsError", "mut"]
 
 /-- A binder or parameter: the source name, primed out of the reserved

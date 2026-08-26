@@ -146,6 +146,10 @@ const REFUSED_OPERATORS = new Map<string, string>([
   ],
 ]);
 
+/** The global number constants the walk models — exact binary64 values,
+ * the fallback JavaScript makes them, never keywords. */
+const GLOBAL_NUMBER_ATOMS = new Set(["NaN", "Infinity"]);
+
 const ARITH_OPERATORS = new Set(["+", "-", "*", "/", "%"]);
 const COMPARISON_OPERATORS = new Set(["<", "<=", ">", ">=", "===", "!=="]);
 
@@ -308,6 +312,15 @@ interface WalkScope {
   module: string;
 }
 
+/** Whether the module itself binds a spelling: a top-level declaration or
+ * a resolved import (`names`), or a degraded one (`failed`). */
+function moduleBinds(scope: WalkScope, name: string): boolean {
+  return (
+    scope.names.has(name) ||
+    scope.failed.has(modelKey({ module: scope.module, name }))
+  );
+}
+
 /** Where a source spelling's model lives: an imported binding names its
  * exporting module, anything else is this module's own. */
 function refOf(scope: WalkScope, name: string): ModelRef {
@@ -380,7 +393,10 @@ function walkTyped(
     return { kind: "num", lit };
   }
   if (ts.isIdentifier(e)) {
-    if (!scope.vars.has(e.text)) {
+    const bound = scope.vars.has(e.text);
+    const global =
+      !bound && GLOBAL_NUMBER_ATOMS.has(e.text) && !moduleBinds(scope, e.text);
+    if (!bound && !global) {
       throw new ModelError(`unbound identifier '${e.text}'`);
     }
     if (expected !== "num") {
@@ -388,7 +404,7 @@ function walkTyped(
         `identifier '${e.text}' is a number, not ${describeTy(expected)}`,
       );
     }
-    return { kind: "id", name: e.text };
+    return bound ? { kind: "id", name: e.text } : { kind: "num", lit: e.text };
   }
   if (isUnaryArith(e)) {
     const operand = walkTyped(e.operand, "num", scope, sf);
