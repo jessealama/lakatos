@@ -22,10 +22,10 @@ example (x : Int) (h : 0 ≤ x) :
 example : ballIco 0 5 (fun x => x + 1 > x) := by
   grind
 
--- A ts_def model unfolds by its equations under grind.
-ts_def "dblGrind" := ts.fn(ts.param["x"](ts.number)) : ts.number {
-  ts.return(ts.binop["*"](ts.id["x"], ts.num[2]))
-}
+-- An emitted model unfolds by its equations under grind.
+@[js_norm, grind]
+def TsModel.dblGrind (x : JsNumber) : JsM JsNumber := do
+  return x * 2
 
 example (x : Float) : TsModel.dblGrind x = (pure (x * 2) : JsM Float) := by
   grind

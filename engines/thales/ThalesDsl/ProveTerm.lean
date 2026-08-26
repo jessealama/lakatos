@@ -1,12 +1,13 @@
 import Lean
 import ThalesDsl.Prove
+import ThalesDsl.Binders
 
 /-! `#thales_prove` with a plain-`Prop` payload: the form the plain-Lean
 emission pipeline writes (#144). The obligation is an ordinary term a
 person can read and edit in the artifact; the elaboration recovers binder
 structure from the payload's `ballIco` and `∀` heads so the same four-rung
-ladder runs unchanged. The old constructor grammar keeps winning wherever
-it parses. -/
+ladder runs unchanged. The bare form — no payload at all — reports the
+stub verdict. -/
 
 namespace ThalesDsl
 
@@ -174,5 +175,16 @@ elab_rules : command
         pure ⟨identity, .Error,
           s!"property elaboration failed: {← ex.toMessageData.toString}", none, none⟩
     verdict.emit
+
+/-- The bare form: an obligation the frontend emitted with no structured
+payload. The verdict is the stub `NotTried`, so the envelope never changes
+shape on degradation. -/
+syntax "#thales_prove " str ppSpace str ppSpace str : command
+
+elab_rules : command
+  | `(#thales_prove $file:str $fn:str $prop:str) => do
+    let identity : Identity := ⟨file.getString, fn.getString, prop.getString⟩
+    Verdict.emit
+      ⟨identity, .NotTried, "stub: no structured property provided", none, none⟩
 
 end ThalesDsl

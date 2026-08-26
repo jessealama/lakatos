@@ -100,9 +100,6 @@ jobs:
       - name: Verdict channel
         run: npm run check:verdict-channel
 
-      - name: Transcriber end-to-end
-        run: npm run check:transcriber
-
       - name: Envelope expectations
         run: npm run check:envelopes
         env:

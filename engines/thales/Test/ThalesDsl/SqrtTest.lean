@@ -1,3 +1,4 @@
+import Js
 import ThalesDsl.Prove
 
 open ThalesDsl Js Js.Number
