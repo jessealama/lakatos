@@ -100,6 +100,17 @@
         },
         {
           "type": "object",
+          "description": "Object.is on numbers: ECMA-262 SameValue.",
+          "additionalProperties": false,
+          "required": ["kind", "left", "right"],
+          "properties": {
+            "kind": { "const": "same-value" },
+            "left": { "$ref": "#/definitions/expr" },
+            "right": { "$ref": "#/definitions/expr" }
+          }
+        },
+        {
+          "type": "object",
           "additionalProperties": false,
           "required": ["kind", "callee", "args"],
           "properties": {

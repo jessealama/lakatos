@@ -1390,3 +1390,139 @@ describe("unsupported ranges classify NotTried before emission", () => {
     ]);
   });
 });
+
+describe("Object.is models as SameValue", () => {
+  const FILE = "engines/thales/tests/fixtures/tracer.ts"; // any resolvable path; no imports are followed
+
+  test("a branch condition walks to a same-value node", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 2)) { canon(n) === 0 } */",
+      "export function canon(x: number): number {",
+      "  if (Object.is(x, -0)) {",
+      "    return 0;",
+      "  }",
+      "  return 0;",
+      "}",
+    ].join("\n");
+    const { emission } = emitModule(src, FILE);
+    expectValidEmission(emission);
+    expect(emission.declarations).toEqual([
+      expect.objectContaining({
+        name: "canon",
+        body: [
+          {
+            kind: "if",
+            cond: {
+              kind: "same-value",
+              left: { kind: "id", name: "x" },
+              right: { kind: "num", lit: "-0" },
+            },
+            then: [{ kind: "return", expr: { kind: "num", lit: "0" } }],
+          },
+          { kind: "return", expr: { kind: "num", lit: "0" } },
+        ],
+      }),
+    ]);
+  });
+
+  test("a non-numeric argument refuses the declaration naming the call", () => {
+    const src = [
+      "/** @ensures{p} forall (x: number) { pick(x) === 1 } */",
+      "export function pick(x: number): number {",
+      '  if (Object.is(x, "zero")) {',
+      "    return 0;",
+      "  }",
+      "  return 1;",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining(
+          "'Object.is' models numbers only; argument 2 is not a number",
+        ),
+      }),
+    ]);
+  });
+
+  test("a bool-valued argument refuses the same way", () => {
+    const src = [
+      "/** @ensures{p} forall (x: number) { pick(x) === 1 } */",
+      "export function pick(x: number): number {",
+      "  if (Object.is(x < 1, 0)) {",
+      "    return 0;",
+      "  }",
+      "  return 1;",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining(
+          "'Object.is' models numbers only; argument 1 is not a number",
+        ),
+      }),
+    ]);
+  });
+
+  test("Object.is in a num position is a type mismatch, the engine's Error", () => {
+    const src = [
+      "/** @ensures{p} forall (x: number) { toBit(x) === 1 } */",
+      "export function toBit(x: number): number {",
+      "  return Object.is(x, 0);",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Error",
+        reason: expect.stringContaining(
+          "a call to 'Object.is' yields a boolean, not a number",
+        ),
+      }),
+    ]);
+  });
+
+  test("a failed callee inside an Object.is argument still travels", () => {
+    const src = [
+      "/** @ensures{p} forall (x: number) { pick(x) === 1 } */",
+      "export function broken(x: number): number {",
+      "  while (true) {}",
+      "}",
+      "export function pick(x: number): number {",
+      "  if (Object.is(broken(x), 0)) {",
+      "    return 0;",
+      "  }",
+      "  return 1;",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining("'broken' could not be modeled"),
+      }),
+    ]);
+  });
+
+  test("a wrong-arity Object.is stays the unmapped call it was", () => {
+    const src = [
+      "/** @ensures{p} forall (x: number) { pick(x) === 1 } */",
+      "export function pick(x: number): number {",
+      "  if (Object.is(x)) {",
+      "    return 0;",
+      "  }",
+      "  return 1;",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining("unmapped TypeScript construct"),
+      }),
+    ]);
+  });
+});
