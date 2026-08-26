@@ -1,0 +1,105 @@
+{
+  "file": "engines/thales/tests/fixtures/degradations.ts",
+  "declarations": [
+    {
+      "kind": "function",
+      "name": "twice",
+      "params": ["n"],
+      "source": "export function twice(n: number): number {\n  return n + n;\n}",
+      "body": [
+        {
+          "kind": "return",
+          "expr": {
+            "kind": "binop",
+            "op": "+",
+            "left": {
+              "kind": "id",
+              "name": "n"
+            },
+            "right": {
+              "kind": "id",
+              "name": "n"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "kind": "function",
+      "name": "keep",
+      "params": ["n"],
+      "source": "export function keep(n: number): number {\n  return n;\n}",
+      "body": [
+        {
+          "kind": "return",
+          "expr": {
+            "kind": "id",
+            "name": "n"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "function",
+      "name": "lone",
+      "params": ["n"],
+      "source": "export function lone(n: number): number {\n  return n;\n}",
+      "body": [
+        {
+          "kind": "return",
+          "expr": {
+            "kind": "id",
+            "name": "n"
+          }
+        }
+      ]
+    }
+  ],
+  "obligations": [
+    {
+      "function": "twice",
+      "property": "doubles",
+      "formula": "forall (n: int ∈ [0, 8)) { twice(n) === n + n }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "n",
+            "kind": "range",
+            "lo": "0",
+            "hi": "8"
+          }
+        ],
+        "conclusion": {
+          "kind": "istrue",
+          "expr": {
+            "kind": "binop",
+            "op": "===",
+            "left": {
+              "kind": "call",
+              "callee": "twice",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "n"
+                }
+              ]
+            },
+            "right": {
+              "kind": "binop",
+              "op": "+",
+              "left": {
+                "kind": "id",
+                "name": "n"
+              },
+              "right": {
+                "kind": "id",
+                "name": "n"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
