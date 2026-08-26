@@ -96,6 +96,7 @@ describe('emitModule on the tracer fixture', () => {
     ['engines/thales/tests/fixtures/tracer.ts'],
     ['engines/thales/tests/fixtures/statements.ts'],
     ['engines/thales/tests/fixtures/binders.ts'],
+    ['engines/thales/tests/fixtures/degradations.ts'],
   ])('the emission for %s validates against the schema', (fixture) => {
     expectValidEmission(
       emitModule(fs.readFileSync(fixture, 'utf8'), fixture).emission,
@@ -107,6 +108,10 @@ describe('emitModule on the tracer fixture', () => {
     ['engines/thales/tests/fixtures/operators.ts', 'operators.emission.json'],
     ['engines/thales/tests/fixtures/statements.ts', 'statements.emission.json'],
     ['engines/thales/tests/fixtures/binders.ts', 'binders.emission.json'],
+    [
+      'engines/thales/tests/fixtures/degradations.ts',
+      'degradations.emission.json',
+    ],
   ])(
     'the pinned emission for %s is exactly what the frontend emits',
     (fixture, pin) => {
@@ -249,10 +254,6 @@ describe('signature and body blockers', () => {
 describe('obligation payload degradations', () => {
   test.each([
     ['a half-bounded range', 'forall (x: int ∈ (-∞, 10]) { f(x) ≡ x }'],
-    [
-      'a range past the safe integers',
-      'forall (x: int ∈ [0, 99999999999999999999)) { f(x) ≡ x }',
-    ],
     ['an unparseable atom', 'forall (x: int ∈ [0, 5)) { 2x ≡ x }'],
     [
       'an atom that is not valid JavaScript',
@@ -1237,6 +1238,155 @@ describe('class-valued binders classify Inappropriate (#158)', () => {
       'export function volume(b: Box): number { return b.size; }\n';
     expect(classifications(src).classified).toEqual([
       ['Inappropriate', "class-valued binder 'Box' is not yet modeled"],
+    ]);
+  });
+});
+
+describe('non-function declarations degrade before emission', () => {
+  test('a caller of a top-level const classifies Inappropriate naming VariableStatement', () => {
+    const src = [
+      'const double = (x: number): number => x * 2;',
+      '/** @ensures{pos} forall (n: int ∈ [0, 4)) { applyDouble(n) >= 0 } */',
+      'export function applyDouble(n: number): number {',
+      '  return double(n);',
+      '}',
+      '',
+    ].join('\n');
+    const { emission, classified } = emitModule(src, 'consts.ts');
+    expect(emission.declarations).toEqual([]);
+    expect(classified).toHaveLength(1);
+    expect(classified[0]!.szs).toBe('Inappropriate');
+    expect(classified[0]!.reason).toBe(
+      "'applyDouble' could not be modeled: 'double' could not be modeled: " +
+        "unmapped TypeScript construct 'VariableStatement' at 1:7",
+    );
+  });
+
+  test('a formula mentioning a top-level const classifies Inappropriate', () => {
+    const src = [
+      'const scale = (x: number): number => x * 2;',
+      '/** @ensures{eq} forall (n: int ∈ [0, 4)) { keep(n) === scale(n) } */',
+      'export function keep(n: number): number {',
+      '  return n;',
+      '}',
+      '',
+    ].join('\n');
+    const { classified } = emitModule(src, 'consts.ts');
+    expect(classified).toHaveLength(1);
+    expect(classified[0]!.szs).toBe('Inappropriate');
+    expect(classified[0]!.reason).toBe(
+      "'scale' could not be modeled: " +
+        "unmapped TypeScript construct 'VariableStatement' at 1:7",
+    );
+  });
+
+  test('destructuring declarators register every bound name', () => {
+    const src = [
+      'const { lo, hi } = { lo: 1, hi: 2 };',
+      '/** @ensures{pos} forall (n: int ∈ [0, 4)) { f(n) >= 0 } */',
+      'export function f(n: number): number {',
+      '  return lo(n);',
+      '}',
+      '',
+    ].join('\n');
+    const { classified } = emitModule(src, 'destructure.ts');
+    expect(classified[0]!.szs).toBe('Inappropriate');
+    expect(classified[0]!.reason).toContain("'VariableStatement' at 1:9");
+  });
+
+  test('import bindings register as failed with ImportDeclaration', () => {
+    const src = [
+      "import { g } from 'somepkg';",
+      '/** @ensures{pos} forall (n: int ∈ [0, 4)) { h(n) >= 0 } */',
+      'export function h(n: number): number {',
+      '  return g(n);',
+      '}',
+      '',
+    ].join('\n');
+    const { classified } = emitModule(src, 'imports.ts');
+    expect(classified[0]!.szs).toBe('Inappropriate');
+    expect(classified[0]!.reason).toContain(
+      "unmapped TypeScript construct 'ImportDeclaration' at 1:10",
+    );
+  });
+
+  test('default and namespace import bindings register as failed', () => {
+    const src = [
+      "import dflt, * as ns from 'somepkg';",
+      '/** @ensures{p} forall (n: int ∈ [0, 4)) { viaDefault(n) >= 0 } */',
+      'export function viaDefault(n: number): number {',
+      '  return dflt(n);',
+      '}',
+      '/** @ensures{q} forall (n: int ∈ [0, 4)) { viaNamespace(n) >= 0 } */',
+      'export function viaNamespace(n: number): number {',
+      '  return ns(n);',
+      '}',
+      '',
+    ].join('\n');
+    const { classified } = emitModule(src, 'imports.ts');
+    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
+      ['Inappropriate', expect.stringContaining("'ImportDeclaration' at 1:8")],
+      ['Inappropriate', expect.stringContaining("'ImportDeclaration' at 1:19")],
+    ]);
+  });
+
+  test('a side-effect import binds nothing; a lone default still registers', () => {
+    const src = [
+      "import 'polyfill';",
+      "import only from 'somepkg';",
+      '/** @ensures{p} forall (n: int ∈ [0, 4)) { viaOnly(n) >= 0 } */',
+      'export function viaOnly(n: number): number {',
+      '  return only(n);',
+      '}',
+      '',
+    ].join('\n');
+    const { classified } = emitModule(src, 'imports.ts');
+    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
+      ['Inappropriate', expect.stringContaining("'ImportDeclaration' at 2:8")],
+    ]);
+  });
+});
+
+describe('unsupported ranges classify NotTried before emission', () => {
+  const HUGE =
+    '/** @ensures{nonneg} forall (x: int ∈ [0, 1000000000000000000000000000000]) { keep(x) >= 0 } */\n' +
+    'export function keep(x: number): number {\n  return x;\n}\n';
+
+  test('a clamped endpoint classifies NotTried with the old reason', () => {
+    const { classified, emission } = emitModule(HUGE, 'huge.ts');
+    expect(emission.obligations).toEqual([]);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: 'NotTried',
+        kind: 'unsupported-range',
+        reason:
+          'endpoint 1000000000000000000000000000000 exceeds the safe integer range (±9007199254740991)',
+      }),
+    ]);
+  });
+
+  test('a clamp that is not the sole blocker degrades to bare', () => {
+    // The conjunction keeps the body unstructurable, so the clamp never wins.
+    const src =
+      '/** @ensures{p} forall (x: int ∈ [0, 1000000000000000000000000000000]) { keep(x) >= 0 && keep(x) <= x } */\n' +
+      'export function keep(x: number): number {\n  return x;\n}\n';
+    const { classified, emission } = emitModule(src, 'huge-bare.ts');
+    expect(classified).toEqual([]);
+    expect(emission.obligations[0]!.payload).toEqual({ kind: 'bare' });
+  });
+
+  test('an interval the clamp empties is unsupported-range whatever the body', () => {
+    const src =
+      '/** @ensures{p} forall (x: int ∈ [1000000000000000000000000000000, 10000000000000000000000000000000]) { keep(x) >= 0 && keep(x) <= x } */\n' +
+      'export function keep(x: number): number {\n  return x;\n}\n';
+    const { classified } = emitModule(src, 'empty.ts');
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: 'NotTried',
+        kind: 'unsupported-range',
+        reason:
+          'endpoints 1000000000000000000000000000000 and 10000000000000000000000000000000 exceed the safe integer range (±9007199254740991)',
+      }),
     ]);
   });
 });

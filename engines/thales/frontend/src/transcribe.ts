@@ -386,7 +386,7 @@ function transcribeFunction(
 }
 
 /** Every identifier bound by a binding name (destructuring included). */
-function bindingIdentifiers(name: ts.BindingName): ts.Identifier[] {
+export function bindingIdentifiers(name: ts.BindingName): ts.Identifier[] {
   if (ts.isIdentifier(name)) return [name];
   const found: ts.Identifier[] = [];
   for (const el of name.elements) {

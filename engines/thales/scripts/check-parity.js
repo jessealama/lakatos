@@ -97,6 +97,16 @@ const BINDER_FIXTURES = [
   `${CONFORMANCE}/inappropriate/guarded-power.ts`,
 ];
 
+/** The degradation slice (#151): unsupported ranges and the names
+ * non-function declarations bind, mixed with healthy annotations in one
+ * file. Imports stay out until their slice restores them. */
+const DEGRADATION_FIXTURES = [
+  'engines/thales/tests/fixtures/degradations.ts',
+  `${CONFORMANCE}/nottried/empty-after-clamp.ts`,
+  `${CONFORMANCE}/nottried/half-bounded-int.ts`,
+  `${CONFORMANCE}/nottried/huge-range.ts`,
+];
+
 const fixtures =
   process.env.LAKATOS_PROVE_E2E === '1'
     ? [
@@ -104,6 +114,7 @@ const fixtures =
         ...EXPRESSION_FIXTURES,
         ...STATEMENT_FIXTURES,
         ...BINDER_FIXTURES,
+        ...DEGRADATION_FIXTURES,
       ]
     : QUICK_FIXTURES;
 
@@ -131,9 +142,10 @@ const leanPath = spawnSync('lake', ['env', 'printenv', 'LEAN_PATH'], {
 }).stdout?.trim();
 check(Boolean(leanPath), 'lake env yielded no LEAN_PATH');
 
-/** One envelope entry, as both pipelines must produce it. */
-function entry(fn, property, szs, reason, axioms, counterexample) {
-  return { function: fn, property, szs, reason, axioms, counterexample };
+/** One envelope entry, as both pipelines must produce it. `kind` rides
+ * only on the refusals that carry one into the envelope. */
+function entry(fn, property, szs, reason, axioms, counterexample, kind) {
+  return { function: fn, property, szs, reason, axioms, counterexample, kind };
 }
 
 /** A native_decide axiom's ordinal is a per-file gensym — it counts the
@@ -163,7 +175,17 @@ function projectUntried(u) {
     u.annotation.isStatic,
   );
   const szs = u.kind === 'class-binder' ? 'Inappropriate' : 'NotTried';
-  return entry(fn, u.annotation.propertyName, szs, u.reason);
+  // The CLI carries the kind into the envelope only for NotTried refusals.
+  const kind = u.kind === 'class-binder' ? undefined : u.kind;
+  return entry(
+    fn,
+    u.annotation.propertyName,
+    szs,
+    u.reason,
+    undefined,
+    undefined,
+    kind,
+  );
 }
 
 const identityOf = (a) =>
@@ -249,7 +271,15 @@ for (const [i, fixture] of fixtures.entries()) {
       );
       byIdentity.set(
         `${fn} ${c.annotation.propertyName}`,
-        entry(fn, c.annotation.propertyName, c.szs, c.reason),
+        entry(
+          fn,
+          c.annotation.propertyName,
+          c.szs,
+          c.reason,
+          undefined,
+          undefined,
+          c.kind,
+        ),
       );
     }
     return {
