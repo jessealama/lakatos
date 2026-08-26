@@ -123,6 +123,10 @@ partial def valueTerm (coerced : String → Bool) : JsExpr → RenderM Rendered
     | "===" => return ⟨← `(Float.beq $lt $rt), lifted⟩
     | "!==" => return ⟨← `(!Float.beq $lt $rt), lifted⟩
     | _ => throw s!"operator '{op}' is not in the emission slice yet"
+  | .sameValue l r => do
+    let ⟨lt, ll⟩ ← valueTerm coerced l
+    let ⟨rt, rl⟩ ← valueTerm coerced r
+    return ⟨← `(Number.FloatOps.sameValue $lt $rt), ll || rl⟩
   | .call callee module args => do
     let c ← callTerm coerced callee module args
     return ⟨← `((← $c:term)), true⟩
