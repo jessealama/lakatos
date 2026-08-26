@@ -4,7 +4,13 @@ import { existsSync, readFileSync, realpathSync } from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { writeArtifacts } from "../engines/thales/frontend/src/artifacts.js";
-import { findEngineRoot, runLean } from "../engines/thales/frontend/src/run.js";
+import { writeEmissionArtifacts } from "../engines/thales/frontend/src/emission-artifacts.js";
+import {
+  findEngineRoot,
+  type LeanRunResult,
+  runEmission,
+  runLean,
+} from "../engines/thales/frontend/src/run.js";
 import { generate } from "../engines/pabst/src/codegen.js";
 import { runTests } from "../engines/pabst/src/run.js";
 import { parseSeed, randomSeed } from "../engines/pabst/src/seed.js";
@@ -423,7 +429,65 @@ function refuteSpine(seed: number): Spine {
   };
 }
 
+/** Shared by both prove spines: containment, join, and health discipline
+ * over a Lean run result, whatever produced the artifacts. */
+function leanRunOutcome(
+  result: LeanRunResult,
+  plan: Plan,
+  sourceOf: Map<string, string>,
+): Outcome {
+  if (result.kind === "interrupted")
+    return { kind: "interrupted", signal: result.signal };
+  if (result.kind === "no-project")
+    return { kind: "unhealthy", messages: [result.message] };
+  if (result.kind === "failed") {
+    process.stderr.write(result.stdout);
+    process.stderr.write(result.stderr);
+    return {
+      kind: "unhealthy",
+      messages: ["the Lean run failed before reporting verdicts"],
+    };
+  }
+  for (const d of result.diagnostics) console.error(d);
+  for (const f of result.failures)
+    for (const m of f.messages) console.error(`error: ${m}`);
+
+  // A contained per-artifact failure degrades only that file's
+  // annotations; every healthy verdict still reaches the envelope.
+  const failedSources = new Set(
+    result.failures.map((f) => sourceOf.get(f.file)),
+  );
+  const failedResults: AnnotationResult[] = plan.identities
+    .filter((i) => failedSources.has(i.file))
+    .map((i) => ({
+      ...i,
+      szs: "Error" as const,
+      error:
+        "the Lean run on this file's artifact failed before reporting its verdicts",
+    }));
+  const join = joinProveVerdicts(
+    plan.identities.filter((i) => !failedSources.has(i.file)),
+    result.verdicts,
+  );
+  if (join.kind === "mismatched")
+    return { kind: "unhealthy", messages: join.messages };
+
+  return {
+    kind: "completed",
+    annotations: [...join.annotations, ...failedResults],
+    meta: {},
+    degraded: result.failures.length > 0,
+    refuted: join.annotations.some((a) => a.szs === "CounterSatisfiable"),
+  };
+}
+
 function proveSpine(): Spine {
+  return process.env.LAKATOS_PROVE_PIPELINE === "plain"
+    ? plainProveSpine()
+    : transcriberProveSpine();
+}
+
+function transcriberProveSpine(): Spine {
   // The transcriber's per-artifact source mapping, needed by the run to
   // attribute a failed artifact back to the file its annotations came from.
   const sourceOf = new Map<string, string>();
@@ -488,50 +552,80 @@ function proveSpine(): Spine {
     },
 
     run(plan) {
-      const result = runLean(plan.outFiles, findEngineRoot());
-      if (result.kind === "interrupted")
-        return { kind: "interrupted", signal: result.signal };
-      if (result.kind === "no-project")
-        return { kind: "unhealthy", messages: [result.message] };
-      if (result.kind === "failed") {
-        process.stderr.write(result.stdout);
-        process.stderr.write(result.stderr);
-        return {
-          kind: "unhealthy",
-          messages: ["the Lean run failed before reporting verdicts"],
-        };
+      return leanRunOutcome(runLean(plan.outFiles, findEngineRoot()), plan, sourceOf);
+    },
+  };
+}
+
+/** The plain-Lean emission spine: the frontend classifies everything it
+ * cannot map before emission, thales-emit renders the artifacts, and the
+ * shared Lean-run discipline does the rest. */
+function plainProveSpine(): Spine {
+  const sourceOf = new Map<string, string>();
+  const jsonOf = new Map<string, string>();
+  return {
+    plan(files, runDir) {
+      const outRoot = path.join(runDir, "thales");
+      const artifacts = writeEmissionArtifacts(files, outRoot);
+      const inputErrors = inputErrorResults(
+        artifacts.map((a) => ({ file: a.sourceFile, invalid: a.invalid })),
+      );
+      // Partition each file's annotations once, by object identity:
+      // classified ones were settled by the frontend and are never
+      // expected in the verdict join; the rest are the identities the
+      // join must account for.
+      const tried: PropertyIdentity[] = [];
+      const classifiedResults: AnnotationResult[] = [];
+      const proveFiles: string[] = [];
+      for (const a of artifacts) {
+        const classified = new Map(a.classified.map((c) => [c.annotation, c]));
+        for (const r of a.annotations) {
+          const identity = {
+            file: a.sourceFile,
+            function: qualifiedName(r.functionName, r.className, r.isStatic),
+            property: r.propertyName,
+          };
+          const c = classified.get(r);
+          if (c === undefined) tried.push(identity);
+          // The envelope's field split: an engine failure explains
+          // itself in `error`, everything else in `reason`.
+          else if (c.szs === "Error")
+            classifiedResults.push({ ...identity, szs: c.szs, error: c.reason });
+          else
+            classifiedResults.push({
+              ...identity,
+              szs: c.szs,
+              ...(c.kind !== undefined ? { kind: c.kind } : {}),
+              reason: c.reason,
+            });
+        }
+        if (a.leanFile !== undefined) {
+          sourceOf.set(a.leanFile, a.sourceFile);
+          jsonOf.set(a.leanFile, a.jsonFile!);
+          proveFiles.push(a.leanFile);
+        }
       }
-      for (const d of result.diagnostics) console.error(d);
-      for (const f of result.failures)
-        for (const m of f.messages) console.error(`error: ${m}`);
-
-      // A contained per-artifact failure degrades only that file's
-      // annotations; every healthy verdict still reaches the envelope.
-      const failedSources = new Set(
-        result.failures.map((f) => sourceOf.get(f.file)),
+      const n = tried.length;
+      console.error(
+        `lakatos: emitted ${n} annotation${n === 1 ? "" : "s"} across ${artifacts.length} file(s) into ${outRoot}/`,
       );
-      const failedResults: AnnotationResult[] = plan.identities
-        .filter((i) => failedSources.has(i.file))
-        .map((i) => ({
-          ...i,
-          szs: "Error" as const,
-          error:
-            "the Lean run on this file's artifact failed before reporting its verdicts",
-        }));
-      const join = joinProveVerdicts(
-        plan.identities.filter((i) => !failedSources.has(i.file)),
-        result.verdicts,
-      );
-      if (join.kind === "mismatched")
-        return { kind: "unhealthy", messages: join.messages };
-
       return {
-        kind: "completed",
-        annotations: [...join.annotations, ...failedResults],
+        identities: tried,
+        untried: classifiedResults,
+        inputErrors,
+        outFiles: proveFiles,
         meta: {},
-        degraded: result.failures.length > 0,
-        refuted: join.annotations.some((a) => a.szs === "CounterSatisfiable"),
+        emptyMeta: {},
+        emptyExit: 0,
       };
+    },
+
+    run(plan) {
+      const jobs = plan.outFiles.map((leanFile) => ({
+        jsonFile: jsonOf.get(leanFile)!,
+        leanFile,
+      }));
+      return leanRunOutcome(runEmission(jobs, findEngineRoot()), plan, sourceOf);
     },
   };
 }
