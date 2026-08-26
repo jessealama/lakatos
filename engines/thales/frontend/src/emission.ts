@@ -21,7 +21,7 @@ import {
   kindName,
   numberBounds,
   numberToken,
-} from "./transcribe.js";
+} from "./readings.js";
 import {
   type ModelRef,
   type ModuleReader,
