@@ -1325,14 +1325,8 @@ describe('non-function declarations degrade before emission', () => {
     ].join('\n');
     const { classified } = emitModule(src, 'imports.ts');
     expect(classified.map((c) => [c.szs, c.reason])).toEqual([
-      [
-        'Inappropriate',
-        expect.stringContaining("'ImportDeclaration' at 1:8"),
-      ],
-      [
-        'Inappropriate',
-        expect.stringContaining("'ImportDeclaration' at 1:19"),
-      ],
+      ['Inappropriate', expect.stringContaining("'ImportDeclaration' at 1:8")],
+      ['Inappropriate', expect.stringContaining("'ImportDeclaration' at 1:19")],
     ]);
   });
 
@@ -1348,10 +1342,7 @@ describe('non-function declarations degrade before emission', () => {
     ].join('\n');
     const { classified } = emitModule(src, 'imports.ts');
     expect(classified.map((c) => [c.szs, c.reason])).toEqual([
-      [
-        'Inappropriate',
-        expect.stringContaining("'ImportDeclaration' at 2:8"),
-      ],
+      ['Inappropriate', expect.stringContaining("'ImportDeclaration' at 2:8")],
     ]);
   });
 });
