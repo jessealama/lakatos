@@ -94,6 +94,7 @@ const BINDER_FIXTURES = [
   `${CONFORMANCE}/theorem/left-factor.ts`,
   `${CONFORMANCE}/theorem/literal-factor.ts`,
   `${CONFORMANCE}/theorem/guarded-monotone-conversion.ts`,
+  `${CONFORMANCE}/gaveup/scale-identity.ts`,
   `${CONFORMANCE}/inappropriate/guarded-power.ts`,
 ];
 

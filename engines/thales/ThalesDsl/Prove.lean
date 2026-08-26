@@ -1,4 +1,5 @@
 import Lean
+import Js.Number.Basic
 import ThalesDsl.Verdict
 import ThalesDsl.Model
 
@@ -154,7 +155,7 @@ partial def elabProp (vars : List String) :
             | "<=" => `($e ≤ $v)
             | other => throwErrorAt lit s!"unsupported lower bound '{other}'"
           body ← `($hyp → $body)
-        `(∀ ($v : Float), $body)
+        `(∀ ($v : JsNumber), $body)
     let search ←
       if allBounded then
         bs.foldrM (init := inner.search) fun b acc => do
@@ -376,13 +377,20 @@ inductive GenericOutcome where
   | done (v : Verdict)
   | stuck (root : Expr) (goal : MVarId) (residual : Expr)
 
+/-- Pretty-prints a residual goal with `Js` and `ThalesDsl` open, so the
+reason's wording never depends on the artifact's own header. -/
+def ppResidual (e : Expr) : MetaM Format :=
+  withTheReader Core.Context
+    (fun ctx => { ctx with openDecls := [.simple `Js [], .simple `ThalesDsl []] })
+    (Meta.ppExpr e)
+
 /-- Certifies a closed root metavariable through the kernel; anything off
 about the proof (kernel budget exhaustion aside) degrades to the
 residual-goal GaveUp rather than escaping. -/
 def certifyRoot (identity : Identity) (p root residual : Expr) :
     Term.TermElabM Verdict := do
   let gaveUp : Verdict :=
-    ⟨identity, .GaveUp, s!"unsolved goal: {← Meta.ppExpr residual}", none, none⟩
+    ⟨identity, .GaveUp, s!"unsolved goal: {← ppResidual residual}", none, none⟩
   let proof ← instantiateMVars root
   if proof.hasExprMVar then return gaveUp
   try
@@ -442,7 +450,7 @@ def attemptGrind (identity : Identity) (p root : Expr) (goal : MVarId)
     catch _ => pure false)
     (fun ex => if ex.isRuntime then pure false else throw ex)
   if solved then return ← certifyRoot identity p root residual
-  return ⟨identity, .GaveUp, s!"unsolved goal: {← Meta.ppExpr residual}", none, none⟩
+  return ⟨identity, .GaveUp, s!"unsolved goal: {← ppResidual residual}", none, none⟩
 
 def timeoutVerdict (identity : Identity) (budget : Nat) : Verdict :=
   ⟨identity, .Timeout,

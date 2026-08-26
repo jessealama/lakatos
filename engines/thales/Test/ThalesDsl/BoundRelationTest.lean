@@ -33,7 +33,7 @@ private def isVar (s : TSyntax `term) : Bool :=
     ts.eq(ts.call["idf"](ts.id["a"]), ts.id["a"])
   })
   match (← elabProp [] p).prop with
-  | `(∀ ($_ : Float), $lhs ≤ $rhs → $_) => return isVar rhs && !isVar lhs
+  | `(∀ ($_ : JsNumber), $lhs ≤ $rhs → $_) => return isVar rhs && !isVar lhs
   | _ => return false
 
 /-- info: true -/
@@ -44,7 +44,7 @@ private def isVar (s : TSyntax `term) : Bool :=
     ts.eq(ts.call["idf"](ts.id["a"]), ts.id["a"])
   })
   match (← elabProp [] p).prop with
-  | `(∀ ($_ : Float), $lhs < $rhs → $_) => return isVar rhs && !isVar lhs
+  | `(∀ ($_ : JsNumber), $lhs < $rhs → $_) => return isVar rhs && !isVar lhs
   | _ => return false
 
 -- An upper bound puts the endpoint on the right: `a <relation> endpoint`.
@@ -56,7 +56,7 @@ private def isVar (s : TSyntax `term) : Bool :=
     ts.eq(ts.call["idf"](ts.id["a"]), ts.id["a"])
   })
   match (← elabProp [] p).prop with
-  | `(∀ ($_ : Float), $lhs ≤ $rhs → $_) => return isVar lhs && !isVar rhs
+  | `(∀ ($_ : JsNumber), $lhs ≤ $rhs → $_) => return isVar lhs && !isVar rhs
   | _ => return false
 
 /-- info: true -/
@@ -67,7 +67,7 @@ private def isVar (s : TSyntax `term) : Bool :=
     ts.eq(ts.call["idf"](ts.id["a"]), ts.id["a"])
   })
   match (← elabProp [] p).prop with
-  | `(∀ ($_ : Float), $lhs < $rhs → $_) => return isVar lhs && !isVar rhs
+  | `(∀ ($_ : JsNumber), $lhs < $rhs → $_) => return isVar lhs && !isVar rhs
   | _ => return false
 
 -- Both bounds: the lower hypothesis comes first, and neither side's
@@ -80,7 +80,7 @@ private def isVar (s : TSyntax `term) : Bool :=
     ts.eq(ts.call["idf"](ts.id["a"]), ts.id["a"])
   })
   match (← elabProp [] p).prop with
-  | `(∀ ($_ : Float), $lo ≤ $loVar → $hiVar < $hi → $_) =>
+  | `(∀ ($_ : JsNumber), $lo ≤ $loVar → $hiVar < $hi → $_) =>
       return isVar loVar && !isVar lo && isVar hiVar && !isVar hi
   | _ => return false
 
@@ -103,7 +103,7 @@ private def isNegFloatInf (s : TSyntax `term) : Bool :=
     ts.eq(ts.call["idf"](ts.id["a"]), ts.id["a"])
   })
   match (← elabProp [] p).prop with
-  | `(∀ ($_ : Float), $v < $hi → $_) => return isVar v && isFloatInf hi
+  | `(∀ ($_ : JsNumber), $v < $hi → $_) => return isVar v && isFloatInf hi
   | _ => return false
 
 /-- info: true -/
@@ -114,7 +114,7 @@ private def isNegFloatInf (s : TSyntax `term) : Bool :=
     ts.eq(ts.call["idf"](ts.id["a"]), ts.id["a"])
   })
   match (← elabProp [] p).prop with
-  | `(∀ ($_ : Float), $lo < $v → $_) => return isVar v && isNegFloatInf lo
+  | `(∀ ($_ : JsNumber), $lo < $v → $_) => return isVar v && isNegFloatInf lo
   | _ => return false
 
 -- A binder with no interval at all carries no hypothesis: the whole of
@@ -127,6 +127,6 @@ private def isNegFloatInf (s : TSyntax `term) : Bool :=
     ts.eq(ts.call["idf"](ts.id["a"]), ts.id["a"])
   })
   match (← elabProp [] p).prop with
-  | `(∀ ($_ : Float), $_ → $_) => return false
-  | `(∀ ($_ : Float), $_) => return true
+  | `(∀ ($_ : JsNumber), $_ → $_) => return false
+  | `(∀ ($_ : JsNumber), $_) => return true
   | _ => return false
