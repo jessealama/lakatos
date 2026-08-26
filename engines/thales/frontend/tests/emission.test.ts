@@ -1309,6 +1309,51 @@ describe('non-function declarations degrade before emission', () => {
       "unmapped TypeScript construct 'ImportDeclaration' at 1:10",
     );
   });
+
+  test('default and namespace import bindings register as failed', () => {
+    const src = [
+      "import dflt, * as ns from 'somepkg';",
+      '/** @ensures{p} forall (n: int ∈ [0, 4)) { viaDefault(n) >= 0 } */',
+      'export function viaDefault(n: number): number {',
+      '  return dflt(n);',
+      '}',
+      '/** @ensures{q} forall (n: int ∈ [0, 4)) { viaNamespace(n) >= 0 } */',
+      'export function viaNamespace(n: number): number {',
+      '  return ns(n);',
+      '}',
+      '',
+    ].join('\n');
+    const { classified } = emitModule(src, 'imports.ts');
+    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
+      [
+        'Inappropriate',
+        expect.stringContaining("'ImportDeclaration' at 1:8"),
+      ],
+      [
+        'Inappropriate',
+        expect.stringContaining("'ImportDeclaration' at 1:19"),
+      ],
+    ]);
+  });
+
+  test('a side-effect import binds nothing; a lone default still registers', () => {
+    const src = [
+      "import 'polyfill';",
+      "import only from 'somepkg';",
+      '/** @ensures{p} forall (n: int ∈ [0, 4)) { viaOnly(n) >= 0 } */',
+      'export function viaOnly(n: number): number {',
+      '  return only(n);',
+      '}',
+      '',
+    ].join('\n');
+    const { classified } = emitModule(src, 'imports.ts');
+    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
+      [
+        'Inappropriate',
+        expect.stringContaining("'ImportDeclaration' at 2:8"),
+      ],
+    ]);
+  });
 });
 
 describe('unsupported ranges classify NotTried before emission', () => {

@@ -449,6 +449,36 @@ describe('runEmission', () => {
     expect(calls.filter((c) => c.args[1] === 'lean')).toHaveLength(1);
   });
 
+  test("a spawn error during an emit carries the error's message into the failure", () => {
+    const { spawn } = fakeSpawn([
+      { status: 0 },
+      { status: 0 },
+      { status: 1, error: new Error('spawn thales-emit blew up') },
+      { status: 0 },
+      { status: 0, stdout: verdictLine('g', 'Theorem') },
+    ]);
+    const res = runEmission(JOBS, '/engine', spawn);
+    expect(res.kind).toBe('completed');
+    if (res.kind !== 'completed') return;
+    expect(res.failures[0]!.file).toBe('a.lean');
+    expect(res.failures[0]!.messages.join('\n')).toContain(
+      'spawn thales-emit blew up',
+    );
+    expect(res.verdicts).toHaveLength(1);
+  });
+
+  test('an interrupt during the lean pass after the emits stops the run', () => {
+    const { spawn } = fakeSpawn([
+      { status: 0 }, // lake build
+      { status: 0 }, // lake build thales-emit
+      { status: 0 }, // emit a
+      { status: 0 }, // emit b
+      { status: 0, signal: 'SIGTERM' }, // lean a killed
+    ]);
+    const res = runEmission(JOBS, '/engine', spawn);
+    expect(res).toEqual({ kind: 'interrupted', signal: 'SIGTERM' });
+  });
+
   test('a thales-emit build failure fails the run', () => {
     const res = runEmission(
       JOBS,
