@@ -1595,3 +1595,169 @@ describe("equation guards", () => {
     ]);
   });
 });
+
+describe("NaN and Infinity resolve as expression atoms", () => {
+  const FILE = "engines/thales/tests/fixtures/tracer.ts"; // any resolvable path; no imports are followed
+
+  test("NaN in a body walks to a num atom", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 2)) { addNaN(n) >= 0 } */",
+      "export function addNaN(x: number): number {",
+      "  return x + NaN;",
+      "}",
+    ].join("\n");
+    const { emission } = emitModule(src, FILE);
+    expectValidEmission(emission);
+    expect(emission.declarations[0]!.body).toEqual([
+      {
+        kind: "return",
+        expr: {
+          kind: "binop",
+          op: "+",
+          left: { kind: "id", name: "x" },
+          right: { kind: "num", lit: "NaN" },
+        },
+      },
+    ]);
+  });
+
+  test("NaN in a formula atom walks to a num atom", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 2)) { Object.is(addNaN(n), NaN) } */",
+      "export function addNaN(x: number): number {",
+      "  return x + NaN;",
+      "}",
+    ].join("\n");
+    const { emission } = emitModule(src, FILE);
+    expectValidEmission(emission);
+    expect(emission.obligations[0]!.payload).toEqual(
+      expect.objectContaining({
+        conclusion: expect.objectContaining({
+          kind: "eq",
+          right: { kind: "num", lit: "NaN" },
+        }),
+      }),
+    );
+  });
+
+  test("-Infinity composes as unary minus over the Infinity atom", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 2)) { floor(n) >= -Infinity } */",
+      "export function floor(x: number): number {",
+      "  return -Infinity;",
+      "}",
+    ].join("\n");
+    const { emission } = emitModule(src, FILE);
+    expectValidEmission(emission);
+    expect(emission.declarations[0]!.body).toEqual([
+      {
+        kind: "return",
+        expr: {
+          kind: "unop",
+          op: "-",
+          operand: { kind: "num", lit: "Infinity" },
+        },
+      },
+    ]);
+  });
+
+  test("Infinity in a branch comparison walks to a num atom", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 2)) { clampInf(n) === n } */",
+      "export function clampInf(x: number): number {",
+      "  if (x === Infinity) {",
+      "    return 0;",
+      "  }",
+      "  return x;",
+      "}",
+    ].join("\n");
+    const { emission } = emitModule(src, FILE);
+    expectValidEmission(emission);
+    expect(emission.declarations[0]!.body[0]).toEqual(
+      expect.objectContaining({
+        cond: {
+          kind: "binop",
+          op: "===",
+          left: { kind: "id", name: "x" },
+          right: { kind: "num", lit: "Infinity" },
+        },
+      }),
+    );
+  });
+
+  test("a parameter spelled NaN shadows the global", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 2)) { ident(n) === n } */",
+      "export function ident(NaN: number): number {",
+      "  return NaN;",
+      "}",
+    ].join("\n");
+    const { emission } = emitModule(src, FILE);
+    expectValidEmission(emission);
+    expect(emission.declarations[0]!.body).toEqual([
+      { kind: "return", expr: { kind: "id", name: "NaN" } },
+    ]);
+  });
+
+  test("a local spelled Infinity shadows the global", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 2)) { one(n) === 1 } */",
+      "export function one(x: number): number {",
+      "  const Infinity = 1;",
+      "  return Infinity;",
+      "}",
+    ].join("\n");
+    const { emission } = emitModule(src, FILE);
+    expectValidEmission(emission);
+    expect(emission.declarations[0]!.body[1]).toEqual({
+      kind: "return",
+      expr: { kind: "id", name: "Infinity" },
+    });
+  });
+
+  test("a module-level binding wins over the global and stays unmodeled", () => {
+    const src = [
+      "const NaN = 1;",
+      "/** @ensures{p} forall (n: int ∈ [0, 2)) { probe(n) === 1 } */",
+      "export function probe(x: number): number {",
+      "  return NaN;",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Error",
+        reason: expect.stringContaining("unbound identifier 'NaN'"),
+      }),
+    ]);
+  });
+
+  test("a degraded import of the spelling also wins over the global", () => {
+    const src = [
+      'import { NaN } from "./missing.js";',
+      "/** @ensures{p} forall (n: int ∈ [0, 2)) { probe(n) === 1 } */",
+      "export function probe(x: number): number {",
+      "  return NaN;",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Error",
+        reason: expect.stringContaining("unbound identifier 'NaN'"),
+      }),
+    ]);
+  });
+
+  test("a NaN conclusion atom is a type mismatch, not an unbound name", () => {
+    expect(
+      classifications(formulaWith("forall (x: int ∈ [0, 5)) { NaN }"))
+        .classified,
+    ).toEqual([
+      [
+        "Error",
+        "property elaboration failed: identifier 'NaN' is a number, not a boolean",
+      ],
+    ]);
+  });
+});
