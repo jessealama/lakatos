@@ -3,11 +3,11 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
-  type ModuleReader,
   transcribe,
   transcribeFile,
   transcribeSource,
 } from "../src/transcribe.js";
+import { type ModuleReader } from "../src/module-graph.js";
 
 describe("mappable function declarations", () => {
   test("a number-typed function becomes a ts_def with its source as comments", () => {
