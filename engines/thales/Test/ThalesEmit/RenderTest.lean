@@ -292,3 +292,27 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
     throwError "the branch condition did not render as sameValue:\n{rendered}"
   unless (rendered.splitOn "Number.FloatOps.sameValue (Float.ofInt n) 1").length == 2 do
     throwError "the guard argument was not coerced:\n{rendered}"
+
+-- NaN is a num lit like Infinity already is: no decoder change, and the
+-- renderer spells both as the Js library's kernel-reducible constants. A
+-- parameter spelled like the NaN constant is primed out of its way.
+#guard (decodeExpr (Json.mkObj [("kind", "num"), ("lit", "NaN")])) matches .ok (.num "NaN")
+#eval show CoreM Unit from do
+  let e : Emission := {
+    file := "t.ts"
+    declarations := #[
+      { name := "addNaN", params := #["x"], source := "addNaN",
+        body := #[.ret (.binop "+" (.id "x") (.num "NaN"))] },
+      { name := "shadow", params := #["floatNaN"], source := "shadow",
+        body := #[.ret (.id "floatNaN")] }]
+    obligations := #[{ function := "addNaN", property := "p", formula := "f",
+                       payload := .structured #[.range "n" 0 2] #[]
+                         (.istrue (.binop "<" (.call "addNaN" none #[.id "n"])
+                           (.num "Infinity"))) }] }
+  let rendered ← renderEmission e
+  unless (rendered.splitOn "x + floatNaN").length == 2 do
+    throwError "NaN did not render as floatNaN:\n{rendered}"
+  unless (rendered.splitOn "floatNaN'").length == 3 do
+    throwError "the parameter spelled floatNaN was not primed:\n{rendered}"
+  unless (rendered.splitOn "floatInf").length == 2 do
+    throwError "Infinity did not render as floatInf in a comparison:\n{rendered}"
