@@ -338,3 +338,43 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
     throwError "the body did not render as Float.sqrt:\n{rendered}"
   unless (rendered.splitOn "Float.sqrt (Float.ofInt n)").length == 2 do
     throwError "the formula argument was not coerced:\n{rendered}"
+
+-- Pure logical operands render as the Bool operators; a lifted right
+-- operand renders behind the choice, so its effects never hoist past it.
+#eval show CoreM Unit from do
+  let cmp (n : String) (lit : String) : JsExpr := .binop "===" (.id n) (.num lit)
+  let e : Emission := {
+    file := "t.ts"
+    declarations := #[
+      { name := "boom", params := #["x"], source := "boom",
+        body := #[.throwErr "RangeError"] },
+      { name := "pick", params := #["x"], source := "pick",
+        body := #[
+          .ite (.binop "||" (cmp "x" "0") (cmp "x" "1")) #[.ret (.num "0")] none,
+          .ite (.binop "||" (cmp "x" "2")
+                 (.binop "===" (.call "boom" none #[.id "x"]) (.num "0")))
+            #[.ret (.num "0")] none,
+          .ite (.binop "&&" (cmp "x" "3")
+                 (.binop "===" (.call "boom" none #[.id "x"]) (.num "0")))
+            #[.ret (.num "0")] none,
+          .ite (.unop "!" (.sameValue (.id "x") (.num "NaN")))
+            #[.ret (.num "0")] none,
+          .ret (.num "1")] }]
+    obligations := #[] }
+  let rendered ← renderEmission e
+  -- Where the printer breaks a long term is its own business; where the
+  -- lift sits relative to the choice is not, so the checks read one line.
+  let flat := rendered.foldl
+    (fun acc c =>
+      if c.isWhitespace then (if acc.endsWith " " then acc else acc.push ' ')
+      else acc.push c) ""
+  unless (flat.splitOn "(Float.beq x 0 || Float.beq x 1)").length == 2 do
+    throwError "pure || did not render as Bool.or:\n{rendered}"
+  unless (flat.splitOn ("(← if Float.beq x 2 then pure true else " ++
+      "((do return Float.beq (← TsModel.boom x) 0) : JsM Bool))")).length == 2 do
+    throwError "a lifted right || operand did not render behind the choice:\n{rendered}"
+  unless (flat.splitOn ("(← if Float.beq x 3 then " ++
+      "((do return Float.beq (← TsModel.boom x) 0) : JsM Bool) else pure false)")).length == 2 do
+    throwError "a lifted right && operand did not render behind the choice:\n{rendered}"
+  unless (flat.splitOn "(!Number.FloatOps.sameValue x floatNaN)").length == 2 do
+    throwError "! did not render as Bool.not:\n{rendered}"
