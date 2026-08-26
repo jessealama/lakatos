@@ -280,17 +280,15 @@ function callNames(e: ts.Expression, into: string[] = []): string[] {
     callNames(e.left, into);
     return callNames(e.right, into);
   }
-  if (ts.isCallExpression(e)) {
-    if (ts.isIdentifier(e.expression)) {
-      into.push(e.expression.text);
-      for (const a of e.arguments) callNames(a, into);
-    } else {
-      const sides = equationSides(e);
-      if (sides !== undefined) {
-        callNames(sides[0], into);
-        callNames(sides[1], into);
-      }
-    }
+  const sides = equationSides(e);
+  if (sides !== undefined) {
+    // `Object.is` has no callee of its own; its arguments carry them.
+    callNames(sides[0], into);
+    return callNames(sides[1], into);
+  }
+  if (ts.isCallExpression(e) && ts.isIdentifier(e.expression)) {
+    into.push(e.expression.text);
+    for (const a of e.arguments) callNames(a, into);
   }
   return into;
 }

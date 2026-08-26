@@ -1414,6 +1414,29 @@ describe("Object.is models as SameValue", () => {
     ]);
   });
 
+  test("a negated identifier argument is numeric-shaped and walks", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 2)) { canon(n) === 0 } */",
+      "export function canon(x: number): number {",
+      "  if (Object.is(-x, 0)) {",
+      "    return 0;",
+      "  }",
+      "  return 0;",
+      "}",
+    ].join("\n");
+    const { emission } = emitModule(src, FILE);
+    expectValidEmission(emission);
+    expect(emission.declarations[0]!.body[0]).toEqual(
+      expect.objectContaining({
+        cond: {
+          kind: "same-value",
+          left: { kind: "unop", op: "-", operand: { kind: "id", name: "x" } },
+          right: { kind: "num", lit: "0" },
+        },
+      }),
+    );
+  });
+
   test("a non-numeric argument refuses the declaration naming the call", () => {
     const src = [
       "/** @ensures{p} forall (x: number) { pick(x) === 1 } */",
