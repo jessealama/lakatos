@@ -177,7 +177,15 @@ function projectUntried(u) {
   const szs = u.kind === 'class-binder' ? 'Inappropriate' : 'NotTried';
   // The CLI carries the kind into the envelope only for NotTried refusals.
   const kind = u.kind === 'class-binder' ? undefined : u.kind;
-  return entry(fn, u.annotation.propertyName, szs, u.reason, undefined, undefined, kind);
+  return entry(
+    fn,
+    u.annotation.propertyName,
+    szs,
+    u.reason,
+    undefined,
+    undefined,
+    kind,
+  );
 }
 
 const identityOf = (a) =>

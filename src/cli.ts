@@ -552,7 +552,11 @@ function transcriberProveSpine(): Spine {
     },
 
     run(plan) {
-      return leanRunOutcome(runLean(plan.outFiles, findEngineRoot()), plan, sourceOf);
+      return leanRunOutcome(
+        runLean(plan.outFiles, findEngineRoot()),
+        plan,
+        sourceOf,
+      );
     },
   };
 }
@@ -590,7 +594,11 @@ function plainProveSpine(): Spine {
           // The envelope's field split: an engine failure explains
           // itself in `error`, everything else in `reason`.
           else if (c.szs === "Error")
-            classifiedResults.push({ ...identity, szs: c.szs, error: c.reason });
+            classifiedResults.push({
+              ...identity,
+              szs: c.szs,
+              error: c.reason,
+            });
           else
             classifiedResults.push({
               ...identity,
@@ -625,7 +633,11 @@ function plainProveSpine(): Spine {
         jsonFile: jsonOf.get(leanFile)!,
         leanFile,
       }));
-      return leanRunOutcome(runEmission(jobs, findEngineRoot()), plan, sourceOf);
+      return leanRunOutcome(
+        runEmission(jobs, findEngineRoot()),
+        plan,
+        sourceOf,
+      );
     },
   };
 }
