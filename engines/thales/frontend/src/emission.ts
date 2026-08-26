@@ -22,6 +22,7 @@ import {
   numberBounds,
   numberToken,
 } from "./transcribe.js";
+import { type ModelRef, modelKey } from "./module-graph.js";
 
 /** A JS expression in the shapes the plain-Lean emitter renders. The
  * frontend records operator text verbatim; what an operator means is the
@@ -33,7 +34,7 @@ export type EmitExpr =
   | { kind: "id"; name: string }
   | { kind: "unop"; op: "-" | "+"; operand: EmitExpr }
   | { kind: "binop"; op: string; left: EmitExpr; right: EmitExpr }
-  | { kind: "call"; callee: string; args: EmitExpr[] };
+  | { kind: "call"; callee: string; module?: string; args: EmitExpr[] };
 
 /** A statement in the shapes the plain-Lean emitter renders as Lean
  * do-notation: `const` and mutable `let` locals, reassignment, `if`/`else`
@@ -51,6 +52,8 @@ export type EmitStmt =
 export interface EmitFunction {
   kind: "function";
   name: string;
+  /** The defining module's entry-relative path; absent for the entry. */
+  module?: string;
   /** Parameter names; every parameter is `: number`. */
   params: string[];
   /** The declaration's original text, echoed as comments above the def. */
@@ -244,11 +247,24 @@ function callNames(e: ts.Expression, into: string[] = []): string[] {
 }
 
 /** What a body or formula may reference: bound value names, the models
- * registered so far, and the declarations that failed. */
+ * registered so far, and the declarations that failed. Registries are
+ * keyed across the whole closure, so a reference resolves through
+ * `names` — which module a source spelling belongs to — before lookup. */
 interface WalkScope {
   vars: ReadonlySet<string>;
   mapped: ReadonlyMap<string, number>;
   failed: ReadonlyMap<string, FailedDecl>;
+  /** Source spellings this module binds elsewhere: imported names, and
+   * only those. A spelling absent here is this module's own. */
+  names: ReadonlyMap<string, ModelRef>;
+  /** This module's qualifier; empty for the entry file. */
+  module: string;
+}
+
+/** Where a source spelling's model lives: an imported binding names its
+ * exporting module, anything else is this module's own. */
+function refOf(scope: WalkScope, name: string): ModelRef {
+  return scope.names.get(name) ?? { module: scope.module, name };
 }
 
 /** The first callee among `names` whose own declaration failed on a named
@@ -260,8 +276,9 @@ function failedCalleeIn(
   scope: WalkScope,
 ): FailedDecl | undefined {
   for (const name of names) {
-    if (scope.mapped.has(name)) continue;
-    const failed = scope.failed.get(name);
+    const key = modelKey(refOf(scope, name));
+    if (scope.mapped.has(key)) continue;
+    const failed = scope.failed.get(key);
     if (failed?.construct !== undefined) {
       return {
         construct: failed.construct,
@@ -363,9 +380,11 @@ function walkTyped(
   }
   if (ts.isCallExpression(e) && ts.isIdentifier(e.expression)) {
     const name = e.expression.text;
-    const arity = scope.mapped.get(name);
+    const ref = refOf(scope, name);
+    const key = modelKey(ref);
+    const arity = scope.mapped.get(key);
     if (arity === undefined) {
-      const failed = scope.failed.get(name);
+      const failed = scope.failed.get(key);
       if (failed !== undefined) {
         throw new ModelError(`'${name}' has no model: ${failed.reason}`);
       }
@@ -382,7 +401,12 @@ function walkTyped(
       );
     }
     const args = e.arguments.map((a) => walkTyped(a, "num", scope, sf));
-    return { kind: "call", callee: name, args };
+    return {
+      kind: "call",
+      callee: ref.name,
+      ...(ref.module !== "" ? { module: ref.module } : {}),
+      args,
+    };
   }
   // Unreachable after the construct scan; degrade like an opaque node.
   throw new ModelError(constructAt(e, e.kind, sf).reason);
@@ -800,11 +824,19 @@ function walkFunction(
   sf: ts.SourceFile,
   mapped: ReadonlyMap<string, number>,
   failed: ReadonlyMap<string, FailedDecl>,
+  names: ReadonlyMap<string, ModelRef>,
+  module: string,
 ): EmitFunction | FailedDecl {
   const sig = signatureFailure(fn, sf);
   if (sig !== undefined) return sig;
   const params = fn.parameters.map((p) => (p.name as ts.Identifier).text);
-  const scope: WalkScope = { vars: new Set(params), mapped, failed };
+  const scope: WalkScope = {
+    vars: new Set(params),
+    mapped,
+    failed,
+    names,
+    module,
+  };
   // Parameters are assignable, the way JavaScript has them.
   const locals: Locals = new Map(params.map((p) => [p, "mutable" as const]));
   const tree = fn.body!.statements.flatMap((s) => structureStmt(s, sf, locals));
@@ -838,6 +870,7 @@ function walkFunction(
     return {
       kind: "function",
       name: fn.name!.text,
+      ...(module !== "" ? { module } : {}),
       params,
       source: fn.getText(sf),
       body,
@@ -942,6 +975,8 @@ function obligationPayload(
   formula: string,
   mapped: ReadonlyMap<string, number>,
   failed: ReadonlyMap<string, FailedDecl>,
+  names: ReadonlyMap<string, ModelRef>,
+  module: string,
 ): PayloadResult {
   const bare: PayloadResult = { kind: "payload", payload: { kind: "bare" } };
   try {
@@ -985,6 +1020,8 @@ function obligationPayload(
       vars: new Set(binders.map((b) => b.varName)),
       mapped,
       failed,
+      names,
+      module,
     };
     // Guards precede the conclusion in the old elaborator's tree order, so
     // the first refusal either pipeline reports is the same one.
@@ -1079,22 +1116,25 @@ export function emitModule(text: string, file: string): PlainEmission {
   const declarations: EmitFunction[] = [];
   const mapped = new Map<string, number>();
   const failed = new Map<string, FailedDecl>();
+  const names = new Map<string, ModelRef>();
+  const module = "";
+  const key = (name: string) => modelKey({ module, name });
   for (const stmt of sf.statements) {
     if (ts.isFunctionDeclaration(stmt)) {
       if (stmt.name === undefined) continue;
-      const walked = walkFunction(stmt, sf, mapped, failed);
+      const walked = walkFunction(stmt, sf, mapped, failed, names, module);
       if ("kind" in walked && walked.kind === "function") {
         declarations.push(walked);
-        mapped.set(stmt.name.text, walked.params.length);
+        mapped.set(key(stmt.name.text), walked.params.length);
       } else {
-        failed.set(stmt.name.text, walked as FailedDecl);
+        failed.set(key(stmt.name.text), walked as FailedDecl);
       }
       continue;
     }
     if (ts.isClassDeclaration(stmt)) {
       if (stmt.name === undefined) continue;
       const className = stmt.name.text;
-      failed.set(className, constructAt(stmt.name, stmt.kind, sf));
+      failed.set(key(className), constructAt(stmt.name, stmt.kind, sf));
       for (const member of stmt.members) {
         const name = member.name;
         if (name === undefined || !ts.isIdentifier(name)) continue;
@@ -1102,7 +1142,7 @@ export function emitModule(text: string, file: string): PlainEmission {
           ts.getModifiers(member as ts.HasModifiers) ?? []
         ).some((m) => m.kind === ts.SyntaxKind.StaticKeyword);
         failed.set(
-          qualifiedName(name.text, className, isStatic),
+          key(qualifiedName(name.text, className, isStatic)),
           constructAt(name, stmt.kind, sf),
         );
       }
@@ -1113,7 +1153,7 @@ export function emitModule(text: string, file: string): PlainEmission {
     if (ts.isVariableStatement(stmt)) {
       for (const d of stmt.declarationList.declarations) {
         for (const id of bindingIdentifiers(d.name)) {
-          failed.set(id.text, constructAt(id, stmt.kind, sf));
+          failed.set(key(id.text), constructAt(id, stmt.kind, sf));
         }
       }
       continue;
@@ -1123,18 +1163,21 @@ export function emitModule(text: string, file: string): PlainEmission {
       const clause = stmt.importClause;
       if (clause === undefined) continue;
       if (clause.name !== undefined) {
-        failed.set(clause.name.text, constructAt(clause.name, stmt.kind, sf));
+        failed.set(
+          key(clause.name.text),
+          constructAt(clause.name, stmt.kind, sf),
+        );
       }
       const bindings = clause.namedBindings;
       if (bindings !== undefined) {
         if (ts.isNamespaceImport(bindings)) {
           failed.set(
-            bindings.name.text,
+            key(bindings.name.text),
             constructAt(bindings.name, stmt.kind, sf),
           );
         } else {
           for (const el of bindings.elements) {
-            failed.set(el.name.text, constructAt(el.name, stmt.kind, sf));
+            failed.set(key(el.name.text), constructAt(el.name, stmt.kind, sf));
           }
         }
       }
@@ -1143,7 +1186,7 @@ export function emitModule(text: string, file: string): PlainEmission {
     // Any other named declaration (enum, interface, type alias, namespace).
     const name = (stmt as { name?: ts.Node }).name;
     if (name !== undefined && ts.isIdentifier(name)) {
-      failed.set(name.text, constructAt(name, stmt.kind, sf));
+      failed.set(key(name.text), constructAt(name, stmt.kind, sf));
     }
   }
 
@@ -1164,7 +1207,7 @@ export function emitModule(text: string, file: string): PlainEmission {
     // A failed declaration blocks the annotation only when nothing
     // modeled the name: an overload signature fails while the
     // implementation models.
-    const fnFailed = mapped.has(fn) ? undefined : failed.get(fn);
+    const fnFailed = mapped.has(key(fn)) ? undefined : failed.get(key(fn));
     if (fnFailed !== undefined) {
       classified.push({
         annotation: a,
@@ -1173,7 +1216,7 @@ export function emitModule(text: string, file: string): PlainEmission {
       });
       continue;
     }
-    const result = obligationPayload(a.formula, mapped, failed);
+    const result = obligationPayload(a.formula, mapped, failed, names, module);
     if (result.kind === "classified") {
       classified.push({
         annotation: a,
