@@ -3681,3 +3681,247 @@ describe("instance methods (#130)", () => {
     expect((emission.declarations[0] as EmitClass).methods).toHaveLength(1);
   });
 });
+
+describe("method calls in atoms and bodies (#130)", () => {
+  /** The Box class with `annotation` carried on its `double` method. */
+  const box = (annotation: string) => `export class Box {
+  #v: number;
+  constructor(v: number) {
+    this.#v = v;
+  }
+  /** ${annotation} */
+  double(): number {
+    return this.#v * 2;
+  }
+}
+`;
+
+  test("a method call on a fresh instance walks in an atom", () => {
+    const src = box(
+      "@ensures{doubled} forall (x: number) { Object.is(new Box(x).double(), x * 2) }",
+    );
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    const payload = emission.obligations[0]!.payload;
+    expect(payload).toMatchObject({
+      kind: "structured",
+      conclusion: {
+        kind: "eq",
+        left: {
+          kind: "method-call",
+          className: "Box",
+          name: "double",
+          object: {
+            kind: "new",
+            className: "Box",
+            args: [{ kind: "id", name: "x" }],
+          },
+          args: [],
+        },
+      },
+    });
+  });
+
+  test("a method calls an earlier method through this", () => {
+    const src = `export class Doubler {
+  #v: number;
+  constructor(v: number) {
+    this.#v = v;
+  }
+  base(): number {
+    return this.#v;
+  }
+  twice(): number {
+    return this.base() + this.base();
+  }
+}
+`;
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    const cls = emission.declarations[0] as EmitClass;
+    expect(cls.methods.map((m) => m.name)).toEqual(["base", "twice"]);
+    expect(cls.methods[1]!.body[0]).toEqual({
+      kind: "return",
+      expr: {
+        kind: "binop",
+        op: "+",
+        left: {
+          kind: "method-call",
+          className: "Doubler",
+          name: "base",
+          object: { kind: "self" },
+          args: [],
+        },
+        right: {
+          kind: "method-call",
+          className: "Doubler",
+          name: "base",
+          object: { kind: "self" },
+          args: [],
+        },
+      },
+    });
+  });
+
+  test("a forward this-call degrades the caller alone", () => {
+    const src = `export class C {
+  #v: number;
+  constructor(v: number) {
+    this.#v = v;
+  }
+  twice(): number {
+    return this.base() + this.base();
+  }
+  base(): number {
+    return this.#v;
+  }
+}
+`;
+    const { emission } = emitModule(src, "t.ts");
+    const cls = emission.declarations[0] as EmitClass;
+    expect(cls.methods.map((m) => m.name)).toEqual(["base"]);
+  });
+
+  test("a getter calling a method degrades the getter alone", () => {
+    const src = `export class C {
+  #v: number;
+  constructor(v: number) {
+    this.#v = v;
+  }
+  get d(): number {
+    return this.m();
+  }
+  m(): number {
+    return this.#v;
+  }
+}
+`;
+    const { emission } = emitModule(src, "t.ts");
+    const cls = emission.declarations[0] as EmitClass;
+    expect(cls.getters).toEqual([]);
+    expect(cls.methods.map((m) => m.name)).toEqual(["m"]);
+  });
+
+  test("a self-recursive method degrades alone", () => {
+    const src = `export class C {
+  #v: number;
+  constructor(v: number) {
+    this.#v = v;
+  }
+  loop(): number {
+    return this.loop();
+  }
+}
+`;
+    const { emission } = emitModule(src, "t.ts");
+    expect((emission.declarations[0] as EmitClass).methods).toEqual([]);
+  });
+
+  test("method arity is checked in atoms", () => {
+    const src = box(
+      "@ensures{p} forall (x: number) { Object.is(new Box(x).double(1), x) }",
+    );
+    const { classified } = emitModule(src, "t.ts");
+    expect(classified[0]!.szs).toBe("Error");
+    expect(classified[0]!.reason).toContain("expects 0 argument(s), got 1");
+  });
+
+  test("an unknown method is the engine's error", () => {
+    const src = box(
+      "@ensures{p} forall (x: number) { Object.is(new Box(x).triple(), x) }",
+    );
+    const { classified } = emitModule(src, "t.ts");
+    expect(classified[0]!.szs).toBe("Error");
+    expect(classified[0]!.reason).toContain(
+      "has no method 'triple' in the model",
+    );
+  });
+
+  test("an atom calling a degraded method carries its reason", () => {
+    const src = `export class C {
+  #v: number;
+  constructor(v: number) {
+    this.#v = v;
+  }
+  async m(): number {
+    return 1;
+  }
+  /** @ensures{p} forall (x: number) { Object.is(new C(x).m(), x) } */
+  get v(): number {
+    return this.#v;
+  }
+}
+`;
+    const { classified } = emitModule(src, "t.ts");
+    expect(classified[0]!.szs).toBe("Inappropriate");
+    expect(classified[0]!.reason).toContain("'C#m' could not be modeled");
+  });
+
+  test("a class named Math resolves to the method, not the builtin", () => {
+    const src = `export class Math {
+  #v: number;
+  constructor(v: number) {
+    this.#v = v;
+  }
+  /** @ensures{own} forall (x: number) { Object.is(new Math(x).abs(), x) } */
+  abs(): number {
+    return this.#v;
+  }
+}
+`;
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    expect(emission.obligations[0]!.payload).toMatchObject({
+      kind: "structured",
+      conclusion: {
+        kind: "eq",
+        left: { kind: "method-call", className: "Math", name: "abs" },
+      },
+    });
+  });
+
+  test("a shadowing binding still declines the builtin inside a method body", () => {
+    // `Number` is a parameter, so `Number.isNaN` cannot be the builtin; the
+    // call has no model and the method degrades alone, never silently
+    // becoming Float.isNaN.
+    const src = `export class C {
+  #v: number;
+  constructor(v: number) {
+    this.#v = v;
+  }
+  m(Number: number): number {
+    if (Number.isNaN(Number)) {
+      return 0;
+    }
+    return Number;
+  }
+  get v(): number {
+    return this.#v;
+  }
+}
+`;
+    const { emission } = emitModule(src, "t.ts");
+    const cls = emission.declarations[0] as EmitClass;
+    expect(cls.methods).toEqual([]);
+    expect(cls.getters.map((g) => g.name)).toEqual(["v"]);
+  });
+
+  test("receiver arguments walk before call arguments", () => {
+    const src = `export class Box {
+  #v: number;
+  constructor(v: number) {
+    this.#v = v;
+  }
+  /** @ensures{p} forall (x: number) (y: number) { Object.is(new Box(x).plus(y), x + y) } */
+  plus(y: number): number {
+    return this.#v + y;
+  }
+}
+`;
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    const left = (emission.obligations[0]!.payload as any).conclusion.left;
+    expect(left.object.args).toEqual([{ kind: "id", name: "x" }]);
+    expect(left.args).toEqual([{ kind: "id", name: "y" }]);
+  });
+});

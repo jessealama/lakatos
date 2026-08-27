@@ -218,6 +218,23 @@
         },
         {
           "type": "object",
+          "description": "A method call: the receiver's method applied to the receiver and the arguments, receiver first.",
+          "additionalProperties": false,
+          "required": ["kind", "className", "name", "object", "args"],
+          "properties": {
+            "kind": { "const": "method-call" },
+            "className": { "$ref": "#/definitions/identifier" },
+            "module": { "$ref": "#/definitions/modulePath" },
+            "name": { "$ref": "#/definitions/identifier" },
+            "object": { "$ref": "#/definitions/expr" },
+            "args": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/expr" }
+            }
+          }
+        },
+        {
+          "type": "object",
           "description": "The receiver inside a getter body.",
           "additionalProperties": false,
           "required": ["kind"],

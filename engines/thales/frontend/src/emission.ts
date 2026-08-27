@@ -63,6 +63,14 @@ export type EmitExpr =
       field: string;
       object: EmitExpr;
     }
+  | {
+      kind: "method-call";
+      className: string;
+      module?: string;
+      name: string;
+      object: EmitExpr;
+      args: EmitExpr[];
+    }
   | { kind: "self" };
 
 /** A statement in the shapes the plain-Lean emitter renders as Lean
@@ -265,6 +273,31 @@ function instanceAccess(
   return { object, name: e.name.text };
 }
 
+/** A member call on a freshly built instance. */
+function instanceCall(
+  e: ts.Expression,
+):
+  | { object: ts.NewExpression; name: string; args: readonly ts.Expression[] }
+  | undefined {
+  if (!ts.isCallExpression(e)) return undefined;
+  const callee = e.expression;
+  if (!ts.isPropertyAccessExpression(callee)) return undefined;
+  const object = newCall(callee.expression);
+  if (object === undefined) return undefined;
+  if (!ts.isIdentifier(callee.name)) return undefined;
+  return { object, name: callee.name.text, args: e.arguments };
+}
+
+/** A `this.m(...)` call: the only method call a member body can make. */
+function thisCall(
+  e: ts.Expression,
+): { name: string; args: readonly ts.Expression[] } | undefined {
+  if (!ts.isCallExpression(e)) return undefined;
+  const callee = e.expression;
+  if (!isThisAccess(callee)) return undefined;
+  return { name: callee.name.text, args: e.arguments };
+}
+
 /** The class a `new` names, in the registries. */
 function newRef(scope: WalkScope, built: ts.NewExpression): ModelRef {
   return refOf(scope, (built.expression as ts.Identifier).text);
@@ -309,6 +342,7 @@ function numericShaped(e: ts.Expression, scope: WalkScope): boolean {
   if (ts.isBinaryExpression(u))
     return ARITH_OPERATORS.has(u.operatorToken.getText());
   if (isThisAccess(u) || instanceAccess(u) !== undefined) return true;
+  if (instanceCall(u) !== undefined || thisCall(u) !== undefined) return true;
   const builtin = builtinCall(u, scope);
   if (builtin !== undefined) return builtin.ty === "num";
   return ts.isCallExpression(u) && ts.isIdentifier(u.expression);
@@ -411,6 +445,27 @@ function findConstruct(
   }
   // A field read is shaped only where `this` denotes something.
   if (isThisAccess(e) && scope.self !== undefined) return undefined;
+  // A this-call is shaped on the same condition as the field read above.
+  if (scope.self !== undefined) {
+    const selfCall = thisCall(e);
+    if (selfCall !== undefined) {
+      for (const a of selfCall.args) {
+        const found = findConstruct(a, sf, scope);
+        if (found !== undefined) return found;
+      }
+      return undefined;
+    }
+  }
+  const icall = instanceCall(e);
+  if (icall !== undefined) {
+    const found = findConstruct(icall.object, sf, scope);
+    if (found !== undefined) return found;
+    for (const a of icall.args) {
+      const inner = findConstruct(a, sf, scope);
+      if (inner !== undefined) return inner;
+    }
+    return undefined;
+  }
   const access = instanceAccess(e);
   if (access !== undefined) return findConstruct(access.object, sf, scope);
   const built = newCall(e);
@@ -439,6 +494,16 @@ function findRefusedOp(e: ts.Expression): FailedDecl | undefined {
     const reason = REFUSED_OPERATORS.get(op);
     if (reason !== undefined) return { construct: op, reason };
     return findRefusedOp(e.left) ?? findRefusedOp(e.right);
+  }
+  const icall = instanceCall(e);
+  if (icall !== undefined) {
+    const found = findRefusedOp(icall.object);
+    if (found !== undefined) return found;
+    for (const a of icall.args) {
+      const inner = findRefusedOp(a);
+      if (inner !== undefined) return inner;
+    }
+    return undefined;
   }
   const access = instanceAccess(e);
   if (access !== undefined) return findRefusedOp(access.object);
@@ -482,6 +547,17 @@ function callNames(
   const builtin = builtinCall(e, scope);
   // A builtin member call has no user callee; its argument carries them.
   if (builtin !== undefined) return callNames(builtin.arg, scope, into);
+  const icall = instanceCall(e);
+  if (icall !== undefined) {
+    callNames(icall.object, scope, into);
+    for (const a of icall.args) callNames(a, scope, into);
+    return into;
+  }
+  const selfCall = thisCall(e);
+  if (selfCall !== undefined) {
+    for (const a of selfCall.args) callNames(a, scope, into);
+    return into;
+  }
   const access = instanceAccess(e);
   if (access !== undefined) return callNames(access.object, scope, into);
   const built = newCall(e);
@@ -599,6 +675,41 @@ function findFailedMemberUse(
   }
   const builtin = builtinCall(e, scope);
   if (builtin !== undefined) return findFailedMemberUse(builtin.arg, scope);
+  const selfCall = thisCall(e);
+  if (selfCall !== undefined && scope.self !== undefined) {
+    if (!scope.self.shape.methods.has(selfCall.name)) {
+      const found = travelFailure(scope, {
+        module: scope.self.ref.module,
+        name: qualifiedName(selfCall.name, scope.self.ref.name),
+      });
+      if (found !== undefined) return found;
+    }
+    for (const a of selfCall.args) {
+      const found = findFailedMemberUse(a, scope);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  }
+  const icall = instanceCall(e);
+  if (icall !== undefined) {
+    const found = findFailedMemberUse(icall.object, scope);
+    if (found !== undefined) return found;
+    const ref = newRef(scope, icall.object);
+    const shape = scope.classes.get(modelKey(ref));
+    // An unmodeled class already travelled through its own `new`.
+    if (shape !== undefined && !shape.methods.has(icall.name)) {
+      const travelled = travelFailure(scope, {
+        module: ref.module,
+        name: qualifiedName(icall.name, ref.name),
+      });
+      if (travelled !== undefined) return travelled;
+    }
+    for (const a of icall.args) {
+      const inner = findFailedMemberUse(a, scope);
+      if (inner !== undefined) return inner;
+    }
+    return undefined;
+  }
   const access = instanceAccess(e);
   if (access !== undefined) {
     const found = findFailedMemberUse(access.object, scope);
@@ -806,6 +917,83 @@ function walkTyped(
         : {}),
       field,
       object: { kind: "self" },
+    };
+  }
+  if (scope.self !== undefined) {
+    const selfCall = thisCall(e);
+    if (selfCall !== undefined) {
+      const arity = scope.self.shape.methods.get(selfCall.name);
+      if (arity === undefined) {
+        throw new ModelError(
+          `'this.${selfCall.name}' does not name a modeled method of ` +
+            `'${scope.self.ref.name}'`,
+        );
+      }
+      if (arity !== selfCall.args.length) {
+        throw new ModelError(
+          `'${qualifiedName(selfCall.name, scope.self.ref.name)}' expects ` +
+            `${arity} argument(s), got ${selfCall.args.length}`,
+        );
+      }
+      if (expected !== "num") {
+        throw new ModelError(
+          `a method call yields a number, not ${describeTy(expected)}`,
+        );
+      }
+      return {
+        kind: "method-call",
+        className: scope.self.ref.name,
+        ...(scope.self.ref.module !== ""
+          ? { module: scope.self.ref.module }
+          : {}),
+        name: selfCall.name,
+        object: { kind: "self" },
+        args: selfCall.args.map((a) => walkTyped(a, "num", scope, sf)),
+      };
+    }
+  }
+  const icall = instanceCall(e);
+  if (icall !== undefined) {
+    const ref = newRef(scope, icall.object);
+    const shape = classShapeOf(scope, ref);
+    const rawCtorArgs = icall.object.arguments ?? [];
+    if (shape.ctorArity !== rawCtorArgs.length) {
+      throw new ModelError(
+        `'${displayName(ref)}' expects ${shape.ctorArity} argument(s), ` +
+          `got ${rawCtorArgs.length}`,
+      );
+    }
+    const arity = shape.methods.get(icall.name);
+    if (arity === undefined) {
+      throw new ModelError(
+        `'${displayName(ref)}' has no method '${icall.name}' in the model`,
+      );
+    }
+    if (arity !== icall.args.length) {
+      throw new ModelError(
+        `'${qualifiedName(icall.name, ref.name)}' expects ${arity} ` +
+          `argument(s), got ${icall.args.length}`,
+      );
+    }
+    if (expected !== "num") {
+      throw new ModelError(
+        `a method call yields a number, not ${describeTy(expected)}`,
+      );
+    }
+    const module = ref.module !== "" ? { module: ref.module } : {};
+    const object: EmitExpr = {
+      kind: "new",
+      className: ref.name,
+      ...module,
+      args: rawCtorArgs.map((a) => walkTyped(a, "num", scope, sf)),
+    };
+    return {
+      kind: "method-call",
+      className: ref.name,
+      ...module,
+      name: icall.name,
+      object,
+      args: icall.args.map((a) => walkTyped(a, "num", scope, sf)),
     };
   }
   const access = instanceAccess(e);
