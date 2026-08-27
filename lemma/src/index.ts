@@ -29,6 +29,9 @@ export { mirrorPath } from "./mirror.js";
 export { resolveFiles } from "./discover.js";
 export type { Discovery } from "./discover.js";
 
+export { typecheckProject } from "./typecheck.js";
+export type { TypecheckDiagnostic, TypecheckResult } from "./typecheck.js";
+
 export { extract, extractFromSource } from "./extract.js";
 export type {
   ExtractResult,
