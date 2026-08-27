@@ -3031,3 +3031,500 @@ describe("new and member access in atoms (#129)", () => {
     ]);
   });
 });
+
+/** A class around the standard `#v` field, its constructor, and a getter
+ * `v` carrying the annotation; each part is overridable. */
+function cls(opts: {
+  head?: string;
+  field?: string;
+  ctor?: string;
+  members?: string;
+  getter?: string;
+}): string {
+  return [
+    opts.head ?? "export class C {",
+    opts.field ?? "  #v: number;",
+    opts.ctor ?? "  constructor(v: number) {\n    this.#v = v;\n  }",
+    ...(opts.members === undefined ? [] : [opts.members]),
+    "  /** @ensures{p} forall (x: number) { Object.is(new C(x).v, x) } */",
+    opts.getter ?? "  get v(): number {\n    return this.#v;\n  }",
+    "}",
+    "",
+  ].join("\n");
+}
+
+describe("class-level degrade paths (#129)", () => {
+  test.each([
+    ["a class decorator", { head: "@dec\nexport class C {" }],
+    ["a type parameter", { head: "export class C<T> {" }],
+    ["an abstract class", { head: "export abstract class C {" }],
+    [
+      "a member decorator",
+      { members: "  @dec\n  twice(): number {\n    return 1;\n  }" },
+    ],
+    [
+      "a string-literal member name",
+      { members: '  "m"(): number {\n    return 1;\n  }' },
+    ],
+    ["an accessor field", { field: "  accessor #v: number;" }],
+    ["an untyped field", { field: "  #v;" }],
+    ["a reserved field name", { field: "  construct: number;" }],
+    ["two fields of one spelling", { field: "  #v: number;\n  #v: number;" }],
+    [
+      "a field and a getter sharing a spelling",
+      {
+        field: "  #v: number;\n  v: number;",
+        ctor: "  constructor(v: number) {\n    this.#v = v;\n    this.v = v;\n  }",
+      },
+    ],
+    [
+      "two constructor implementations",
+      {
+        ctor:
+          "  constructor(v: number) {\n    this.#v = v;\n  }\n" +
+          "  constructor(v: number) {\n    this.#v = v;\n  }",
+      },
+    ],
+    [
+      "a destructured constructor parameter",
+      {
+        field: "",
+        ctor: "  constructor({ v }: { v: number }) {}",
+        getter: "  get v(): number {\n    return 1;\n  }",
+      },
+    ],
+    [
+      "a rest constructor parameter",
+      {
+        field: "",
+        ctor: "  constructor(...v: number[]) {}",
+        getter: "  get v(): number {\n    return 1;\n  }",
+      },
+    ],
+    [
+      "an optional constructor parameter",
+      {
+        field: "",
+        ctor: "  constructor(v?: number) {}",
+        getter: "  get v(): number {\n    return 1;\n  }",
+      },
+    ],
+    [
+      "an untyped constructor parameter",
+      {
+        field: "",
+        ctor: "  constructor(v) {}",
+        getter: "  get v(): number {\n    return 1;\n  }",
+      },
+    ],
+    [
+      "a non-number constructor parameter",
+      {
+        field: "",
+        ctor: "  constructor(v: string) {}",
+        getter: "  get v(): number {\n    return 1;\n  }",
+      },
+    ],
+    [
+      "a stray semicolon and an opaque constructor statement",
+      {
+        members: "  ;",
+        ctor: "  constructor(v: number) {\n    v;\n    this.#v = v;\n  }",
+      },
+    ],
+    [
+      "a compound field assignment",
+      { ctor: "  constructor(v: number) {\n    this.#v += v;\n  }" },
+    ],
+    [
+      "a bodiless constructor overload beside a bad one",
+      {
+        ctor:
+          "  constructor(v: number);\n" +
+          "  constructor(v: string) {\n    this.#v = 1;\n  }",
+      },
+    ],
+    [
+      "a return in the constructor",
+      {
+        ctor: "  constructor(v: number) {\n    if (v < 0) {\n      return v;\n    }\n    this.#v = v;\n  }",
+      },
+    ],
+    [
+      "a refused operator in the constructor",
+      { ctor: "  constructor(v: number) {\n    this.#v = v ** 2;\n  }" },
+    ],
+  ])("%s degrades the class", (_label, opts) => {
+    const { szs, reason } = classClassifiedOf(cls(opts));
+    expect(szs).toBe("Inappropriate");
+    expect(reason).toMatch(/^'C#v' could not be modeled: /);
+  });
+
+  test("an unbound name in the constructor is the engine's Error", () => {
+    const { szs, reason } = classClassifiedOf(
+      cls({ ctor: "  constructor(v: number) {\n    this.#v = missing;\n  }" }),
+    );
+    expect(szs).toBe("Error");
+    expect(reason).toBe(
+      "'C#v' could not be modeled: unbound identifier 'missing'",
+    );
+  });
+
+  test.each([
+    [
+      "a constructor that throws on every path",
+      "  constructor(v: number) {\n    if (v < 0) {\n      throw new RangeError('a');\n    } else {\n      throw new RangeError('b');\n    }\n  }",
+    ],
+    [
+      "an else arm that throws",
+      "  constructor(v: number) {\n    if (v < 0) {\n      this.#v = 0;\n    } else {\n      throw new RangeError('a');\n    }\n  }",
+    ],
+    [
+      "both arms assigning the field",
+      "  constructor(v: number) {\n    if (v < 0) {\n      this.#v = 0;\n    } else {\n      this.#v = v;\n    }\n  }",
+    ],
+    [
+      "a local reassignment beside the field set",
+      "  constructor(v: number) {\n    let y = v;\n    y = v + 1;\n    this.#v = y;\n  }",
+    ],
+  ])("%s still models", (_label, ctor) => {
+    const { emission, classified } = emitModule(cls({ ctor }), "t.ts");
+    expect(classified).toEqual([]);
+    expect(emission.declarations[0]!.kind).toBe("class");
+  });
+
+  test("an arm assigning only in the else degrades naming the field", () => {
+    const { reason } = classClassifiedOf(
+      cls({
+        ctor: "  constructor(v: number) {\n    if (v < 0) {\n      v;\n    } else {\n      this.#v = v;\n    }\n  }",
+      }),
+    );
+    expect(reason).toContain("assigns field '#v' on only some paths");
+  });
+});
+
+describe("class member-level degrade paths (#129)", () => {
+  /** The classification of the annotation on member `m`, in a file whose
+   * class otherwise models. */
+  function memberClassifiedOf(
+    member: string,
+    fn = "bad",
+  ): { szs: string; reason: string; declarations: number } {
+    const src = [
+      "export class C {",
+      "  #v: number;",
+      "  constructor(v: number) {",
+      "    this.#v = v;",
+      "  }",
+      `  /** @ensures{p} forall (x: number) { Object.is(new C(x).v, x) } */`,
+      member,
+      "  get v(): number {",
+      "    return this.#v;",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(classified).toHaveLength(1);
+    expect(classified[0]!.annotation.functionName).toBe(fn);
+    return {
+      szs: classified[0]!.szs,
+      reason: classified[0]!.reason,
+      declarations: emission.declarations.length,
+    };
+  }
+
+  test.each([
+    [
+      "a getter with a parameter",
+      "  get bad(n: number): number {\n    return 1;\n  }",
+    ],
+    ["a bodiless getter", "  get bad(): number;"],
+    ["an untyped getter", "  get bad() {\n    return 1;\n  }"],
+    ["a non-number getter", '  get bad(): string {\n    return "x";\n  }'],
+    [
+      "a getter reading a non-field",
+      "  get bad(): number {\n    return this.other;\n  }",
+    ],
+    [
+      "a refused operator in a getter",
+      "  get bad(): number {\n    return this.#v ** 2;\n  }",
+    ],
+    ["a getter that can run off the end", "  get bad(): number {}"],
+    [
+      "an opaque statement in a getter",
+      "  get bad(): number {\n    1;\n    return this.#v;\n  }",
+    ],
+    [
+      "a getter writing a name that is not a field",
+      "  get bad(): number {\n    this.other = 1;\n    return this.#v;\n  }",
+    ],
+    [
+      "a non-block arm writing a field",
+      "  get bad(): number {\n    if (this.#v < 0) this.#v = 1;\n    return this.#v;\n  }",
+    ],
+  ])("%s degrades alone", (_label, member) => {
+    const got = memberClassifiedOf(member);
+    expect(got.declarations).toBe(1);
+  });
+
+  test("a reserved getter name degrades alone", () => {
+    const got = memberClassifiedOf(
+      "  get mk(): number {\n    return 1;\n  }",
+      "mk",
+    );
+    expect(got.szs).toBe("Inappropriate");
+    expect(got.reason).toContain("reserves the name 'mk'");
+    expect(got.declarations).toBe(1);
+  });
+
+  // The extractor attaches no annotation to a private member, so their
+  // absence from the model is what there is to check.
+  test("private getters are absent from the model", () => {
+    const src = [
+      "export class C {",
+      "  #v: number;",
+      "  constructor(v: number) {",
+      "    this.#v = v;",
+      "  }",
+      "  get #p(): number {",
+      "    return this.#v;",
+      "  }",
+      "  private get q(): number {",
+      "    return this.#v;",
+      "  }",
+      "  get v(): number {",
+      "    return this.#v;",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    const c = emission.declarations[0]!;
+    assert(c.kind === "class");
+    expect(c.getters.map((g) => g.name)).toEqual(["v"]);
+  });
+
+  test.each([
+    [
+      "an arm-assigned field",
+      "  get bad(): number {\n    if (this.#v < 0) {\n      this.#v = 1;\n    }\n    return this.#v;\n  }",
+    ],
+    [
+      "an else-assigned field",
+      "  get bad(): number {\n    if (this.#v < 0) {\n      return 1;\n    } else {\n      this.#v = 1;\n    }\n    return this.#v;\n  }",
+    ],
+  ])("%s degrades as immutability", (_label, member) => {
+    const got = memberClassifiedOf(member);
+    expect(got.reason).toContain("outside the constructor");
+    expect(got.declarations).toBe(1);
+  });
+
+  test("a branching getter that writes nothing still models", () => {
+    const src = [
+      "export class C {",
+      "  #v: number;",
+      "  constructor(v: number) {",
+      "    this.#v = v;",
+      "  }",
+      "  get v(): number {",
+      "    if (this.#v < 0) {",
+      "      return 1;",
+      "    }",
+      "    return this.#v;",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    const c = emission.declarations[0]!;
+    assert(c.kind === "class");
+    expect(c.getters).toHaveLength(1);
+  });
+});
+
+describe("instance atoms outside the happy path (#129)", () => {
+  const BOX_DECL = [
+    "export class Box {",
+    "  #v: number;",
+    "  constructor(v: number) {",
+    "    this.#v = v;",
+    "  }",
+    "  get v(): number {",
+    "    return this.#v;",
+    "  }",
+    "}",
+  ].join("\n");
+
+  /** The classification of an annotation whose atom is `atom`, on a file
+   * that also declares Box and a modeled function `g`. */
+  function atomOf(atom: string, extra = ""): { szs: string; reason: string } {
+    const src = [
+      BOX_DECL,
+      extra,
+      `/** @ensures{p} forall (x: number) { ${atom} } */`,
+      "export function g(x: number): number {",
+      "  return x;",
+      "}",
+      "",
+    ].join("\n");
+    const { classified } = emitModule(src, "t.ts");
+    expect(classified).toHaveLength(1);
+    return { szs: classified[0]!.szs, reason: classified[0]!.reason };
+  }
+
+  test.each([
+    [
+      "a private member on an instance",
+      "Object.is(new Box(x).#v, x)",
+      /unmapped TypeScript construct/,
+    ],
+    [
+      "a type argument on new",
+      "Object.is(new Box<number>(x).v, x)",
+      /unmapped TypeScript construct 'NumberKeyword'/,
+    ],
+    [
+      "an opaque construct in a new argument",
+      "Object.is(new Box(await h(x)).v, x)",
+      /unmapped TypeScript construct 'AwaitExpression'/,
+    ],
+    [
+      "a refused operator in a new argument",
+      "Object.is(new Box(x ** 2).v, x)",
+      /'\*\*' is implementation-approximated/,
+    ],
+    [
+      "a qualified constructor name",
+      "Object.is(new a.B(x).v, x)",
+      /unmapped TypeScript construct 'PropertyAccessExpression'/,
+    ],
+  ])("%s classifies Inappropriate", (_label, atom, pattern) => {
+    const got = atomOf(atom);
+    expect(got.szs).toBe("Inappropriate");
+    expect(got.reason).toMatch(pattern);
+  });
+
+  const WIDE = [
+    "class Base {}",
+    "export class Wide extends Base {",
+    "  #v: number;",
+    "  constructor(v: number) {",
+    "    this.#v = v;",
+    "  }",
+    "  get v(): number {",
+    "    return this.#v;",
+    "  }",
+    "}",
+  ].join("\n");
+
+  test.each([
+    ["nested in a new argument", "Object.is(new Box(new Wide(x).v).v, x)"],
+    ["nested in a call argument", "Object.is(g(new Wide(x).v), x)"],
+  ])("a degraded class %s still travels", (_label, atom) => {
+    const got = atomOf(atom, WIDE);
+    expect(got.szs).toBe("Inappropriate");
+    expect(got.reason).toMatch(/'Wide' could not be modeled/);
+  });
+
+  test.each([
+    [
+      "new over a degraded declaration",
+      "Object.is(new bad(x).v, x)",
+      "'bad' has no model: unbound identifier 'missing'",
+      "export function bad(n: number): number {\n  return missing;\n}",
+    ],
+    [
+      "new over an unknown name",
+      "Object.is(new Nope(x).v, x)",
+      "no model registered for 'Nope'",
+      "",
+    ],
+    [
+      "new over a bound variable",
+      "Object.is(new x(1).v, x)",
+      "'x' is not a class; 'new' has no model for it",
+      "",
+    ],
+  ])("%s classifies Error", (_label, atom, reason, extra) => {
+    const got = atomOf(atom, extra);
+    expect(got.szs).toBe("Error");
+    expect(got.reason).toBe(`property elaboration failed: ${reason}`);
+  });
+
+  // `new C` with no argument list is still a construction; the arity
+  // check is what refuses it.
+  test("an argument-less new is an arity mismatch", () => {
+    const got = atomOf("Object.is((new Box).v, x)");
+    expect(got.szs).toBe("Error");
+    expect(got.reason).toBe(
+      "property elaboration failed: 'Box' expects 1 argument(s), got 0",
+    );
+  });
+
+  test("a member read in a boolean position is a type mismatch", () => {
+    const got = atomOf("new Box(x).v");
+    expect(got.szs).toBe("Error");
+    expect(got.reason).toBe(
+      "property elaboration failed: a member read yields a number, not a boolean",
+    );
+  });
+
+  test("a body's Object.is compares a member read", () => {
+    const src = [
+      BOX_DECL,
+      "/** @ensures{p} forall (x: number) { Object.is(pick(x), 0) } */",
+      "export function pick(x: number): number {",
+      "  if (Object.is(new Box(x).v, 0)) {",
+      "    return 1;",
+      "  }",
+      "  return 0;",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    const pick = emission.declarations.find((d) => d.name === "pick")!;
+    expect(JSON.stringify(fnBody(pick))).toContain('"kind":"getter-read"');
+  });
+
+  test("a body naming a degraded class travels its reason", () => {
+    const src = [
+      WIDE,
+      "/** @ensures{p} forall (x: number) { Object.is(use(x), x) } */",
+      "export function use(x: number): number {",
+      "  return new Wide(x).v;",
+      "}",
+      "",
+    ].join("\n");
+    const { classified } = emitModule(src, "t.ts");
+    expect(classified).toHaveLength(1);
+    expect(classified[0]!.szs).toBe("Inappropriate");
+    expect(classified[0]!.reason).toMatch(/'Wide' could not be modeled/);
+  });
+
+  test("a getter's Object.is compares a field read", () => {
+    const src = [
+      "export class C {",
+      "  #v: number;",
+      "  constructor(v: number) {",
+      "    this.#v = v;",
+      "  }",
+      "  get v(): number {",
+      "    if (Object.is(this.#v, 0)) {",
+      "      return 1;",
+      "    }",
+      "    return this.#v;",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    const c = emission.declarations[0]!;
+    assert(c.kind === "class");
+    expect(JSON.stringify(c.getters[0]!.body)).toContain('"kind":"same-value"');
+  });
+});

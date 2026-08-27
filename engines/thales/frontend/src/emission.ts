@@ -770,21 +770,24 @@ function walkTyped(
     }
     return { kind: builtin.kind, arg };
   }
-  if (isThisAccess(e)) {
-    if (scope.self === undefined) {
-      throw new ModelError("'this' has no model outside a class member");
-    }
+  // Outside a member the construct scan already made `this` opaque, so
+  // the receiver is here whenever the walk reaches a field read.
+  if (scope.self !== undefined && isThisAccess(e)) {
     const field = e.name.text;
     if (!scope.self.shape.fields.includes(field)) {
       throw new ModelError(
         `'this.${field}' does not name a field of '${scope.self.ref.name}'`,
       );
     }
+    /* v8 ignore start -- no boolean position admits a field read: every
+       one of them is gated on `booleanShaped`, which a `this` access is
+       not. The throw mirrors the call case's, kept for the same defense. */
     if (expected !== "num") {
       throw new ModelError(
         `field '${field}' is a number, not ${describeTy(expected)}`,
       );
     }
+    /* v8 ignore stop */
     return {
       kind: "field-read",
       className: scope.self.ref.name,
@@ -1663,9 +1666,9 @@ function walkClass(
   } catch (err) {
     if (err instanceof CtorPrecondition)
       return { construct: "constructor", reason: err.message };
-    if (err instanceof ModelError) return { reason: err.message };
-    /* v8 ignore next 2 -- the walk throws nothing else */
-    throw err;
+    /* v8 ignore next -- the walk throws nothing else */
+    if (!(err instanceof ModelError)) throw err;
+    return { reason: err.message };
   }
 
   const shape: ClassShape = {
@@ -1711,10 +1714,9 @@ function walkClass(
         ),
       });
     } catch (err) {
-      if (err instanceof ModelError)
-        memberFailed.set(memberKey(spelling), { reason: err.message });
-      /* v8 ignore next 2 -- the walk throws nothing else */
-      else throw err;
+      /* v8 ignore next -- the walk throws nothing else */
+      if (!(err instanceof ModelError)) throw err;
+      memberFailed.set(memberKey(spelling), { reason: err.message });
     }
   }
   return {
