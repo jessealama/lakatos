@@ -36,7 +36,8 @@
             }
           ]
         }
-      ]
+      ],
+      "methods": []
     },
     {
       "kind": "class",
@@ -96,7 +97,8 @@
             }
           ]
         }
-      ]
+      ],
+      "methods": []
     }
   ],
   "obligations": [

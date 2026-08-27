@@ -250,9 +250,17 @@
     },
     "class": {
       "type": "object",
-      "description": "A number-typed class: a structure over its fields, a constructor assigning each exactly once on every path, and one function per modeled getter.",
+      "description": "A number-typed class: a structure over its fields, a constructor assigning each exactly once on every path, and one function per modeled getter or method.",
       "additionalProperties": false,
-      "required": ["kind", "name", "source", "fields", "ctor", "getters"],
+      "required": [
+        "kind",
+        "name",
+        "source",
+        "fields",
+        "ctor",
+        "getters",
+        "methods"
+      ],
       "properties": {
         "kind": { "const": "class" },
         "name": { "$ref": "#/definitions/identifier" },
@@ -289,6 +297,26 @@
             "required": ["name", "body"],
             "properties": {
               "name": { "$ref": "#/definitions/identifier" },
+              "body": {
+                "type": "array",
+                "items": { "$ref": "#/definitions/statement" }
+              }
+            }
+          }
+        },
+        "methods": {
+          "type": "array",
+          "description": "Modeled instance methods in declaration order; each is a function of the instance and its number parameters.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "params", "body"],
+            "properties": {
+              "name": { "$ref": "#/definitions/identifier" },
+              "params": {
+                "type": "array",
+                "items": { "$ref": "#/definitions/identifier" }
+              },
               "body": {
                 "type": "array",
                 "items": { "$ref": "#/definitions/statement" }

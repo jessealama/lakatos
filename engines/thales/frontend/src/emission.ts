@@ -96,9 +96,16 @@ export interface EmitGetter {
   body: EmitStmt[];
 }
 
+export interface EmitMethod {
+  name: string;
+  /** Parameter names; every parameter is `: number`. */
+  params: string[];
+  body: EmitStmt[];
+}
+
 /** A class as the emitter renders it: a structure over its fields, a
  * constructor that assigns each exactly once, and one function per
- * modeled getter. */
+ * modeled getter or method. */
 export interface EmitClass {
   kind: "class";
   name: string;
@@ -109,6 +116,7 @@ export interface EmitClass {
   source: string;
   ctor: { params: string[]; body: EmitStmt[] };
   getters: EmitGetter[];
+  methods: EmitMethod[];
 }
 
 export type EmitDecl = EmitFunction | EmitClass;
@@ -119,6 +127,8 @@ export interface ClassShape {
   fields: string[];
   getters: ReadonlySet<string>;
   ctorArity: number;
+  /** Modeled methods by name, with their arities. */
+  methods: ReadonlyMap<string, number>;
 }
 
 /** A binder's denoted domain: a finite half-open integer range, the whole
@@ -1542,6 +1552,8 @@ function walkClass(
   const fields: string[] = [];
   const ctors: ts.ConstructorDeclaration[] = [];
   const getterDecls: ts.GetAccessorDeclaration[] = [];
+  const methodDecls: ts.MethodDeclaration[] = [];
+  const overloadOnly: string[] = [];
   const memberFailed = new Map<string, FailedDecl>();
   for (const m of cls.members) {
     if (ts.isSemicolonClassElement(m)) continue;
@@ -1597,8 +1609,24 @@ function walkClass(
       else getterDecls.push(m);
       continue;
     }
-    // Methods, and anything else a class body can hold, degrade alone.
+    if (ts.isMethodDeclaration(m)) {
+      // A bodiless overload signature declares nothing, like a function's.
+      if (m.body !== undefined) methodDecls.push(m);
+      else overloadOnly.push(spelling);
+      continue;
+    }
+    // Anything else a class body can hold degrades alone.
     memberFailed.set(memberKey(spelling), constructAt(m, m.kind, sf));
+  }
+  const bodied = new Set(
+    methodDecls.map((m) => (m.name as ts.PropertyName & { text: string }).text),
+  );
+  for (const spelling of overloadOnly) {
+    if (!bodied.has(spelling))
+      memberFailed.set(memberKey(spelling), {
+        construct: "MethodDeclaration",
+        reason: `'${qualifiedName(spelling, className)}' has no implementation to model`,
+      });
   }
   for (const g of getterDecls) {
     const spelling = (g.name as ts.Identifier).text;
@@ -1608,6 +1636,32 @@ function walkClass(
         spelling,
         "declares both a field and a getter named",
       );
+  }
+  const getterNames = new Set(
+    getterDecls.map((g) => (g.name as ts.Identifier).text),
+  );
+  const seenMethods = new Set<string>();
+  for (const m of methodDecls) {
+    const spelling = (m.name as ts.Identifier | ts.PrivateIdentifier).text;
+    if (fields.includes(spelling))
+      return memberNameFailure(
+        className,
+        spelling,
+        "declares both a field and a method named",
+      );
+    if (getterNames.has(spelling))
+      return memberNameFailure(
+        className,
+        spelling,
+        "declares both a getter and a method named",
+      );
+    if (seenMethods.has(spelling))
+      return memberNameFailure(
+        className,
+        spelling,
+        "declares two methods named",
+      );
+    seenMethods.add(spelling);
   }
   if (ctors.length === 0) {
     return {
@@ -1671,10 +1725,12 @@ function walkClass(
     return { reason: err.message };
   }
 
+  const methodArities = new Map<string, number>();
   const shape: ClassShape = {
     fields,
-    getters: new Set(getterDecls.map((g) => (g.name as ts.Identifier).text)),
+    getters: getterNames,
     ctorArity: ctorParams.length,
+    methods: methodArities,
   };
   const self = { ref: { module: qualifier, name: className }, shape };
   const getters: EmitGetter[] = [];
@@ -1719,6 +1775,59 @@ function walkClass(
       memberFailed.set(memberKey(spelling), { reason: err.message });
     }
   }
+  // Getters render ahead of methods, so a getter body sees an empty
+  // method map: a getter calling a method degrades alone.
+  const methods: EmitMethod[] = [];
+  for (const m of methodDecls) {
+    const spelling = (m.name as ts.Identifier | ts.PrivateIdentifier).text;
+    const failure = methodFailure(m, className, spelling, sf);
+    if (failure !== undefined) {
+      memberFailed.set(memberKey(spelling), failure);
+      continue;
+    }
+    const written = firstThisAssignment(m.body!.statements, fieldSet);
+    if (written !== undefined) {
+      const member = qualifiedName(spelling, className);
+      memberFailed.set(memberKey(spelling), {
+        construct: "this-assignment",
+        reason:
+          `'${member}' assigns field '${written}' outside the constructor; ` +
+          `instances are immutable after construction`,
+      });
+      continue;
+    }
+    const params = m.parameters.map((p) => (p.name as ts.Identifier).text);
+    const scope: WalkScope = { ...base, vars: new Set(params), self };
+    const locals: Locals = new Map(params.map((p) => [p, "mutable" as const]));
+    const body = m.body!.statements.flatMap((st) =>
+      structureStmt(st, sf, locals, scope),
+    );
+    const prescan = bodyPrescan(body, sf, scope);
+    if (prescan !== undefined) {
+      memberFailed.set(memberKey(spelling), prescan);
+      continue;
+    }
+    try {
+      methods.push({
+        name: spelling,
+        params,
+        body: lowerTree(
+          body,
+          params,
+          () => {
+            throw new ModelError("the body must return on every path");
+          },
+          scope,
+          sf,
+        ),
+      });
+      methodArities.set(spelling, params.length);
+    } catch (err) {
+      /* v8 ignore next -- the walk throws nothing else */
+      if (!(err instanceof ModelError)) throw err;
+      memberFailed.set(memberKey(spelling), { reason: err.message });
+    }
+  }
   return {
     emit: {
       kind: "class",
@@ -1728,10 +1837,47 @@ function walkClass(
       fields,
       ctor: { params: ctorParams, body: ctorBody },
       getters,
+      methods,
     },
-    shape: { ...shape, getters: new Set(getters.map((g) => g.name)) },
+    shape: {
+      ...shape,
+      getters: new Set(getters.map((g) => g.name)),
+      methods: methodArities,
+    },
     memberFailed,
   };
+}
+
+/** A method outside the slice degrades alone: privacy, asynchrony, a
+ * signature the model cannot read, or a name the model reserves. */
+function methodFailure(
+  m: ts.MethodDeclaration,
+  className: string,
+  spelling: string,
+  sf: ts.SourceFile,
+): FailedDecl | undefined {
+  if (
+    ts.isPrivateIdentifier(m.name) ||
+    hasModifier(m, ts.SyntaxKind.PrivateKeyword)
+  )
+    return constructAt(m.name, m.kind, sf);
+  if (m.asteriskToken !== undefined) return constructAt(m, m.kind, sf);
+  if (hasModifier(m, ts.SyntaxKind.AsyncKeyword))
+    return constructAt(m, m.kind, sf);
+  const typeParam = m.typeParameters?.[0];
+  if (typeParam !== undefined)
+    return constructAt(typeParam, typeParam.kind, sf);
+  if (m.questionToken !== undefined) return constructAt(m, m.kind, sf);
+  if (RESERVED_MEMBERS.has(spelling))
+    return memberNameFailure(className, spelling, "reserves the name");
+  for (const p of m.parameters) {
+    const failure = ctorParamFailure(p, sf);
+    if (failure !== undefined) return failure;
+  }
+  if (m.type === undefined) return constructAt(m, m.kind, sf);
+  if (m.type.kind !== ts.SyntaxKind.NumberKeyword)
+    return constructAt(m.type, m.type.kind, sf);
+  return undefined;
 }
 
 /** A getter outside the slice degrades alone: privacy, a signature the
@@ -2228,6 +2374,9 @@ function walkEmitModule(
         );
         for (const g of walked.shape.getters) {
           c.mapped.set(key(qualifiedName(g, className)), 0);
+        }
+        for (const [m, arity] of walked.shape.methods) {
+          c.mapped.set(key(qualifiedName(m, className)), arity);
         }
         for (const [k, v] of walked.memberFailed) c.failed.set(k, v);
         continue;
