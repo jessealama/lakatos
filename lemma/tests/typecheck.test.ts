@@ -102,6 +102,27 @@ describe("typecheckProject: version-skew compiler option", () => {
   });
 });
 
+describe("typecheckProject: an options error that is not version skew", () => {
+  useTempProject("lemma-tc-optionerr-", {
+    "tsconfig.json": JSON.stringify({
+      compilerOptions: { isolatedDeclarations: true },
+      include: ["src"],
+    }),
+    "src/a.ts": "export const a: number = 1;\n",
+  });
+
+  it("fails, and the diagnostic carries no file or line", () => {
+    const result = typecheckProject(process.cwd());
+    expect(result.kind).toBe("failed");
+    if (result.kind !== "failed") return;
+    expect(result.diagnostics).toHaveLength(1);
+    expect(result.diagnostics[0]).toEqual({
+      code: 5069,
+      message: expect.stringContaining("isolatedDeclarations"),
+    });
+  });
+});
+
 describe("typecheckProject: malformed tsconfig", () => {
   useTempProject("lemma-tc-garbage-", {
     "tsconfig.json": "{ not json",
@@ -120,18 +141,25 @@ describe("typecheckProject: incremental build info", () => {
     "src/a.ts": "export function id(x: number): number {\n  return x;\n}\n",
   });
 
-  it("persists the build info and stays correct across edits", () => {
-    const info = path.resolve(".lakatos", "typecheck.tsbuildinfo");
-    expect(typecheckProject(process.cwd(), info)).toEqual({ kind: "clean" });
-    expect(fs.existsSync(info)).toBe(true);
-    // A cached verdict must not survive the edit that invalidates it.
-    fs.writeFileSync("src/a.ts", 'export const a: number = "no";\n');
-    const second = typecheckProject(process.cwd(), info);
-    expect(second.kind).toBe("failed");
-    fs.writeFileSync(
-      "src/a.ts",
-      "export function id(x: number): number {\n  return x;\n}\n",
-    );
-    expect(typecheckProject(process.cwd(), info)).toEqual({ kind: "clean" });
-  });
+  it(
+    "persists the build info and stays correct across edits",
+    // Three full program constructions, each parsing the default lib
+    // declarations: the default budget does not fit them on an instrumented
+    // CI runner, where every pass costs several times what it does locally.
+    { timeout: 60_000 },
+    () => {
+      const info = path.resolve(".lakatos", "typecheck.tsbuildinfo");
+      expect(typecheckProject(process.cwd(), info)).toEqual({ kind: "clean" });
+      expect(fs.existsSync(info)).toBe(true);
+      // A cached verdict must not survive the edit that invalidates it.
+      fs.writeFileSync("src/a.ts", 'export const a: number = "no";\n');
+      const second = typecheckProject(process.cwd(), info);
+      expect(second.kind).toBe("failed");
+      fs.writeFileSync(
+        "src/a.ts",
+        "export function id(x: number): number {\n  return x;\n}\n",
+      );
+      expect(typecheckProject(process.cwd(), info)).toEqual({ kind: "clean" });
+    },
+  );
 });

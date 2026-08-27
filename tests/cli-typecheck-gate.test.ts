@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { runForEnvelope, runMain, useTempProject } from "./helpers/cli.js";
+import { runMain, useTempProject } from "./helpers/cli.js";
+import { expectValidEnvelope } from "./helpers/envelope-schema.js";
 
 const ILL_TYPED = {
   "tsconfig.json": JSON.stringify({ include: ["src"] }),
@@ -27,7 +28,9 @@ describe("refute refuses an ill-typed program", () => {
     );
     // The gate runs before codegen: nothing was generated, no run dir named.
     expect(joined).not.toContain("generated");
+    expect(run.stdout).toHaveLength(1);
     const env = JSON.parse(run.stdout[0]!);
+    expectValidEnvelope(env);
     expect(env.annotations).toEqual([
       {
         file: "src/abs.ts",
@@ -38,10 +41,6 @@ describe("refute refuses an ill-typed program", () => {
           "the program does not type check: src/abs.ts:3: TS2322: Type 'string' is not assignable to type 'number'.",
       },
     ]);
-  });
-
-  it("emits a schema-valid envelope", () => {
-    runForEnvelope(["refute"], 2);
   });
 });
 
@@ -84,6 +83,81 @@ describe("the gate is whole-project", () => {
   });
 });
 
+describe("several diagnostics over several annotations", () => {
+  useTempProject("lakatos-gate-many-", {
+    "tsconfig.json": JSON.stringify({ include: ["src"] }),
+    "src/a.ts":
+      "/** @ensures{pos} forall (n: nat) { id(n) >= 0 } */\n" +
+      "export function id(n: number): number {\n  return n;\n}\n" +
+      'export const bad1: number = "one";\n',
+    "src/b.ts":
+      "/** @ensures{pos} forall (n: nat) { twice(n) >= 0 } */\n" +
+      "export function twice(n: number): number {\n  return 2 * n;\n}\n" +
+      'export const bad2: number = "two";\n',
+  });
+
+  it("names the first diagnostic and counts the rest", () => {
+    const run = runMain(["refute"]);
+    expect(run.code).toBe(2);
+    const joined = run.stderr.join("\n");
+    expect(joined).toContain(
+      "lakatos: the program does not type check; reporting 2 annotations as InputError",
+    );
+    const env = JSON.parse(run.stdout[0]!);
+    expect(env.annotations).toHaveLength(2);
+    for (const a of env.annotations) {
+      expect(a.szs).toBe("InputError");
+      expect(a.error).toMatch(
+        /^the program does not type check: src\/[ab]\.ts:5: TS2322: .* \(and 1 more\)$/,
+      );
+    }
+    // Both diagnostics reach stderr even though only one reaches the envelope.
+    expect(joined).toContain("error: src/a.ts:5: TS2322:");
+    expect(joined).toContain("error: src/b.ts:5: TS2322:");
+  });
+});
+
+describe("a diagnostic with no file of its own", () => {
+  useTempProject("lakatos-gate-optionerr-", {
+    "tsconfig.json": JSON.stringify({
+      compilerOptions: { isolatedDeclarations: true },
+      include: ["src"],
+    }),
+    "src/a.ts":
+      "/** @ensures{pos} forall (n: nat) { id(n) >= 0 } */\n" +
+      "export function id(n: number): number {\n  return n;\n}\n",
+  });
+
+  it("formats without a file:line prefix", () => {
+    const run = runMain(["refute"]);
+    expect(run.code).toBe(2);
+    expect(run.stderr.join("\n")).toContain("error: TS5069: Option");
+    const env = JSON.parse(run.stdout[0]!);
+    expect(env.annotations[0].error).toContain(
+      "the program does not type check: TS5069: Option",
+    );
+  });
+});
+
+describe("a tsconfig that names no files", () => {
+  useTempProject("lakatos-gate-noinputs-", {
+    "tsconfig.json": JSON.stringify({ files: [] }),
+    "src/a.ts":
+      "/** @ensures{pos} forall (n: nat) { id(n) >= 0 } */\n" +
+      "export function id(n: number): number {\n  return n;\n}\n",
+  });
+
+  it("warns and proceeds: an empty program vouches for nothing", () => {
+    const run = runMain(["check"]);
+    expect(run.code).toBe(1);
+    expect(run.stderr.join("\n")).toContain(
+      "lakatos: tsconfig.json names no files; skipping type check",
+    );
+    const env = JSON.parse(run.stdout[0]!);
+    expect(env.annotations[0]).toMatchObject({ szs: "NotTried" });
+  });
+});
+
 describe("no tsconfig: the run proceeds unchecked, with a warning", () => {
   useTempProject("lakatos-gate-warn-", {
     "src/a.ts":
@@ -110,14 +184,10 @@ describe("clean project under a tsconfig: no warning, no refusal", () => {
       "export function id(n: number): number {\n  return n;\n}\n",
   });
 
-  it("says nothing about type checking", () => {
+  it("says nothing about it, and leaves its build info for the next run", () => {
     const run = runMain(["check"]);
     expect(run.code).toBe(1);
     expect(run.stderr.join("\n")).not.toContain("type check");
-  });
-
-  it("leaves its build info under .lakatos/ for the next run", () => {
-    runMain(["check"]);
     expect(fs.existsSync(path.join(".lakatos", "typecheck.tsbuildinfo"))).toBe(
       true,
     );
