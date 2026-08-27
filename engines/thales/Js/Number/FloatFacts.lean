@@ -2993,6 +2993,23 @@ theorem beq_neg_inf_eq_false {u : UnpackedFloat}
     simp_all [UnpackedFloat.lt, UnpackedFloat.beq, UnpackedFloat.compare] <;>
     (rename_i s; cases s <;> simp_all)
 
+/-- The converse: a non-NaN value not IEEE-equal to `+∞` is strictly
+below it — `lt` and `beq` read the same `compare`. -/
+theorem lt_pos_inf_of_beq_false {u : UnpackedFloat} (hn : u ≠ .notANumber)
+    (h : UnpackedFloat.beq u (.infinity .positive) = false) :
+    UnpackedFloat.lt u (.infinity .positive) = true := by
+  cases u <;>
+    simp_all [UnpackedFloat.lt, UnpackedFloat.beq, UnpackedFloat.compare] <;>
+    (rename_i s; cases s <;> simp_all [compare])
+
+/-- Not IEEE-equal to `-∞` (and not NaN) means strictly above it. -/
+theorem lt_neg_inf_of_beq_false {u : UnpackedFloat} (hn : u ≠ .notANumber)
+    (h : UnpackedFloat.beq u (.infinity .negative) = false) :
+    UnpackedFloat.lt (.infinity .negative) u = true := by
+  cases u <;>
+    simp_all [UnpackedFloat.lt, UnpackedFloat.beq, UnpackedFloat.compare] <;>
+    (rename_i s; cases s <;> simp_all [compare])
+
 /-- A true `lt` on canonical floats yields the strict key order. -/
 theorem key_of_lt {u v : UnpackedFloat} (hu : Canonical u) (hv : Canonical v)
     (h : UnpackedFloat.lt u v = true) : key u < key v := by
