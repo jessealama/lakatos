@@ -648,6 +648,20 @@
       "szs": "Theorem",
       "reason": "proved by generic proof search, kernel-checked as TsProof.thm_13337300961223989660",
       "axioms": []
+    },
+    {
+      "function": "Doubler#double",
+      "property": "doubled",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_15090795993282267752",
+      "axioms": []
+    },
+    {
+      "function": "Doubler#twice",
+      "property": "chained",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_10832304802670057439",
+      "axioms": []
     }
   ],
   "engines/thales/tests/conformance/theorem/class-box-roundtrip.ts": [

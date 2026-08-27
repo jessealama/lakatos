@@ -57,6 +57,43 @@ def TsModel.Gate.construct (a : JsNumber) : JsM TsModel.Gate := do
 def TsModel.Gate.lo (self : TsModel.Gate) : JsM JsNumber := do
   return TsModel.Gate.«#lo» self
 
+-- export class Doubler {
+--   #v: number;
+--   constructor(v: number) {
+--     this.#v = v;
+--   }
+--   /** @ensures{doubled} forall (x: number) { Object.is(new Doubler(x).double(), 2 * x) } */
+--   double(): number {
+--     return this.#v * 2;
+--   }
+--   base(): number {
+--     return this.#v;
+--   }
+--   /** @ensures{chained} forall (x: number) { Object.is(new Doubler(x).twice(), x + x) } */
+--   twice(): number {
+--     return this.base() + this.base();
+--   }
+-- }
+structure TsModel.Doubler where
+  «#v» : JsNumber
+
+@[js_norm, grind]
+def TsModel.Doubler.construct (v : JsNumber) : JsM TsModel.Doubler := do
+  let «this.#v» : JsNumber := v
+  return TsModel.Doubler.mk «this.#v»
+
+@[js_norm, grind]
+def TsModel.Doubler.double (self : TsModel.Doubler) : JsM JsNumber := do
+  return TsModel.Doubler.«#v» self * 2
+
+@[js_norm, grind]
+def TsModel.Doubler.base (self : TsModel.Doubler) : JsM JsNumber := do
+  return TsModel.Doubler.«#v» self
+
+@[js_norm, grind]
+def TsModel.Doubler.twice (self : TsModel.Doubler) : JsM JsNumber := do
+  return (← TsModel.Doubler.base self) + (← TsModel.Doubler.base self)
+
 -- @ensures{roundTrip} forall (x: number) { Object.is(new Box(x).v, x) }
 #thales_prove "engines/thales/tests/fixtures/classes.ts" "Box#v" "roundTrip" :=
   ∀ (x : JsNumber),
@@ -71,3 +108,17 @@ def TsModel.Gate.lo (self : TsModel.Gate) : JsM JsNumber := do
       (do
           return (← TsModel.Gate.lo (← TsModel.Gate.construct a)) : JsM JsNumber) =
         pure a
+
+-- @ensures{doubled} forall (x: number) { Object.is(new Doubler(x).double(), 2 * x) }
+#thales_prove "engines/thales/tests/fixtures/classes.ts" "Doubler#double" "doubled" :=
+  ∀ (x : JsNumber),
+    (do
+        return (← TsModel.Doubler.double (← TsModel.Doubler.construct x)) : JsM JsNumber) =
+      pure (2 * x)
+
+-- @ensures{chained} forall (x: number) { Object.is(new Doubler(x).twice(), x + x) }
+#thales_prove "engines/thales/tests/fixtures/classes.ts" "Doubler#twice" "chained" :=
+  ∀ (x : JsNumber),
+    (do
+        return (← TsModel.Doubler.twice (← TsModel.Doubler.construct x)) : JsM JsNumber) =
+      pure (x + x)

@@ -99,6 +99,101 @@
         }
       ],
       "methods": []
+    },
+    {
+      "kind": "class",
+      "name": "Doubler",
+      "source": "export class Doubler {\n  #v: number;\n  constructor(v: number) {\n    this.#v = v;\n  }\n  /** @ensures{doubled} forall (x: number) { Object.is(new Doubler(x).double(), 2 * x) } */\n  double(): number {\n    return this.#v * 2;\n  }\n  base(): number {\n    return this.#v;\n  }\n  /** @ensures{chained} forall (x: number) { Object.is(new Doubler(x).twice(), x + x) } */\n  twice(): number {\n    return this.base() + this.base();\n  }\n}",
+      "fields": ["#v"],
+      "ctor": {
+        "params": ["v"],
+        "body": [
+          {
+            "kind": "field-set",
+            "field": "#v",
+            "expr": {
+              "kind": "id",
+              "name": "v"
+            }
+          }
+        ]
+      },
+      "getters": [],
+      "methods": [
+        {
+          "name": "double",
+          "params": [],
+          "body": [
+            {
+              "kind": "return",
+              "expr": {
+                "kind": "binop",
+                "op": "*",
+                "left": {
+                  "kind": "field-read",
+                  "className": "Doubler",
+                  "field": "#v",
+                  "object": {
+                    "kind": "self"
+                  }
+                },
+                "right": {
+                  "kind": "num",
+                  "lit": "2"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "base",
+          "params": [],
+          "body": [
+            {
+              "kind": "return",
+              "expr": {
+                "kind": "field-read",
+                "className": "Doubler",
+                "field": "#v",
+                "object": {
+                  "kind": "self"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "twice",
+          "params": [],
+          "body": [
+            {
+              "kind": "return",
+              "expr": {
+                "kind": "binop",
+                "op": "+",
+                "left": {
+                  "kind": "method-call",
+                  "className": "Doubler",
+                  "name": "base",
+                  "object": {
+                    "kind": "self"
+                  },
+                  "args": []
+                },
+                "right": {
+                  "kind": "method-call",
+                  "className": "Doubler",
+                  "name": "base",
+                  "object": {
+                    "kind": "self"
+                  },
+                  "args": []
+                }
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "obligations": [
@@ -184,6 +279,96 @@
           "right": {
             "kind": "id",
             "name": "a"
+          }
+        }
+      }
+    },
+    {
+      "function": "Doubler#double",
+      "property": "doubled",
+      "formula": "forall (x: number) { Object.is(new Doubler(x).double(), 2 * x) }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "x",
+            "kind": "number"
+          }
+        ],
+        "conclusion": {
+          "kind": "eq",
+          "left": {
+            "kind": "method-call",
+            "className": "Doubler",
+            "name": "double",
+            "object": {
+              "kind": "new",
+              "className": "Doubler",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "x"
+                }
+              ]
+            },
+            "args": []
+          },
+          "right": {
+            "kind": "binop",
+            "op": "*",
+            "left": {
+              "kind": "num",
+              "lit": "2"
+            },
+            "right": {
+              "kind": "id",
+              "name": "x"
+            }
+          }
+        }
+      }
+    },
+    {
+      "function": "Doubler#twice",
+      "property": "chained",
+      "formula": "forall (x: number) { Object.is(new Doubler(x).twice(), x + x) }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "x",
+            "kind": "number"
+          }
+        ],
+        "conclusion": {
+          "kind": "eq",
+          "left": {
+            "kind": "method-call",
+            "className": "Doubler",
+            "name": "twice",
+            "object": {
+              "kind": "new",
+              "className": "Doubler",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "x"
+                }
+              ]
+            },
+            "args": []
+          },
+          "right": {
+            "kind": "binop",
+            "op": "+",
+            "left": {
+              "kind": "id",
+              "name": "x"
+            },
+            "right": {
+              "kind": "id",
+              "name": "x"
+            }
           }
         }
       }
