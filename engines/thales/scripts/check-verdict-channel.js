@@ -151,6 +151,16 @@ const FIXTURES = [
     file: "theorem-rescue.lean",
     expected: [["dbl", "Theorem"]],
   },
+  {
+    // The class shapes: a structure, its single-assignment constructor in
+    // both the plain-let and let-mut forms, and a getter. Both round-trips
+    // are kernel-checked, the guarded one through the refuted throw arm.
+    file: "class-core-plain.lean",
+    expected: [
+      ["Box#v", "Theorem", /generic proof search, kernel-checked as/],
+      ["Gate#lo", "Theorem", /generic proof search, kernel-checked as/],
+    ],
+  },
 ];
 
 const { check, done } = checker("verdict-channel");
