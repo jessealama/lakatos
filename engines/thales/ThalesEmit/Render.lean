@@ -157,6 +157,8 @@ partial def valueTerm (coerced : String → Bool) : JsExpr → RenderM Rendered
   | .call callee module args => do
     let c ← callTerm coerced callee module args
     return ⟨← `((← $c:term)), true⟩
+  | .newObj .. | .getterRead .. | .fieldRead .. | .selfRef =>
+    throw "class rendering is not wired yet"
 
 /-- A call as the `JsM` value it denotes, its arguments still
 value-level. -/
@@ -225,6 +227,7 @@ partial def stmtDoElem : JsStmt → RenderM (TSyntax `doElem)
   | .assign x e => do
     `(doElem| $(← scopedIdent x):ident := $(← bodyTerm e))
   | .ite c thn els => iteElem c thn els
+  | .fieldSet .. => throw "class rendering is not wired yet"
 
 /-- An `if` statement. An else arm that is itself exactly one `if` joins
 the chain as `else if`, the way the source spells it: the nested doIf's
@@ -401,7 +404,10 @@ def renderEmission (e : Emission) : CoreM String := do
   -- A dependency's declarations are contiguous and introduced by their
   -- module, the way the old pipeline writes it; the entry's carry none.
   let mut fromModule : Option String := none
-  for f in e.declarations do
+  for d in e.declarations do
+    let f ← match d with
+      | .fn f => pure f
+      | .cls _ => throwError "class rendering is not wired yet"
     if f.module != fromModule then
       fromModule := f.module
       if let some m := f.module then
