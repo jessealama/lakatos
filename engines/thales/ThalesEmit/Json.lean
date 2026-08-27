@@ -24,6 +24,8 @@ inductive JsExpr where
       (object : JsExpr)
   | fieldRead (className : String) (module : Option String) (field : String)
       (object : JsExpr)
+  | methodCall (className : String) (module : Option String) (name : String)
+      (object : JsExpr) (args : Array JsExpr)
   | selfRef
 deriving Repr, Inhabited
 
@@ -51,8 +53,15 @@ structure EmitGetter where
   body : Array JsStmt
 deriving Repr, Inhabited
 
+structure EmitMethod where
+  name : String
+  params : Array String
+  body : Array JsStmt
+deriving Repr, Inhabited
+
 /-- A class: the structure its fields make, the constructor that assigns
-each exactly once on every path, and one function per modeled getter. -/
+each exactly once on every path, and one function per modeled getter or
+method. -/
 structure EmitClass where
   name : String
   /-- The defining module's entry-relative path; none for the entry. -/
@@ -63,6 +72,7 @@ structure EmitClass where
   ctorParams : Array String
   ctorBody : Array JsStmt
   getters : Array EmitGetter
+  methods : Array EmitMethod := #[]
 deriving Repr, Inhabited
 
 inductive Decl where
@@ -177,6 +187,10 @@ partial def decodeExpr (j : Json) : Except String JsExpr := do
   | "field-read" =>
     pure (.fieldRead (← getStr j "className") (← getStrOpt j "module")
       (← getStr j "field") (← decodeExpr (← j.getObjVal? "object")))
+  | "method-call" =>
+    pure (.methodCall (← getStr j "className") (← getStrOpt j "module")
+      (← getStr j "name") (← decodeExpr (← j.getObjVal? "object"))
+      (← (← getArr j "args").mapM decodeExpr))
   | "self" => pure .selfRef
   | k => throw s!"unknown expression kind '{k}'"
 
@@ -227,6 +241,11 @@ def decodeGetter (j : Json) : Except String EmitGetter := do
   pure { name := ← getStr j "name"
          body := ← (← getArr j "body").mapM decodeStmt }
 
+def decodeMethod (j : Json) : Except String EmitMethod := do
+  pure { name := ← getStr j "name"
+         params := ← decodeNames j "params" "parameter name"
+         body := ← (← getArr j "body").mapM decodeStmt }
+
 def decodeClass (j : Json) : Except String EmitClass := do
   -- Fields are read in schema order, so the error names the first one
   -- the object is actually missing.
@@ -238,7 +257,8 @@ def decodeClass (j : Json) : Except String EmitClass := do
   pure { name, module, source, fields
          ctorParams := ← decodeNames ctor "params" "parameter name"
          ctorBody := ← (← getArr ctor "body").mapM decodeStmt
-         getters := ← (← getArr j "getters").mapM decodeGetter }
+         getters := ← (← getArr j "getters").mapM decodeGetter
+         methods := ← (← getArr j "methods").mapM decodeMethod }
 
 def decodeDecl (j : Json) : Except String Decl := do
   match ← getStr j "kind" with

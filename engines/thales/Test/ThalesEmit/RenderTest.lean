@@ -67,6 +67,12 @@ open Lean ThalesEmit
      ("object", Json.mkObj [("kind", "self")])]))
   matches .ok (.fieldRead "Box" none "#v" .selfRef)
 #guard
+  (decodeExpr (Json.mkObj
+    [("kind", "method-call"), ("className", "Box"), ("name", "double"),
+     ("object", Json.mkObj [("kind", "self")]),
+     ("args", Json.arr #[Json.mkObj [("kind", "id"), ("name", "y")]])]))
+  matches .ok (.methodCall "Box" none "double" .selfRef #[.id "y"])
+#guard
   (decodeStmt (Json.mkObj
     [("kind", "field-set"), ("field", "#v"),
      ("expr", Json.mkObj [("kind", "id"), ("name", "v")])]))
@@ -86,8 +92,21 @@ open Lean ThalesEmit
           [("kind", "return"),
            ("expr", Json.mkObj
              [("kind", "field-read"), ("className", "Box"), ("field", "#v"),
-              ("object", Json.mkObj [("kind", "self")])])]])]])]))
-  matches .ok (.cls _)
+              ("object", Json.mkObj [("kind", "self")])])]])]]),
+     ("methods", Json.arr #[Json.mkObj
+       [("name", "scale"), ("params", Json.arr #["k"]),
+        ("body", Json.arr #[Json.mkObj
+          [("kind", "return"),
+           ("expr", Json.mkObj [("kind", "id"), ("name", "k")])]])]])]))
+  matches .ok (.cls { methods := #[{ name := "scale", .. }], .. })
+-- A method missing its params is a field error, not a default.
+#guard
+  (decodeClass (Json.mkObj
+    [("kind", "class"), ("name", "Box"), ("source", "class Box {}"),
+     ("fields", Json.arr #[]), ("getters", Json.arr #[]),
+     ("ctor", Json.mkObj [("params", Json.arr #[]), ("body", Json.arr #[])]),
+     ("methods", Json.arr #[Json.mkObj [("name", "m")]])]))
+  matches .error "property not found: params"
 -- A class without its constructor is a decode error, never a default.
 #guard
   (decodeDecl (Json.mkObj
@@ -449,3 +468,48 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
     throwError "a lifted right && operand did not render behind the choice:\n{rendered}"
   unless (flat.splitOn "(!Number.FloatOps.sameValue x floatNaN)").length == 2 do
     throwError "! did not render as Bool.not:\n{rendered}"
+
+-- A method is a function of the instance and its parameters, rendered
+-- after the getters so an earlier method resolves for a later body.
+#eval show CoreM Unit from do
+  let box : EmitClass := {
+    name := "Box", source := "class Box"
+    fields := #["#v"], ctorParams := #["v"]
+    ctorBody := #[.fieldSet "#v" (.id "v")]
+    getters := #[]
+    methods := #[
+      { name := "base", params := #[]
+        body := #[.ret (.fieldRead "Box" none "#v" .selfRef)] },
+      { name := "scale", params := #["k"]
+        body := #[.ret (.binop "*"
+          (.methodCall "Box" none "base" .selfRef #[]) (.id "k"))] }] }
+  let e : Emission := { file := "t.ts", declarations := #[.cls box], obligations := #[] }
+  let rendered ← renderEmission e
+  unless (rendered.splitOn "def TsModel.Box.base (self : TsModel.Box) : JsM JsNumber := do").length == 2 do
+    throwError "the zero-parameter method def is missing:\n{rendered}"
+  unless (rendered.splitOn "def TsModel.Box.scale (self : TsModel.Box) (k : JsNumber) : JsM JsNumber := do").length == 2 do
+    throwError "the parameterized method def is missing:\n{rendered}"
+  unless (rendered.splitOn "← TsModel.Box.base self").length == 2 do
+    throwError "the this-call is not applied to self:\n{rendered}"
+
+-- A method call on a fresh instance lifts receiver-first.
+#eval show CoreM Unit from do
+  let box : EmitClass := {
+    name := "Box", source := "class Box"
+    fields := #["#v"], ctorParams := #["v"]
+    ctorBody := #[.fieldSet "#v" (.id "v")]
+    getters := #[]
+    methods := #[{ name := "double", params := #[]
+                   body := #[.ret (.binop "*"
+                     (.fieldRead "Box" none "#v" .selfRef) (.num "2"))] }] }
+  let e : Emission := {
+    file := "t.ts", declarations := #[.cls box]
+    obligations := #[{ function := "Box#double", property := "doubled"
+                       formula := "forall (x: number) { … }"
+                       payload := .structured #[.number "x" none none] #[]
+                         (.eq (.methodCall "Box" none "double"
+                             (.newObj "Box" none #[.id "x"]) #[])
+                           (.binop "*" (.id "x") (.num "2"))) }] }
+  let rendered ← renderEmission e
+  unless (rendered.splitOn "← TsModel.Box.double (← TsModel.Box.construct x)").length == 2 do
+    throwError "the instance method call did not render:\n{rendered}"

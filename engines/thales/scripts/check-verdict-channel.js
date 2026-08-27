@@ -153,11 +153,13 @@ const FIXTURES = [
   },
   {
     // The class shapes: a structure, its single-assignment constructor in
-    // both the plain-let and let-mut forms, and a getter. Both round-trips
-    // are kernel-checked, the guarded one through the refuted throw arm.
+    // both the plain-let and let-mut forms, a getter, and an
+    // instance-taking method. Every round-trip is kernel-checked, the
+    // guarded one through the refuted throw arm.
     file: "class-core-plain.lean",
     expected: [
       ["Box#v", "Theorem", /generic proof search, kernel-checked as/],
+      ["Box#double", "Theorem", /generic proof search, kernel-checked as/],
       ["Gate#lo", "Theorem", /generic proof search, kernel-checked as/],
     ],
   },
