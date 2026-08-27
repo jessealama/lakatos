@@ -135,6 +135,40 @@ theorem float_le_of_not_lt {x y : Float} (hxLo : -floatInf < x) (hxHi : x < floa
     Float.le y x = true :=
   FloatFacts.float_le_of_not_lt hxLo hxHi hyLo hyHi h
 
+/-! The non-negativity chain: square, sum, square root. The NaN bridges
+are its entry points, restated on `floatInf` so the bound hypotheses a
+`number` binder emits instantiate them directly. -/
+
+/-- A float strictly inside the infinities is not NaN. -/
+theorem float_ne_nan_of_bounds {c : Float} (hLo : -floatInf < c) (hHi : c < floatInf) :
+    c.toModel.unpack ≠ .notANumber :=
+  FloatFacts.unpack_ne_nan hLo hHi
+
+/-- Subtraction of floats strictly inside the infinities is never NaN;
+overflow to an infinity is absorbed downstream. -/
+theorem float_sub_ne_nan_of_bounds {a b : Float}
+    (haLo : -floatInf < a) (haHi : a < floatInf)
+    (hbLo : -floatInf < b) (hbHi : b < floatInf) :
+    (a - b).toModel.unpack ≠ .notANumber :=
+  FloatFacts.float_sub_ne_nan haLo haHi hbLo hbHi
+
+/-- A square is non-negative whatever the operand's sign, overflow to
+`+∞` included. -/
+theorem float_sq_nonneg {x : Float} (hx : x.toModel.unpack ≠ .notANumber) :
+    Float.le 0 (x * x) = true :=
+  FloatFacts.float_sq_nonneg hx
+
+/-- A sum of non-negatives stays non-negative. -/
+theorem float_add_nonneg {a b : Float}
+    (ha : Float.le 0 a = true) (hb : Float.le 0 b = true) :
+    Float.le 0 (a + b) = true :=
+  FloatFacts.float_add_nonneg ha hb
+
+/-- The square root of a non-negative float is non-negative. -/
+theorem float_sqrt_nonneg {x : Float} (hx : Float.le 0 x = true) :
+    Float.le 0 (Float.sqrt x) = true :=
+  FloatFacts.float_sqrt_nonneg hx
+
 open Lean Meta Simp in
 /-- Evaluates a closed `Float` comparison by reducing its `Decidable`
 instance, the way the `decide` tactic does; the kernel recomputes the
@@ -188,5 +222,10 @@ grind_pattern float_lt_inf_of_le => a ≤ b
 grind_pattern float_gt_neg_inf_of_lt => a < b
 grind_pattern float_gt_neg_inf_of_le => a ≤ b
 grind_pattern float_le_of_not_lt => Float.lt x y
+grind_pattern float_ne_nan_of_bounds => c.toModel.unpack
+grind_pattern float_sub_ne_nan_of_bounds => (a - b).toModel.unpack
+grind_pattern float_sq_nonneg => x * x
+grind_pattern float_add_nonneg => a + b
+grind_pattern float_sqrt_nonneg => Float.sqrt x
 
 end Js
