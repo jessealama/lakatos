@@ -677,13 +677,8 @@ function findFailedMemberUse(
   if (builtin !== undefined) return findFailedMemberUse(builtin.arg, scope);
   const selfCall = thisCall(e);
   if (selfCall !== undefined && scope.self !== undefined) {
-    if (!scope.self.shape.methods.has(selfCall.name)) {
-      const found = travelFailure(scope, {
-        module: scope.self.ref.module,
-        name: qualifiedName(selfCall.name, scope.self.ref.name),
-      });
-      if (found !== undefined) return found;
-    }
+    // A member's own failures register only once the class walk ends, so
+    // the call itself has nothing to travel; its arguments still do.
     for (const a of selfCall.args) {
       const found = findFailedMemberUse(a, scope);
       if (found !== undefined) return found;
@@ -935,11 +930,15 @@ function walkTyped(
             `${arity} argument(s), got ${selfCall.args.length}`,
         );
       }
+      /* v8 ignore start -- no boolean position admits a method call:
+         every one of them is gated on `booleanShaped`, which a call on
+         `this` is not. The throw mirrors the field read's. */
       if (expected !== "num") {
         throw new ModelError(
           `a method call yields a number, not ${describeTy(expected)}`,
         );
       }
+      /* v8 ignore stop */
       return {
         kind: "method-call",
         className: scope.self.ref.name,
@@ -975,11 +974,14 @@ function walkTyped(
           `argument(s), got ${icall.args.length}`,
       );
     }
+    /* v8 ignore start -- as above: `booleanShaped` admits no call on a
+       fresh instance, so no boolean position reaches this. */
     if (expected !== "num") {
       throw new ModelError(
         `a method call yields a number, not ${describeTy(expected)}`,
       );
     }
+    /* v8 ignore stop */
     const module = ref.module !== "" ? { module: ref.module } : {};
     const object: EmitExpr = {
       kind: "new",
@@ -1803,7 +1805,8 @@ function walkClass(
       else overloadOnly.push(spelling);
       continue;
     }
-    // Anything else a class body can hold degrades alone.
+    /* v8 ignore next 2 -- every class-element kind is handled or
+       returned above; the fallthrough guards against new ones. */
     memberFailed.set(memberKey(spelling), constructAt(m, m.kind, sf));
   }
   const bodied = new Set(
