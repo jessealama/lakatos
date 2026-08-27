@@ -2127,6 +2127,133 @@ describe("builtin member calls model as Float primitives", () => {
     ]);
   });
 
+  test("a module-level binding of the namespace wins over the builtin", () => {
+    const src = [
+      "const Number = { isFinite: (v: number): boolean => v > 0 };",
+      "/** @ensures{p} forall (n: int ∈ [0, 4)) { flag(n) === 1 } */",
+      "export function flag(x: number): number {",
+      "  if (Number.isFinite(x)) {",
+      "    return 1;",
+      "  }",
+      "  return 0;",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining(
+          "unmapped TypeScript construct 'CallExpression'",
+        ),
+      }),
+    ]);
+  });
+
+  test("a degraded import of the namespace also wins over the builtin", () => {
+    const src = [
+      'import { Number } from "./missing.js";',
+      "/** @ensures{p} forall (n: int ∈ [0, 4)) { flag(n) === 1 } */",
+      "export function flag(x: number): number {",
+      "  if (Number.isFinite(x)) {",
+      "    return 1;",
+      "  }",
+      "  return 0;",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining(
+          "unmapped TypeScript construct 'CallExpression'",
+        ),
+      }),
+    ]);
+  });
+
+  test("a module-level declaration of Math wins over the builtin", () => {
+    const src = [
+      "export function Math(): number {",
+      "  return 0;",
+      "}",
+      "/** @ensures{p} forall (n: int ∈ [-5, 5)) { mag(n) >= 0 } */",
+      "export function mag(x: number): number {",
+      "  return Math.abs(x);",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining(
+          "unmapped TypeScript construct 'CallExpression'",
+        ),
+      }),
+    ]);
+  });
+
+  test("a parameter named Math shadows the builtin in its own body", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 4)) { mag(n) >= 0 } */",
+      "export function mag(Math: number): number {",
+      "  return Math.abs(Math);",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining(
+          "unmapped TypeScript construct 'CallExpression'",
+        ),
+      }),
+    ]);
+  });
+
+  // The pre-scan's scope carries parameters, not yet-undeclared locals, so
+  // a local shadow is caught by the typed walk instead: `Error`, not
+  // `Inappropriate`. Either way the builtin never lowers.
+  test("a local named Number shadows the builtin from its declaration on", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 4)) { flag(n) === 1 } */",
+      "export function flag(x: number): number {",
+      "  const Number = x;",
+      "  if (Number.isFinite(x)) {",
+      "    return 1;",
+      "  }",
+      "  return 0;",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Error",
+        reason: expect.stringContaining(
+          "unmapped TypeScript construct 'CallExpression'",
+        ),
+      }),
+    ]);
+  });
+
+  test("a shadowed namespace in a formula atom is refused too", () => {
+    const src = [
+      "const Math = { abs: (v: number): number => v };",
+      "/** @ensures{p} forall (n: int ∈ [0, 4)) { Math.abs(n) >= 0 } */",
+      "export function probe(x: number): number {",
+      "  return x;",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining(
+          "unmapped TypeScript construct 'CallExpression'",
+        ),
+      }),
+    ]);
+  });
+
   test("a refused operator inside a Math.abs argument is still found", () => {
     const src = [
       "/** @ensures{p} forall (n: int ∈ [0, 3)) { f(n) >= 0 } */",

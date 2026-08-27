@@ -212,14 +212,14 @@ function isPrefixNot(e: ts.Expression): e is ts.PrefixUnaryExpression {
 /** Whether an expression's own shape can denote a number in this slice —
  * the shapes the typed walk accepts at `num`. Top-level shape only:
  * deeper offenders keep their own refusals. */
-function numericShaped(e: ts.Expression): boolean {
+function numericShaped(e: ts.Expression, scope: WalkScope): boolean {
   const u = unwrapParens(e);
   if (ts.isNumericLiteral(u) || negatedLiteral(u) !== undefined) return true;
   if (ts.isIdentifier(u)) return true;
   if (isUnaryArith(u)) return true;
   if (ts.isBinaryExpression(u))
     return ARITH_OPERATORS.has(u.operatorToken.getText());
-  const builtin = builtinCall(u);
+  const builtin = builtinCall(u, scope);
   if (builtin !== undefined) return builtin.ty === "num";
   return ts.isCallExpression(u) && ts.isIdentifier(u.expression);
 }
@@ -227,14 +227,14 @@ function numericShaped(e: ts.Expression): boolean {
 /** Whether an expression's own shape can denote a boolean in this slice:
  * a comparison, a SameValue call, or a logical combination of them.
  * Top-level shape only: deeper offenders keep their own refusals. */
-function booleanShaped(e: ts.Expression): boolean {
+function booleanShaped(e: ts.Expression, scope: WalkScope): boolean {
   const u = unwrapParens(e);
   if (ts.isBinaryExpression(u)) {
     const op = u.operatorToken.getText();
     return COMPARISON_OPERATORS.has(op) || LOGICAL_OPERATORS.has(op);
   }
   if (isPrefixNot(u)) return true;
-  if (builtinCall(u)?.ty === "bool") return true;
+  if (builtinCall(u, scope)?.ty === "bool") return true;
   return equationSides(u) !== undefined;
 }
 
@@ -265,31 +265,35 @@ function nonBooleanOperand(
 function findConstruct(
   e: ts.Expression,
   sf: ts.SourceFile,
+  scope: WalkScope,
 ): FailedDecl | undefined {
-  if (ts.isParenthesizedExpression(e)) return findConstruct(e.expression, sf);
+  if (ts.isParenthesizedExpression(e))
+    return findConstruct(e.expression, sf, scope);
   if (ts.isIdentifier(e) || ts.isNumericLiteral(e)) return undefined;
   if (negatedLiteral(e) !== undefined) return undefined;
-  if (isUnaryArith(e)) return findConstruct(e.operand, sf);
+  if (isUnaryArith(e)) return findConstruct(e.operand, sf, scope);
   if (ts.isBinaryExpression(e)) {
     const op = e.operatorToken.getText();
     if (LOGICAL_OPERATORS.has(op)) {
-      if (!booleanShaped(e.left))
+      if (!booleanShaped(e.left, scope))
         return nonBooleanOperand(op, "the left operand", e.left, sf);
-      if (!booleanShaped(e.right))
+      if (!booleanShaped(e.right, scope))
         return nonBooleanOperand(op, "the right operand", e.right, sf);
     }
-    return findConstruct(e.left, sf) ?? findConstruct(e.right, sf);
+    return (
+      findConstruct(e.left, sf, scope) ?? findConstruct(e.right, sf, scope)
+    );
   }
   if (isPrefixNot(e)) {
-    if (!booleanShaped(e.operand))
+    if (!booleanShaped(e.operand, scope))
       return nonBooleanOperand("!", "the operand", e.operand, sf);
-    return findConstruct(e.operand, sf);
+    return findConstruct(e.operand, sf, scope);
   }
   const sides = equationSides(e);
   if (sides !== undefined) {
     // `Object.is` compares JS values of one type; only numbers have a
     // model here, so a non-numeric argument is refused on the merits.
-    const offender = sides.findIndex((s) => !numericShaped(s));
+    const offender = sides.findIndex((s) => !numericShaped(s, scope));
     if (offender !== -1) {
       const arg = unwrapParens(sides[offender]!);
       const { line, character } = sf.getLineAndCharacterOfPosition(
@@ -302,13 +306,15 @@ function findConstruct(
           `not a number (${kindName(arg.kind)} at ${line + 1}:${character + 1})`,
       };
     }
-    return findConstruct(sides[0]!, sf) ?? findConstruct(sides[1]!, sf);
+    return (
+      findConstruct(sides[0]!, sf, scope) ?? findConstruct(sides[1]!, sf, scope)
+    );
   }
-  const builtin = builtinCall(e);
-  if (builtin !== undefined) return findConstruct(builtin.arg, sf);
+  const builtin = builtinCall(e, scope);
+  if (builtin !== undefined) return findConstruct(builtin.arg, sf, scope);
   if (ts.isCallExpression(e) && ts.isIdentifier(e.expression)) {
     for (const a of e.arguments) {
-      const found = findConstruct(a, sf);
+      const found = findConstruct(a, sf, scope);
       if (found !== undefined) return found;
     }
     return undefined;
@@ -340,26 +346,31 @@ function findRefusedOp(e: ts.Expression): FailedDecl | undefined {
 }
 
 /** Every identifier-callee name in tree order. */
-function callNames(e: ts.Expression, into: string[] = []): string[] {
-  if (ts.isParenthesizedExpression(e)) return callNames(e.expression, into);
-  if (isUnaryArith(e)) return callNames(e.operand, into);
-  if (isPrefixNot(e)) return callNames(e.operand, into);
+function callNames(
+  e: ts.Expression,
+  scope: WalkScope,
+  into: string[] = [],
+): string[] {
+  if (ts.isParenthesizedExpression(e))
+    return callNames(e.expression, scope, into);
+  if (isUnaryArith(e)) return callNames(e.operand, scope, into);
+  if (isPrefixNot(e)) return callNames(e.operand, scope, into);
   if (ts.isBinaryExpression(e)) {
-    callNames(e.left, into);
-    return callNames(e.right, into);
+    callNames(e.left, scope, into);
+    return callNames(e.right, scope, into);
   }
   const sides = equationSides(e);
   if (sides !== undefined) {
     // `Object.is` has no callee of its own; its arguments carry them.
-    callNames(sides[0], into);
-    return callNames(sides[1], into);
+    callNames(sides[0], scope, into);
+    return callNames(sides[1], scope, into);
   }
-  const builtin = builtinCall(e);
+  const builtin = builtinCall(e, scope);
   // A builtin member call has no user callee; its argument carries them.
-  if (builtin !== undefined) return callNames(builtin.arg, into);
+  if (builtin !== undefined) return callNames(builtin.arg, scope, into);
   if (ts.isCallExpression(e) && ts.isIdentifier(e.expression)) {
     into.push(e.expression.text);
-    for (const a of e.arguments) callNames(a, into);
+    for (const a of e.arguments) callNames(a, scope, into);
   }
   return into;
 }
@@ -421,7 +432,7 @@ function findFailedCallee(
   e: ts.Expression,
   scope: WalkScope,
 ): FailedDecl | undefined {
-  return failedCalleeIn(callNames(e), scope);
+  return failedCalleeIn(callNames(e, scope), scope);
 }
 
 type Expected = "num" | "bool";
@@ -540,7 +551,7 @@ function walkTyped(
     }
     return { kind: "same-value", left, right };
   }
-  const builtin = builtinCall(e);
+  const builtin = builtinCall(e, scope);
   if (builtin !== undefined) {
     // The argument is typed before the position is, mirroring the binops.
     const arg = walkTyped(builtin.arg, "num", scope, sf);
@@ -603,7 +614,7 @@ function prescanFailure(
   scope: WalkScope,
 ): FailedDecl | undefined {
   const scans = [
-    (r: ScanRoot) => findConstruct(r.expr, r.sf),
+    (r: ScanRoot) => findConstruct(r.expr, r.sf, scope),
     (r: ScanRoot) => findRefusedOp(r.expr),
     (r: ScanRoot) => findFailedCallee(r.expr, scope),
   ];
@@ -746,6 +757,7 @@ function structureStmt(
   s: ts.Statement,
   sf: ts.SourceFile,
   locals: Locals,
+  scope: WalkScope,
 ): TStmt[] {
   if (ts.isReturnStatement(s)) {
     // `return;` yields undefined, which a `number` function has no value
@@ -770,7 +782,7 @@ function structureStmt(
     const inner = unwrapParens(s.expression);
     // The condition must be boolean-shaped — a comparison, an `Object.is`
     // call, or a logical combination of them: truthiness has no model.
-    const cond = booleanShaped(inner)
+    const cond = booleanShaped(inner, scope)
       ? { expr: inner }
       : { opaque: constructAt(inner, inner.kind, sf) };
     // An arm's locals are a copy, so its bindings do not escape it. A
@@ -779,7 +791,7 @@ function structureStmt(
     const arm = (stmt: ts.Statement): TStmt[] => {
       const body = ts.isBlock(stmt) ? stmt.statements : [stmt];
       const armLocals: Locals = new Map(locals);
-      return body.flatMap((b) => structureStmt(b, sf, armLocals));
+      return body.flatMap((b) => structureStmt(b, sf, armLocals, scope));
     };
     const thenArm = arm(s.thenStatement);
     if (s.elseStatement === undefined)
@@ -828,32 +840,33 @@ function treeExprs(
 function treeConstruct(
   stmts: readonly TStmt[],
   sf: ts.SourceFile,
+  scope: WalkScope,
 ): FailedDecl | undefined {
   for (const s of stmts) {
     switch (s.t) {
       case "opaque":
         return s.failure;
       case "return": {
-        const found = findConstruct(s.expr, sf);
+        const found = findConstruct(s.expr, sf, scope);
         if (found !== undefined) return found;
         break;
       }
       case "decl": {
-        const found = findConstruct(s.init, sf);
+        const found = findConstruct(s.init, sf, scope);
         if (found !== undefined) return found;
         break;
       }
       case "assign": {
-        const found = findConstruct(s.expr, sf);
+        const found = findConstruct(s.expr, sf, scope);
         if (found !== undefined) return found;
         break;
       }
       case "if": {
         if ("opaque" in s.cond) return s.cond.opaque;
         const found =
-          findConstruct(s.cond.expr, sf) ??
-          treeConstruct(s.then, sf) ??
-          (s.else !== undefined ? treeConstruct(s.else, sf) : undefined);
+          findConstruct(s.cond.expr, sf, scope) ??
+          treeConstruct(s.then, sf, scope) ??
+          (s.else !== undefined ? treeConstruct(s.else, sf, scope) : undefined);
         if (found !== undefined) return found;
         break;
       }
@@ -1013,11 +1026,13 @@ function walkFunction(
   };
   // Parameters are assignable, the way JavaScript has them.
   const locals: Locals = new Map(params.map((p) => [p, "mutable" as const]));
-  const tree = fn.body!.statements.flatMap((s) => structureStmt(s, sf, locals));
+  const tree = fn.body!.statements.flatMap((s) =>
+    structureStmt(s, sf, locals, scope),
+  );
   // The pre-scans cover the whole body in the old elaborator's order —
   // opaque constructs, then refused operators, then construct-failed
   // callees — dead code included.
-  const construct = treeConstruct(tree, sf);
+  const construct = treeConstruct(tree, sf, scope);
   if (construct !== undefined) return construct;
   const exprs = treeExprs(tree);
   for (const e of exprs) {
@@ -1025,7 +1040,7 @@ function walkFunction(
     if (refused !== undefined) return refused;
   }
   const callee = failedCalleeIn(
-    exprs.flatMap((e) => callNames(e)),
+    exprs.flatMap((e) => callNames(e, scope)),
     scope,
   );
   if (callee !== undefined) return callee;
@@ -1108,9 +1123,15 @@ const BUILTIN_MEMBER_CALLS: ReadonlyMap<
   ["Number.isNaN", { kind: "number-is-nan", ty: "bool" }],
 ]);
 
-/** The whitelisted builtin member call an expression is, if any. */
+/** The whitelisted builtin member call an expression is, if any. A
+ * binding of the namespace spelling — parameter, local, module-level
+ * declaration, or import, degraded ones included — wins over the builtin,
+ * the way one wins over the `NaN`/`Infinity` atoms: the model would
+ * otherwise state a claim about the standard library the source does not
+ * make. */
 function builtinCall(
   e: ts.Expression,
+  scope: WalkScope,
 ):
   | { name: string; kind: BuiltinKind; ty: Expected; arg: ts.Expression }
   | undefined {
@@ -1122,7 +1143,11 @@ function builtinCall(
   ) {
     return undefined;
   }
-  const name = `${callee.expression.text}.${callee.name.text}`;
+  const namespace = callee.expression.text;
+  if (scope.vars.has(namespace) || moduleBinds(scope, namespace)) {
+    return undefined;
+  }
+  const name = `${namespace}.${callee.name.text}`;
   const entry = BUILTIN_MEMBER_CALLS.get(name);
   if (entry === undefined) return undefined;
   return { name, ...entry, arg: e.arguments[0]! };
