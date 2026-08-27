@@ -169,6 +169,9 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
 #eval goldenCheck "tests/fixtures/degradations.emission.json"
   "tests/fixtures/degradations.emitted.lean.expected"
 
+#eval goldenCheck "tests/fixtures/classes.emission.json"
+  "tests/fixtures/classes.emitted.lean.expected"
+
 -- Emitted defs live under the model namespace: a TS function named
 -- after a root-level Lean name (`id`) must still define.
 #eval show CoreM Unit from do
