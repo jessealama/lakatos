@@ -192,6 +192,32 @@ theorem sameValue_nan_eq_false {x : Float}
     Number.FloatOps.sameValue x floatNaN = false :=
   decide_eq_false (FloatFacts.float_ne_nan (FloatFacts.unpack_ne_nan hLo hHi))
 
+/-! The converse direction: a constructor that survived its guards hands
+the proof refuted equality tests, not bounds. These recover the strict
+bounds from the refutations, which is the only finiteness a class binder
+has. -/
+
+/-- Not IEEE-equal to `+∞` (and not NaN) means strictly below it. -/
+theorem float_lt_inf_of_beq_false {x : Float}
+    (hn : x.toModel.unpack ≠ .notANumber)
+    (h : Float.beq x floatInf = false) : x < floatInf :=
+  FloatFacts.float_lt_inf_of_beq_false hn h
+
+/-- Not IEEE-equal to `-∞` (and not NaN) means strictly above it. -/
+theorem float_gt_neg_inf_of_beq_false {x : Float}
+    (hn : x.toModel.unpack ≠ .notANumber)
+    (h : Float.beq x (-floatInf) = false) : -floatInf < x :=
+  FloatFacts.float_gt_neg_inf_of_beq_false hn h
+
+/-- A refuted SameValue test against NaN means the value does not unpack
+to NaN — the fact that feeds the two lemmas above. -/
+theorem unpack_ne_nan_of_sameValue_false {x : Float}
+    (h : Number.FloatOps.sameValue x floatNaN = false) :
+    x.toModel.unpack ≠ .notANumber := by
+  intro hu
+  have hx : x = floatNaN := FloatFacts.float_eq_nan_of_unpack_nan hu
+  simp [Number.FloatOps.sameValue, hx] at h
+
 open Lean Meta Simp in
 /-- Evaluates a closed `Float` comparison by reducing its `Decidable`
 instance, the way the `decide` tactic does; the kernel recomputes the
@@ -253,5 +279,8 @@ grind_pattern float_sqrt_nonneg => Float.sqrt x
 grind_pattern float_beq_inf_eq_false => Float.beq x floatInf
 grind_pattern float_beq_neg_inf_eq_false => Float.beq x (-floatInf)
 grind_pattern sameValue_nan_eq_false => Number.FloatOps.sameValue x floatNaN
+grind_pattern float_lt_inf_of_beq_false => Float.beq x floatInf
+grind_pattern float_gt_neg_inf_of_beq_false => Float.beq x (-floatInf)
+grind_pattern unpack_ne_nan_of_sameValue_false => Number.FloatOps.sameValue x floatNaN
 
 end Js

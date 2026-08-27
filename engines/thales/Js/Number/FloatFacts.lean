@@ -2993,6 +2993,23 @@ theorem beq_neg_inf_eq_false {u : UnpackedFloat}
     simp_all [UnpackedFloat.lt, UnpackedFloat.beq, UnpackedFloat.compare] <;>
     (rename_i s; cases s <;> simp_all)
 
+/-- The converse: a non-NaN value not IEEE-equal to `+∞` is strictly
+below it — `lt` and `beq` read the same `compare`. -/
+theorem lt_pos_inf_of_beq_false {u : UnpackedFloat} (hn : u ≠ .notANumber)
+    (h : UnpackedFloat.beq u (.infinity .positive) = false) :
+    UnpackedFloat.lt u (.infinity .positive) = true := by
+  cases u <;>
+    simp_all [UnpackedFloat.lt, UnpackedFloat.beq, UnpackedFloat.compare] <;>
+    (rename_i s; cases s <;> simp_all [compare])
+
+/-- Not IEEE-equal to `-∞` (and not NaN) means strictly above it. -/
+theorem lt_neg_inf_of_beq_false {u : UnpackedFloat} (hn : u ≠ .notANumber)
+    (h : UnpackedFloat.beq u (.infinity .negative) = false) :
+    UnpackedFloat.lt (.infinity .negative) u = true := by
+  cases u <;>
+    simp_all [UnpackedFloat.lt, UnpackedFloat.beq, UnpackedFloat.compare] <;>
+    (rename_i s; cases s <;> simp_all [compare])
+
 /-- A true `lt` on canonical floats yields the strict key order. -/
 theorem key_of_lt {u v : UnpackedFloat} (hu : Canonical u) (hv : Canonical v)
     (h : UnpackedFloat.lt u v = true) : key u < key v := by
@@ -3333,6 +3350,17 @@ theorem float_ne_nan {x : Float} (h : x.toModel.unpack ≠ .notANumber) :
     x ≠ (0.0 / 0.0 : Float) :=
   fun he => h (he ▸ unpack_nan)
 
+/-- The converse: unpacking to NaN pins the `Float` itself. `Float` is a
+one-field structure over `Float.Model`, so model equality is value
+equality, and the model collapses NaN payloads. -/
+theorem float_eq_nan_of_unpack_nan {x : Float}
+    (h : x.toModel.unpack = .notANumber) : x = (0.0 / 0.0 : Float) := by
+  have hm : x.toModel = ((0.0 / 0.0 : Float)).toModel := by
+    rw [← model_pack_unpack x.toModel,
+      ← model_pack_unpack ((0.0 / 0.0 : Float)).toModel, h]
+    rfl
+  exact congrArg Float.ofModel hm
+
 /-- A false `<` between two non-NaN floats is the reverse `≤`. -/
 theorem float_le_of_not_lt {x y : Float}
     (hxLo : (-(1.0 / 0.0) : Float) < x) (hxHi : x < (1.0 / 0.0 : Float))
@@ -3372,6 +3400,28 @@ theorem float_beq_neg_inf_eq_false {x : Float}
   rw [float_beq_unpack,
     show ((-(1.0 / 0.0) : Float)).toModel.unpack = UnpackedFloat.infinity .negative from rfl]
   exact beq_neg_inf_eq_false h
+
+/-- A non-NaN float not IEEE-equal to `+∞` is strictly below it. -/
+theorem float_lt_inf_of_beq_false {x : Float}
+    (hn : x.toModel.unpack ≠ .notANumber)
+    (h : Float.beq x (1.0 / 0.0 : Float) = false) :
+    Float.lt x (1.0 / 0.0 : Float) = true := by
+  rw [float_beq_unpack,
+    show ((1.0 / 0.0 : Float)).toModel.unpack = UnpackedFloat.infinity .positive from rfl] at h
+  rw [float_lt_unpack,
+    show ((1.0 / 0.0 : Float)).toModel.unpack = UnpackedFloat.infinity .positive from rfl]
+  exact lt_pos_inf_of_beq_false hn h
+
+/-- A non-NaN float not IEEE-equal to `-∞` is strictly above it. -/
+theorem float_gt_neg_inf_of_beq_false {x : Float}
+    (hn : x.toModel.unpack ≠ .notANumber)
+    (h : Float.beq x (-(1.0 / 0.0) : Float) = false) :
+    Float.lt (-(1.0 / 0.0) : Float) x = true := by
+  rw [float_beq_unpack,
+    show ((-(1.0 / 0.0) : Float)).toModel.unpack = UnpackedFloat.infinity .negative from rfl] at h
+  rw [float_lt_unpack,
+    show ((-(1.0 / 0.0) : Float)).toModel.unpack = UnpackedFloat.infinity .negative from rfl]
+  exact lt_neg_inf_of_beq_false hn h
 
 /-! ## The non-negativity chain: square, sum, sqrt
 

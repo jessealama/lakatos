@@ -229,3 +229,32 @@ example (x : Float) (h : Float.lt (-(1.0 / 0.0)) x = true) :
 -- ≠ NaN crosses to the Float layer by congruence through the model.
 example (x : Float) (h : x.toModel.unpack ≠ .notANumber) : x ≠ (0.0 / 0.0) :=
   FloatFacts.float_ne_nan h
+
+-- The converse beq bridge: a non-NaN value not IEEE-equal to an infinity
+-- is strictly inside it.
+example (u : UnpackedFloat) (hn : u ≠ .notANumber)
+    (h : UnpackedFloat.beq u (.infinity .positive) = false) :
+    UnpackedFloat.lt u (.infinity .positive) = true :=
+  FloatFacts.lt_pos_inf_of_beq_false hn h
+
+example (u : UnpackedFloat) (hn : u ≠ .notANumber)
+    (h : UnpackedFloat.beq u (.infinity .negative) = false) :
+    UnpackedFloat.lt (.infinity .negative) u = true :=
+  FloatFacts.lt_neg_inf_of_beq_false hn h
+
+-- The converse congruence: unpacking to NaN pins the Float itself,
+-- because the model collapses NaN payloads.
+example (x : Float) (h : x.toModel.unpack = .notANumber) :
+    x = (0.0 / 0.0) :=
+  FloatFacts.float_eq_nan_of_unpack_nan h
+
+-- The Float-layer lifts of the converse bridge, on the literal spellings.
+example (x : Float) (hn : x.toModel.unpack ≠ .notANumber)
+    (h : Float.beq x (1.0 / 0.0) = false) :
+    Float.lt x (1.0 / 0.0) = true :=
+  FloatFacts.float_lt_inf_of_beq_false hn h
+
+example (x : Float) (hn : x.toModel.unpack ≠ .notANumber)
+    (h : Float.beq x (-(1.0 / 0.0)) = false) :
+    Float.lt (-(1.0 / 0.0)) x = true :=
+  FloatFacts.float_gt_neg_inf_of_beq_false hn h

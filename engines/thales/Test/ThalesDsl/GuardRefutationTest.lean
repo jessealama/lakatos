@@ -53,3 +53,27 @@ example : ∀ (x : JsNumber),
           (pure true : JsM Bool) := by
   intro x h1 h2
   grind
+
+/-! The converse direction: a class binder has no range, so its
+finiteness comes only from the negated constructor guards. Each bridge
+pinned by application, then the pipeline shape under plain `grind`. -/
+
+example (x : Float) (hn : x.toModel.unpack ≠ .notANumber)
+    (h : Float.beq x floatInf = false) : x < floatInf :=
+  float_lt_inf_of_beq_false hn h
+
+example (x : Float) (hn : x.toModel.unpack ≠ .notANumber)
+    (h : Float.beq x (-floatInf) = false) : -floatInf < x :=
+  float_gt_neg_inf_of_beq_false hn h
+
+example (x : Float) (h : Number.FloatOps.sameValue x floatNaN = false) :
+    x.toModel.unpack ≠ .notANumber :=
+  unpack_ne_nan_of_sameValue_false h
+
+-- Exactly the hypotheses a successful constructor leaves behind: negated
+-- guards, no range. grind splits the `||` and chains the bridges itself.
+example (x : Float)
+    (hInf : (Float.beq x (-floatInf) || Float.beq x floatInf) = false)
+    (hNan : Number.FloatOps.sameValue x floatNaN = false) :
+    -floatInf < x ∧ x < floatInf := by
+  grind
