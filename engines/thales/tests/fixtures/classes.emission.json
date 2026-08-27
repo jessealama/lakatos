@@ -1,0 +1,190 @@
+{
+  "file": "engines/thales/tests/fixtures/classes.ts",
+  "declarations": [
+    {
+      "kind": "class",
+      "name": "Box",
+      "source": "export class Box {\n  #v: number;\n  constructor(v: number) {\n    this.#v = v;\n  }\n  /** @ensures{roundTrip} forall (x: number) { Object.is(new Box(x).v, x) } */\n  get v(): number {\n    return this.#v;\n  }\n}",
+      "fields": ["#v"],
+      "ctor": {
+        "params": ["v"],
+        "body": [
+          {
+            "kind": "field-set",
+            "field": "#v",
+            "expr": {
+              "kind": "id",
+              "name": "v"
+            }
+          }
+        ]
+      },
+      "getters": [
+        {
+          "name": "v",
+          "body": [
+            {
+              "kind": "return",
+              "expr": {
+                "kind": "field-read",
+                "className": "Box",
+                "field": "#v",
+                "object": {
+                  "kind": "self"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "class",
+      "name": "Gate",
+      "source": "export class Gate {\n  #lo: number;\n  constructor(a: number) {\n    if (a < 0) {\n      throw new RangeError(\"negative\");\n    } else {\n      this.#lo = a;\n    }\n  }\n  /** @ensures{keepsValue} forall (a: number) { 0 <= a → Object.is(new Gate(a).lo, a) } */\n  get lo(): number {\n    return this.#lo;\n  }\n}",
+      "fields": ["#lo"],
+      "ctor": {
+        "params": ["a"],
+        "body": [
+          {
+            "kind": "if",
+            "cond": {
+              "kind": "binop",
+              "op": "<",
+              "left": {
+                "kind": "id",
+                "name": "a"
+              },
+              "right": {
+                "kind": "num",
+                "lit": "0"
+              }
+            },
+            "then": [
+              {
+                "kind": "throw",
+                "error": "RangeError"
+              }
+            ],
+            "else": [
+              {
+                "kind": "field-set",
+                "field": "#lo",
+                "expr": {
+                  "kind": "id",
+                  "name": "a"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "getters": [
+        {
+          "name": "lo",
+          "body": [
+            {
+              "kind": "return",
+              "expr": {
+                "kind": "field-read",
+                "className": "Gate",
+                "field": "#lo",
+                "object": {
+                  "kind": "self"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "obligations": [
+    {
+      "function": "Box#v",
+      "property": "roundTrip",
+      "formula": "forall (x: number) { Object.is(new Box(x).v, x) }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "x",
+            "kind": "number"
+          }
+        ],
+        "conclusion": {
+          "kind": "eq",
+          "left": {
+            "kind": "getter-read",
+            "className": "Box",
+            "name": "v",
+            "object": {
+              "kind": "new",
+              "className": "Box",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "x"
+                }
+              ]
+            }
+          },
+          "right": {
+            "kind": "id",
+            "name": "x"
+          }
+        }
+      }
+    },
+    {
+      "function": "Gate#lo",
+      "property": "keepsValue",
+      "formula": "forall (a: number) { 0 <= a → Object.is(new Gate(a).lo, a) }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "a",
+            "kind": "number"
+          }
+        ],
+        "guards": [
+          {
+            "kind": "binop",
+            "op": "<=",
+            "left": {
+              "kind": "num",
+              "lit": "0"
+            },
+            "right": {
+              "kind": "id",
+              "name": "a"
+            }
+          }
+        ],
+        "conclusion": {
+          "kind": "eq",
+          "left": {
+            "kind": "getter-read",
+            "className": "Gate",
+            "name": "lo",
+            "object": {
+              "kind": "new",
+              "className": "Gate",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "a"
+                }
+              ]
+            }
+          },
+          "right": {
+            "kind": "id",
+            "name": "a"
+          }
+        }
+      }
+    }
+  ]
+}
