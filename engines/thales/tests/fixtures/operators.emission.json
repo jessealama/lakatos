@@ -119,6 +119,86 @@
           }
         }
       ]
+    },
+    {
+      "kind": "function",
+      "name": "magnitude",
+      "params": ["x"],
+      "source": "export function magnitude(x: number): number {\n  return Math.abs(x);\n}",
+      "body": [
+        {
+          "kind": "return",
+          "expr": {
+            "kind": "math-abs",
+            "arg": {
+              "kind": "id",
+              "name": "x"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "kind": "function",
+      "name": "halveSafe",
+      "params": ["n"],
+      "source": "export function halveSafe(n: number): number {\n  return n / 2;\n}",
+      "body": [
+        {
+          "kind": "return",
+          "expr": {
+            "kind": "binop",
+            "op": "/",
+            "left": {
+              "kind": "id",
+              "name": "n"
+            },
+            "right": {
+              "kind": "num",
+              "lit": "2"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "kind": "function",
+      "name": "zeroOverZero",
+      "params": ["n"],
+      "source": "export function zeroOverZero(n: number): number {\n  return (n - n) / (n - n);\n}",
+      "body": [
+        {
+          "kind": "return",
+          "expr": {
+            "kind": "binop",
+            "op": "/",
+            "left": {
+              "kind": "binop",
+              "op": "-",
+              "left": {
+                "kind": "id",
+                "name": "n"
+              },
+              "right": {
+                "kind": "id",
+                "name": "n"
+              }
+            },
+            "right": {
+              "kind": "binop",
+              "op": "-",
+              "left": {
+                "kind": "id",
+                "name": "n"
+              },
+              "right": {
+                "kind": "id",
+                "name": "n"
+              }
+            }
+          }
+        }
+      ]
     }
   ],
   "obligations": [
@@ -384,6 +464,107 @@
                 {
                   "kind": "id",
                   "name": "x"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "function": "magnitude",
+      "property": "nonNeg",
+      "formula": "forall (x: int ∈ [-5, 5)) { magnitude(x) >= 0 }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "x",
+            "kind": "range",
+            "lo": "-5",
+            "hi": "5"
+          }
+        ],
+        "conclusion": {
+          "kind": "istrue",
+          "expr": {
+            "kind": "binop",
+            "op": ">=",
+            "left": {
+              "kind": "call",
+              "callee": "magnitude",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "x"
+                }
+              ]
+            },
+            "right": {
+              "kind": "num",
+              "lit": "0"
+            }
+          }
+        }
+      }
+    },
+    {
+      "function": "halveSafe",
+      "property": "finite",
+      "formula": "forall (n: int ∈ [0, 5)) { Number.isFinite(halveSafe(n)) }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "n",
+            "kind": "range",
+            "lo": "0",
+            "hi": "5"
+          }
+        ],
+        "conclusion": {
+          "kind": "istrue",
+          "expr": {
+            "kind": "number-is-finite",
+            "arg": {
+              "kind": "call",
+              "callee": "halveSafe",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "n"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "function": "zeroOverZero",
+      "property": "nan",
+      "formula": "forall (n: int ∈ [0, 5)) { Number.isNaN(zeroOverZero(n)) }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "n",
+            "kind": "range",
+            "lo": "0",
+            "hi": "5"
+          }
+        ],
+        "conclusion": {
+          "kind": "istrue",
+          "expr": {
+            "kind": "number-is-nan",
+            "arg": {
+              "kind": "call",
+              "callee": "zeroOverZero",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "n"
                 }
               ]
             }

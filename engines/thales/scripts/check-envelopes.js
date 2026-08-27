@@ -57,6 +57,8 @@ const EXPRESSION_FIXTURES = [
   `${CONFORMANCE}/inappropriate/exponentiation.ts`,
   `${CONFORMANCE}/error/unmodeled-operator.ts`,
   `${CONFORMANCE}/timeout/big-domain.ts`,
+  `${CONFORMANCE}/theorem/finite-guard.ts`,
+  `${CONFORMANCE}/countersatisfiable/abs-shrinks.ts`,
 ];
 
 /** The statement slice (#148): statement-bodied fixtures — const and

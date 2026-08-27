@@ -26,3 +26,18 @@ export function bump(x: number): number {
 export function chain(x: number): number {
   return bump(neg(x)) + 1;
 }
+
+/** @ensures{nonNeg} forall (x: int ∈ [-5, 5)) { magnitude(x) >= 0 } */
+export function magnitude(x: number): number {
+  return Math.abs(x);
+}
+
+/** @ensures{finite} forall (n: int ∈ [0, 5)) { Number.isFinite(halveSafe(n)) } */
+export function halveSafe(n: number): number {
+  return n / 2;
+}
+
+/** @ensures{nan} forall (n: int ∈ [0, 5)) { Number.isNaN(zeroOverZero(n)) } */
+export function zeroOverZero(n: number): number {
+  return (n - n) / (n - n);
+}

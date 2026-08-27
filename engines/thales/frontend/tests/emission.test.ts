@@ -1901,6 +1901,376 @@ describe("Math.sqrt models as Float.sqrt", () => {
   });
 });
 
+describe("builtin member calls model as Float primitives", () => {
+  const FILE = "engines/thales/tests/fixtures/tracer.ts"; // any resolvable path; no imports are followed
+
+  test("a returned Math.abs walks to a math-abs node", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [-5, 5)) { mag(n) >= 0 } */",
+      "export function mag(x: number): number {",
+      "  return Math.abs(x);",
+      "}",
+    ].join("\n");
+    const { emission } = emitModule(src, FILE);
+    expectValidEmission(emission);
+    expect(emission.declarations).toEqual([
+      expect.objectContaining({
+        name: "mag",
+        body: [
+          {
+            kind: "return",
+            expr: { kind: "math-abs", arg: { kind: "id", name: "x" } },
+          },
+        ],
+      }),
+    ]);
+  });
+
+  test("a boolean island conclusion admits Number.isFinite", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 5)) { Number.isFinite(bump(n)) } */",
+      "export function bump(x: number): number {",
+      "  return x + 1;",
+      "}",
+    ].join("\n");
+    const { emission } = emitModule(src, FILE);
+    expectValidEmission(emission);
+    expect(emission.obligations[0]!.payload).toEqual(
+      expect.objectContaining({
+        conclusion: {
+          kind: "istrue",
+          expr: {
+            kind: "number-is-finite",
+            arg: {
+              kind: "call",
+              callee: "bump",
+              args: [{ kind: "id", name: "n" }],
+            },
+          },
+        },
+      }),
+    );
+  });
+
+  test("a Number.isFinite guard joins the guard chain", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 5)) { Number.isFinite(n) → half(n) <= n } */",
+      "export function half(x: number): number {",
+      "  return x / 2;",
+      "}",
+    ].join("\n");
+    const { emission } = emitModule(src, FILE);
+    expectValidEmission(emission);
+    expect(emission.obligations[0]!.payload).toEqual(
+      expect.objectContaining({
+        guards: [{ kind: "number-is-finite", arg: { kind: "id", name: "n" } }],
+      }),
+    );
+  });
+
+  test("a negated Number.isNaN walks under '!'", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 5)) { clean(n) >= 0 } */",
+      "export function clean(x: number): number {",
+      "  if (!Number.isNaN(x)) {",
+      "    return x;",
+      "  }",
+      "  return 0;",
+      "}",
+    ].join("\n");
+    const { emission } = emitModule(src, FILE);
+    expectValidEmission(emission);
+    expect(emission.declarations[0]!.body[0]).toEqual(
+      expect.objectContaining({
+        cond: {
+          kind: "unop",
+          op: "!",
+          operand: { kind: "number-is-nan", arg: { kind: "id", name: "x" } },
+        },
+      }),
+    );
+  });
+
+  test("Number.isNaN is boolean-shaped as a branch condition", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 4)) { clean(n) >= 0 } */",
+      "export function clean(x: number): number {",
+      "  if (Number.isNaN(x)) {",
+      "    return 0;",
+      "  }",
+      "  return x;",
+      "}",
+    ].join("\n");
+    const { emission } = emitModule(src, FILE);
+    expectValidEmission(emission);
+    expect(emission.declarations[0]!.body[0]).toEqual({
+      kind: "if",
+      cond: { kind: "number-is-nan", arg: { kind: "id", name: "x" } },
+      then: [{ kind: "return", expr: { kind: "num", lit: "0" } }],
+    });
+  });
+
+  test("Number.isFinite composes with '&&' in a branch condition", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 4)) { pos(n) >= 0 } */",
+      "export function pos(x: number): number {",
+      "  if (Number.isFinite(x) && x > 0) {",
+      "    return x;",
+      "  }",
+      "  return 0;",
+      "}",
+    ].join("\n");
+    const { emission } = emitModule(src, FILE);
+    expectValidEmission(emission);
+    expect(emission.declarations[0]!.body[0]).toEqual(
+      expect.objectContaining({
+        cond: {
+          kind: "binop",
+          op: "&&",
+          left: { kind: "number-is-finite", arg: { kind: "id", name: "x" } },
+          right: expect.objectContaining({ op: ">" }),
+        },
+      }),
+    );
+  });
+
+  test("a boolean position rejects Math.abs as a number", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 3)) { Math.abs(n) } */",
+      "export function mag(x: number): number {",
+      "  return Math.abs(x);",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Error",
+        reason: expect.stringContaining(
+          "a call to 'Math.abs' yields a number, not",
+        ),
+      }),
+    ]);
+  });
+
+  test("a numeric position rejects Number.isFinite as a boolean", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 3)) { probe(n) >= 0 } */",
+      "export function probe(x: number): number {",
+      "  return Number.isFinite(x);",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Error",
+        reason: expect.stringContaining(
+          "a call to 'Number.isFinite' yields a boolean, not",
+        ),
+      }),
+    ]);
+  });
+
+  test("a Number.isFinite argument keeps Object.is numbers-only", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 3)) { Object.is(Number.isFinite(n), n) } */",
+      "export function probe(x: number): number {",
+      "  return x;",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Error",
+        reason: expect.stringContaining(
+          "a call to 'Number.isFinite' yields a boolean, not a number",
+        ),
+      }),
+    ]);
+  });
+
+  test("Number.parseFloat keeps the unmapped-construct refusal", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 3)) { conv(n) >= 0 } */",
+      "export function conv(x: number): number {",
+      "  return Number.parseFloat(x);",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining(
+          "unmapped TypeScript construct 'CallExpression'",
+        ),
+      }),
+    ]);
+  });
+
+  test("a wrong-arity Number.isFinite stays an unmapped construct", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 3)) { two(n) >= 0 } */",
+      "export function two(x: number): number {",
+      "  if (Number.isFinite(x, 2)) {",
+      "    return x;",
+      "  }",
+      "  return 0;",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining(
+          "unmapped TypeScript construct 'CallExpression'",
+        ),
+      }),
+    ]);
+  });
+
+  test("a module-level binding of the namespace wins over the builtin", () => {
+    const src = [
+      "const Number = { isFinite: (v: number): boolean => v > 0 };",
+      "/** @ensures{p} forall (n: int ∈ [0, 4)) { flag(n) === 1 } */",
+      "export function flag(x: number): number {",
+      "  if (Number.isFinite(x)) {",
+      "    return 1;",
+      "  }",
+      "  return 0;",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining(
+          "unmapped TypeScript construct 'CallExpression'",
+        ),
+      }),
+    ]);
+  });
+
+  test("a degraded import of the namespace also wins over the builtin", () => {
+    const src = [
+      'import { Number } from "./missing.js";',
+      "/** @ensures{p} forall (n: int ∈ [0, 4)) { flag(n) === 1 } */",
+      "export function flag(x: number): number {",
+      "  if (Number.isFinite(x)) {",
+      "    return 1;",
+      "  }",
+      "  return 0;",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining(
+          "unmapped TypeScript construct 'CallExpression'",
+        ),
+      }),
+    ]);
+  });
+
+  test("a module-level declaration of Math wins over the builtin", () => {
+    const src = [
+      "export function Math(): number {",
+      "  return 0;",
+      "}",
+      "/** @ensures{p} forall (n: int ∈ [-5, 5)) { mag(n) >= 0 } */",
+      "export function mag(x: number): number {",
+      "  return Math.abs(x);",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining(
+          "unmapped TypeScript construct 'CallExpression'",
+        ),
+      }),
+    ]);
+  });
+
+  test("a parameter named Math shadows the builtin in its own body", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 4)) { mag(n) >= 0 } */",
+      "export function mag(Math: number): number {",
+      "  return Math.abs(Math);",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining(
+          "unmapped TypeScript construct 'CallExpression'",
+        ),
+      }),
+    ]);
+  });
+
+  // The pre-scan's scope carries parameters, not yet-undeclared locals, so
+  // a local shadow is caught by the typed walk instead: `Error`, not
+  // `Inappropriate`. Either way the builtin never lowers.
+  test("a local named Number shadows the builtin from its declaration on", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 4)) { flag(n) === 1 } */",
+      "export function flag(x: number): number {",
+      "  const Number = x;",
+      "  if (Number.isFinite(x)) {",
+      "    return 1;",
+      "  }",
+      "  return 0;",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Error",
+        reason: expect.stringContaining(
+          "unmapped TypeScript construct 'CallExpression'",
+        ),
+      }),
+    ]);
+  });
+
+  test("a shadowed namespace in a formula atom is refused too", () => {
+    const src = [
+      "const Math = { abs: (v: number): number => v };",
+      "/** @ensures{p} forall (n: int ∈ [0, 4)) { Math.abs(n) >= 0 } */",
+      "export function probe(x: number): number {",
+      "  return x;",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining(
+          "unmapped TypeScript construct 'CallExpression'",
+        ),
+      }),
+    ]);
+  });
+
+  test("a refused operator inside a Math.abs argument is still found", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 3)) { f(n) >= 0 } */",
+      "export function f(x: number): number {",
+      "  return Math.abs(x ** 2);",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining("**"),
+      }),
+    ]);
+  });
+});
+
 describe("logical operators on boolean operands", () => {
   const FILE = "engines/thales/tests/fixtures/tracer.ts";
 

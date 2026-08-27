@@ -123,6 +123,36 @@
         },
         {
           "type": "object",
+          "description": "Math.abs: ECMA-262 abs — the sign bit cleared, so -0 becomes +0 and NaN stays NaN.",
+          "additionalProperties": false,
+          "required": ["kind", "arg"],
+          "properties": {
+            "kind": { "const": "math-abs" },
+            "arg": { "$ref": "#/definitions/expr" }
+          }
+        },
+        {
+          "type": "object",
+          "description": "Number.isFinite on a number: true exactly for non-NaN, non-infinite doubles.",
+          "additionalProperties": false,
+          "required": ["kind", "arg"],
+          "properties": {
+            "kind": { "const": "number-is-finite" },
+            "arg": { "$ref": "#/definitions/expr" }
+          }
+        },
+        {
+          "type": "object",
+          "description": "Number.isNaN on a number: true exactly for NaN.",
+          "additionalProperties": false,
+          "required": ["kind", "arg"],
+          "properties": {
+            "kind": { "const": "number-is-nan" },
+            "arg": { "$ref": "#/definitions/expr" }
+          }
+        },
+        {
+          "type": "object",
           "additionalProperties": false,
           "required": ["kind", "callee", "args"],
           "properties": {

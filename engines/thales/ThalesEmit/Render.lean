@@ -145,6 +145,15 @@ partial def valueTerm (coerced : String → Bool) : JsExpr → RenderM Rendered
   | .mathSqrt a => do
     let ⟨t, lifted⟩ ← valueTerm coerced a
     return ⟨← `(Float.sqrt $t), lifted⟩
+  | .mathAbs a => do
+    let ⟨t, lifted⟩ ← valueTerm coerced a
+    return ⟨← `(Float.abs $t), lifted⟩
+  | .numberIsFinite a => do
+    let ⟨t, lifted⟩ ← valueTerm coerced a
+    return ⟨← `(Float.isFinite $t), lifted⟩
+  | .numberIsNaN a => do
+    let ⟨t, lifted⟩ ← valueTerm coerced a
+    return ⟨← `(Float.isNaN $t), lifted⟩
   | .call callee module args => do
     let c ← callTerm coerced callee module args
     return ⟨← `((← $c:term)), true⟩

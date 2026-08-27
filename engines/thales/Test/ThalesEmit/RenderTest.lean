@@ -28,6 +28,21 @@ open Lean ThalesEmit
      ("arg", Json.mkObj [("kind", "id"), ("name", "x")])]))
   matches .ok (.mathSqrt (.id "x"))
 #guard
+  (decodeExpr (Json.mkObj
+    [("kind", "math-abs"),
+     ("arg", Json.mkObj [("kind", "id"), ("name", "x")])]))
+  matches .ok (.mathAbs (.id "x"))
+#guard
+  (decodeExpr (Json.mkObj
+    [("kind", "number-is-finite"),
+     ("arg", Json.mkObj [("kind", "id"), ("name", "x")])]))
+  matches .ok (.numberIsFinite (.id "x"))
+#guard
+  (decodeExpr (Json.mkObj
+    [("kind", "number-is-nan"),
+     ("arg", Json.mkObj [("kind", "id"), ("name", "x")])]))
+  matches .ok (.numberIsNaN (.id "x"))
+#guard
   (decodeBinder (Json.mkObj [("name", "x"), ("kind", "int")]))
   matches .ok (.int "x")
 #guard

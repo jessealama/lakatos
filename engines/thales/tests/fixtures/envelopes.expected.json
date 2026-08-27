@@ -76,6 +76,27 @@
       "szs": "Theorem",
       "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_8475325979719138379",
       "axioms": []
+    },
+    {
+      "function": "magnitude",
+      "property": "nonNeg",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_8173753381879385441",
+      "axioms": []
+    },
+    {
+      "function": "halveSafe",
+      "property": "finite",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_11842021719056629656",
+      "axioms": []
+    },
+    {
+      "function": "zeroOverZero",
+      "property": "nan",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_15842919892147362585",
+      "axioms": []
     }
   ],
   "engines/thales/tests/conformance/theorem/add-commutes.ts": [
@@ -326,6 +347,26 @@
       "property": "nonneg",
       "szs": "Timeout",
       "reason": "the attempt exceeded the per-annotation heartbeat budget (thales.heartbeats = 1)"
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/finite-guard.ts": [
+    {
+      "function": "scale",
+      "property": "nonNeg",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_13174018913230107788",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/countersatisfiable/abs-shrinks.ts": [
+    {
+      "function": "mag",
+      "property": "grows",
+      "szs": "CounterSatisfiable",
+      "reason": "the property is false on its bounded domain",
+      "counterexample": {
+        "n": 0
+      }
     }
   ],
   "engines/thales/tests/fixtures/statements.ts": [
