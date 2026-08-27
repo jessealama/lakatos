@@ -103,7 +103,7 @@
         },
         {
           "title": "input error",
-          "description": "The annotation's input is malformed at extraction (duplicate property name, inaccessible subject); error carries the diagnostic. The function label is best-effort: subjects without a proper name use placeholders such as <anonymous>#m or Box#<computed>.",
+          "description": "The annotation's input is malformed at extraction (duplicate property name, inaccessible subject), or the program it describes does not type check; error carries the diagnostic. The function label is best-effort: subjects without a proper name use placeholders such as <anonymous>#m or Box#<computed>.",
           "additionalProperties": false,
           "required": ["file", "function", "property", "szs", "error"],
           "properties": {
