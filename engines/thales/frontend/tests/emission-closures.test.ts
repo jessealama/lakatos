@@ -104,6 +104,102 @@ describe("emission import closures", () => {
     });
   });
 
+  test("a method call on an imported class carries its module", () => {
+    const boxed = [
+      'import { Dep } from "./dep.mjs";',
+      "/** @ensures{keeps} forall (x: number) { Object.is(new Dep(x).m(), x) } */",
+      "export function keep(x: number): number {",
+      "  return x;",
+      "}",
+      "",
+    ].join("\n");
+    const dep = [
+      "export class Dep {",
+      "  #v: number;",
+      "  constructor(v: number) {",
+      "    this.#v = v;",
+      "  }",
+      "  m(): number {",
+      "    return this.#v;",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(
+      boxed,
+      "main.mts",
+      reader({ "dep.mts": dep }),
+    );
+    expect(classified).toEqual([]);
+    expect(emission.obligations[0]!.payload).toEqual({
+      kind: "structured",
+      binders: [{ name: "x", kind: "number" }],
+      conclusion: {
+        kind: "eq",
+        left: {
+          kind: "method-call",
+          className: "Dep",
+          module: "dep.mts",
+          name: "m",
+          object: {
+            kind: "new",
+            className: "Dep",
+            module: "dep.mts",
+            args: [{ kind: "id", name: "x" }],
+          },
+          args: [],
+        },
+        right: { kind: "id", name: "x" },
+      },
+    });
+  });
+
+  test("a dependency's this-call carries the dependency's module", () => {
+    const boxed = [
+      'import { Dep } from "./dep.mjs";',
+      "/** @ensures{keeps} forall (x: number) { Object.is(new Dep(x).twice(), x + x) } */",
+      "export function keep(x: number): number {",
+      "  return x;",
+      "}",
+      "",
+    ].join("\n");
+    const dep = [
+      "export class Dep {",
+      "  #v: number;",
+      "  constructor(v: number) {",
+      "    this.#v = v;",
+      "  }",
+      "  base(): number {",
+      "    return this.#v;",
+      "  }",
+      "  twice(): number {",
+      "    return this.base() + this.base();",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(
+      boxed,
+      "main.mts",
+      reader({ "dep.mts": dep }),
+    );
+    expect(classified).toEqual([]);
+    const cls = emission.declarations[0]!;
+    assert(cls.kind === "class");
+    expect(cls.methods[1]!.body[0]).toMatchObject({
+      kind: "return",
+      expr: {
+        left: {
+          kind: "method-call",
+          className: "Dep",
+          module: "dep.mts",
+          name: "base",
+          object: { kind: "self" },
+        },
+      },
+    });
+  });
+
   test("only the entry's annotations become obligations", () => {
     const annotated = [
       "/** @ensures{pos} forall (x: int ∈ [0, 5)) { double(x) >= 0 } */",

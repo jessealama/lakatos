@@ -107,6 +107,18 @@ const CLASS_FIXTURES = [
   `${CONFORMANCE}/inappropriate/class-extends.ts`,
 ];
 
+/** The method slice (#130): instance methods, this-chains, method atoms,
+ * and the whitelist non-collision. */
+const METHOD_FIXTURES = [
+  `${CONFORMANCE}/theorem/method-double.ts`,
+  `${CONFORMANCE}/theorem/method-chain.ts`,
+  `${CONFORMANCE}/theorem/method-guarded-throw.ts`,
+  `${CONFORMANCE}/theorem/method-on-shadowing-class.ts`,
+  `${CONFORMANCE}/theorem/method-sibling-degrades.ts`,
+  `${CONFORMANCE}/inappropriate/method-power.ts`,
+  `${CONFORMANCE}/error/method-arity.ts`,
+];
+
 /** The degradation slice (#151): unsupported ranges and the names
  * non-function declarations bind, mixed with healthy annotations in one
  * file. */
@@ -133,6 +145,7 @@ const fixtures =
         ...STATEMENT_FIXTURES,
         ...BINDER_FIXTURES,
         ...CLASS_FIXTURES,
+        ...METHOD_FIXTURES,
         ...DEGRADATION_FIXTURES,
         ...IMPORT_FIXTURES,
       ]

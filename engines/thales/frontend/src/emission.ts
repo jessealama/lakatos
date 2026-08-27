@@ -63,6 +63,14 @@ export type EmitExpr =
       field: string;
       object: EmitExpr;
     }
+  | {
+      kind: "method-call";
+      className: string;
+      module?: string;
+      name: string;
+      object: EmitExpr;
+      args: EmitExpr[];
+    }
   | { kind: "self" };
 
 /** A statement in the shapes the plain-Lean emitter renders as Lean
@@ -96,9 +104,16 @@ export interface EmitGetter {
   body: EmitStmt[];
 }
 
+export interface EmitMethod {
+  name: string;
+  /** Parameter names; every parameter is `: number`. */
+  params: string[];
+  body: EmitStmt[];
+}
+
 /** A class as the emitter renders it: a structure over its fields, a
  * constructor that assigns each exactly once, and one function per
- * modeled getter. */
+ * modeled getter or method. */
 export interface EmitClass {
   kind: "class";
   name: string;
@@ -109,6 +124,7 @@ export interface EmitClass {
   source: string;
   ctor: { params: string[]; body: EmitStmt[] };
   getters: EmitGetter[];
+  methods: EmitMethod[];
 }
 
 export type EmitDecl = EmitFunction | EmitClass;
@@ -119,6 +135,8 @@ export interface ClassShape {
   fields: string[];
   getters: ReadonlySet<string>;
   ctorArity: number;
+  /** Modeled methods by name, with their arities. */
+  methods: ReadonlyMap<string, number>;
 }
 
 /** A binder's denoted domain: a finite half-open integer range, the whole
@@ -255,6 +273,31 @@ function instanceAccess(
   return { object, name: e.name.text };
 }
 
+/** A member call on a freshly built instance. */
+function instanceCall(
+  e: ts.Expression,
+):
+  | { object: ts.NewExpression; name: string; args: readonly ts.Expression[] }
+  | undefined {
+  if (!ts.isCallExpression(e)) return undefined;
+  const callee = e.expression;
+  if (!ts.isPropertyAccessExpression(callee)) return undefined;
+  const object = newCall(callee.expression);
+  if (object === undefined) return undefined;
+  if (!ts.isIdentifier(callee.name)) return undefined;
+  return { object, name: callee.name.text, args: e.arguments };
+}
+
+/** A `this.m(...)` call: the only method call a member body can make. */
+function thisCall(
+  e: ts.Expression,
+): { name: string; args: readonly ts.Expression[] } | undefined {
+  if (!ts.isCallExpression(e)) return undefined;
+  const callee = e.expression;
+  if (!isThisAccess(callee)) return undefined;
+  return { name: callee.name.text, args: e.arguments };
+}
+
 /** The class a `new` names, in the registries. */
 function newRef(scope: WalkScope, built: ts.NewExpression): ModelRef {
   return refOf(scope, (built.expression as ts.Identifier).text);
@@ -299,6 +342,7 @@ function numericShaped(e: ts.Expression, scope: WalkScope): boolean {
   if (ts.isBinaryExpression(u))
     return ARITH_OPERATORS.has(u.operatorToken.getText());
   if (isThisAccess(u) || instanceAccess(u) !== undefined) return true;
+  if (instanceCall(u) !== undefined || thisCall(u) !== undefined) return true;
   const builtin = builtinCall(u, scope);
   if (builtin !== undefined) return builtin.ty === "num";
   return ts.isCallExpression(u) && ts.isIdentifier(u.expression);
@@ -401,6 +445,27 @@ function findConstruct(
   }
   // A field read is shaped only where `this` denotes something.
   if (isThisAccess(e) && scope.self !== undefined) return undefined;
+  // A this-call is shaped on the same condition as the field read above.
+  if (scope.self !== undefined) {
+    const selfCall = thisCall(e);
+    if (selfCall !== undefined) {
+      for (const a of selfCall.args) {
+        const found = findConstruct(a, sf, scope);
+        if (found !== undefined) return found;
+      }
+      return undefined;
+    }
+  }
+  const icall = instanceCall(e);
+  if (icall !== undefined) {
+    const found = findConstruct(icall.object, sf, scope);
+    if (found !== undefined) return found;
+    for (const a of icall.args) {
+      const inner = findConstruct(a, sf, scope);
+      if (inner !== undefined) return inner;
+    }
+    return undefined;
+  }
   const access = instanceAccess(e);
   if (access !== undefined) return findConstruct(access.object, sf, scope);
   const built = newCall(e);
@@ -429,6 +494,16 @@ function findRefusedOp(e: ts.Expression): FailedDecl | undefined {
     const reason = REFUSED_OPERATORS.get(op);
     if (reason !== undefined) return { construct: op, reason };
     return findRefusedOp(e.left) ?? findRefusedOp(e.right);
+  }
+  const icall = instanceCall(e);
+  if (icall !== undefined) {
+    const found = findRefusedOp(icall.object);
+    if (found !== undefined) return found;
+    for (const a of icall.args) {
+      const inner = findRefusedOp(a);
+      if (inner !== undefined) return inner;
+    }
+    return undefined;
   }
   const access = instanceAccess(e);
   if (access !== undefined) return findRefusedOp(access.object);
@@ -472,6 +547,17 @@ function callNames(
   const builtin = builtinCall(e, scope);
   // A builtin member call has no user callee; its argument carries them.
   if (builtin !== undefined) return callNames(builtin.arg, scope, into);
+  const icall = instanceCall(e);
+  if (icall !== undefined) {
+    callNames(icall.object, scope, into);
+    for (const a of icall.args) callNames(a, scope, into);
+    return into;
+  }
+  const selfCall = thisCall(e);
+  if (selfCall !== undefined) {
+    for (const a of selfCall.args) callNames(a, scope, into);
+    return into;
+  }
   const access = instanceAccess(e);
   if (access !== undefined) return callNames(access.object, scope, into);
   const built = newCall(e);
@@ -589,6 +675,36 @@ function findFailedMemberUse(
   }
   const builtin = builtinCall(e, scope);
   if (builtin !== undefined) return findFailedMemberUse(builtin.arg, scope);
+  const selfCall = thisCall(e);
+  if (selfCall !== undefined && scope.self !== undefined) {
+    // A member's own failures register only once the class walk ends, so
+    // the call itself has nothing to travel; its arguments still do.
+    for (const a of selfCall.args) {
+      const found = findFailedMemberUse(a, scope);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  }
+  const icall = instanceCall(e);
+  if (icall !== undefined) {
+    const found = findFailedMemberUse(icall.object, scope);
+    if (found !== undefined) return found;
+    const ref = newRef(scope, icall.object);
+    const shape = scope.classes.get(modelKey(ref));
+    // An unmodeled class already travelled through its own `new`.
+    if (shape !== undefined && !shape.methods.has(icall.name)) {
+      const travelled = travelFailure(scope, {
+        module: ref.module,
+        name: qualifiedName(icall.name, ref.name),
+      });
+      if (travelled !== undefined) return travelled;
+    }
+    for (const a of icall.args) {
+      const inner = findFailedMemberUse(a, scope);
+      if (inner !== undefined) return inner;
+    }
+    return undefined;
+  }
   const access = instanceAccess(e);
   if (access !== undefined) {
     const found = findFailedMemberUse(access.object, scope);
@@ -796,6 +912,90 @@ function walkTyped(
         : {}),
       field,
       object: { kind: "self" },
+    };
+  }
+  if (scope.self !== undefined) {
+    const selfCall = thisCall(e);
+    if (selfCall !== undefined) {
+      const arity = scope.self.shape.methods.get(selfCall.name);
+      if (arity === undefined) {
+        throw new ModelError(
+          `'this.${selfCall.name}' does not name a modeled method of ` +
+            `'${scope.self.ref.name}'`,
+        );
+      }
+      if (arity !== selfCall.args.length) {
+        throw new ModelError(
+          `'${qualifiedName(selfCall.name, scope.self.ref.name)}' expects ` +
+            `${arity} argument(s), got ${selfCall.args.length}`,
+        );
+      }
+      /* v8 ignore start -- no boolean position admits a method call:
+         every one of them is gated on `booleanShaped`, which a call on
+         `this` is not. The throw mirrors the field read's. */
+      if (expected !== "num") {
+        throw new ModelError(
+          `a method call yields a number, not ${describeTy(expected)}`,
+        );
+      }
+      /* v8 ignore stop */
+      return {
+        kind: "method-call",
+        className: scope.self.ref.name,
+        ...(scope.self.ref.module !== ""
+          ? { module: scope.self.ref.module }
+          : {}),
+        name: selfCall.name,
+        object: { kind: "self" },
+        args: selfCall.args.map((a) => walkTyped(a, "num", scope, sf)),
+      };
+    }
+  }
+  const icall = instanceCall(e);
+  if (icall !== undefined) {
+    const ref = newRef(scope, icall.object);
+    const shape = classShapeOf(scope, ref);
+    const rawCtorArgs = icall.object.arguments ?? [];
+    if (shape.ctorArity !== rawCtorArgs.length) {
+      throw new ModelError(
+        `'${displayName(ref)}' expects ${shape.ctorArity} argument(s), ` +
+          `got ${rawCtorArgs.length}`,
+      );
+    }
+    const arity = shape.methods.get(icall.name);
+    if (arity === undefined) {
+      throw new ModelError(
+        `'${displayName(ref)}' has no method '${icall.name}' in the model`,
+      );
+    }
+    if (arity !== icall.args.length) {
+      throw new ModelError(
+        `'${qualifiedName(icall.name, ref.name)}' expects ${arity} ` +
+          `argument(s), got ${icall.args.length}`,
+      );
+    }
+    /* v8 ignore start -- as above: `booleanShaped` admits no call on a
+       fresh instance, so no boolean position reaches this. */
+    if (expected !== "num") {
+      throw new ModelError(
+        `a method call yields a number, not ${describeTy(expected)}`,
+      );
+    }
+    /* v8 ignore stop */
+    const module = ref.module !== "" ? { module: ref.module } : {};
+    const object: EmitExpr = {
+      kind: "new",
+      className: ref.name,
+      ...module,
+      args: rawCtorArgs.map((a) => walkTyped(a, "num", scope, sf)),
+    };
+    return {
+      kind: "method-call",
+      className: ref.name,
+      ...module,
+      name: icall.name,
+      object,
+      args: icall.args.map((a) => walkTyped(a, "num", scope, sf)),
     };
   }
   const access = instanceAccess(e);
@@ -1542,6 +1742,8 @@ function walkClass(
   const fields: string[] = [];
   const ctors: ts.ConstructorDeclaration[] = [];
   const getterDecls: ts.GetAccessorDeclaration[] = [];
+  const methodDecls: ts.MethodDeclaration[] = [];
+  const overloadOnly: string[] = [];
   const memberFailed = new Map<string, FailedDecl>();
   for (const m of cls.members) {
     if (ts.isSemicolonClassElement(m)) continue;
@@ -1597,8 +1799,25 @@ function walkClass(
       else getterDecls.push(m);
       continue;
     }
-    // Methods, and anything else a class body can hold, degrade alone.
+    if (ts.isMethodDeclaration(m)) {
+      // A bodiless overload signature declares nothing, like a function's.
+      if (m.body !== undefined) methodDecls.push(m);
+      else overloadOnly.push(spelling);
+      continue;
+    }
+    /* v8 ignore next 2 -- every class-element kind is handled or
+       returned above; the fallthrough guards against new ones. */
     memberFailed.set(memberKey(spelling), constructAt(m, m.kind, sf));
+  }
+  const bodied = new Set(
+    methodDecls.map((m) => (m.name as ts.PropertyName & { text: string }).text),
+  );
+  for (const spelling of overloadOnly) {
+    if (!bodied.has(spelling))
+      memberFailed.set(memberKey(spelling), {
+        construct: "MethodDeclaration",
+        reason: `'${qualifiedName(spelling, className)}' has no implementation to model`,
+      });
   }
   for (const g of getterDecls) {
     const spelling = (g.name as ts.Identifier).text;
@@ -1608,6 +1827,32 @@ function walkClass(
         spelling,
         "declares both a field and a getter named",
       );
+  }
+  const getterNames = new Set(
+    getterDecls.map((g) => (g.name as ts.Identifier).text),
+  );
+  const seenMethods = new Set<string>();
+  for (const m of methodDecls) {
+    const spelling = (m.name as ts.Identifier | ts.PrivateIdentifier).text;
+    if (fields.includes(spelling))
+      return memberNameFailure(
+        className,
+        spelling,
+        "declares both a field and a method named",
+      );
+    if (getterNames.has(spelling))
+      return memberNameFailure(
+        className,
+        spelling,
+        "declares both a getter and a method named",
+      );
+    if (seenMethods.has(spelling))
+      return memberNameFailure(
+        className,
+        spelling,
+        "declares two methods named",
+      );
+    seenMethods.add(spelling);
   }
   if (ctors.length === 0) {
     return {
@@ -1671,10 +1916,12 @@ function walkClass(
     return { reason: err.message };
   }
 
+  const methodArities = new Map<string, number>();
   const shape: ClassShape = {
     fields,
-    getters: new Set(getterDecls.map((g) => (g.name as ts.Identifier).text)),
+    getters: getterNames,
     ctorArity: ctorParams.length,
+    methods: methodArities,
   };
   const self = { ref: { module: qualifier, name: className }, shape };
   const getters: EmitGetter[] = [];
@@ -1719,6 +1966,59 @@ function walkClass(
       memberFailed.set(memberKey(spelling), { reason: err.message });
     }
   }
+  // Getters render ahead of methods, so a getter body sees an empty
+  // method map: a getter calling a method degrades alone.
+  const methods: EmitMethod[] = [];
+  for (const m of methodDecls) {
+    const spelling = (m.name as ts.Identifier | ts.PrivateIdentifier).text;
+    const failure = methodFailure(m, className, spelling, sf);
+    if (failure !== undefined) {
+      memberFailed.set(memberKey(spelling), failure);
+      continue;
+    }
+    const written = firstThisAssignment(m.body!.statements, fieldSet);
+    if (written !== undefined) {
+      const member = qualifiedName(spelling, className);
+      memberFailed.set(memberKey(spelling), {
+        construct: "this-assignment",
+        reason:
+          `'${member}' assigns field '${written}' outside the constructor; ` +
+          `instances are immutable after construction`,
+      });
+      continue;
+    }
+    const params = m.parameters.map((p) => (p.name as ts.Identifier).text);
+    const scope: WalkScope = { ...base, vars: new Set(params), self };
+    const locals: Locals = new Map(params.map((p) => [p, "mutable" as const]));
+    const body = m.body!.statements.flatMap((st) =>
+      structureStmt(st, sf, locals, scope),
+    );
+    const prescan = bodyPrescan(body, sf, scope);
+    if (prescan !== undefined) {
+      memberFailed.set(memberKey(spelling), prescan);
+      continue;
+    }
+    try {
+      methods.push({
+        name: spelling,
+        params,
+        body: lowerTree(
+          body,
+          params,
+          () => {
+            throw new ModelError("the body must return on every path");
+          },
+          scope,
+          sf,
+        ),
+      });
+      methodArities.set(spelling, params.length);
+    } catch (err) {
+      /* v8 ignore next -- the walk throws nothing else */
+      if (!(err instanceof ModelError)) throw err;
+      memberFailed.set(memberKey(spelling), { reason: err.message });
+    }
+  }
   return {
     emit: {
       kind: "class",
@@ -1728,10 +2028,47 @@ function walkClass(
       fields,
       ctor: { params: ctorParams, body: ctorBody },
       getters,
+      methods,
     },
-    shape: { ...shape, getters: new Set(getters.map((g) => g.name)) },
+    shape: {
+      ...shape,
+      getters: new Set(getters.map((g) => g.name)),
+      methods: methodArities,
+    },
     memberFailed,
   };
+}
+
+/** A method outside the slice degrades alone: privacy, asynchrony, a
+ * signature the model cannot read, or a name the model reserves. */
+function methodFailure(
+  m: ts.MethodDeclaration,
+  className: string,
+  spelling: string,
+  sf: ts.SourceFile,
+): FailedDecl | undefined {
+  if (
+    ts.isPrivateIdentifier(m.name) ||
+    hasModifier(m, ts.SyntaxKind.PrivateKeyword)
+  )
+    return constructAt(m.name, m.kind, sf);
+  if (m.asteriskToken !== undefined) return constructAt(m, m.kind, sf);
+  if (hasModifier(m, ts.SyntaxKind.AsyncKeyword))
+    return constructAt(m, m.kind, sf);
+  const typeParam = m.typeParameters?.[0];
+  if (typeParam !== undefined)
+    return constructAt(typeParam, typeParam.kind, sf);
+  if (m.questionToken !== undefined) return constructAt(m, m.kind, sf);
+  if (RESERVED_MEMBERS.has(spelling))
+    return memberNameFailure(className, spelling, "reserves the name");
+  for (const p of m.parameters) {
+    const failure = ctorParamFailure(p, sf);
+    if (failure !== undefined) return failure;
+  }
+  if (m.type === undefined) return constructAt(m, m.kind, sf);
+  if (m.type.kind !== ts.SyntaxKind.NumberKeyword)
+    return constructAt(m.type, m.type.kind, sf);
+  return undefined;
 }
 
 /** A getter outside the slice degrades alone: privacy, a signature the
@@ -2228,6 +2565,9 @@ function walkEmitModule(
         );
         for (const g of walked.shape.getters) {
           c.mapped.set(key(qualifiedName(g, className)), 0);
+        }
+        for (const [m, arity] of walked.shape.methods) {
+          c.mapped.set(key(qualifiedName(m, className)), arity);
         }
         for (const [k, v] of walked.memberFailed) c.failed.set(k, v);
         continue;

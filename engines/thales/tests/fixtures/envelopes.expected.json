@@ -648,6 +648,20 @@
       "szs": "Theorem",
       "reason": "proved by generic proof search, kernel-checked as TsProof.thm_13337300961223989660",
       "axioms": []
+    },
+    {
+      "function": "Doubler#double",
+      "property": "doubled",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_15090795993282267752",
+      "axioms": []
+    },
+    {
+      "function": "Doubler#twice",
+      "property": "chained",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_10832304802670057439",
+      "axioms": []
     }
   ],
   "engines/thales/tests/conformance/theorem/class-box-roundtrip.ts": [
@@ -681,6 +695,74 @@
       "property": "keeps",
       "szs": "Inappropriate",
       "reason": "'Tagged#v' could not be modeled: unmapped TypeScript construct 'HeritageClause' at 3:21"
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/method-double.ts": [
+    {
+      "function": "Box#double",
+      "property": "doubled",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_6512472819467694225",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/method-chain.ts": [
+    {
+      "function": "Acc#twice",
+      "property": "chained",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_17366748854070318335",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/method-guarded-throw.ts": [
+    {
+      "function": "Gate#level",
+      "property": "kept",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_13797612289878966518",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/method-on-shadowing-class.ts": [
+    {
+      "function": "Math#abs",
+      "property": "own",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_12682564316637861639",
+      "axioms": []
+    },
+    {
+      "function": "Number#value",
+      "property": "kept",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_13066317647207584403",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/method-sibling-degrades.ts": [
+    {
+      "function": "Pair#value",
+      "property": "kept",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_3011229874224911381",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/inappropriate/method-power.ts": [
+    {
+      "function": "Pow#square",
+      "property": "grows",
+      "szs": "Inappropriate",
+      "reason": "'Pow#square' could not be modeled: '**' is implementation-approximated in JavaScript, so any model would certify results a conforming engine may disagree with"
+    }
+  ],
+  "engines/thales/tests/conformance/error/method-arity.ts": [
+    {
+      "function": "Box#double",
+      "property": "p",
+      "szs": "Error",
+      "reason": "property elaboration failed: 'Box#double' expects 0 argument(s), got 1"
     }
   ],
   "engines/thales/tests/fixtures/degradations.ts": [

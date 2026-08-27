@@ -206,6 +206,13 @@ partial def valueTerm (coerced : String → Bool) : JsExpr → RenderM Rendered
     let p := mkIdent ((← classIdent module cls).getId ++ (← fieldComponent field))
     let ⟨o, lifted⟩ ← valueTerm coerced obj
     return ⟨← `($p:term $o:term), lifted⟩
+  -- The receiver renders ahead of the arguments, so its lift elaborates
+  -- first: JS evaluates a call's receiver before its arguments.
+  | .methodCall cls module name obj args => do
+    let m ← classMember module cls name
+    let ⟨o, _⟩ ← valueTerm coerced obj
+    let argTerms ← args.mapM (fun a => return (← valueTerm coerced a).term)
+    return ⟨← `((← $m:term $o:term $argTerms*)), true⟩
   | .selfRef => return ⟨mkIdent (Name.mkSimple "self"), false⟩
 
 /-- A call as the `JsM` value it denotes, its arguments still
@@ -388,15 +395,32 @@ def ctorCommand (c : EmitClass) : RenderM (TSyntax `command) := do
     `(@[js_norm, grind] def $name ($params* : JsNumber) : JsM $cls := do
         $[$elems:doElem]*)
 
-/-- A getter as a real function of the instance; the receiver is `self`,
-which is in the reserved vocabulary, so no source name captures it. -/
-def getterCommand (c : EmitClass) (g : EmitGetter) : RenderM (TSyntax `command) := do
-  let name ← classMember c.module c.name g.name
+/-- A method as a function of the instance and its parameters; the
+receiver is `self`, in the reserved vocabulary, so no source name
+captures it. An assigned parameter is rebound `let mut`, like a free
+function's. -/
+def methodCommand (c : EmitClass) (m : EmitMethod) : RenderM (TSyntax `command) := do
+  let name ← classMember c.module c.name m.name
   let cls ← classIdent c.module c.name
   let self := mkIdent (Name.mkSimple "self")
-  let body ← g.body.mapM (stmtDoElem none)
-  `(@[js_norm, grind] def $name ($self : $cls) : JsM JsNumber := do
-      $[$body:doElem]*)
+  let params ← m.params.mapM scopedIdent
+  let assigned := m.body.toList.flatMap assignedNames
+  let rebound ← m.params.filterMapM fun p => do
+    unless assigned.contains p do return none
+    let pi ← scopedIdent p
+    return some (← `(doElem| let mut $pi:ident := $pi))
+  let body ← m.body.mapM (stmtDoElem none)
+  let elems := rebound ++ body
+  if params.isEmpty then
+    `(@[js_norm, grind] def $name ($self : $cls) : JsM JsNumber := do
+        $[$elems:doElem]*)
+  else
+    `(@[js_norm, grind] def $name ($self : $cls) ($params* : JsNumber) : JsM JsNumber := do
+        $[$elems:doElem]*)
+
+/-- A getter is the zero-parameter method shape. -/
+def getterCommand (c : EmitClass) (g : EmitGetter) : RenderM (TSyntax `command) :=
+  methodCommand c { name := g.name, params := #[], body := g.body }
 
 /-- A boolean-valued expression as the proposition that it evaluates to
 `pure true` — the shape the old pipeline elaborates for both a boolean
@@ -544,6 +568,9 @@ def renderEmission (e : Emission) : CoreM String := do
       for g in c.getters do
         blocks := blocks.push
           (prettyLines (← ppCommand (← rendered (getterCommand c g))))
+      for m in c.methods do
+        blocks := blocks.push
+          (prettyLines (← ppCommand (← rendered (methodCommand c m))))
   for o in e.obligations do
     let cmd ← rendered (obligationCommand e o)
     blocks := blocks.push

@@ -1,6 +1,7 @@
 -- Hand-written pin of the class-core artifact shapes: the structure, the
 -- single-assignment constructor (both let and let-mut forms), a getter,
--- and an obligation whose atom builds an instance with new.
+-- an instance-taking method, and obligations whose atoms build an
+-- instance with new and call a method on it.
 import ThalesDsl
 
 open Js ThalesDsl
@@ -22,6 +23,15 @@ def TsModel.Box.v (self : TsModel.Box) : JsM JsNumber := do
 #thales_prove "class-core-plain.ts" "Box#v" "roundTrip" :=
   ∀ (x : JsNumber),
     ((do return (← TsModel.Box.v (← TsModel.Box.construct x))) : JsM JsNumber) = pure x
+
+@[js_norm, grind]
+def TsModel.Box.double (self : TsModel.Box) : JsM JsNumber := do
+  return TsModel.Box.«#v» self * 2
+
+#thales_prove "class-core-plain.ts" "Box#double" "doubled" :=
+  ∀ (x : JsNumber),
+    ((do return (← TsModel.Box.double (← TsModel.Box.construct x))) : JsM JsNumber) =
+      ((pure (x * 2) : JsM JsNumber))
 
 structure TsModel.Gate where
   «#lo» : JsNumber

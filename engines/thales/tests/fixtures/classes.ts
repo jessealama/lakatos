@@ -23,3 +23,21 @@ export class Gate {
     return this.#lo;
   }
 }
+
+export class Doubler {
+  #v: number;
+  constructor(v: number) {
+    this.#v = v;
+  }
+  /** @ensures{doubled} forall (x: number) { Object.is(new Doubler(x).double(), 2 * x) } */
+  double(): number {
+    return this.#v * 2;
+  }
+  base(): number {
+    return this.#v;
+  }
+  /** @ensures{chained} forall (x: number) { Object.is(new Doubler(x).twice(), x + x) } */
+  twice(): number {
+    return this.base() + this.base();
+  }
+}
