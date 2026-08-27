@@ -40,6 +40,27 @@ def TsModel.bump (x : JsNumber) : JsM JsNumber := do
 def TsModel.chain (x : JsNumber) : JsM JsNumber := do
   return (← TsModel.bump (← TsModel.neg x)) + 1
 
+-- export function magnitude(x: number): number {
+--   return Math.abs(x);
+-- }
+@[js_norm, grind]
+def TsModel.magnitude (x : JsNumber) : JsM JsNumber := do
+  return Float.abs x
+
+-- export function halveSafe(n: number): number {
+--   return n / 2;
+-- }
+@[js_norm, grind]
+def TsModel.halveSafe (n : JsNumber) : JsM JsNumber := do
+  return n / 2
+
+-- export function zeroOverZero(n: number): number {
+--   return (n - n) / (n - n);
+-- }
+@[js_norm, grind]
+def TsModel.zeroOverZero (n : JsNumber) : JsM JsNumber := do
+  return (n - n) / (n - n)
+
 -- @ensures{belowSeven} forall (x: int ∈ [0, 20)) { rem7(x) < 7 }
 #thales_prove "engines/thales/tests/fixtures/operators.ts" "rem7" "belowSeven" :=
   ballIco 0 20 fun x =>
@@ -90,3 +111,27 @@ def TsModel.chain (x : JsNumber) : JsM JsNumber := do
   ballIco 0 5 fun x =>
     TsModel.chain (Float.ofInt x) = do
       return 2 + (← TsModel.neg (Float.ofInt x))
+
+-- @ensures{nonNeg} forall (x: int ∈ [-5, 5)) { magnitude(x) >= 0 }
+#thales_prove "engines/thales/tests/fixtures/operators.ts" "magnitude" "nonNeg" :=
+  ballIco (-5) 5 fun x =>
+    ((do
+          return Float.le 0 (← TsModel.magnitude (Float.ofInt x))) :
+        JsM Bool) =
+      pure true
+
+-- @ensures{finite} forall (n: int ∈ [0, 5)) { Number.isFinite(halveSafe(n)) }
+#thales_prove "engines/thales/tests/fixtures/operators.ts" "halveSafe" "finite" :=
+  ballIco 0 5 fun n =>
+    ((do
+          return Float.isFinite (← TsModel.halveSafe (Float.ofInt n))) :
+        JsM Bool) =
+      pure true
+
+-- @ensures{nan} forall (n: int ∈ [0, 5)) { Number.isNaN(zeroOverZero(n)) }
+#thales_prove "engines/thales/tests/fixtures/operators.ts" "zeroOverZero" "nan" :=
+  ballIco 0 5 fun n =>
+    ((do
+          return Float.isNaN (← TsModel.zeroOverZero (Float.ofInt n))) :
+        JsM Bool) =
+      pure true
