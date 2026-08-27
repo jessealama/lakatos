@@ -19,6 +19,12 @@ inductive JsExpr where
   | numberIsFinite (arg : JsExpr)
   | numberIsNaN (arg : JsExpr)
   | call (callee : String) (module : Option String) (args : Array JsExpr)
+  | newObj (className : String) (module : Option String) (args : Array JsExpr)
+  | getterRead (className : String) (module : Option String) (name : String)
+      (object : JsExpr)
+  | fieldRead (className : String) (module : Option String) (field : String)
+      (object : JsExpr)
+  | selfRef
 deriving Repr, Inhabited
 
 inductive JsStmt where
@@ -28,6 +34,7 @@ inductive JsStmt where
   | letDecl (name : String) (init : JsExpr)
   | assign (name : String) (expr : JsExpr)
   | ite (cond : JsExpr) (thn : Array JsStmt) (els : Option (Array JsStmt))
+  | fieldSet (field : String) (expr : JsExpr)
 deriving Repr, Inhabited
 
 structure EmitFn where
@@ -37,6 +44,30 @@ structure EmitFn where
   params : Array String
   source : String
   body : Array JsStmt
+deriving Repr, Inhabited
+
+structure EmitGetter where
+  name : String
+  body : Array JsStmt
+deriving Repr, Inhabited
+
+/-- A class: the structure its fields make, the constructor that assigns
+each exactly once on every path, and one function per modeled getter. -/
+structure EmitClass where
+  name : String
+  /-- The defining module's entry-relative path; none for the entry. -/
+  module : Option String := none
+  source : String
+  /-- Field spellings in declaration order — the structure's fields. -/
+  fields : Array String
+  ctorParams : Array String
+  ctorBody : Array JsStmt
+  getters : Array EmitGetter
+deriving Repr, Inhabited
+
+inductive Decl where
+  | fn (f : EmitFn)
+  | cls (c : EmitClass)
 deriving Repr, Inhabited
 
 /-- A binder's denoted domain: a finite half-open `[lo, hi)` integer
@@ -83,7 +114,7 @@ deriving Repr, Inhabited
 
 structure Emission where
   file : String
-  declarations : Array EmitFn
+  declarations : Array Decl
   obligations : Array Obligation
 deriving Repr, Inhabited
 
@@ -137,6 +168,16 @@ partial def decodeExpr (j : Json) : Except String JsExpr := do
   | "call" =>
     pure (.call (← getStr j "callee") (← getStrOpt j "module")
       (← (← getArr j "args").mapM decodeExpr))
+  | "new" =>
+    pure (.newObj (← getStr j "className") (← getStrOpt j "module")
+      (← (← getArr j "args").mapM decodeExpr))
+  | "getter-read" =>
+    pure (.getterRead (← getStr j "className") (← getStrOpt j "module")
+      (← getStr j "name") (← decodeExpr (← j.getObjVal? "object")))
+  | "field-read" =>
+    pure (.fieldRead (← getStr j "className") (← getStrOpt j "module")
+      (← getStr j "field") (← decodeExpr (← j.getObjVal? "object")))
+  | "self" => pure .selfRef
   | k => throw s!"unknown expression kind '{k}'"
 
 partial def decodeStmt (j : Json) : Except String JsStmt := do
@@ -163,17 +204,46 @@ partial def decodeStmt (j : Json) : Except String JsStmt := do
         | .ok a => some <$> a.mapM decodeStmt
         | .error _ => throw "field 'else' is not an array"
     pure (.ite cond thn els)
+  | "field-set" =>
+    pure (.fieldSet (← getStr j "field")
+      (← decodeExpr (← j.getObjVal? "expr")))
   | k => throw s!"unknown statement kind '{k}'"
 
+/-- An array field of plain strings — names, which the schema constrains
+and the renderer checks again before it emits them. -/
+def decodeNames (j : Json) (field what : String) :
+    Except String (Array String) := do
+  (← getArr j field).mapM fun n =>
+    n.getStr?.mapError fun _ => s!"a {what} is not a string"
+
 def decodeFn (j : Json) : Except String EmitFn := do
+  pure { name := ← getStr j "name"
+         module := ← getStrOpt j "module"
+         params := ← decodeNames j "params" "parameter name"
+         source := ← getStr j "source"
+         body := ← (← getArr j "body").mapM decodeStmt }
+
+def decodeGetter (j : Json) : Except String EmitGetter := do
+  pure { name := ← getStr j "name"
+         body := ← (← getArr j "body").mapM decodeStmt }
+
+def decodeClass (j : Json) : Except String EmitClass := do
+  -- Fields are read in schema order, so the error names the first one
+  -- the object is actually missing.
+  let name ← getStr j "name"
+  let module ← getStrOpt j "module"
+  let source ← getStr j "source"
+  let fields ← decodeNames j "fields" "field name"
+  let ctor ← j.getObjVal? "ctor"
+  pure { name, module, source, fields
+         ctorParams := ← decodeNames ctor "params" "parameter name"
+         ctorBody := ← (← getArr ctor "body").mapM decodeStmt
+         getters := ← (← getArr j "getters").mapM decodeGetter }
+
+def decodeDecl (j : Json) : Except String Decl := do
   match ← getStr j "kind" with
-  | "function" =>
-    pure { name := ← getStr j "name"
-           module := ← getStrOpt j "module"
-           params := ← (← getArr j "params").mapM fun p =>
-             p.getStr?.mapError fun _ => "a parameter name is not a string"
-           source := ← getStr j "source"
-           body := ← (← getArr j "body").mapM decodeStmt }
+  | "function" => .fn <$> decodeFn j
+  | "class" => .cls <$> decodeClass j
   | k => throw s!"unknown declaration kind '{k}'"
 
 /-- One side of a `number` binder's interval, absent when unbounded: an
@@ -229,7 +299,7 @@ def decodeObligation (j : Json) : Except String Obligation := do
 broke the schema contract. -/
 def decodeEmission (j : Json) : Except String Emission := do
   pure { file := ← getStr j "file"
-         declarations := ← (← getArr j "declarations").mapM decodeFn
+         declarations := ← (← getArr j "declarations").mapM decodeDecl
          obligations := ← (← getArr j "obligations").mapM decodeObligation }
 
 end ThalesEmit

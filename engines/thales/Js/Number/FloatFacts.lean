@@ -3381,6 +3381,19 @@ theorem float_le_of_not_lt {x y : Float}
     -- definitional equality, rather than by rewriting.
     exact Bool.noConfusion (hc.symm.trans h)
 
+/-- A true `≤` refutes the reverse `<`. `le` already excludes NaN on both
+sides, so no bounds are needed here. -/
+theorem float_lt_eq_false_of_le {x y : Float} (h : Float.le y x = true) :
+    Float.lt x y = false := by
+  rw [float_le_unpack] at h
+  have hk := key_of_le (canonical_unpack _) (canonical_unpack _) h
+  cases hlt : Float.lt x y with
+  | false => rfl
+  | true =>
+    rw [float_lt_unpack] at hlt
+    have hx := key_of_lt (canonical_unpack _) (canonical_unpack _) hlt
+    omega
+
 /-- A float strictly below `+∞` is not IEEE-equal to it. -/
 theorem float_beq_inf_eq_false {x : Float}
     (h : Float.lt x (1.0 / 0.0 : Float) = true) :

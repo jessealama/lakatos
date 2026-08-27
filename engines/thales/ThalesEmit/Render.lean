@@ -51,7 +51,7 @@ re-parsed plain text, so a binder or parameter spelled like one would
 capture the reference. -/
 def reservedNames : List String :=
   ["pure", "ballIco", "floatInf", "floatNaN", "Float", "Number", "Int",
-   "JsM", "JsNumber", "Bool", "TsModel", "JsError", "mut"]
+   "JsM", "JsNumber", "Bool", "TsModel", "JsError", "mut", "self"]
 
 /-- A binder or parameter: the source name, primed out of the reserved
 vocabulary — a spelling no TS identifier has. -/
@@ -71,6 +71,40 @@ def modelIdent (module : Option String) (name : String) : RenderM Ident := do
   | none => return mkIdent (`TsModel ++ Name.mkSimple name)
   | some m =>
     return mkIdent (`TsModel ++ (← modulePathIdent m) ++ Name.mkSimple name)
+
+/-- A field's source spelling as one name component; '#'-spelled privates
+print between guillemets, which parse back unchanged. -/
+def fieldComponent (field : String) : RenderM Name := do
+  unless field.length > 0 &&
+      field.all (fun c => c.toNat ≥ 32 && c != '«' && c != '»') do
+    throw s!"'{field}' is not an emittable field name"
+  return Name.mkSimple field
+
+/-- A field's binder ident. The printer never escapes a name whose root
+component starts with '#' — it reads those as delaborator pseudo-syntax —
+and a bare `#v` does not parse back, so a non-atomic spelling carries its
+guillemets inside the component. An ordinary field prints as itself. -/
+def fieldIdent (field : String) : RenderM Ident := do
+  let _ ← fieldComponent field
+  let atomic :=
+    (field.front.isAlpha || field.front == '_') &&
+      field.all (fun c => c.isAlphanum || c == '_')
+  return mkIdent (Name.mkSimple (if atomic then field else "«" ++ field ++ "»"))
+
+/-- A class's structure lives beside the functions, under `TsModel`. -/
+def classIdent (module : Option String) (name : String) : RenderM Ident :=
+  modelIdent module name
+
+/-- A member of a class: the constructor model, or a getter. -/
+def classMember (module : Option String) (cls member : String) :
+    RenderM Ident := do
+  let _ ← identTerm member
+  return mkIdent ((← classIdent module cls).getId ++ Name.mkSimple member)
+
+/-- The constructor local that carries field F: «this.F», a spelling no
+TypeScript identifier can take, so no source name captures it. -/
+def ctorLocal (field : String) : RenderM Ident := do
+  return mkIdent (← fieldComponent ("this." ++ field))
 
 /-- A value-level rendering: a Float- or Bool-valued term that may embed
 `(← call)` lifts, and whether any lift occurred. Lifts appear left to
@@ -157,6 +191,22 @@ partial def valueTerm (coerced : String → Bool) : JsExpr → RenderM Rendered
   | .call callee module args => do
     let c ← callTerm coerced callee module args
     return ⟨← `((← $c:term)), true⟩
+  | .newObj cls module args => do
+    let c ← classMember module cls "construct"
+    let argTerms ← args.mapM (fun a => return (← valueTerm coerced a).term)
+    let call ← if argTerms.isEmpty then pure (c : TSyntax `term) else `($c $argTerms*)
+    return ⟨← `((← $call:term)), true⟩
+  | .getterRead cls module name obj => do
+    let g ← classMember module cls name
+    let ⟨o, _⟩ ← valueTerm coerced obj
+    return ⟨← `((← $g:term $o:term)), true⟩
+  -- A field projection is pure; an object that lifts keeps its lift, so
+  -- the `(← ...)` nests and JS evaluation order survives.
+  | .fieldRead cls module field obj => do
+    let p := mkIdent ((← classIdent module cls).getId ++ (← fieldComponent field))
+    let ⟨o, lifted⟩ ← valueTerm coerced obj
+    return ⟨← `($p:term $o:term), lifted⟩
+  | .selfRef => return ⟨mkIdent (Name.mkSimple "self"), false⟩
 
 /-- A call as the `JsM` value it denotes, its arguments still
 value-level. -/
@@ -204,14 +254,18 @@ mutual
 
 /-- An arm's statement sequence. An arm the source left empty still needs
 a do-element, so it renders as `pure ()`. -/
-partial def stmtsDoSeq (stmts : Array JsStmt) :
+partial def stmtsDoSeq (straight : Option (List String)) (stmts : Array JsStmt) :
     RenderM (TSyntax ``Lean.Parser.Term.doSeqIndent) := do
   let elems ←
     if stmts.isEmpty then pure #[← `(doElem| pure ())]
-    else stmts.mapM stmtDoElem
+    else stmts.mapM (stmtDoElem straight)
   `(Lean.Parser.Term.doSeqIndent| $[$elems:doElem]*)
 
-partial def stmtDoElem : JsStmt → RenderM (TSyntax `doElem)
+/-- One statement. `straight` is set only inside a constructor body,
+where it names the fields whose single assignment sits at the top level:
+those render as plain `let`s, the rest as reassignments of a prelude. -/
+partial def stmtDoElem (straight : Option (List String)) :
+    JsStmt → RenderM (TSyntax `doElem)
   | .ret e => do `(doElem| return $(← bodyTerm e))
   | .throwErr kind =>
     -- The error carries its constructor name alone, like the old model.
@@ -224,20 +278,29 @@ partial def stmtDoElem : JsStmt → RenderM (TSyntax `doElem)
     `(doElem| let mut $(← scopedIdent x) : JsNumber := $(← bodyTerm e))
   | .assign x e => do
     `(doElem| $(← scopedIdent x):ident := $(← bodyTerm e))
-  | .ite c thn els => iteElem c thn els
+  | .ite c thn els => iteElem straight c thn els
+  | .fieldSet f e => do
+    let some fields := straight
+      | throw "a field assignment outside a constructor is not renderable"
+    let x ← ctorLocal f
+    if fields.contains f then
+      `(doElem| let $x:ident : JsNumber := $(← bodyTerm e))
+    else
+      `(doElem| $x:ident := $(← bodyTerm e))
 
 /-- An `if` statement. An else arm that is itself exactly one `if` joins
 the chain as `else if`, the way the source spells it: the nested doIf's
 condition and arms are grafted onto the outer node's else-if groups,
 which is syntax the quotations built — only rearranged. -/
-partial def iteElem (c : JsExpr) (thn : Array JsStmt)
-    (els : Option (Array JsStmt)) : RenderM (TSyntax `doElem) := do
+partial def iteElem (straight : Option (List String)) (c : JsExpr)
+    (thn : Array JsStmt) (els : Option (Array JsStmt)) :
+    RenderM (TSyntax `doElem) := do
   let ct ← bodyTerm c
-  let thenSeq ← stmtsDoSeq thn
+  let thenSeq ← stmtsDoSeq straight thn
   match els with
   | none => `(doElem| if $ct then $thenSeq:doSeqIndent)
   | some #[.ite c2 t2 e2] => do
-    let inner ← iteElem c2 t2 e2
+    let inner ← iteElem straight c2 t2 e2
     let base ← `(doElem| if $ct then $thenSeq:doSeqIndent)
     -- doIf's shape: "if", cond, "then", seq, else-if groups, else?.
     let a := inner.raw.getArgs
@@ -245,7 +308,7 @@ partial def iteElem (c : JsExpr) (thn : Array JsStmt)
       #[mkNode `group #[mkAtom "else", mkAtom "if"], a[1]!, a[2]!, a[3]!]
     return ⟨(base.raw.setArg 4 (mkNullNode (#[elseIf] ++ a[4]!.getArgs))).setArg 5 a[5]!⟩
   | some elseStmts => do
-    let elseSeq ← stmtsDoSeq elseStmts
+    let elseSeq ← stmtsDoSeq straight elseStmts
     `(doElem| if $ct then $thenSeq:doSeqIndent else $elseSeq:doSeqIndent)
 
 end
@@ -269,12 +332,71 @@ def fnCommand (f : EmitFn) : RenderM (TSyntax `command) := do
     unless assigned.contains p do return none
     let pi ← scopedIdent p
     return some (← `(doElem| let mut $pi:ident := $pi))
-  let body ← f.body.mapM stmtDoElem
+  let body ← f.body.mapM (stmtDoElem none)
   let elems := rebound ++ body
   -- Dual-tagged like the old models: the js_norm closers and the grind
   -- rung both unfold a model by its equations.
   `(@[js_norm, grind] def $name ($params* : JsNumber) : JsM JsNumber := do
       $[$elems:doElem]*)
+
+/-- Whether a statement tree assigns F anywhere. -/
+partial def hasSetOf (f : String) : JsStmt → Bool
+  | .fieldSet g _ => g == f
+  | .ite _ thn els => (thn ++ els.getD #[]).any (hasSetOf f)
+  | _ => false
+
+/-- Whether F's single assignment sits at the constructor's top level and
+nowhere else, so it can render as a plain let in place of a mut prelude. -/
+def straightSet (body : Array JsStmt) (f : String) : Bool :=
+  body.any (fun s => match s with | .fieldSet g _ => g == f | _ => false) &&
+  body.all (fun s => match s with
+    | .ite _ thn els => !(thn ++ els.getD #[]).any (hasSetOf f)
+    | _ => true)
+
+def structCommand (c : EmitClass) : RenderM (TSyntax `command) := do
+  let cls ← classIdent c.module c.name
+  let fields ← c.fields.mapM fieldIdent
+  if fields.isEmpty then `(structure $cls)
+  else `(structure $cls where $[$fields:ident : JsNumber]*)
+
+/-- The constructor as a `JsM`-returning function over the structure. A
+field the body assigns inside a branch needs a mut prelude; the dummy `0`
+is never read, since every falling-through path assigns before the end. -/
+def ctorCommand (c : EmitClass) : RenderM (TSyntax `command) := do
+  let name ← classMember c.module c.name "construct"
+  let cls ← classIdent c.module c.name
+  let params ← c.ctorParams.mapM scopedIdent
+  let straight := c.fields.toList.filter (straightSet c.ctorBody)
+  let assigned := c.ctorBody.toList.flatMap assignedNames
+  let rebound ← c.ctorParams.filterMapM fun p => do
+    unless assigned.contains p do return none
+    let pi ← scopedIdent p
+    return some (← `(doElem| let mut $pi:ident := $pi))
+  let prelude ← (c.fields.filter (fun f => !straight.contains f)).mapM fun f => do
+    `(doElem| let mut $(← ctorLocal f):ident : JsNumber := 0)
+  let body ← c.ctorBody.mapM (stmtDoElem (some straight))
+  let mk := mkIdent (cls.getId ++ `mk)
+  let mkArgs ← c.fields.mapM ctorLocal
+  let ret ←
+    if mkArgs.isEmpty then `(doElem| return $mk)
+    else `(doElem| return $mk $mkArgs*)
+  let elems := rebound ++ prelude ++ body ++ #[ret]
+  if params.isEmpty then
+    `(@[js_norm, grind] def $name : JsM $cls := do
+        $[$elems:doElem]*)
+  else
+    `(@[js_norm, grind] def $name ($params* : JsNumber) : JsM $cls := do
+        $[$elems:doElem]*)
+
+/-- A getter as a real function of the instance; the receiver is `self`,
+which is in the reserved vocabulary, so no source name captures it. -/
+def getterCommand (c : EmitClass) (g : EmitGetter) : RenderM (TSyntax `command) := do
+  let name ← classMember c.module c.name g.name
+  let cls ← classIdent c.module c.name
+  let self := mkIdent (Name.mkSimple "self")
+  let body ← g.body.mapM (stmtDoElem none)
+  `(@[js_norm, grind] def $name ($self : $cls) : JsM JsNumber := do
+      $[$body:doElem]*)
 
 /-- A boolean-valued expression as the proposition that it evaluates to
 `pure true` — the shape the old pipeline elaborates for both a boolean
@@ -401,14 +523,27 @@ def renderEmission (e : Emission) : CoreM String := do
   -- A dependency's declarations are contiguous and introduced by their
   -- module, the way the old pipeline writes it; the entry's carry none.
   let mut fromModule : Option String := none
-  for f in e.declarations do
-    if f.module != fromModule then
-      fromModule := f.module
-      if let some m := f.module then
+  for d in e.declarations do
+    let module := match d with | .fn f => f.module | .cls c => c.module
+    if module != fromModule then
+      fromModule := module
+      if let some m := module then
         blocks := blocks.push s!"-- module {m}"
-    let cmd ← rendered (fnCommand f)
-    blocks := blocks.push
-      (commentLines f.source ++ "\n" ++ prettyLines (← ppCommand cmd))
+    match d with
+    | .fn f =>
+      let cmd ← rendered (fnCommand f)
+      blocks := blocks.push
+        (commentLines f.source ++ "\n" ++ prettyLines (← ppCommand cmd))
+    | .cls c =>
+      -- The source echo introduces the structure; the constructor and
+      -- each getter follow as their own blocks.
+      let st ← rendered (structCommand c)
+      blocks := blocks.push
+        (commentLines c.source ++ "\n" ++ prettyLines (← ppCommand st))
+      blocks := blocks.push (prettyLines (← ppCommand (← rendered (ctorCommand c))))
+      for g in c.getters do
+        blocks := blocks.push
+          (prettyLines (← ppCommand (← rendered (getterCommand c g))))
   for o in e.obligations do
     let cmd ← rendered (obligationCommand e o)
     blocks := blocks.push

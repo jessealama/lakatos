@@ -7,9 +7,16 @@ open Lean ThalesEmit
 #guard (decodeEmission (Json.mkObj [])) matches .error _
 #guard
   (decodeEmission (Json.mkObj
+    [("file", "t.ts"), ("declarations", Json.arr #[Json.mkObj [("kind", "enum")]]),
+     ("obligations", Json.arr #[])]))
+  matches .error "unknown declaration kind 'enum'"
+-- A known kind is still decoded strictly: a class missing its name is a
+-- field error, not a default.
+#guard
+  (decodeEmission (Json.mkObj
     [("file", "t.ts"), ("declarations", Json.arr #[Json.mkObj [("kind", "class")]]),
      ("obligations", Json.arr #[])]))
-  matches .error "unknown declaration kind 'class'"
+  matches .error "property not found: name"
 
 -- The unary-operator and binder-domain IR decodes strictly.
 #guard
@@ -42,6 +49,52 @@ open Lean ThalesEmit
     [("kind", "number-is-nan"),
      ("arg", Json.mkObj [("kind", "id"), ("name", "x")])]))
   matches .ok (.numberIsNaN (.id "x"))
+-- The class IR: instance construction, member reads, the receiver, and
+-- a constructor's field assignment.
+#guard
+  (decodeExpr (Json.mkObj
+    [("kind", "new"), ("className", "Box"),
+     ("args", Json.arr #[Json.mkObj [("kind", "id"), ("name", "x")]])]))
+  matches .ok (.newObj "Box" none #[.id "x"])
+#guard
+  (decodeExpr (Json.mkObj
+    [("kind", "getter-read"), ("className", "Box"), ("name", "v"),
+     ("object", Json.mkObj [("kind", "self")])]))
+  matches .ok (.getterRead "Box" none "v" .selfRef)
+#guard
+  (decodeExpr (Json.mkObj
+    [("kind", "field-read"), ("className", "Box"), ("field", "#v"),
+     ("object", Json.mkObj [("kind", "self")])]))
+  matches .ok (.fieldRead "Box" none "#v" .selfRef)
+#guard
+  (decodeStmt (Json.mkObj
+    [("kind", "field-set"), ("field", "#v"),
+     ("expr", Json.mkObj [("kind", "id"), ("name", "v")])]))
+  matches .ok (.fieldSet "#v" (.id "v"))
+#guard
+  (decodeDecl (Json.mkObj
+    [("kind", "class"), ("name", "Box"), ("source", "class Box {}"),
+     ("fields", Json.arr #["#v"]),
+     ("ctor", Json.mkObj
+       [("params", Json.arr #["v"]),
+        ("body", Json.arr #[Json.mkObj
+          [("kind", "field-set"), ("field", "#v"),
+           ("expr", Json.mkObj [("kind", "id"), ("name", "v")])]])]),
+     ("getters", Json.arr #[Json.mkObj
+       [("name", "v"),
+        ("body", Json.arr #[Json.mkObj
+          [("kind", "return"),
+           ("expr", Json.mkObj
+             [("kind", "field-read"), ("className", "Box"), ("field", "#v"),
+              ("object", Json.mkObj [("kind", "self")])])]])]])]))
+  matches .ok (.cls _)
+-- A class without its constructor is a decode error, never a default.
+#guard
+  (decodeDecl (Json.mkObj
+    [("kind", "class"), ("name", "Box"), ("source", "class Box {}"),
+     ("fields", Json.arr #[]), ("getters", Json.arr #[])]))
+  matches .error _
+
 #guard
   (decodeBinder (Json.mkObj [("name", "x"), ("kind", "int")]))
   matches .ok (.int "x")
@@ -116,13 +169,16 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
 #eval goldenCheck "tests/fixtures/degradations.emission.json"
   "tests/fixtures/degradations.emitted.lean.expected"
 
+#eval goldenCheck "tests/fixtures/classes.emission.json"
+  "tests/fixtures/classes.emitted.lean.expected"
+
 -- Emitted defs live under the model namespace: a TS function named
 -- after a root-level Lean name (`id`) must still define.
 #eval show CoreM Unit from do
   let e : Emission := {
     file := "t.ts"
-    declarations := #[{ name := "id", params := #["x"], source := "id",
-                        body := #[.ret (.id "x")] }]
+    declarations := #[.fn { name := "id", params := #["x"], source := "id",
+                            body := #[.ret (.id "x")] }]
     obligations := #[] }
   let rendered ← renderEmission e
   unless (rendered.splitOn "def TsModel.id ").length == 2 do
@@ -133,8 +189,8 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
 #eval show CoreM Unit from do
   let e : Emission := {
     file := "t.ts"
-    declarations := #[{ name := "bump", params := #["x"], source := "bump",
-                        body := #[.ret (.binop "+" (.id "x") (.num "1"))] }]
+    declarations := #[.fn { name := "bump", params := #["x"], source := "bump",
+                            body := #[.ret (.binop "+" (.id "x") (.num "1"))] }]
     obligations := #[{ function := "bump", property := "p", formula := "f",
                        payload := .structured #[.int "bump"] #[]
                          (.eq (.call "bump" none #[.id "bump"])
@@ -148,8 +204,8 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
 #eval show CoreM Unit from do
   let e : Emission := {
     file := "t.ts"
-    declarations := #[{ name := "f", params := #["x"], source := "f",
-                        body := #[.ret (.id "x")] }]
+    declarations := #[.fn { name := "f", params := #["x"], source := "f",
+                            body := #[.ret (.id "x")] }]
     obligations := #[{ function := "f", property := "p", formula := "f",
                        payload := .structured #[.int "pure"] #[]
                          (.istrue (.binop ">=" (.call "f" none #[.id "pure"])
@@ -180,11 +236,11 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
 #eval show CoreM Unit from do
   let e : Emission := {
     file := "t.ts"
-    declarations := #[{ name := "clampUp", params := #["x"], source := "clampUp",
-                        body := #[
-                          .ite (.binop "<" (.id "x") (.num "1"))
-                            #[.assign "x" (.num "1")] none,
-                          .ret (.id "x")] }]
+    declarations := #[.fn { name := "clampUp", params := #["x"], source := "clampUp",
+                            body := #[
+                              .ite (.binop "<" (.id "x") (.num "1"))
+                                #[.assign "x" (.num "1")] none,
+                              .ret (.id "x")] }]
     obligations := #[] }
   let rendered ← renderEmission e
   unless (rendered.splitOn "let mut x := x").length == 2 do
@@ -202,10 +258,10 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
     .call "applyConversionFactors" none #[.id x, .id x, .id x, .id x, .id x]
   let e : Emission := {
     file := "t.ts"
-    declarations := #[{ name := "applyConversionFactors",
-                        params := #["v", "sf", "so", "tf", "to"],
-                        source := "applyConversionFactors",
-                        body := #[.ret (.id "v")] }]
+    declarations := #[.fn { name := "applyConversionFactors",
+                            params := #["v", "sf", "so", "tf", "to"],
+                            source := "applyConversionFactors",
+                            body := #[.ret (.id "v")] }]
     obligations := #[{ function := "applyConversionFactors", property := "p",
                        formula := "f",
                        payload := .structured
@@ -239,8 +295,8 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
 #eval show CoreM Unit from do
   let e : Emission := {
     file := "t.ts"
-    declarations := #[{ name := "helper.mts::double", params := #["x"],
-                        source := "f", body := #[.ret (.id "x")] }]
+    declarations := #[.fn { name := "helper.mts::double", params := #["x"],
+                            source := "f", body := #[.ret (.id "x")] }]
     obligations := #[] }
   let refused ← try
     let _ ← renderEmission e
@@ -255,10 +311,10 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
   let e : Emission := {
     file := "main.mts"
     declarations := #[
-      { name := "double", module := some "helper.mts", params := #["x"],
-        source := "double", body := #[.ret (.binop "*" (.id "x") (.num "2"))] },
-      { name := "twice", params := #["x"], source := "twice",
-        body := #[.ret (.call "double" (some "helper.mts") #[.id "x"])] }]
+      .fn { name := "double", module := some "helper.mts", params := #["x"],
+            source := "double", body := #[.ret (.binop "*" (.id "x") (.num "2"))] },
+      .fn { name := "twice", params := #["x"], source := "twice",
+            body := #[.ret (.call "double" (some "helper.mts") #[.id "x"])] }]
     obligations := #[] }
   let rendered ← renderEmission e
   unless (rendered.splitOn "def TsModel.«helper.mts».double").length == 2 do
@@ -283,8 +339,8 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
   for bad in ["a«b", "/abs.ts", ""] do
     let e : Emission := {
       file := "t.ts"
-      declarations := #[{ name := "double", module := some bad, params := #["x"],
-                          source := "f", body := #[.ret (.id "x")] }]
+      declarations := #[.fn { name := "double", module := some bad, params := #["x"],
+                              source := "f", body := #[.ret (.id "x")] }]
       obligations := #[] }
     let refused ← try
       let _ ← renderEmission e
@@ -298,11 +354,11 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
 #eval show CoreM Unit from do
   let e : Emission := {
     file := "t.ts"
-    declarations := #[{ name := "canon", params := #["x"], source := "canon",
-                        body := #[
-                          .ite (.sameValue (.id "x") (.num "-0"))
-                            #[.ret (.num "0")] none,
-                          .ret (.id "x")] }]
+    declarations := #[.fn { name := "canon", params := #["x"], source := "canon",
+                            body := #[
+                              .ite (.sameValue (.id "x") (.num "-0"))
+                                #[.ret (.num "0")] none,
+                              .ret (.id "x")] }]
     obligations := #[{ function := "canon", property := "p", formula := "f",
                        payload := .structured #[.range "n" 0 2]
                          #[.sameValue (.id "n") (.num "1")]
@@ -321,10 +377,10 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
   let e : Emission := {
     file := "t.ts"
     declarations := #[
-      { name := "addNaN", params := #["x"], source := "addNaN",
-        body := #[.ret (.binop "+" (.id "x") (.num "NaN"))] },
-      { name := "shadow", params := #["floatNaN"], source := "shadow",
-        body := #[.ret (.id "floatNaN")] }]
+      .fn { name := "addNaN", params := #["x"], source := "addNaN",
+            body := #[.ret (.binop "+" (.id "x") (.num "NaN"))] },
+      .fn { name := "shadow", params := #["floatNaN"], source := "shadow",
+            body := #[.ret (.id "floatNaN")] }]
     obligations := #[{ function := "addNaN", property := "p", formula := "f",
                        payload := .structured #[.range "n" 0 2] #[]
                          (.istrue (.binop "<" (.call "addNaN" none #[.id "n"])
@@ -342,8 +398,8 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
 #eval show CoreM Unit from do
   let e : Emission := {
     file := "t.ts"
-    declarations := #[{ name := "root", params := #["x"], source := "root",
-                        body := #[.ret (.mathSqrt (.id "x"))] }]
+    declarations := #[.fn { name := "root", params := #["x"], source := "root",
+                            body := #[.ret (.mathSqrt (.id "x"))] }]
     obligations := #[{ function := "root", property := "p", formula := "f",
                        payload := .structured #[.range "n" 0 2] #[]
                          (.istrue (.binop ">="
@@ -361,20 +417,20 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
   let e : Emission := {
     file := "t.ts"
     declarations := #[
-      { name := "boom", params := #["x"], source := "boom",
-        body := #[.throwErr "RangeError"] },
-      { name := "pick", params := #["x"], source := "pick",
-        body := #[
-          .ite (.binop "||" (cmp "x" "0") (cmp "x" "1")) #[.ret (.num "0")] none,
-          .ite (.binop "||" (cmp "x" "2")
-                 (.binop "===" (.call "boom" none #[.id "x"]) (.num "0")))
-            #[.ret (.num "0")] none,
-          .ite (.binop "&&" (cmp "x" "3")
-                 (.binop "===" (.call "boom" none #[.id "x"]) (.num "0")))
-            #[.ret (.num "0")] none,
-          .ite (.unop "!" (.sameValue (.id "x") (.num "NaN")))
-            #[.ret (.num "0")] none,
-          .ret (.num "1")] }]
+      .fn { name := "boom", params := #["x"], source := "boom",
+            body := #[.throwErr "RangeError"] },
+      .fn { name := "pick", params := #["x"], source := "pick",
+            body := #[
+              .ite (.binop "||" (cmp "x" "0") (cmp "x" "1")) #[.ret (.num "0")] none,
+              .ite (.binop "||" (cmp "x" "2")
+                     (.binop "===" (.call "boom" none #[.id "x"]) (.num "0")))
+                #[.ret (.num "0")] none,
+              .ite (.binop "&&" (cmp "x" "3")
+                     (.binop "===" (.call "boom" none #[.id "x"]) (.num "0")))
+                #[.ret (.num "0")] none,
+              .ite (.unop "!" (.sameValue (.id "x") (.num "NaN")))
+                #[.ret (.num "0")] none,
+              .ret (.num "1")] }]
     obligations := #[] }
   let rendered ← renderEmission e
   -- Where the printer breaks a long term is its own business; where the

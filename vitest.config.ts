@@ -37,10 +37,10 @@ export default defineConfig({
         // changed the denominator; emission.ts still carries two defensive
         // branches no input can reach.
         autoUpdate: true,
-        statements: 99.22,
-        branches: 97.92,
+        statements: 99.37,
+        branches: 98.31,
         functions: 100,
-        lines: 99.53,
+        lines: 99.64,
       },
     },
   },

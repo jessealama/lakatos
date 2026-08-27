@@ -17,7 +17,7 @@
       "function": "Counter#bump",
       "property": "bumps",
       "szs": "Inappropriate",
-      "reason": "'Counter#bump' could not be modeled: unmapped TypeScript construct 'ClassDeclaration' at 13:3"
+      "reason": "'Counter#bump' could not be modeled: class 'Counter' has no constructor implementation to model"
     }
   ],
   "engines/thales/tests/conformance/inappropriate/class-binder.ts": [
@@ -322,7 +322,7 @@
       "function": "Counter#bump",
       "property": "bumps",
       "szs": "Inappropriate",
-      "reason": "'Counter#bump' could not be modeled: unmapped TypeScript construct 'ClassDeclaration' at 3:3"
+      "reason": "'Counter#bump' could not be modeled: class 'Counter' has no constructor implementation to model"
     }
   ],
   "engines/thales/tests/conformance/inappropriate/exponentiation.ts": [
@@ -632,6 +632,55 @@
       "property": "guardedPower",
       "szs": "Inappropriate",
       "reason": "'**' is implementation-approximated in JavaScript, so any model would certify results a conforming engine may disagree with"
+    }
+  ],
+  "engines/thales/tests/fixtures/classes.ts": [
+    {
+      "function": "Box#v",
+      "property": "roundTrip",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_13158981463843283958",
+      "axioms": []
+    },
+    {
+      "function": "Gate#lo",
+      "property": "keepsValue",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_13337300961223989660",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/class-box-roundtrip.ts": [
+    {
+      "function": "Box#v",
+      "property": "roundTrip",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_5912744196769564160",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/inappropriate/ctor-assigns-twice.ts": [
+    {
+      "function": "Pair#a",
+      "property": "stored",
+      "szs": "Inappropriate",
+      "reason": "'Pair#a' could not be modeled: the constructor of 'Pair' assigns field '#a' more than once on a path; the class model requires every field assigned exactly once on every path"
+    }
+  ],
+  "engines/thales/tests/conformance/inappropriate/ctor-partial-assign.ts": [
+    {
+      "function": "Clamp#v",
+      "property": "floored",
+      "szs": "Inappropriate",
+      "reason": "'Clamp#v' could not be modeled: the constructor of 'Clamp' assigns field '#v' on only some paths; the class model requires every field assigned exactly once on every path"
+    }
+  ],
+  "engines/thales/tests/conformance/inappropriate/class-extends.ts": [
+    {
+      "function": "Tagged#v",
+      "property": "keeps",
+      "szs": "Inappropriate",
+      "reason": "'Tagged#v' could not be modeled: unmapped TypeScript construct 'HeritageClause' at 3:21"
     }
   ],
   "engines/thales/tests/fixtures/degradations.ts": [

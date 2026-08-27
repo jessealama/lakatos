@@ -137,6 +137,12 @@ theorem float_le_of_not_lt {x y : Float} (hxLo : -floatInf < x) (hxHi : x < floa
     Float.le y x = true :=
   FloatFacts.float_le_of_not_lt hxLo hxHi hyLo hyHi h
 
+/-- A guard that passed refutes its own strict comparison: a constructor
+surviving `0 <= a` leaves the throwing arm's `a < 0` false. -/
+theorem float_lt_eq_false_of_le {x y : Float} (h : Float.le y x = true) :
+    Float.lt x y = false :=
+  FloatFacts.float_lt_eq_false_of_le h
+
 /-! The non-negativity chain: square, sum, square root. The NaN bridges
 are its entry points, restated on `floatInf` so the bound hypotheses a
 `number` binder emits instantiate them directly. -/
@@ -271,6 +277,7 @@ grind_pattern float_lt_inf_of_le => a ≤ b
 grind_pattern float_gt_neg_inf_of_lt => a < b
 grind_pattern float_gt_neg_inf_of_le => a ≤ b
 grind_pattern float_le_of_not_lt => Float.lt x y
+grind_pattern float_lt_eq_false_of_le => Float.lt x y
 grind_pattern float_ne_nan_of_bounds => c.toModel.unpack
 grind_pattern float_sub_ne_nan_of_bounds => (a - b).toModel.unpack
 grind_pattern float_sq_nonneg => x * x

@@ -77,3 +77,25 @@ example (x : Float)
     (hNan : Number.FloatOps.sameValue x floatNaN = false) :
     -floatInf < x ∧ x < floatInf := by
   grind
+
+/-! A passed comparison guard refutes the throwing arm's own comparison —
+the direction a class constructor needs, where the surviving branch is
+what the annotation quantifies over. -/
+
+example (x : Float) (h : Float.le 0 x = true) : Float.lt x 0 = false :=
+  float_lt_eq_false_of_le h
+
+-- The constructor shape: the guard hypothesis alone must kill the
+-- throwing arm, since no pure result equals a throw.
+example : ∀ (a : JsNumber),
+    Float.le 0 a = true →
+      (do
+          let __do_lift ←
+            if Float.lt a 0 = true then do
+                throw (JsError.error "RangeError")
+                pure 0
+              else pure a
+          pure __do_lift) =
+        (pure a : JsM JsNumber) := by
+  intro a h
+  grind

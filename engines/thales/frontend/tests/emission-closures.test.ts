@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { assert, describe, expect, test } from "vitest";
 import * as path from "node:path";
 import { emitModule } from "../src/emission.js";
 import { type ModuleReader } from "../src/module-graph.js";
@@ -49,9 +49,59 @@ describe("emission import closures", () => {
       reader({ "helper.mts": HELPER }),
     );
     const twice = emission.declarations.find((d) => d.name === "twice")!;
+    assert(twice.kind === "function");
     const ret = twice.body[0]!;
     expect(ret.kind).toBe("return");
     expect(JSON.stringify(ret)).toContain('"module":"helper.mts"');
+  });
+
+  test("an imported class builds instances under its own module", () => {
+    const boxed = [
+      'import { Box } from "./box.mjs";',
+      "/** @ensures{keeps} forall (x: number) { Object.is(new Box(x).v, x) } */",
+      "export function keep(x: number): number {",
+      "  return x;",
+      "}",
+      "",
+    ].join("\n");
+    const box = [
+      "export class Box {",
+      "  #v: number;",
+      "  constructor(v: number) {",
+      "    this.#v = v;",
+      "  }",
+      "  get v(): number {",
+      "    return this.#v;",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(
+      boxed,
+      "main.mts",
+      reader({ "box.mts": box }),
+    );
+    expect(classified).toEqual([]);
+    expect(emission.obligations[0]!.payload).toEqual({
+      kind: "structured",
+      binders: [{ name: "x", kind: "number" }],
+      conclusion: {
+        kind: "eq",
+        left: {
+          kind: "getter-read",
+          className: "Box",
+          module: "box.mts",
+          name: "v",
+          object: {
+            kind: "new",
+            className: "Box",
+            module: "box.mts",
+            args: [{ kind: "id", name: "x" }],
+          },
+        },
+        right: { kind: "id", name: "x" },
+      },
+    });
   });
 
   test("only the entry's annotations become obligations", () => {

@@ -13,7 +13,12 @@
     },
     "declarations": {
       "type": "array",
-      "items": { "$ref": "#/definitions/function" }
+      "items": {
+        "oneOf": [
+          { "$ref": "#/definitions/function" },
+          { "$ref": "#/definitions/class" }
+        ]
+      }
     },
     "obligations": {
       "type": "array",
@@ -24,6 +29,11 @@
     "identifier": {
       "type": "string",
       "pattern": "^[$A-Za-z_][$A-Za-z0-9_]*$"
+    },
+    "fieldName": {
+      "type": "string",
+      "description": "A class field's source spelling; a '#'-private keeps its sigil, which the artifact renders as one guillemeted name component.",
+      "pattern": "^#?[$A-Za-z_][$A-Za-z0-9_]*$"
     },
     "modulePath": {
       "type": "string",
@@ -164,6 +174,54 @@
               "items": { "$ref": "#/definitions/expr" }
             }
           }
+        },
+        {
+          "type": "object",
+          "description": "Instance construction: a lifted call of the class's construct model.",
+          "additionalProperties": false,
+          "required": ["kind", "className", "args"],
+          "properties": {
+            "kind": { "const": "new" },
+            "className": { "$ref": "#/definitions/identifier" },
+            "module": { "$ref": "#/definitions/modulePath" },
+            "args": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/expr" }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "A getter read on an instance: a lifted call of the getter model.",
+          "additionalProperties": false,
+          "required": ["kind", "className", "name", "object"],
+          "properties": {
+            "kind": { "const": "getter-read" },
+            "className": { "$ref": "#/definitions/identifier" },
+            "module": { "$ref": "#/definitions/modulePath" },
+            "name": { "$ref": "#/definitions/identifier" },
+            "object": { "$ref": "#/definitions/expr" }
+          }
+        },
+        {
+          "type": "object",
+          "description": "A field projection on an instance; private '#' spellings included.",
+          "additionalProperties": false,
+          "required": ["kind", "className", "field", "object"],
+          "properties": {
+            "kind": { "const": "field-read" },
+            "className": { "$ref": "#/definitions/identifier" },
+            "module": { "$ref": "#/definitions/modulePath" },
+            "field": { "$ref": "#/definitions/fieldName" },
+            "object": { "$ref": "#/definitions/expr" }
+          }
+        },
+        {
+          "type": "object",
+          "description": "The receiver inside a getter body.",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": { "kind": { "const": "self" } }
         }
       ]
     },
@@ -187,6 +245,56 @@
         "body": {
           "type": "array",
           "items": { "$ref": "#/definitions/statement" }
+        }
+      }
+    },
+    "class": {
+      "type": "object",
+      "description": "A number-typed class: a structure over its fields, a constructor assigning each exactly once on every path, and one function per modeled getter.",
+      "additionalProperties": false,
+      "required": ["kind", "name", "source", "fields", "ctor", "getters"],
+      "properties": {
+        "kind": { "const": "class" },
+        "name": { "$ref": "#/definitions/identifier" },
+        "module": { "$ref": "#/definitions/modulePath" },
+        "source": {
+          "type": "string",
+          "description": "The declaration's original text, echoed as comments above the structure."
+        },
+        "fields": {
+          "type": "array",
+          "description": "Field spellings in declaration order — the structure's fields, and the constructor's arguments in order.",
+          "items": { "$ref": "#/definitions/fieldName" }
+        },
+        "ctor": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["params", "body"],
+          "properties": {
+            "params": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/identifier" }
+            },
+            "body": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/statement" }
+            }
+          }
+        },
+        "getters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "body"],
+            "properties": {
+              "name": { "$ref": "#/definitions/identifier" },
+              "body": {
+                "type": "array",
+                "items": { "$ref": "#/definitions/statement" }
+              }
+            }
+          }
         }
       }
     },
@@ -236,6 +344,17 @@
               "$ref": "#/definitions/identifier",
               "description": "The mutable local (or parameter) being reassigned."
             },
+            "expr": { "$ref": "#/definitions/expr" }
+          }
+        },
+        {
+          "type": "object",
+          "description": "A constructor's this.F = e; every field is assigned exactly once on every path.",
+          "additionalProperties": false,
+          "required": ["kind", "field", "expr"],
+          "properties": {
+            "kind": { "const": "field-set" },
+            "field": { "$ref": "#/definitions/fieldName" },
             "expr": { "$ref": "#/definitions/expr" }
           }
         },
