@@ -15,6 +15,9 @@ inductive JsExpr where
   | binop (op : String) (left right : JsExpr)
   | sameValue (left right : JsExpr)
   | mathSqrt (arg : JsExpr)
+  | mathAbs (arg : JsExpr)
+  | numberIsFinite (arg : JsExpr)
+  | numberIsNaN (arg : JsExpr)
   | call (callee : String) (module : Option String) (args : Array JsExpr)
 deriving Repr, Inhabited
 
@@ -125,6 +128,12 @@ partial def decodeExpr (j : Json) : Except String JsExpr := do
       (← decodeExpr (← j.getObjVal? "right")))
   | "math-sqrt" =>
     pure (.mathSqrt (← decodeExpr (← j.getObjVal? "arg")))
+  | "math-abs" =>
+    pure (.mathAbs (← decodeExpr (← j.getObjVal? "arg")))
+  | "number-is-finite" =>
+    pure (.numberIsFinite (← decodeExpr (← j.getObjVal? "arg")))
+  | "number-is-nan" =>
+    pure (.numberIsNaN (← decodeExpr (← j.getObjVal? "arg")))
   | "call" =>
     pure (.call (← getStr j "callee") (← getStrOpt j "module")
       (← (← getArr j "args").mapM decodeExpr))
