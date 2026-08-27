@@ -247,3 +247,14 @@ example (u : UnpackedFloat) (hn : u ≠ .notANumber)
 example (x : Float) (h : x.toModel.unpack = .notANumber) :
     x = (0.0 / 0.0) :=
   FloatFacts.float_eq_nan_of_unpack_nan h
+
+-- The Float-layer lifts of the converse bridge, on the literal spellings.
+example (x : Float) (hn : x.toModel.unpack ≠ .notANumber)
+    (h : Float.beq x (1.0 / 0.0) = false) :
+    Float.lt x (1.0 / 0.0) = true :=
+  FloatFacts.float_lt_inf_of_beq_false hn h
+
+example (x : Float) (hn : x.toModel.unpack ≠ .notANumber)
+    (h : Float.beq x (-(1.0 / 0.0)) = false) :
+    Float.lt (-(1.0 / 0.0)) x = true :=
+  FloatFacts.float_gt_neg_inf_of_beq_false hn h

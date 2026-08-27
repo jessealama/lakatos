@@ -3401,6 +3401,28 @@ theorem float_beq_neg_inf_eq_false {x : Float}
     show ((-(1.0 / 0.0) : Float)).toModel.unpack = UnpackedFloat.infinity .negative from rfl]
   exact beq_neg_inf_eq_false h
 
+/-- A non-NaN float not IEEE-equal to `+∞` is strictly below it. -/
+theorem float_lt_inf_of_beq_false {x : Float}
+    (hn : x.toModel.unpack ≠ .notANumber)
+    (h : Float.beq x (1.0 / 0.0 : Float) = false) :
+    Float.lt x (1.0 / 0.0 : Float) = true := by
+  rw [float_beq_unpack,
+    show ((1.0 / 0.0 : Float)).toModel.unpack = UnpackedFloat.infinity .positive from rfl] at h
+  rw [float_lt_unpack,
+    show ((1.0 / 0.0 : Float)).toModel.unpack = UnpackedFloat.infinity .positive from rfl]
+  exact lt_pos_inf_of_beq_false hn h
+
+/-- A non-NaN float not IEEE-equal to `-∞` is strictly above it. -/
+theorem float_gt_neg_inf_of_beq_false {x : Float}
+    (hn : x.toModel.unpack ≠ .notANumber)
+    (h : Float.beq x (-(1.0 / 0.0) : Float) = false) :
+    Float.lt (-(1.0 / 0.0) : Float) x = true := by
+  rw [float_beq_unpack,
+    show ((-(1.0 / 0.0) : Float)).toModel.unpack = UnpackedFloat.infinity .negative from rfl] at h
+  rw [float_lt_unpack,
+    show ((-(1.0 / 0.0) : Float)).toModel.unpack = UnpackedFloat.infinity .negative from rfl]
+  exact lt_neg_inf_of_beq_false hn h
+
 /-! ## The non-negativity chain: square, sum, sqrt
 
 A distance-style conclusion `0 ≤ √(dx·dx + dy·dy)` needs each link stated
