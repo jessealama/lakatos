@@ -2789,3 +2789,221 @@ describe("class declarations (#129)", () => {
     ]);
   });
 });
+
+describe("new and member access in atoms (#129)", () => {
+  test("the Box roundTrip obligation structures with new and getter access", () => {
+    const { emission, classified } = emitModule(BOX, "t.ts");
+    expect(classified).toEqual([]);
+    expect(emission.obligations).toEqual([
+      {
+        function: "Box#v",
+        property: "roundTrip",
+        formula: "forall (x: number) { Object.is(new Box(x).v, x) }",
+        payload: {
+          kind: "structured",
+          binders: [{ name: "x", kind: "number" }],
+          conclusion: {
+            kind: "eq",
+            left: {
+              kind: "getter-read",
+              className: "Box",
+              name: "v",
+              object: {
+                kind: "new",
+                className: "Box",
+                args: [{ kind: "id", name: "x" }],
+              },
+            },
+            right: { kind: "id", name: "x" },
+          },
+        },
+      },
+    ]);
+  });
+
+  test("a degraded class travels its reason; a healthy sibling still models", () => {
+    const src = [
+      "class B {}",
+      "export class Wide extends B {",
+      "  #v: number;",
+      "  constructor(v: number) {",
+      "    this.#v = v;",
+      "  }",
+      "  get v(): number {",
+      "    return 1;",
+      "  }",
+      "}",
+      BOX,
+      "/** @ensures{wide} forall (x: number) { Object.is(new Wide(x).v, x) } */",
+      "export function g(x: number): number {",
+      "  return x;",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(classified).toHaveLength(1);
+    expect(classified[0]!.szs).toBe("Inappropriate");
+    expect(classified[0]!.reason).toMatch(
+      /'Wide' could not be modeled: unmapped TypeScript construct/,
+    );
+    // The healthy class still structures its own obligation.
+    expect(emission.obligations.map((o) => o.function)).toEqual(["Box#v"]);
+  });
+
+  test("an atom naming a degraded member travels the member's reason", () => {
+    const src = [
+      "export class Box {",
+      "  #v: number;",
+      "  constructor(v: number) {",
+      "    this.#v = v;",
+      "  }",
+      "  twice(n: number): number {",
+      "    return n + n;",
+      "  }",
+      "  get v(): number {",
+      "    return this.#v;",
+      "  }",
+      "}",
+      "/** @ensures{p} forall (x: number) { Object.is(new Box(x).twice, x) } */",
+      "export function g(x: number): number {",
+      "  return x;",
+      "}",
+      "",
+    ].join("\n");
+    const { classified } = emitModule(src, "t.ts");
+    expect(classified).toHaveLength(1);
+    expect(classified[0]!.szs).toBe("Inappropriate");
+    expect(classified[0]!.reason).toMatch(
+      /'Box#twice' could not be modeled: unmapped TypeScript construct 'MethodDeclaration'/,
+    );
+  });
+
+  /** The classification of an annotation whose atom is `formula`, on a
+   * file that also declares the Box class. */
+  function atomClassifiedOf(atom: string): { szs: string; reason: string } {
+    const src = [
+      BOX.replace(
+        "  /** @ensures{roundTrip} forall (x: number) { Object.is(new Box(x).v, x) } */\n",
+        "",
+      ),
+      `/** @ensures{p} forall (x: number) { ${atom} } */`,
+      "export function g(x: number): number {",
+      "  return x;",
+      "}",
+      "",
+    ].join("\n");
+    const { classified } = emitModule(src, "t.ts");
+    expect(classified).toHaveLength(1);
+    return { szs: classified[0]!.szs, reason: classified[0]!.reason };
+  }
+
+  test.each([
+    [
+      "a wrong constructor arity",
+      "Object.is(new Box(x, x).v, x)",
+      "'Box' expects 1 argument(s), got 2",
+    ],
+    [
+      "an unknown member",
+      "Object.is(new Box(x).w, x)",
+      "'Box' has no member 'w' in the model",
+    ],
+    [
+      "new over a function",
+      "Object.is(new g(x).v, x)",
+      "'g' is not a class; 'new' has no model for it",
+    ],
+    [
+      "a class called as a function",
+      "Object.is(Box(x), x)",
+      "'Box' is a class; it is only modeled under 'new'",
+    ],
+    [
+      "a bare instance in a numeric position",
+      "Object.is(new Box(x) + 1, x)",
+      "'new Box(...)' yields an instance of 'Box', not a number",
+    ],
+  ])("%s classifies Error", (_label, atom, reason) => {
+    const got = atomClassifiedOf(atom);
+    expect(got.szs).toBe("Error");
+    expect(got.reason).toBe(`property elaboration failed: ${reason}`);
+  });
+
+  // A conclusion's sides are scanned apart, so an instance in one is a
+  // type mismatch on that side rather than a refusal of the call.
+  test("a bare instance as an equation side fails property elaboration", () => {
+    const got = atomClassifiedOf("Object.is(new Box(x), x)");
+    expect(got.szs).toBe("Error");
+    expect(got.reason).toBe(
+      "property elaboration failed: 'new Box(...)' yields an instance of " +
+        "'Box', not a number",
+    );
+  });
+
+  test("a public field reads through member access", () => {
+    const src = [
+      "export class Cell {",
+      "  readonly w: number;",
+      "  constructor(v: number) {",
+      "    this.w = v;",
+      "  }",
+      "}",
+      "/** @ensures{p} forall (x: number) { Object.is(new Cell(x).w, x) } */",
+      "export function g(x: number): number {",
+      "  return x;",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    expect(emission.obligations[0]!.payload).toEqual({
+      kind: "structured",
+      binders: [{ name: "x", kind: "number" }],
+      conclusion: {
+        kind: "eq",
+        left: {
+          kind: "field-read",
+          className: "Cell",
+          field: "w",
+          object: {
+            kind: "new",
+            className: "Cell",
+            args: [{ kind: "id", name: "x" }],
+          },
+        },
+        right: { kind: "id", name: "x" },
+      },
+    });
+  });
+
+  test("a function body builds an instance too", () => {
+    const src = [
+      BOX.replace(
+        "  /** @ensures{roundTrip} forall (x: number) { Object.is(new Box(x).v, x) } */\n",
+        "",
+      ),
+      "export function g(x: number): number {",
+      "  return new Box(x).v;",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    const g = emission.declarations.find((d) => d.name === "g")!;
+    expect(fnBody(g)).toEqual([
+      {
+        kind: "return",
+        expr: {
+          kind: "getter-read",
+          className: "Box",
+          name: "v",
+          object: {
+            kind: "new",
+            className: "Box",
+            args: [{ kind: "id", name: "x" }],
+          },
+        },
+      },
+    ]);
+  });
+});

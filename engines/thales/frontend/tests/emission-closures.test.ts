@@ -55,6 +55,55 @@ describe("emission import closures", () => {
     expect(JSON.stringify(ret)).toContain('"module":"helper.mts"');
   });
 
+  test("an imported class builds instances under its own module", () => {
+    const boxed = [
+      'import { Box } from "./box.mjs";',
+      "/** @ensures{keeps} forall (x: number) { Object.is(new Box(x).v, x) } */",
+      "export function keep(x: number): number {",
+      "  return x;",
+      "}",
+      "",
+    ].join("\n");
+    const box = [
+      "export class Box {",
+      "  #v: number;",
+      "  constructor(v: number) {",
+      "    this.#v = v;",
+      "  }",
+      "  get v(): number {",
+      "    return this.#v;",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(
+      boxed,
+      "main.mts",
+      reader({ "box.mts": box }),
+    );
+    expect(classified).toEqual([]);
+    expect(emission.obligations[0]!.payload).toEqual({
+      kind: "structured",
+      binders: [{ name: "x", kind: "number" }],
+      conclusion: {
+        kind: "eq",
+        left: {
+          kind: "getter-read",
+          className: "Box",
+          module: "box.mts",
+          name: "v",
+          object: {
+            kind: "new",
+            className: "Box",
+            module: "box.mts",
+            args: [{ kind: "id", name: "x" }],
+          },
+        },
+        right: { kind: "id", name: "x" },
+      },
+    });
+  });
+
   test("only the entry's annotations become obligations", () => {
     const annotated = [
       "/** @ensures{pos} forall (x: int ∈ [0, 5)) { double(x) >= 0 } */",

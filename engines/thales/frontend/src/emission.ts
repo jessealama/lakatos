@@ -236,6 +236,30 @@ function isThisAccess(e: ts.Expression): e is ts.PropertyAccessExpression {
   );
 }
 
+/** A `new C(...)` with a plain identifier callee — the only construction
+ * shape the model reads. */
+function newCall(e: ts.Expression): ts.NewExpression | undefined {
+  const u = unwrapParens(e);
+  if (!ts.isNewExpression(u)) return undefined;
+  return ts.isIdentifier(u.expression) ? u : undefined;
+}
+
+/** A member access on a freshly built instance. */
+function instanceAccess(
+  e: ts.Expression,
+): { object: ts.NewExpression; name: string } | undefined {
+  if (!ts.isPropertyAccessExpression(e)) return undefined;
+  const object = newCall(e.expression);
+  if (object === undefined) return undefined;
+  if (!ts.isIdentifier(e.name)) return undefined;
+  return { object, name: e.name.text };
+}
+
+/** The class a `new` names, in the registries. */
+function newRef(scope: WalkScope, built: ts.NewExpression): ModelRef {
+  return refOf(scope, (built.expression as ts.Identifier).text);
+}
+
 /** A folded negative numeric literal, the one prefix-minus shape that is
  * a literal rather than an operator application. */
 function negatedLiteral(e: ts.Expression): ts.NumericLiteral | undefined {
@@ -274,7 +298,7 @@ function numericShaped(e: ts.Expression, scope: WalkScope): boolean {
   if (isUnaryArith(u)) return true;
   if (ts.isBinaryExpression(u))
     return ARITH_OPERATORS.has(u.operatorToken.getText());
-  if (isThisAccess(u)) return true;
+  if (isThisAccess(u) || instanceAccess(u) !== undefined) return true;
   const builtin = builtinCall(u, scope);
   if (builtin !== undefined) return builtin.ty === "num";
   return ts.isCallExpression(u) && ts.isIdentifier(u.expression);
@@ -377,6 +401,18 @@ function findConstruct(
   }
   // A field read is shaped only where `this` denotes something.
   if (isThisAccess(e) && scope.self !== undefined) return undefined;
+  const access = instanceAccess(e);
+  if (access !== undefined) return findConstruct(access.object, sf, scope);
+  const built = newCall(e);
+  if (built !== undefined) {
+    const targ = built.typeArguments?.[0];
+    if (targ !== undefined) return constructAt(targ, targ.kind, sf);
+    for (const a of built.arguments ?? []) {
+      const found = findConstruct(a, sf, scope);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  }
   return constructAt(e, e.kind, sf);
 }
 
@@ -393,6 +429,16 @@ function findRefusedOp(e: ts.Expression): FailedDecl | undefined {
     const reason = REFUSED_OPERATORS.get(op);
     if (reason !== undefined) return { construct: op, reason };
     return findRefusedOp(e.left) ?? findRefusedOp(e.right);
+  }
+  const access = instanceAccess(e);
+  if (access !== undefined) return findRefusedOp(access.object);
+  const built = newCall(e);
+  if (built !== undefined) {
+    for (const a of built.arguments ?? []) {
+      const found = findRefusedOp(a);
+      if (found !== undefined) return found;
+    }
+    return undefined;
   }
   if (ts.isCallExpression(e)) {
     for (const a of e.arguments) {
@@ -426,6 +472,14 @@ function callNames(
   const builtin = builtinCall(e, scope);
   // A builtin member call has no user callee; its argument carries them.
   if (builtin !== undefined) return callNames(builtin.arg, scope, into);
+  const access = instanceAccess(e);
+  if (access !== undefined) return callNames(access.object, scope, into);
+  const built = newCall(e);
+  if (built !== undefined) {
+    // A class is not a callee, but its arguments carry them.
+    for (const a of built.arguments ?? []) callNames(a, scope, into);
+    return into;
+  }
   if (ts.isCallExpression(e) && ts.isIdentifier(e.expression)) {
     into.push(e.expression.text);
     for (const a of e.arguments) callNames(a, scope, into);
@@ -496,6 +550,82 @@ function findFailedCallee(
   return failedCalleeIn(callNames(e, scope), scope);
 }
 
+/** A construct-carrying failure as it travels from a declaration to a
+ * use; any other failure is left to the typed walk. */
+function travelFailure(
+  scope: WalkScope,
+  ref: ModelRef,
+): FailedDecl | undefined {
+  const failed = scope.failed.get(modelKey(ref));
+  if (failed?.construct === undefined) return undefined;
+  return {
+    construct: failed.construct,
+    reason: `'${displayName(ref)}' could not be modeled: ${failed.reason}`,
+  };
+}
+
+/** The first degraded class or class member a use names, in tree order:
+ * `new C(...)` where C's declaration failed on a construct, or member
+ * access on an instance whose member failed on one. */
+function findFailedMemberUse(
+  e: ts.Expression,
+  scope: WalkScope,
+): FailedDecl | undefined {
+  if (ts.isParenthesizedExpression(e))
+    return findFailedMemberUse(e.expression, scope);
+  if (isUnaryArith(e) || isPrefixNot(e))
+    return findFailedMemberUse(e.operand, scope);
+  if (ts.isBinaryExpression(e)) {
+    return (
+      findFailedMemberUse(e.left, scope) ?? findFailedMemberUse(e.right, scope)
+    );
+  }
+  const sides = equationSides(e);
+  if (sides !== undefined) {
+    return (
+      findFailedMemberUse(sides[0], scope) ??
+      findFailedMemberUse(sides[1], scope)
+    );
+  }
+  const builtin = builtinCall(e, scope);
+  if (builtin !== undefined) return findFailedMemberUse(builtin.arg, scope);
+  const access = instanceAccess(e);
+  if (access !== undefined) {
+    const found = findFailedMemberUse(access.object, scope);
+    if (found !== undefined) return found;
+    const ref = newRef(scope, access.object);
+    const shape = scope.classes.get(modelKey(ref));
+    // An unmodeled class already travelled through its own `new`.
+    if (shape === undefined) return undefined;
+    if (shape.getters.has(access.name) || shape.fields.includes(access.name))
+      return undefined;
+    return travelFailure(scope, {
+      module: ref.module,
+      name: qualifiedName(access.name, ref.name),
+    });
+  }
+  const built = newCall(e);
+  if (built !== undefined) {
+    const ref = newRef(scope, built);
+    if (!scope.classes.has(modelKey(ref))) {
+      const found = travelFailure(scope, ref);
+      if (found !== undefined) return found;
+    }
+    for (const a of built.arguments ?? []) {
+      const found = findFailedMemberUse(a, scope);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  }
+  if (ts.isCallExpression(e) && ts.isIdentifier(e.expression)) {
+    for (const a of e.arguments) {
+      const found = findFailedMemberUse(a, scope);
+      if (found !== undefined) return found;
+    }
+  }
+  return undefined;
+}
+
 type Expected = "num" | "bool";
 
 function describeTy(t: Expected): string {
@@ -505,6 +635,22 @@ function describeTy(t: Expected): string {
 /** An engine-route failure: the walk found something with no model, or a
  * type mismatch — the failures the old pipeline reports as `Error`. */
 class ModelError extends Error {}
+
+/** The shape of the class a `new` names, or the failure the use earns:
+ * a bound name, a degraded declaration, a function, or nothing at all. */
+function classShapeOf(scope: WalkScope, ref: ModelRef): ClassShape {
+  const shape = scope.classes.get(modelKey(ref));
+  if (shape !== undefined) return shape;
+  const name = displayName(ref);
+  if (scope.vars.has(ref.name) || scope.mapped.has(modelKey(ref))) {
+    throw new ModelError(`'${name}' is not a class; 'new' has no model for it`);
+  }
+  const failed = scope.failed.get(modelKey(ref));
+  if (failed !== undefined) {
+    throw new ModelError(`'${name}' has no model: ${failed.reason}`);
+  }
+  throw new ModelError(`no model registered for '${name}'`);
+}
 
 /** The typed walk, mirroring `evalExpr`: operand types are checked in the
  * old elaboration order so the first failure — and its message — is the
@@ -649,12 +795,72 @@ function walkTyped(
       object: { kind: "self" },
     };
   }
+  const access = instanceAccess(e);
+  if (access !== undefined) {
+    const ref = newRef(scope, access.object);
+    const shape = classShapeOf(scope, ref);
+    const rawArgs = access.object.arguments ?? [];
+    if (shape.ctorArity !== rawArgs.length) {
+      throw new ModelError(
+        `'${displayName(ref)}' expects ${shape.ctorArity} argument(s), ` +
+          `got ${rawArgs.length}`,
+      );
+    }
+    if (expected !== "num") {
+      throw new ModelError(
+        `a member read yields a number, not ${describeTy(expected)}`,
+      );
+    }
+    const module = ref.module !== "" ? { module: ref.module } : {};
+    const object: EmitExpr = {
+      kind: "new",
+      className: ref.name,
+      ...module,
+      args: rawArgs.map((a) => walkTyped(a, "num", scope, sf)),
+    };
+    if (shape.getters.has(access.name)) {
+      return {
+        kind: "getter-read",
+        className: ref.name,
+        ...module,
+        name: access.name,
+        object,
+      };
+    }
+    if (shape.fields.includes(access.name)) {
+      return {
+        kind: "field-read",
+        className: ref.name,
+        ...module,
+        field: access.name,
+        object,
+      };
+    }
+    throw new ModelError(
+      `'${displayName(ref)}' has no member '${access.name}' in the model`,
+    );
+  }
+  const built = newCall(e);
+  if (built !== undefined) {
+    const ref = newRef(scope, built);
+    // The class must exist before the instance can be refused as a value.
+    classShapeOf(scope, ref);
+    throw new ModelError(
+      `'new ${displayName(ref)}(...)' yields an instance of ` +
+        `'${displayName(ref)}', not a number`,
+    );
+  }
   if (ts.isCallExpression(e) && ts.isIdentifier(e.expression)) {
     const ref = refOf(scope, e.expression.text);
     const key = modelKey(ref);
     // A dependency's model is named the way its definition is: the old
     // pipeline never sees the importing module's spelling.
     const name = displayName(ref);
+    if (scope.classes.has(key)) {
+      throw new ModelError(
+        `'${name}' is a class; it is only modeled under 'new'`,
+      );
+    }
     const arity = scope.mapped.get(key);
     if (arity === undefined) {
       const failed = scope.failed.get(key);
@@ -703,6 +909,7 @@ function prescanFailure(
     (r: ScanRoot) => findConstruct(r.expr, r.sf, scope),
     (r: ScanRoot) => findRefusedOp(r.expr),
     (r: ScanRoot) => findFailedCallee(r.expr, scope),
+    (r: ScanRoot) => findFailedMemberUse(r.expr, scope),
   ];
   for (const scan of scans) {
     for (const r of roots) {
@@ -1133,10 +1340,16 @@ function bodyPrescan(
     const refused = findRefusedOp(e);
     if (refused !== undefined) return refused;
   }
-  return failedCalleeIn(
+  const callee = failedCalleeIn(
     exprs.flatMap((e) => callNames(e, scope)),
     scope,
   );
+  if (callee !== undefined) return callee;
+  for (const e of exprs) {
+    const found = findFailedMemberUse(e, scope);
+    if (found !== undefined) return found;
+  }
+  return undefined;
 }
 
 /** The synthesized vocabulary a member name may not take: the
