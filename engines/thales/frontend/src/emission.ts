@@ -44,6 +44,9 @@ export type EmitExpr =
   | { kind: "binop"; op: string; left: EmitExpr; right: EmitExpr }
   | { kind: "same-value"; left: EmitExpr; right: EmitExpr }
   | { kind: "math-sqrt"; arg: EmitExpr }
+  | { kind: "math-abs"; arg: EmitExpr }
+  | { kind: "number-is-finite"; arg: EmitExpr }
+  | { kind: "number-is-nan"; arg: EmitExpr }
   | { kind: "call"; callee: string; module?: string; args: EmitExpr[] };
 
 /** A statement in the shapes the plain-Lean emitter renders as Lean
@@ -216,7 +219,8 @@ function numericShaped(e: ts.Expression): boolean {
   if (isUnaryArith(u)) return true;
   if (ts.isBinaryExpression(u))
     return ARITH_OPERATORS.has(u.operatorToken.getText());
-  if (sqrtArg(u) !== undefined) return true;
+  const builtin = builtinCall(u);
+  if (builtin !== undefined) return builtin.ty === "num";
   return ts.isCallExpression(u) && ts.isIdentifier(u.expression);
 }
 
@@ -230,6 +234,7 @@ function booleanShaped(e: ts.Expression): boolean {
     return COMPARISON_OPERATORS.has(op) || LOGICAL_OPERATORS.has(op);
   }
   if (isPrefixNot(u)) return true;
+  if (builtinCall(u)?.ty === "bool") return true;
   return equationSides(u) !== undefined;
 }
 
@@ -299,8 +304,8 @@ function findConstruct(
     }
     return findConstruct(sides[0]!, sf) ?? findConstruct(sides[1]!, sf);
   }
-  const sqrt = sqrtArg(e);
-  if (sqrt !== undefined) return findConstruct(sqrt, sf);
+  const builtin = builtinCall(e);
+  if (builtin !== undefined) return findConstruct(builtin.arg, sf);
   if (ts.isCallExpression(e) && ts.isIdentifier(e.expression)) {
     for (const a of e.arguments) {
       const found = findConstruct(a, sf);
@@ -349,9 +354,9 @@ function callNames(e: ts.Expression, into: string[] = []): string[] {
     callNames(sides[0], into);
     return callNames(sides[1], into);
   }
-  const sqrt = sqrtArg(e);
-  // `Math.sqrt` has no user callee; its argument carries them.
-  if (sqrt !== undefined) return callNames(sqrt, into);
+  const builtin = builtinCall(e);
+  // A builtin member call has no user callee; its argument carries them.
+  if (builtin !== undefined) return callNames(builtin.arg, into);
   if (ts.isCallExpression(e) && ts.isIdentifier(e.expression)) {
     into.push(e.expression.text);
     for (const a of e.arguments) callNames(a, into);
@@ -535,16 +540,17 @@ function walkTyped(
     }
     return { kind: "same-value", left, right };
   }
-  const sqrt = sqrtArg(e);
-  if (sqrt !== undefined) {
+  const builtin = builtinCall(e);
+  if (builtin !== undefined) {
     // The argument is typed before the position is, mirroring the binops.
-    const arg = walkTyped(sqrt, "num", scope, sf);
-    if (expected !== "num") {
+    const arg = walkTyped(builtin.arg, "num", scope, sf);
+    if (expected !== builtin.ty) {
       throw new ModelError(
-        `a call to 'Math.sqrt' yields a number, not ${describeTy(expected)}`,
+        `a call to '${builtin.name}' yields ${describeTy(builtin.ty)}, ` +
+          `not ${describeTy(expected)}`,
       );
     }
-    return { kind: "math-sqrt", arg };
+    return { kind: builtin.kind, arg };
   }
   if (ts.isCallExpression(e) && ts.isIdentifier(e.expression)) {
     const ref = refOf(scope, e.expression.text);
@@ -1085,20 +1091,41 @@ function equationSides(
   return [e.arguments[0]!, e.arguments[1]!];
 }
 
-/** The argument of a `Math.sqrt` call — the one `Math.*` name with a
- * model. `Math.pow` and the rest stay unmapped constructs. */
-function sqrtArg(e: ts.Expression): ts.Expression | undefined {
+type BuiltinKind =
+  "math-sqrt" | "math-abs" | "number-is-finite" | "number-is-nan";
+
+/** The builtin member calls with models, keyed by source spelling. The
+ * namespaces are immutable objects of the standard library, so each entry
+ * is a fixed unary primitive — `Math.pow` and every other member stays an
+ * unmapped construct. */
+const BUILTIN_MEMBER_CALLS: ReadonlyMap<
+  string,
+  { kind: BuiltinKind; ty: Expected }
+> = new Map([
+  ["Math.sqrt", { kind: "math-sqrt", ty: "num" }],
+  ["Math.abs", { kind: "math-abs", ty: "num" }],
+  ["Number.isFinite", { kind: "number-is-finite", ty: "bool" }],
+  ["Number.isNaN", { kind: "number-is-nan", ty: "bool" }],
+]);
+
+/** The whitelisted builtin member call an expression is, if any. */
+function builtinCall(
+  e: ts.Expression,
+):
+  | { name: string; kind: BuiltinKind; ty: Expected; arg: ts.Expression }
+  | undefined {
   if (!ts.isCallExpression(e) || e.arguments.length !== 1) return undefined;
   const callee = e.expression;
   if (
     !ts.isPropertyAccessExpression(callee) ||
-    !ts.isIdentifier(callee.expression) ||
-    callee.expression.text !== "Math" ||
-    callee.name.text !== "sqrt"
+    !ts.isIdentifier(callee.expression)
   ) {
     return undefined;
   }
-  return e.arguments[0]!;
+  const name = `${callee.expression.text}.${callee.name.text}`;
+  const entry = BUILTIN_MEMBER_CALLS.get(name);
+  if (entry === undefined) return undefined;
+  return { name, ...entry, arg: e.arguments[0]! };
 }
 
 /** A binder's emitted domain: a finite half-open range, the whole int
