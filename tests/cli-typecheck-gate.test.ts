@@ -1,4 +1,6 @@
 import { describe, it, expect } from "vitest";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { runForEnvelope, runMain, useTempProject } from "./helpers/cli.js";
 
 const ILL_TYPED = {
@@ -112,5 +114,12 @@ describe("clean project under a tsconfig: no warning, no refusal", () => {
     const run = runMain(["check"]);
     expect(run.code).toBe(1);
     expect(run.stderr.join("\n")).not.toContain("type check");
+  });
+
+  it("leaves its build info under .lakatos/ for the next run", () => {
+    runMain(["check"]);
+    expect(fs.existsSync(path.join(".lakatos", "typecheck.tsbuildinfo"))).toBe(
+      true,
+    );
   });
 });

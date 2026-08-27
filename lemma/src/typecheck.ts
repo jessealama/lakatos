@@ -1,3 +1,4 @@
+import { mkdirSync } from "node:fs";
 import * as path from "node:path";
 import ts from "typescript";
 import { parsedTsconfig } from "./discover.js";
@@ -25,9 +26,14 @@ const OPTION_SKEW_ERRORS = new Set([5023, 5024, 5025, 6046]);
 /**
  * Type check the program ./tsconfig.json describes, under the user's own
  * compilerOptions. skipLibCheck keeps dependency declarations out of the
- * verdict without weakening checking of the user's code.
+ * verdict without weakening checking of the user's code. Given
+ * tsBuildInfoFile, the check reads and writes that build-info file so an
+ * unchanged project re-checks cheaply.
  */
-export function typecheckProject(cwd: string): TypecheckResult {
+export function typecheckProject(
+  cwd: string,
+  tsBuildInfoFile?: string,
+): TypecheckResult {
   const parsed = parsedTsconfig(cwd);
   if (parsed === undefined) return { kind: "skipped", reason: "no-tsconfig" };
   if (parsed.fileNames.length === 0)
@@ -36,17 +42,29 @@ export function typecheckProject(cwd: string): TypecheckResult {
     ...parsed.options,
     noEmit: true,
     skipLibCheck: true,
+    ...(tsBuildInfoFile !== undefined
+      ? { incremental: true, tsBuildInfoFile }
+      : {}),
   };
-  const program = ts.createProgram(parsed.fileNames, options);
-  const diagnostics = ts
-    .getPreEmitDiagnostics(program)
+  let diagnostics: readonly ts.Diagnostic[];
+  if (tsBuildInfoFile !== undefined) {
+    mkdirSync(path.dirname(tsBuildInfoFile), { recursive: true });
+    const builder = ts.createIncrementalProgram({
+      rootNames: parsed.fileNames,
+      options,
+    });
+    diagnostics = ts.getPreEmitDiagnostics(builder.getProgram());
+    // The build-info write is the one emit a noEmit incremental program does.
+    builder.emit();
+  } else {
+    const program = ts.createProgram(parsed.fileNames, options);
+    diagnostics = ts.getPreEmitDiagnostics(program);
+  }
+  const errors = diagnostics
     .filter((d) => d.category === ts.DiagnosticCategory.Error)
     .filter((d) => !OPTION_SKEW_ERRORS.has(d.code));
-  if (diagnostics.length === 0) return { kind: "clean" };
-  return {
-    kind: "failed",
-    diagnostics: diagnostics.map((d) => structured(d, cwd)),
-  };
+  if (errors.length === 0) return { kind: "clean" };
+  return { kind: "failed", diagnostics: errors.map((d) => structured(d, cwd)) };
 }
 
 function structured(d: ts.Diagnostic, cwd: string): TypecheckDiagnostic {

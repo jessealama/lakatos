@@ -32,7 +32,7 @@ import {
   type PropertyIdentity,
 } from "./envelope.js";
 import { withInterruptGuard, type InterruptSignal } from "./interrupt.js";
-import { claimRunDir } from "./run-dir.js";
+import { claimRunDir, RUN_ROOT } from "./run-dir.js";
 
 /** Envelope entries for extraction-level input errors, with their
  * diagnostics echoed to stderr. Any such entry makes the run exit 2.
@@ -206,7 +206,10 @@ function runCommand(spine: Spine, patterns: string[]): number {
   const base = captureMeta();
   // The gate sits before claimRunDir so a refused run leaves no empty run
   // directory, and before any codegen so no engine sees uncompilable input.
-  const check = typecheckProject(process.cwd());
+  const check = typecheckProject(
+    process.cwd(),
+    path.resolve(RUN_ROOT, "typecheck.tsbuildinfo"),
+  );
   if (check.kind === "skipped") {
     console.error(
       check.reason === "no-tsconfig"

@@ -1,4 +1,6 @@
 import { describe, it, expect } from "vitest";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { typecheckProject } from "../src/typecheck.js";
 import { LemmaError } from "../src/errors.js";
 import { useTempProject } from "../../tests/helpers/cli.js";
@@ -109,5 +111,27 @@ describe("typecheckProject: malformed tsconfig", () => {
   it("throws the same LemmaError shape discovery throws", () => {
     expect(() => typecheckProject(process.cwd())).toThrow(LemmaError);
     expect(() => typecheckProject(process.cwd())).toThrow(/^tsconfig\.json:/);
+  });
+});
+
+describe("typecheckProject: incremental build info", () => {
+  useTempProject("lemma-tc-incr-", {
+    "tsconfig.json": JSON.stringify({ include: ["src"] }),
+    "src/a.ts": "export function id(x: number): number {\n  return x;\n}\n",
+  });
+
+  it("persists the build info and stays correct across edits", () => {
+    const info = path.resolve(".lakatos", "typecheck.tsbuildinfo");
+    expect(typecheckProject(process.cwd(), info)).toEqual({ kind: "clean" });
+    expect(fs.existsSync(info)).toBe(true);
+    // A cached verdict must not survive the edit that invalidates it.
+    fs.writeFileSync("src/a.ts", 'export const a: number = "no";\n');
+    const second = typecheckProject(process.cwd(), info);
+    expect(second.kind).toBe("failed");
+    fs.writeFileSync(
+      "src/a.ts",
+      "export function id(x: number): number {\n  return x;\n}\n",
+    );
+    expect(typecheckProject(process.cwd(), info)).toEqual({ kind: "clean" });
   });
 });
