@@ -71,6 +71,19 @@ describe.runIf(enabled)("lakatos prove end-to-end (tracer)", () => {
       ),
       path.join(dir, "conversion.ts"),
     );
+    // The non-negativity chain's flagship: sqrt of a square.
+    fs.copyFileSync(
+      path.join(
+        repoRoot,
+        "engines",
+        "thales",
+        "tests",
+        "conformance",
+        "theorem",
+        "sqrt-sum-sq-nonneg.ts",
+      ),
+      path.join(dir, "sq.ts"),
+    );
     // The class-binder flagship (Point#distance non-negativity), pinned at
     // today's honest refusal; class modeling landing flips this to Theorem.
     fs.copyFileSync(
@@ -154,6 +167,21 @@ describe.runIf(enabled)("lakatos prove end-to-end (tracer)", () => {
       expect(env.annotations[0]).toMatchObject({
         function: "applyConversionFactors",
         property: "monotone",
+        szs: "Theorem",
+        axioms: [],
+      });
+    },
+  );
+
+  it(
+    "the non-negativity chain proves without axioms",
+    { timeout: proveTimeoutMs(1) },
+    () => {
+      const env = runForEnvelope(["prove", "sq.ts"]);
+      expect(env.annotations).toHaveLength(1);
+      expect(env.annotations[0]).toMatchObject({
+        function: "root",
+        property: "nonNeg",
         szs: "Theorem",
         axioms: [],
       });
