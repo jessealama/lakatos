@@ -97,6 +97,16 @@ const BINDER_FIXTURES = [
   `${CONFORMANCE}/inappropriate/guarded-power.ts`,
 ];
 
+/** The class slice (#129): structures, single-assignment constructors,
+ * getters, and new in atoms — the theorem path and each degrade path. */
+const CLASS_FIXTURES = [
+  "engines/thales/tests/fixtures/classes.ts",
+  `${CONFORMANCE}/theorem/class-box-roundtrip.ts`,
+  `${CONFORMANCE}/inappropriate/ctor-assigns-twice.ts`,
+  `${CONFORMANCE}/inappropriate/ctor-partial-assign.ts`,
+  `${CONFORMANCE}/inappropriate/class-extends.ts`,
+];
+
 /** The degradation slice (#151): unsupported ranges and the names
  * non-function declarations bind, mixed with healthy annotations in one
  * file. */
@@ -122,6 +132,7 @@ const fixtures =
         ...EXPRESSION_FIXTURES,
         ...STATEMENT_FIXTURES,
         ...BINDER_FIXTURES,
+        ...CLASS_FIXTURES,
         ...DEGRADATION_FIXTURES,
         ...IMPORT_FIXTURES,
       ]

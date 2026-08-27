@@ -128,7 +128,9 @@ describe.runIf(enabled)("lakatos prove end-to-end (tracer)", () => {
       });
       expect(by.get("Counter#bump/bumps")).toMatchObject({
         szs: "Inappropriate",
-        reason: expect.stringContaining("ClassDeclaration"),
+        reason: expect.stringContaining(
+          "class 'Counter' has no constructor implementation to model",
+        ),
       });
       expect(env.annotations).toHaveLength(3);
     },

@@ -2753,6 +2753,28 @@ describe("class declarations (#129)", () => {
     expect(cls.getters.map((g) => g.name)).toEqual(["v"]);
   });
 
+  // A definite-assignment `!` says nothing the model reads: the
+  // single-assignment analysis is the authority on what is assigned.
+  test("a definite-assignment field still models", () => {
+    const src = [
+      "export class Box {",
+      "  #v!: number;",
+      "  constructor(v: number) {",
+      "    this.#v = v;",
+      "  }",
+      "  get v(): number {",
+      "    return this.#v;",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    const cls = emission.declarations[0]!;
+    assert(cls.kind === "class");
+    expect(cls.fields).toEqual(["#v"]);
+  });
+
   test("a throwing guard with a branch assignment models", () => {
     const src = [
       "export class Gate {",
