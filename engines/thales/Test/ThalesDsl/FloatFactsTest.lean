@@ -241,3 +241,9 @@ example (u : UnpackedFloat) (hn : u ≠ .notANumber)
     (h : UnpackedFloat.beq u (.infinity .negative) = false) :
     UnpackedFloat.lt (.infinity .negative) u = true :=
   FloatFacts.lt_neg_inf_of_beq_false hn h
+
+-- The converse congruence: unpacking to NaN pins the Float itself,
+-- because the model collapses NaN payloads.
+example (x : Float) (h : x.toModel.unpack = .notANumber) :
+    x = (0.0 / 0.0) :=
+  FloatFacts.float_eq_nan_of_unpack_nan h

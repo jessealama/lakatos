@@ -3350,6 +3350,17 @@ theorem float_ne_nan {x : Float} (h : x.toModel.unpack ≠ .notANumber) :
     x ≠ (0.0 / 0.0 : Float) :=
   fun he => h (he ▸ unpack_nan)
 
+/-- The converse: unpacking to NaN pins the `Float` itself. `Float` is a
+one-field structure over `Float.Model`, so model equality is value
+equality, and the model collapses NaN payloads. -/
+theorem float_eq_nan_of_unpack_nan {x : Float}
+    (h : x.toModel.unpack = .notANumber) : x = (0.0 / 0.0 : Float) := by
+  have hm : x.toModel = ((0.0 / 0.0 : Float)).toModel := by
+    rw [← model_pack_unpack x.toModel,
+      ← model_pack_unpack ((0.0 / 0.0 : Float)).toModel, h]
+    rfl
+  exact congrArg Float.ofModel hm
+
 /-- A false `<` between two non-NaN floats is the reverse `≤`. -/
 theorem float_le_of_not_lt {x y : Float}
     (hxLo : (-(1.0 / 0.0) : Float) < x) (hxHi : x < (1.0 / 0.0 : Float))
