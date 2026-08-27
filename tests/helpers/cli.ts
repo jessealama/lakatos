@@ -38,6 +38,14 @@ export function runMain(argv: string[]): MainRun {
 }
 
 /**
+ * Captured stderr without the type-check gate's skip warning, which every
+ * tsconfig-less fixture provokes and which no test about diagnostics means.
+ */
+export function withoutSkipWarning(stderr: string[]): string[] {
+  return stderr.filter((l) => !l.startsWith("lakatos: no tsconfig.json;"));
+}
+
+/**
  * The run directory the CLI announced on stderr. Tests read it the way a
  * user does rather than recomputing it from the envelope's startedAt: a run
  * whose name was taken steps to the next free one, so the two can differ.

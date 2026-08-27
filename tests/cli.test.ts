@@ -1,7 +1,12 @@
 import { describe, it, expect, afterAll, beforeAll, beforeEach } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { announcedRunDir, runMain, useTempProject } from "./helpers/cli.js";
+import {
+  announcedRunDir,
+  runMain,
+  useTempProject,
+  withoutSkipWarning,
+} from "./helpers/cli.js";
 import { expectValidEnvelope } from "./helpers/envelope-schema.js";
 import { RUN_ROOT } from "../src/run-dir.js";
 
@@ -138,9 +143,10 @@ describe("check stub", () => {
   it("still exits 2 on a formula lemma itself cannot parse", () => {
     const { code, stderr } = runMain(["check", "malformed.ts"]);
     expect(code).toBe(2);
-    expect(stderr).toHaveLength(1);
-    expect(stderr[0]).toContain("malformed.ts:1: @ensures{shapely}:");
-    expect(stderr[0]).toContain("expected 'forall'");
+    const diagnostics = withoutSkipWarning(stderr);
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0]).toContain("malformed.ts:1: @ensures{shapely}:");
+    expect(diagnostics[0]).toContain("expected 'forall'");
   });
 });
 
@@ -346,13 +352,16 @@ describe("cli compile errors (exit-code contract)", () => {
     (c) => {
       const { code, stderr } = runMain(["refute", c.file]);
       expect(code).toBe(2);
-      expect(stderr).toHaveLength(1);
-      expect(stderr[0]).not.toContain("\n");
+      const diagnostics = withoutSkipWarning(stderr);
+      expect(diagnostics).toHaveLength(1);
+      expect(diagnostics[0]).not.toContain("\n");
       if (c.wrapped) {
-        expect(stderr[0]).toContain(`${c.file}:1: @ensures{${c.property}}:`);
+        expect(diagnostics[0]).toContain(
+          `${c.file}:1: @ensures{${c.property}}:`,
+        );
       }
       for (const fragment of c.expected) {
-        expect(stderr[0]).toContain(fragment);
+        expect(diagnostics[0]).toContain(fragment);
       }
     },
   );

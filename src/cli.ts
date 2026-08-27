@@ -20,6 +20,8 @@ import {
   parsePrefix,
   qualifiedName,
   resolveFiles,
+  type TypecheckDiagnostic,
+  typecheckProject,
 } from "../lemma/src/index.js";
 import {
   interruptedResults,
@@ -30,7 +32,7 @@ import {
   type PropertyIdentity,
 } from "./envelope.js";
 import { withInterruptGuard, type InterruptSignal } from "./interrupt.js";
-import { claimRunDir } from "./run-dir.js";
+import { claimRunDir, RUN_ROOT } from "./run-dir.js";
 
 /** Envelope entries for extraction-level input errors, with their
  * diagnostics echoed to stderr. Any such entry makes the run exit 2.
@@ -49,6 +51,40 @@ function inputErrorResults(
   );
   for (const r of results) console.error(`error: ${r.error}`);
   return results;
+}
+
+function formatTsDiagnostic(d: TypecheckDiagnostic): string {
+  const site = d.file !== undefined ? `${d.file}:${d.line}: ` : "";
+  return `${site}TS${d.code}: ${d.message}`;
+}
+
+/** Envelope entries for a program the type-check gate refused: every
+ * extractable annotation is InputError — the program it describes never
+ * compiled — beside the extraction-level input errors found on the way. */
+function typecheckRefusedResults(
+  files: string[],
+  diagnostics: TypecheckDiagnostic[],
+): AnnotationResult[] {
+  const rest = diagnostics.length - 1;
+  const error =
+    `the program does not type check: ${formatTsDiagnostic(diagnostics[0]!)}` +
+    (rest > 0 ? ` (and ${rest} more)` : "");
+  const results: AnnotationResult[] = [];
+  const invalid: { file: string; invalid: InvalidAnnotation[] }[] = [];
+  for (const file of files) {
+    const extracted = extract(file);
+    invalid.push({ file, invalid: extracted.invalid });
+    for (const a of extracted.annotations) {
+      results.push({
+        file,
+        function: qualifiedName(a.functionName, a.className, a.isStatic),
+        property: a.propertyName,
+        szs: "InputError",
+        error,
+      });
+    }
+  }
+  return [...results, ...inputErrorResults(invalid)];
 }
 
 // The module runs from src/ under vitest and dist/src/ as a bin, so
@@ -168,6 +204,29 @@ interface Spine {
 function runCommand(spine: Spine, patterns: string[]): number {
   const files = resolve(patterns);
   const base = captureMeta();
+  // The gate sits before claimRunDir so a refused run leaves no empty run
+  // directory, and before any codegen so no engine sees uncompilable input.
+  const check = typecheckProject(
+    process.cwd(),
+    path.resolve(RUN_ROOT, "typecheck.tsbuildinfo"),
+  );
+  if (check.kind === "skipped") {
+    console.error(
+      check.reason === "no-tsconfig"
+        ? "lakatos: no tsconfig.json; skipping type check"
+        : "lakatos: tsconfig.json names no files; skipping type check",
+    );
+  } else if (check.kind === "failed") {
+    for (const d of check.diagnostics)
+      console.error(`error: ${formatTsDiagnostic(d)}`);
+    const annotations = typecheckRefusedResults(files, check.diagnostics);
+    const n = annotations.length;
+    console.error(
+      `lakatos: the program does not type check; reporting ${n} annotation${n === 1 ? "" : "s"} as InputError`,
+    );
+    emitEnvelope({ ...base, annotations });
+    return 2;
+  }
   const runDir = claimRunDir(base.startedAt);
   const plan = spine.plan(files, runDir);
   noteUnsupportedRanges(plan.untried);
@@ -242,6 +301,10 @@ commands:
 when no files are given, lakatos discovers your sources: the files that
 tsconfig.json would compile or, failing that, src/**. declaration files
 (.d.ts) are skipped unless a pattern names them.
+
+when tsconfig.json is present, lakatos type checks the whole project first
+and refuses to analyze a program that does not compile (annotations report
+InputError; without a tsconfig the run proceeds unchecked, with a warning).
 
 options:
   --seed <n>  reproduce a prior refute run's generation (echoed in the report)

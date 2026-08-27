@@ -13,8 +13,9 @@ import type { IssueKind } from "../engines/pabst/src/contract.js";
  * searched out of a bounded domain that decide established false — in the
  * same falsified shape either way. InputError marks an
  * annotation whose input is malformed at extraction (a duplicate property
- * name, an inaccessible subject); its `error` carries the diagnostic and
- * the run exits 2, the documented error mode. Timeout marks an annotation
+ * name, an inaccessible subject) or whose program fails to type check;
+ * its `error` carries the diagnostic and the run exits 2, the documented
+ * error mode. Timeout marks an annotation
  * whose proof attempt exceeded its per-annotation budget; later
  * annotations in the same file still run. User marks an annotation an
  * interrupted run never finished evaluating: processing stopped at the

@@ -114,7 +114,10 @@ name still get entries under best-effort labels (`<anonymous>#m`,
 
 Commands: `lakatos refute` and `lakatos prove` (work today),
 `lakatos check` (stub). All take `[files-or-globs...]`; with no files,
-sources are discovered via `tsconfig.json` or `src/**`. `--seed <n>`
+sources are discovered via `tsconfig.json` or `src/**`. When a
+`tsconfig.json` is present, the whole project is type checked first; a
+program that does not compile is refused (every annotation reports
+`InputError`, exit 2). `--seed <n>`
 applies to refute only: passing a report's `seed` back reproduces its
 run.
 

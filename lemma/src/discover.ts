@@ -91,11 +91,12 @@ function insideCwd(rel: string): boolean {
 }
 
 /**
- * The files tsc would compile for ./tsconfig.json, as sorted relative paths
- * filtered to scannable sources; undefined when there is no tsconfig.json,
- * empty when the config resolves to no usable files.
+ * Parsed ./tsconfig.json — the file list and compilerOptions as tsc sees
+ * them — or undefined when no tsconfig.json exists. Fatal config errors
+ * throw LemmaError; "no inputs" and option-skew diagnostics are not fatal
+ * (see fatalError above).
  */
-function tsconfigFiles(cwd: string): string[] | undefined {
+export function parsedTsconfig(cwd: string): ts.ParsedCommandLine | undefined {
   const configPath = path.join(cwd, "tsconfig.json");
   if (!existsSync(configPath)) return undefined;
   const read = ts.readConfigFile(configPath, ts.sys.readFile);
@@ -109,6 +110,17 @@ function tsconfigFiles(cwd: string): string[] | undefined {
   );
   const fatal = fatalError(parsed.errors);
   if (fatal) throw configError(fatal);
+  return parsed;
+}
+
+/**
+ * The files tsc would compile for ./tsconfig.json, as sorted relative paths
+ * filtered to scannable sources; undefined when there is no tsconfig.json,
+ * empty when the config resolves to no usable files.
+ */
+function tsconfigFiles(cwd: string): string[] | undefined {
+  const parsed = parsedTsconfig(cwd);
+  if (parsed === undefined) return undefined;
   const files = parsed.fileNames
     .map((f) => path.relative(cwd, f))
     .filter(insideCwd)
