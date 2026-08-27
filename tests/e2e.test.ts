@@ -84,6 +84,19 @@ describe.runIf(enabled)("lakatos prove end-to-end (tracer)", () => {
       ),
       path.join(dir, "sq.ts"),
     );
+    // Guard refutation: the binder's bounds rule out the throwing arms.
+    fs.copyFileSync(
+      path.join(
+        repoRoot,
+        "engines",
+        "thales",
+        "tests",
+        "conformance",
+        "theorem",
+        "guarded-sqrt.ts",
+      ),
+      path.join(dir, "guards.ts"),
+    );
     // The class-binder flagship (Point#distance non-negativity), pinned at
     // today's honest refusal; class modeling landing flips this to Theorem.
     fs.copyFileSync(
@@ -185,6 +198,18 @@ describe.runIf(enabled)("lakatos prove end-to-end (tracer)", () => {
         szs: "Theorem",
         axioms: [],
       });
+    },
+  );
+
+  it(
+    "bounds refute the guards' throwing arms without axioms",
+    { timeout: proveTimeoutMs(2) },
+    () => {
+      const env = runForEnvelope(["prove", "guards.ts"]);
+      expect(env.annotations).toHaveLength(2);
+      for (const a of env.annotations) {
+        expect(a).toMatchObject({ szs: "Theorem", axioms: [] });
+      }
     },
   );
 

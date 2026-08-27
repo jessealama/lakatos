@@ -1,6 +1,8 @@
 import Lean
 import Js.NormAttr
+import Js.Number.Basic
 import Js.Number.FloatFacts
+import Js.Number.FloatOps
 import Js.Runtime
 import Js.Binders
 
@@ -169,6 +171,27 @@ theorem float_sqrt_nonneg {x : Float} (hx : Float.le 0 x = true) :
     Float.le 0 (Float.sqrt x) = true :=
   FloatFacts.float_sqrt_nonneg hx
 
+/-! Guard refutation: the bounds a `number` binder emits rule out the
+equality tests a throwing guard makes — IEEE equality with an infinity,
+SameValue with NaN. Refuting the condition is the only way to discharge
+an arm whose body is a `throw`, which no pure result equals. -/
+
+/-- Bounded above means not `+∞`. -/
+theorem float_beq_inf_eq_false {x : Float} (hHi : x < floatInf) :
+    Float.beq x floatInf = false :=
+  FloatFacts.float_beq_inf_eq_false hHi
+
+/-- Bounded below means not `-∞`. -/
+theorem float_beq_neg_inf_eq_false {x : Float} (hLo : -floatInf < x) :
+    Float.beq x (-floatInf) = false :=
+  FloatFacts.float_beq_neg_inf_eq_false hLo
+
+/-- A float strictly inside the infinities is not SameValue-equal to NaN. -/
+theorem sameValue_nan_eq_false {x : Float}
+    (hLo : -floatInf < x) (hHi : x < floatInf) :
+    Number.FloatOps.sameValue x floatNaN = false :=
+  decide_eq_false (FloatFacts.float_ne_nan (FloatFacts.unpack_ne_nan hLo hHi))
+
 open Lean Meta Simp in
 /-- Evaluates a closed `Float` comparison by reducing its `Decidable`
 instance, the way the `decide` tactic does; the kernel recomputes the
@@ -227,5 +250,8 @@ grind_pattern float_sub_ne_nan_of_bounds => (a - b).toModel.unpack
 grind_pattern float_sq_nonneg => x * x
 grind_pattern float_add_nonneg => a + b
 grind_pattern float_sqrt_nonneg => Float.sqrt x
+grind_pattern float_beq_inf_eq_false => Float.beq x floatInf
+grind_pattern float_beq_neg_inf_eq_false => Float.beq x (-floatInf)
+grind_pattern sameValue_nan_eq_false => Number.FloatOps.sameValue x floatNaN
 
 end Js

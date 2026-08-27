@@ -215,3 +215,17 @@ example : Float.le 0 (Float.sqrt (1.0 / 0.0)) = true :=
 
 example : ((1.5 : Float) - 2.5).toModel.unpack ≠ .notANumber :=
   FloatFacts.float_sub_ne_nan rfl rfl rfl rfl
+
+-- The beq bridge: IEEE equality against an infinity is refuted by a
+-- strict comparison on the same side.
+example (x : Float) (h : Float.lt x (1.0 / 0.0) = true) :
+    Float.beq x (1.0 / 0.0) = false :=
+  FloatFacts.float_beq_inf_eq_false h
+
+example (x : Float) (h : Float.lt (-(1.0 / 0.0)) x = true) :
+    Float.beq x (-(1.0 / 0.0)) = false :=
+  FloatFacts.float_beq_neg_inf_eq_false h
+
+-- ≠ NaN crosses to the Float layer by congruence through the model.
+example (x : Float) (h : x.toModel.unpack ≠ .notANumber) : x ≠ (0.0 / 0.0) :=
+  FloatFacts.float_ne_nan h
