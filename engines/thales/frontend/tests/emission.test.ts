@@ -1,7 +1,13 @@
 import { assert, describe, expect, test } from "vitest";
 import * as fs from "node:fs";
 import { schemaValidator } from "../../../../tests/helpers/schema-validator.js";
-import { emitModule } from "../src/emission.js";
+import { type EmitDecl, type EmitStmt, emitModule } from "../src/emission.js";
+
+/** A function declaration's body, narrowed out of the declaration union. */
+function fnBody(d: EmitDecl): EmitStmt[] {
+  assert(d.kind === "function");
+  return d.body;
+}
 
 const FIXTURE = "engines/thales/tests/fixtures/tracer.ts";
 const read = () => fs.readFileSync(FIXTURE, "utf8");
@@ -87,7 +93,7 @@ describe("emitModule on the tracer fixture", () => {
       [
         "bumps",
         "Inappropriate",
-        "'Counter#bump' could not be modeled: unmapped TypeScript construct 'ClassDeclaration' at 13:3",
+        "'Counter#bump' could not be modeled: class 'Counter' has no constructor implementation to model",
       ],
     ]);
   });
@@ -233,7 +239,7 @@ describe("signature and body blockers", () => {
     ].join("\n");
     const { classified } = emitModule(src, "t.ts");
     expect(classified[0]!.reason).toMatch(
-      /'Box\.make' could not be modeled: unmapped TypeScript construct 'ClassDeclaration'/,
+      /'Box\.make' could not be modeled: class 'Box' has no constructor/,
     );
   });
 
@@ -388,7 +394,7 @@ describe("unary operators", () => {
       "export function f(x: number): number { return -x; }\n";
     const { emission, classified } = emitModule(src, "t.ts");
     expect(classified).toEqual([]);
-    expect(emission.declarations[0]!.body).toEqual([
+    expect(fnBody(emission.declarations[0]!)).toEqual([
       {
         kind: "return",
         expr: { kind: "unop", op: "-", operand: { kind: "id", name: "x" } },
@@ -402,7 +408,7 @@ describe("unary operators", () => {
       "export function f(x: number): number { return +x; }\n";
     const { emission, classified } = emitModule(src, "t.ts");
     expect(classified).toEqual([]);
-    expect(emission.declarations[0]!.body).toEqual([
+    expect(fnBody(emission.declarations[0]!)).toEqual([
       {
         kind: "return",
         expr: { kind: "unop", op: "+", operand: { kind: "id", name: "x" } },
@@ -608,7 +614,7 @@ describe("body classification parity with the old pipeline", () => {
     const { emission, classified } = emitModule(src, "t.ts");
     expect(classified).toEqual([]);
     expect(emission.obligations).toHaveLength(1);
-    expect(emission.declarations[0]!.body).toEqual([
+    expect(fnBody(emission.declarations[0]!)).toEqual([
       { kind: "return", expr: { kind: "id", name: "x" } },
     ]);
   });
@@ -768,7 +774,7 @@ describe("statement bodies (#148)", () => {
     );
     const { emission, classified } = emitModule(src, "t.ts");
     expect(classified).toEqual([]);
-    expect(emission.declarations[0]!.body).toEqual([
+    expect(fnBody(emission.declarations[0]!)).toEqual([
       { kind: "const", name: "bonus", init: { kind: "num", lit: "2" } },
       {
         kind: "if",
@@ -828,7 +834,7 @@ describe("statement bodies (#148)", () => {
     );
     const { emission, classified } = emitModule(src, "t.ts");
     expect(classified).toEqual([]);
-    expect(emission.declarations[0]!.body).toEqual([
+    expect(fnBody(emission.declarations[0]!)).toEqual([
       {
         kind: "if",
         cond: {
@@ -849,7 +855,7 @@ describe("statement bodies (#148)", () => {
     );
     const { emission, classified } = emitModule(src, "t.ts");
     expect(classified).toEqual([]);
-    expect(emission.declarations[0]!.body).toHaveLength(1);
+    expect(fnBody(emission.declarations[0]!)).toHaveLength(1);
   });
 
   test("an empty arm keeps its statement, an empty else is dropped", () => {
@@ -858,7 +864,7 @@ describe("statement bodies (#148)", () => {
     );
     const { emission, classified } = emitModule(src, "t.ts");
     expect(classified).toEqual([]);
-    expect(emission.declarations[0]!.body[0]).toEqual({
+    expect(fnBody(emission.declarations[0]!)[0]).toEqual({
       kind: "if",
       cond: {
         kind: "binop",
@@ -983,7 +989,7 @@ describe("statement bodies (#148)", () => {
     );
     const { emission, classified } = emitModule(src, "t.ts");
     expect(classified).toEqual([]);
-    expect(emission.declarations[0]!.body).toEqual([
+    expect(fnBody(emission.declarations[0]!)).toEqual([
       {
         kind: "const",
         name: "y",
@@ -1004,7 +1010,7 @@ describe("statement bodies (#148)", () => {
     );
     const { emission, classified } = emitModule(src, "t.ts");
     expect(classified).toEqual([]);
-    expect(emission.declarations[0]!.body).toEqual([
+    expect(fnBody(emission.declarations[0]!)).toEqual([
       { kind: "let", name: "y", init: { kind: "id", name: "x" } },
       {
         kind: "if",
@@ -1421,7 +1427,7 @@ describe("Object.is models as SameValue", () => {
     ].join("\n");
     const { emission } = emitModule(src, FILE);
     expectValidEmission(emission);
-    expect(emission.declarations[0]!.body[0]).toEqual(
+    expect(fnBody(emission.declarations[0]!)[0]).toEqual(
       expect.objectContaining({
         cond: {
           kind: "same-value",
@@ -1619,7 +1625,7 @@ describe("NaN and Infinity resolve as expression atoms", () => {
     ].join("\n");
     const { emission } = emitModule(src, FILE);
     expectValidEmission(emission);
-    expect(emission.declarations[0]!.body).toEqual([
+    expect(fnBody(emission.declarations[0]!)).toEqual([
       {
         kind: "return",
         expr: {
@@ -1660,7 +1666,7 @@ describe("NaN and Infinity resolve as expression atoms", () => {
     ].join("\n");
     const { emission } = emitModule(src, FILE);
     expectValidEmission(emission);
-    expect(emission.declarations[0]!.body).toEqual([
+    expect(fnBody(emission.declarations[0]!)).toEqual([
       {
         kind: "return",
         expr: {
@@ -1684,7 +1690,7 @@ describe("NaN and Infinity resolve as expression atoms", () => {
     ].join("\n");
     const { emission } = emitModule(src, FILE);
     expectValidEmission(emission);
-    expect(emission.declarations[0]!.body[0]).toEqual(
+    expect(fnBody(emission.declarations[0]!)[0]).toEqual(
       expect.objectContaining({
         cond: {
           kind: "binop",
@@ -1705,7 +1711,7 @@ describe("NaN and Infinity resolve as expression atoms", () => {
     ].join("\n");
     const { emission } = emitModule(src, FILE);
     expectValidEmission(emission);
-    expect(emission.declarations[0]!.body).toEqual([
+    expect(fnBody(emission.declarations[0]!)).toEqual([
       { kind: "return", expr: { kind: "id", name: "NaN" } },
     ]);
   });
@@ -1720,7 +1726,7 @@ describe("NaN and Infinity resolve as expression atoms", () => {
     ].join("\n");
     const { emission } = emitModule(src, FILE);
     expectValidEmission(emission);
-    expect(emission.declarations[0]!.body[1]).toEqual({
+    expect(fnBody(emission.declarations[0]!)[1]).toEqual({
       kind: "return",
       expr: { kind: "id", name: "Infinity" },
     });
@@ -1980,7 +1986,7 @@ describe("builtin member calls model as Float primitives", () => {
     ].join("\n");
     const { emission } = emitModule(src, FILE);
     expectValidEmission(emission);
-    expect(emission.declarations[0]!.body[0]).toEqual(
+    expect(fnBody(emission.declarations[0]!)[0]).toEqual(
       expect.objectContaining({
         cond: {
           kind: "unop",
@@ -2003,7 +2009,7 @@ describe("builtin member calls model as Float primitives", () => {
     ].join("\n");
     const { emission } = emitModule(src, FILE);
     expectValidEmission(emission);
-    expect(emission.declarations[0]!.body[0]).toEqual({
+    expect(fnBody(emission.declarations[0]!)[0]).toEqual({
       kind: "if",
       cond: { kind: "number-is-nan", arg: { kind: "id", name: "x" } },
       then: [{ kind: "return", expr: { kind: "num", lit: "0" } }],
@@ -2022,7 +2028,7 @@ describe("builtin member calls model as Float primitives", () => {
     ].join("\n");
     const { emission } = emitModule(src, FILE);
     expectValidEmission(emission);
-    expect(emission.declarations[0]!.body[0]).toEqual(
+    expect(fnBody(emission.declarations[0]!)[0]).toEqual(
       expect.objectContaining({
         cond: {
           kind: "binop",
@@ -2289,7 +2295,7 @@ describe("logical operators on boolean operands", () => {
     );
     expect(classified).toEqual([]);
     expectValidEmission(emission);
-    expect(emission.declarations[0]!.body[0]).toMatchObject({
+    expect(fnBody(emission.declarations[0]!)[0]).toMatchObject({
       kind: "if",
       cond: {
         kind: "binop",
@@ -2315,7 +2321,7 @@ describe("logical operators on boolean operands", () => {
     );
     expect(classified).toEqual([]);
     expectValidEmission(emission);
-    expect(emission.declarations[0]!.body[0]).toMatchObject({
+    expect(fnBody(emission.declarations[0]!)[0]).toMatchObject({
       kind: "if",
       cond: {
         kind: "binop",
@@ -2341,7 +2347,7 @@ describe("logical operators on boolean operands", () => {
     );
     expect(classified).toEqual([]);
     expectValidEmission(emission);
-    expect(emission.declarations[0]!.body[0]).toMatchObject({
+    expect(fnBody(emission.declarations[0]!)[0]).toMatchObject({
       kind: "if",
       cond: { kind: "unop", op: "!", operand: { kind: "same-value" } },
     });
@@ -2475,6 +2481,311 @@ describe("logical operators on boolean operands", () => {
         szs: "Inappropriate",
         reason: expect.stringContaining("'g' could not be modeled"),
       }),
+    ]);
+  });
+});
+
+const BOX = `export class Box {
+  #v: number;
+  constructor(v: number) {
+    this.#v = v;
+  }
+  /** @ensures{roundTrip} forall (x: number) { Object.is(new Box(x).v, x) } */
+  get v(): number {
+    return this.#v;
+  }
+}
+`;
+
+/** The classification of the annotation on a member of a class decl. */
+function classClassifiedOf(cls: string): { szs: string; reason: string } {
+  const { classified } = emitModule(cls, "t.ts");
+  expect(classified).toHaveLength(1);
+  return { szs: classified[0]!.szs, reason: classified[0]!.reason };
+}
+
+/** A class whose sole annotation sits on a getter over field `#v`. */
+function classWith(members: string): string {
+  return [
+    "export class C {",
+    "  #v: number;",
+    members,
+    "  /** @ensures{p} forall (x: number) { Object.is(new C(x).v, x) } */",
+    "  get v(): number {",
+    "    return this.#v;",
+    "  }",
+    "}",
+    "",
+  ].join("\n");
+}
+
+describe("class declarations (#129)", () => {
+  test("a number-typed class models as a class declaration", () => {
+    const { emission } = emitModule(BOX, "t.ts");
+    expect(emission.declarations).toEqual([
+      {
+        kind: "class",
+        name: "Box",
+        source: expect.stringContaining("export class Box"),
+        fields: ["#v"],
+        ctor: {
+          params: ["v"],
+          body: [
+            { kind: "field-set", field: "#v", expr: { kind: "id", name: "v" } },
+          ],
+        },
+        getters: [
+          {
+            name: "v",
+            body: [
+              {
+                kind: "return",
+                expr: {
+                  kind: "field-read",
+                  className: "Box",
+                  field: "#v",
+                  object: { kind: "self" },
+                },
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+  });
+
+  test.each([
+    [
+      "assigning a field twice on one path",
+      "  constructor(v: number) {\n    this.#v = v;\n    this.#v = v + 1;\n  }",
+      "assigns field '#v' more than once on a path",
+    ],
+    [
+      "assigning a field on one path only",
+      "  constructor(v: number) {\n    if (v < 0) {\n      this.#v = 0;\n    }\n  }",
+      "assigns field '#v' on only some paths",
+    ],
+    [
+      "never assigning a field",
+      "  constructor(v: number) {\n    if (v < 0) {\n      throw new RangeError('x');\n    }\n  }",
+      "never assigns field '#v'",
+    ],
+  ])("%s degrades the class", (_label, ctor, fragment) => {
+    const { szs, reason } = classClassifiedOf(classWith(ctor));
+    expect(szs).toBe("Inappropriate");
+    expect(reason).toContain(fragment);
+    expect(reason).toContain(
+      "the class model requires every field assigned exactly once on every path",
+    );
+  });
+
+  test("a class with no constructor degrades naming the gap", () => {
+    const src = classWith("");
+    const { szs, reason } = classClassifiedOf(src);
+    expect(szs).toBe("Inappropriate");
+    expect(reason).toBe(
+      "'C#v' could not be modeled: class 'C' has no constructor implementation to model",
+    );
+  });
+
+  const CTOR = "  constructor(v: number) {\n    this.#v = v;\n  }";
+
+  test("an extends clause degrades the class", () => {
+    const src = [
+      "class B {}",
+      "export class C extends B {",
+      "  #v: number;",
+      CTOR,
+      "  /** @ensures{p} forall (x: number) { Object.is(new C(x).v, x) } */",
+      "  get v(): number {",
+      "    return this.#v;",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const { szs, reason } = classClassifiedOf(src);
+    expect(szs).toBe("Inappropriate");
+    expect(reason).toMatch(/unmapped TypeScript construct/);
+  });
+
+  test.each([
+    [
+      "a setter",
+      classWith(`${CTOR}\n  set w(n: number) {\n    n;\n  }`),
+      /unmapped TypeScript construct/,
+    ],
+    [
+      "a non-number field",
+      [
+        "export class C {",
+        "  #v: string;",
+        "  constructor(v: string) {",
+        "    this.#v = v;",
+        "  }",
+        "  /** @ensures{p} forall (x: number) { Object.is(new C(x).v, x) } */",
+        "  get v(): number {",
+        "    return 1;",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+      /unmapped TypeScript construct 'StringKeyword'/,
+    ],
+    [
+      "a field with an initializer",
+      [
+        "export class C {",
+        "  #v: number = 0;",
+        CTOR,
+        "  /** @ensures{p} forall (x: number) { Object.is(new C(x).v, x) } */",
+        "  get v(): number {",
+        "    return this.#v;",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+      /unmapped TypeScript construct/,
+    ],
+    [
+      "a parameter property",
+      [
+        "export class C {",
+        "  constructor(readonly v: number) {}",
+        "  /** @ensures{p} forall (x: number) { Object.is(new C(x).v, x) } */",
+        "  get w(): number {",
+        "    return 1;",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+      /unmapped TypeScript construct 'ReadonlyKeyword'/,
+    ],
+    [
+      "an index signature",
+      classWith(`${CTOR}\n  [k: string]: number;`),
+      /unmapped TypeScript construct/,
+    ],
+  ])("%s degrades the class", (_label, src, pattern) => {
+    const { szs, reason } = classClassifiedOf(src);
+    expect(szs).toBe("Inappropriate");
+    expect(reason).toMatch(pattern);
+  });
+
+  test("a method degrades alone; the class still models", () => {
+    const src = [
+      "export class Box {",
+      "  #v: number;",
+      "  constructor(v: number) {",
+      "    this.#v = v;",
+      "  }",
+      "  /** @ensures{q} forall (x: number) { Object.is(twice(x), x) } */",
+      "  twice(n: number): number {",
+      "    return n + n;",
+      "  }",
+      "  get v(): number {",
+      "    return this.#v;",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(classified).toHaveLength(1);
+    expect(classified[0]!.szs).toBe("Inappropriate");
+    expect(classified[0]!.reason).toMatch(
+      /'Box#twice' could not be modeled: unmapped TypeScript construct 'MethodDeclaration'/,
+    );
+    expect(emission.declarations).toHaveLength(1);
+    expect(emission.declarations[0]!.kind).toBe("class");
+  });
+
+  test("a static member degrades alone; the class still models", () => {
+    const src = [
+      "export class Box {",
+      "  #v: number;",
+      "  constructor(v: number) {",
+      "    this.#v = v;",
+      "  }",
+      "  /** @ensures{q} forall (x: number) { Object.is(make(x), x) } */",
+      "  static make(n: number): number {",
+      "    return n;",
+      "  }",
+      "  get v(): number {",
+      "    return this.#v;",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(classified).toHaveLength(1);
+    expect(classified[0]!.reason).toMatch(/'Box\.make' could not be modeled/);
+    expect(emission.declarations).toHaveLength(1);
+  });
+
+  test("a getter assigning a field degrades alone as immutability", () => {
+    const src = [
+      "export class Box {",
+      "  #v: number;",
+      "  constructor(v: number) {",
+      "    this.#v = v;",
+      "  }",
+      "  /** @ensures{q} forall (x: number) { Object.is(new Box(x).bad, x) } */",
+      "  get bad(): number {",
+      "    this.#v = 1;",
+      "    return this.#v;",
+      "  }",
+      "  get v(): number {",
+      "    return this.#v;",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(classified).toHaveLength(1);
+    expect(classified[0]!.szs).toBe("Inappropriate");
+    expect(classified[0]!.reason).toBe(
+      "'Box#bad' could not be modeled: 'Box#bad' assigns field '#v' outside " +
+        "the constructor; instances are immutable after construction",
+    );
+    const cls = emission.declarations[0]!;
+    assert(cls.kind === "class");
+    expect(cls.getters.map((g) => g.name)).toEqual(["v"]);
+  });
+
+  test("a throwing guard with a branch assignment models", () => {
+    const src = [
+      "export class Gate {",
+      "  #lo: number;",
+      "  constructor(a: number) {",
+      "    if (a < 0) {",
+      "      throw new RangeError('negative');",
+      "    } else {",
+      "      this.#lo = a;",
+      "    }",
+      "  }",
+      "  get lo(): number {",
+      "    return this.#lo;",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    const cls = emission.declarations[0]!;
+    assert(cls.kind === "class");
+    expect(cls.ctor.body).toEqual([
+      {
+        kind: "if",
+        cond: {
+          kind: "binop",
+          op: "<",
+          left: { kind: "id", name: "a" },
+          right: { kind: "num", lit: "0" },
+        },
+        then: [{ kind: "throw", error: "RangeError" }],
+        else: [
+          { kind: "field-set", field: "#lo", expr: { kind: "id", name: "a" } },
+        ],
+      },
     ]);
   });
 });

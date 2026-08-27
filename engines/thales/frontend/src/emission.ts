@@ -47,7 +47,23 @@ export type EmitExpr =
   | { kind: "math-abs"; arg: EmitExpr }
   | { kind: "number-is-finite"; arg: EmitExpr }
   | { kind: "number-is-nan"; arg: EmitExpr }
-  | { kind: "call"; callee: string; module?: string; args: EmitExpr[] };
+  | { kind: "call"; callee: string; module?: string; args: EmitExpr[] }
+  | { kind: "new"; className: string; module?: string; args: EmitExpr[] }
+  | {
+      kind: "getter-read";
+      className: string;
+      module?: string;
+      name: string;
+      object: EmitExpr;
+    }
+  | {
+      kind: "field-read";
+      className: string;
+      module?: string;
+      field: string;
+      object: EmitExpr;
+    }
+  | { kind: "self" };
 
 /** A statement in the shapes the plain-Lean emitter renders as Lean
  * do-notation: `const` and mutable `let` locals, reassignment, `if`/`else`
@@ -60,7 +76,8 @@ export type EmitStmt =
   | { kind: "const"; name: string; init: EmitExpr }
   | { kind: "let"; name: string; init: EmitExpr }
   | { kind: "assign"; name: string; expr: EmitExpr }
-  | { kind: "if"; cond: EmitExpr; then: EmitStmt[]; else?: EmitStmt[] };
+  | { kind: "if"; cond: EmitExpr; then: EmitStmt[]; else?: EmitStmt[] }
+  | { kind: "field-set"; field: string; expr: EmitExpr };
 
 export interface EmitFunction {
   kind: "function";
@@ -72,6 +89,36 @@ export interface EmitFunction {
   /** The declaration's original text, echoed as comments above the def. */
   source: string;
   body: EmitStmt[];
+}
+
+export interface EmitGetter {
+  name: string;
+  body: EmitStmt[];
+}
+
+/** A class as the emitter renders it: a structure over its fields, a
+ * constructor that assigns each exactly once, and one function per
+ * modeled getter. */
+export interface EmitClass {
+  kind: "class";
+  name: string;
+  /** The defining module's entry-relative path; absent for the entry. */
+  module?: string;
+  /** Field spellings in declaration order; a private one keeps its '#'. */
+  fields: string[];
+  source: string;
+  ctor: { params: string[]; body: EmitStmt[] };
+  getters: EmitGetter[];
+}
+
+export type EmitDecl = EmitFunction | EmitClass;
+
+/** What a use of a class needs to know: its fields in declaration order,
+ * the getters that modeled, and its constructor's arity. */
+export interface ClassShape {
+  fields: string[];
+  getters: ReadonlySet<string>;
+  ctorArity: number;
 }
 
 /** A binder's denoted domain: a finite half-open integer range, the whole
@@ -109,7 +156,7 @@ export interface EmitObligation {
  * obligations over them, in source order. */
 export interface Emission {
   file: string;
-  declarations: EmitFunction[];
+  declarations: EmitDecl[];
   obligations: EmitObligation[];
 }
 
@@ -181,6 +228,14 @@ function unwrapParens(e: ts.Expression): ts.Expression {
   return ts.isParenthesizedExpression(e) ? unwrapParens(e.expression) : e;
 }
 
+/** A `this.F` read: the only receiver a member body can name. */
+function isThisAccess(e: ts.Expression): e is ts.PropertyAccessExpression {
+  return (
+    ts.isPropertyAccessExpression(e) &&
+    e.expression.kind === ts.SyntaxKind.ThisKeyword
+  );
+}
+
 /** A folded negative numeric literal, the one prefix-minus shape that is
  * a literal rather than an operator application. */
 function negatedLiteral(e: ts.Expression): ts.NumericLiteral | undefined {
@@ -219,6 +274,7 @@ function numericShaped(e: ts.Expression, scope: WalkScope): boolean {
   if (isUnaryArith(u)) return true;
   if (ts.isBinaryExpression(u))
     return ARITH_OPERATORS.has(u.operatorToken.getText());
+  if (isThisAccess(u)) return true;
   const builtin = builtinCall(u, scope);
   if (builtin !== undefined) return builtin.ty === "num";
   return ts.isCallExpression(u) && ts.isIdentifier(u.expression);
@@ -319,6 +375,8 @@ function findConstruct(
     }
     return undefined;
   }
+  // A field read is shaped only where `this` denotes something.
+  if (isThisAccess(e) && scope.self !== undefined) return undefined;
   return constructAt(e, e.kind, sf);
 }
 
@@ -383,11 +441,14 @@ interface WalkScope {
   vars: ReadonlySet<string>;
   mapped: ReadonlyMap<string, number>;
   failed: ReadonlyMap<string, FailedDecl>;
+  classes: ReadonlyMap<string, ClassShape>;
   /** Source spellings this module binds elsewhere: imported names, and
    * only those. A spelling absent here is this module's own. */
   names: ReadonlyMap<string, ModelRef>;
   /** This module's qualifier; empty for the entry file. */
   module: string;
+  /** Set inside a getter body, where `this` denotes the instance. */
+  self?: { ref: ModelRef; shape: ClassShape };
 }
 
 /** Whether the module itself binds a spelling: a top-level declaration or
@@ -563,6 +624,31 @@ function walkTyped(
     }
     return { kind: builtin.kind, arg };
   }
+  if (isThisAccess(e)) {
+    if (scope.self === undefined) {
+      throw new ModelError("'this' has no model outside a class member");
+    }
+    const field = e.name.text;
+    if (!scope.self.shape.fields.includes(field)) {
+      throw new ModelError(
+        `'this.${field}' does not name a field of '${scope.self.ref.name}'`,
+      );
+    }
+    if (expected !== "num") {
+      throw new ModelError(
+        `field '${field}' is a number, not ${describeTy(expected)}`,
+      );
+    }
+    return {
+      kind: "field-read",
+      className: scope.self.ref.name,
+      ...(scope.self.ref.module !== ""
+        ? { module: scope.self.ref.module }
+        : {}),
+      field,
+      object: { kind: "self" },
+    };
+  }
   if (ts.isCallExpression(e) && ts.isIdentifier(e.expression)) {
     const ref = refOf(scope, e.expression.text);
     const key = modelKey(ref);
@@ -688,6 +774,7 @@ type TStmt =
   | { t: "throw"; error: string }
   | { t: "decl"; mutable: boolean; name: string; init: ts.Expression }
   | { t: "assign"; name: string; expr: ts.Expression }
+  | { t: "field-set"; field: string; expr: ts.Expression }
   | {
       t: "if";
       cond: { expr: ts.Expression } | { opaque: FailedDecl };
@@ -751,6 +838,17 @@ function assignStmt(e: ts.Expression, locals: Locals): TStmt | undefined {
   return { t: "assign", name: target.text, expr: e.right };
 }
 
+/** A `this.F = e` statement, F spelled with or without '#'. */
+function thisFieldAssignment(
+  e: ts.Expression,
+): { field: string; expr: ts.Expression } | undefined {
+  if (!ts.isBinaryExpression(e)) return undefined;
+  if (e.operatorToken.kind !== ts.SyntaxKind.EqualsToken) return undefined;
+  const target = unwrapParens(e.left);
+  if (!isThisAccess(target)) return undefined;
+  return { field: target.name.text, expr: e.right };
+}
+
 /** One statement's `TStmt`s, mirroring the old transcriber's fallthrough:
  * whatever it cannot say becomes the opaque node it would have emitted. */
 function structureStmt(
@@ -758,6 +856,9 @@ function structureStmt(
   sf: ts.SourceFile,
   locals: Locals,
   scope: WalkScope,
+  /** Set only inside a constructor body, where `this.F = e` is a field
+   * assignment rather than an opaque statement. */
+  ctorFields?: ReadonlySet<string>,
 ): TStmt[] {
   if (ts.isReturnStatement(s)) {
     // `return;` yields undefined, which a `number` function has no value
@@ -775,6 +876,11 @@ function structureStmt(
     if (stmts !== undefined) return stmts;
   }
   if (ts.isExpressionStatement(s)) {
+    if (ctorFields !== undefined) {
+      const set = thisFieldAssignment(s.expression);
+      if (set !== undefined && ctorFields.has(set.field))
+        return [{ t: "field-set", field: set.field, expr: set.expr }];
+    }
     const stmt = assignStmt(s.expression, locals);
     if (stmt !== undefined) return [stmt];
   }
@@ -791,7 +897,9 @@ function structureStmt(
     const arm = (stmt: ts.Statement): TStmt[] => {
       const body = ts.isBlock(stmt) ? stmt.statements : [stmt];
       const armLocals: Locals = new Map(locals);
-      return body.flatMap((b) => structureStmt(b, sf, armLocals, scope));
+      return body.flatMap((b) =>
+        structureStmt(b, sf, armLocals, scope, ctorFields),
+      );
     };
     const thenArm = arm(s.thenStatement);
     if (s.elseStatement === undefined)
@@ -818,6 +926,7 @@ function treeExprs(
         into.push(s.init);
         break;
       case "assign":
+      case "field-set":
         into.push(s.expr);
         break;
       case "if":
@@ -856,7 +965,8 @@ function treeConstruct(
         if (found !== undefined) return found;
         break;
       }
-      case "assign": {
+      case "assign":
+      case "field-set": {
         const found = findConstruct(s.expr, sf, scope);
         if (found !== undefined) return found;
         break;
@@ -945,6 +1055,11 @@ function lowerTree(
       const tail = lowerTree(rest, vars, k, scope, sf);
       return [{ kind: "assign", name: s.name, expr }, ...tail];
     }
+    case "field-set": {
+      const expr = walk(s.expr, "num", vars);
+      const tail = lowerTree(rest, vars, k, scope, sf);
+      return [{ kind: "field-set", field: s.field, expr }, ...tail];
+    }
     /* v8 ignore start -- an opaque statement or condition is unreachable
        here: the construct scan already degraded the declaration. The throw
        mirrors the old elaborator's, kept for the same defense. */
@@ -1003,14 +1118,437 @@ function lowerTree(
   }
 }
 
+/** The pre-scans over a whole statement tree, in the old elaborator's
+ * order — opaque constructs, then refused operators, then
+ * construct-failed callees — dead code included. */
+function bodyPrescan(
+  tree: readonly TStmt[],
+  sf: ts.SourceFile,
+  scope: WalkScope,
+): FailedDecl | undefined {
+  const construct = treeConstruct(tree, sf, scope);
+  if (construct !== undefined) return construct;
+  const exprs = treeExprs(tree);
+  for (const e of exprs) {
+    const refused = findRefusedOp(e);
+    if (refused !== undefined) return refused;
+  }
+  return failedCalleeIn(
+    exprs.flatMap((e) => callNames(e, scope)),
+    scope,
+  );
+}
+
+/** The synthesized vocabulary a member name may not take: the
+ * constructor model, and the names Lean's structure command generates. */
+const RESERVED_MEMBERS = new Set([
+  "construct",
+  "mk",
+  "rec",
+  "recOn",
+  "casesOn",
+  "brecOn",
+  "below",
+  "noConfusion",
+  "noConfusionType",
+]);
+
+class CtorPrecondition extends Error {}
+
+const PRECONDITION =
+  "the class model requires every field assigned exactly once on every path";
+
+/** Fields assigned on the falling-through paths of `stmts`, or "leaves"
+ * when every path throws. Exactly-once is the checked precondition. */
+function assignedFields(
+  stmts: readonly TStmt[],
+  before: ReadonlySet<string>,
+  className: string,
+): Set<string> | "leaves" {
+  let assigned = new Set(before);
+  for (const s of stmts) {
+    if (s.t === "field-set") {
+      if (assigned.has(s.field)) {
+        throw new CtorPrecondition(
+          `the constructor of '${className}' assigns field '${s.field}' ` +
+            `more than once on a path; ${PRECONDITION}`,
+        );
+      }
+      assigned.add(s.field);
+    } else if (s.t === "throw") {
+      return "leaves";
+    } else if (s.t === "if") {
+      const thn = assignedFields(s.then, assigned, className);
+      const els = assignedFields(s.else ?? [], assigned, className);
+      if (thn === "leaves" && els === "leaves") return "leaves";
+      if (thn === "leaves") assigned = els as Set<string>;
+      else if (els === "leaves") assigned = thn;
+      else {
+        const diff = [...thn]
+          .filter((f) => !els.has(f))
+          .concat([...els].filter((f) => !thn.has(f)));
+        if (diff.length > 0) {
+          throw new CtorPrecondition(
+            `the constructor of '${className}' assigns field '${diff[0]}' ` +
+              `on only some paths; ${PRECONDITION}`,
+          );
+        }
+        assigned = thn;
+      }
+    }
+  }
+  return assigned;
+}
+
+/** The first `return` in a constructor body: a constructor's result is
+ * the instance it built, so an explicit one is outside the slice. */
+function treeReturn(stmts: readonly TStmt[]): ts.Expression | undefined {
+  for (const s of stmts) {
+    if (s.t === "return") return s.expr;
+    if (s.t === "if") {
+      const found = treeReturn(s.then) ?? treeReturn(s.else ?? []);
+      if (found !== undefined) return found;
+    }
+  }
+  return undefined;
+}
+
+/** The first field a statement list assigns through `this`, arms
+ * included — a write only a constructor may make. */
+function firstThisAssignment(
+  stmts: readonly ts.Statement[],
+  fields: ReadonlySet<string>,
+): string | undefined {
+  const arm = (x: ts.Statement) => (ts.isBlock(x) ? x.statements : [x]);
+  for (const s of stmts) {
+    if (ts.isExpressionStatement(s)) {
+      const set = thisFieldAssignment(s.expression);
+      if (set !== undefined && fields.has(set.field)) return set.field;
+    }
+    if (ts.isIfStatement(s)) {
+      const found =
+        firstThisAssignment(arm(s.thenStatement), fields) ??
+        (s.elseStatement !== undefined
+          ? firstThisAssignment(arm(s.elseStatement), fields)
+          : undefined);
+      if (found !== undefined) return found;
+    }
+  }
+  return undefined;
+}
+
+function memberNameFailure(
+  className: string,
+  member: string,
+  what: string,
+): FailedDecl {
+  return {
+    construct: "class-member-name",
+    reason: `class '${className}' ${what} '${member}'`,
+  };
+}
+
+/** A constructor parameter passes the function-parameter check; a
+ * modifier on it is a parameter property, which declares a field the
+ * body never assigns. */
+function ctorParamFailure(
+  p: ts.ParameterDeclaration,
+  sf: ts.SourceFile,
+): FailedDecl | undefined {
+  const mods = ts.getModifiers(p) ?? [];
+  if (mods.length > 0) return constructAt(mods[0]!, mods[0]!.kind, sf);
+  if (!ts.isIdentifier(p.name)) return constructAt(p.name, p.name.kind, sf);
+  if (p.dotDotDotToken !== undefined)
+    return constructAt(p.dotDotDotToken, p.dotDotDotToken.kind, sf);
+  if (p.questionToken !== undefined || p.initializer !== undefined)
+    return constructAt(p, p.kind, sf);
+  if (p.type === undefined) return constructAt(p, p.kind, sf);
+  if (p.type.kind !== ts.SyntaxKind.NumberKeyword)
+    return constructAt(p.type, p.type.kind, sf);
+  return undefined;
+}
+
+/** The modifier kinds a field may carry. `static` is handled apart: a
+ * static field degrades alone, not with its class. */
+const FIELD_MODIFIERS = new Set([
+  ts.SyntaxKind.PublicKeyword,
+  ts.SyntaxKind.PrivateKeyword,
+  ts.SyntaxKind.ProtectedKeyword,
+  ts.SyntaxKind.ReadonlyKeyword,
+]);
+
+function hasModifier(m: ts.ClassElement, kind: ts.SyntaxKind): boolean {
+  return (ts.getModifiers(m as ts.HasModifiers) ?? []).some(
+    (x) => x.kind === kind,
+  );
+}
+
+interface ClassWalk {
+  emit: EmitClass;
+  shape: ClassShape;
+  /** Members that degrade alone, by their full model key. */
+  memberFailed: Map<string, FailedDecl>;
+}
+
+/** A class declaration's IR, or the failure that degrades the whole
+ * class. Members outside the slice degrade alone unless the constructor
+ * or a field is what fails: those are the model's spine. */
+function walkClass(
+  cls: ts.ClassDeclaration,
+  sf: ts.SourceFile,
+  c: EmitClosure,
+  names: ReadonlyMap<string, ModelRef>,
+  qualifier: string,
+): ClassWalk | FailedDecl {
+  const className = cls.name!.text;
+  const memberKey = (member: string, isStatic = false) =>
+    modelKey({
+      module: qualifier,
+      name: qualifiedName(member, className, isStatic),
+    });
+  const decorators = ts.getDecorators(cls) ?? [];
+  if (decorators[0] !== undefined)
+    return constructAt(decorators[0], decorators[0].kind, sf);
+  const heritage = cls.heritageClauses?.[0];
+  if (heritage !== undefined) return constructAt(heritage, heritage.kind, sf);
+  const typeParam = cls.typeParameters?.[0];
+  if (typeParam !== undefined)
+    return constructAt(typeParam, typeParam.kind, sf);
+  for (const m of ts.getModifiers(cls) ?? []) {
+    if (
+      m.kind === ts.SyntaxKind.AbstractKeyword ||
+      m.kind === ts.SyntaxKind.DeclareKeyword
+    ) {
+      return constructAt(m, m.kind, sf);
+    }
+  }
+
+  const fields: string[] = [];
+  const ctors: ts.ConstructorDeclaration[] = [];
+  const getterDecls: ts.GetAccessorDeclaration[] = [];
+  const memberFailed = new Map<string, FailedDecl>();
+  for (const m of cls.members) {
+    if (ts.isSemicolonClassElement(m)) continue;
+    const memberDecorators = ts.getDecorators(m as ts.HasDecorators) ?? [];
+    if (memberDecorators[0] !== undefined)
+      return constructAt(memberDecorators[0], memberDecorators[0].kind, sf);
+    if (
+      ts.isIndexSignatureDeclaration(m) ||
+      ts.isClassStaticBlockDeclaration(m) ||
+      ts.isSetAccessorDeclaration(m)
+    ) {
+      return constructAt(m.name ?? m, m.kind, sf);
+    }
+    if (m.name !== undefined && ts.isComputedPropertyName(m.name))
+      return constructAt(m.name, m.name.kind, sf);
+    const isStatic = hasModifier(m, ts.SyntaxKind.StaticKeyword);
+    const spelling =
+      m.name !== undefined &&
+      (ts.isIdentifier(m.name) || ts.isPrivateIdentifier(m.name))
+        ? m.name.text
+        : undefined;
+    if (ts.isConstructorDeclaration(m)) {
+      // A bodiless overload signature declares nothing, like a function's.
+      if (m.body !== undefined) ctors.push(m);
+      continue;
+    }
+    if (spelling === undefined) return constructAt(m, m.kind, sf);
+    // Every static member degrades alone, whatever kind it is.
+    if (isStatic) {
+      memberFailed.set(memberKey(spelling, true), constructAt(m, m.kind, sf));
+      continue;
+    }
+    if (ts.isPropertyDeclaration(m)) {
+      for (const mod of ts.getModifiers(m) ?? []) {
+        if (!FIELD_MODIFIERS.has(mod.kind))
+          return constructAt(mod, mod.kind, sf);
+      }
+      if (m.initializer !== undefined || m.questionToken !== undefined)
+        return constructAt(m, m.kind, sf);
+      if (m.type === undefined) return constructAt(m, m.kind, sf);
+      if (m.type.kind !== ts.SyntaxKind.NumberKeyword)
+        return constructAt(m.type, m.type.kind, sf);
+      if (RESERVED_MEMBERS.has(spelling))
+        return memberNameFailure(className, spelling, "reserves the name");
+      if (fields.includes(spelling))
+        return memberNameFailure(className, spelling, "declares two fields");
+      fields.push(spelling);
+      continue;
+    }
+    if (ts.isGetAccessorDeclaration(m)) {
+      const failure = getterFailure(m, className, spelling, sf);
+      if (failure !== undefined) memberFailed.set(memberKey(spelling), failure);
+      else getterDecls.push(m);
+      continue;
+    }
+    // Methods, and anything else a class body can hold, degrade alone.
+    memberFailed.set(memberKey(spelling), constructAt(m, m.kind, sf));
+  }
+  for (const g of getterDecls) {
+    const spelling = (g.name as ts.Identifier).text;
+    if (fields.includes(spelling))
+      return memberNameFailure(
+        className,
+        spelling,
+        "declares both a field and a getter named",
+      );
+  }
+  if (ctors.length === 0) {
+    return {
+      construct: "ClassDeclaration",
+      reason: `class '${className}' has no constructor implementation to model`,
+    };
+  }
+  if (ctors[1] !== undefined) return constructAt(ctors[1], ctors[1].kind, sf);
+  const ctor = ctors[0]!;
+  for (const p of ctor.parameters) {
+    const failure = ctorParamFailure(p, sf);
+    if (failure !== undefined) return failure;
+  }
+  const ctorParams = ctor.parameters.map((p) => (p.name as ts.Identifier).text);
+  const base = {
+    mapped: c.mapped,
+    failed: c.failed,
+    classes: c.classes,
+    names,
+    module: qualifier,
+  };
+  const ctorScope: WalkScope = { ...base, vars: new Set(ctorParams) };
+  const fieldSet = new Set(fields);
+  const ctorLocals: Locals = new Map(
+    ctorParams.map((p) => [p, "mutable" as const]),
+  );
+  const tree = ctor.body!.statements.flatMap((s) =>
+    structureStmt(s, sf, ctorLocals, ctorScope, fieldSet),
+  );
+  const returned = treeReturn(tree);
+  if (returned !== undefined) {
+    const stmt = returned.parent;
+    return constructAt(stmt, stmt.kind, sf);
+  }
+  // The precondition is a statement about the constructor, so it is
+  // checked ahead of the expression-level scans.
+  let ctorBody: EmitStmt[];
+  try {
+    const assigned = assignedFields(tree, new Set(), className);
+    if (assigned !== "leaves") {
+      const missing = fields.find((f) => !assigned.has(f));
+      if (missing !== undefined) {
+        return {
+          construct: "constructor",
+          reason:
+            `the constructor of '${className}' never assigns field ` +
+            `'${missing}'; ${PRECONDITION}`,
+        };
+      }
+    }
+    const failure = bodyPrescan(tree, sf, ctorScope);
+    if (failure !== undefined) return failure;
+    // Falling off the end is a constructor's normal exit: the renderer
+    // appends the instance return.
+    ctorBody = lowerTree(tree, ctorParams, () => {}, ctorScope, sf);
+  } catch (err) {
+    if (err instanceof CtorPrecondition)
+      return { construct: "constructor", reason: err.message };
+    if (err instanceof ModelError) return { reason: err.message };
+    /* v8 ignore next 2 -- the walk throws nothing else */
+    throw err;
+  }
+
+  const shape: ClassShape = {
+    fields,
+    getters: new Set(getterDecls.map((g) => (g.name as ts.Identifier).text)),
+    ctorArity: ctorParams.length,
+  };
+  const self = { ref: { module: qualifier, name: className }, shape };
+  const getters: EmitGetter[] = [];
+  for (const g of getterDecls) {
+    const spelling = (g.name as ts.Identifier).text;
+    const written = firstThisAssignment(g.body!.statements, fieldSet);
+    if (written !== undefined) {
+      const member = qualifiedName(spelling, className);
+      memberFailed.set(memberKey(spelling), {
+        construct: "this-assignment",
+        reason:
+          `'${member}' assigns field '${written}' outside the constructor; ` +
+          `instances are immutable after construction`,
+      });
+      continue;
+    }
+    const scope: WalkScope = { ...base, vars: new Set(), self };
+    const body = g.body!.statements.flatMap((st) =>
+      structureStmt(st, sf, new Map(), scope),
+    );
+    const failure = bodyPrescan(body, sf, scope);
+    if (failure !== undefined) {
+      memberFailed.set(memberKey(spelling), failure);
+      continue;
+    }
+    try {
+      getters.push({
+        name: spelling,
+        body: lowerTree(
+          body,
+          [],
+          () => {
+            throw new ModelError("the body must return on every path");
+          },
+          scope,
+          sf,
+        ),
+      });
+    } catch (err) {
+      if (err instanceof ModelError)
+        memberFailed.set(memberKey(spelling), { reason: err.message });
+      /* v8 ignore next 2 -- the walk throws nothing else */
+      else throw err;
+    }
+  }
+  return {
+    emit: {
+      kind: "class",
+      name: className,
+      ...(qualifier !== "" ? { module: qualifier } : {}),
+      source: cls.getText(sf),
+      fields,
+      ctor: { params: ctorParams, body: ctorBody },
+      getters,
+    },
+    shape: { ...shape, getters: new Set(getters.map((g) => g.name)) },
+    memberFailed,
+  };
+}
+
+/** A getter outside the slice degrades alone: privacy, a signature the
+ * model cannot read, or a name the model reserves. */
+function getterFailure(
+  g: ts.GetAccessorDeclaration,
+  className: string,
+  spelling: string,
+  sf: ts.SourceFile,
+): FailedDecl | undefined {
+  if (
+    ts.isPrivateIdentifier(g.name) ||
+    hasModifier(g, ts.SyntaxKind.PrivateKeyword)
+  )
+    return constructAt(g.name, g.kind, sf);
+  if (RESERVED_MEMBERS.has(spelling))
+    return memberNameFailure(className, spelling, "reserves the name");
+  if (g.parameters.length > 0 || g.body === undefined)
+    return constructAt(g, g.kind, sf);
+  if (g.type === undefined) return constructAt(g, g.kind, sf);
+  if (g.type.kind !== ts.SyntaxKind.NumberKeyword)
+    return constructAt(g.type, g.type.kind, sf);
+  return undefined;
+}
+
 /** A function declaration's IR, or its failure. The slice covers `const`
  * and `let` locals, reassignment, `if`/`else`, `throw`, and `return`;
  * anything beyond it must degrade, not approximate. */
 function walkFunction(
   fn: ts.FunctionDeclaration,
   sf: ts.SourceFile,
-  mapped: ReadonlyMap<string, number>,
-  failed: ReadonlyMap<string, FailedDecl>,
+  c: EmitClosure,
   names: ReadonlyMap<string, ModelRef>,
   module: string,
 ): EmitFunction | FailedDecl {
@@ -1019,8 +1557,9 @@ function walkFunction(
   const params = fn.parameters.map((p) => (p.name as ts.Identifier).text);
   const scope: WalkScope = {
     vars: new Set(params),
-    mapped,
-    failed,
+    mapped: c.mapped,
+    failed: c.failed,
+    classes: c.classes,
     names,
     module,
   };
@@ -1029,21 +1568,8 @@ function walkFunction(
   const tree = fn.body!.statements.flatMap((s) =>
     structureStmt(s, sf, locals, scope),
   );
-  // The pre-scans cover the whole body in the old elaborator's order —
-  // opaque constructs, then refused operators, then construct-failed
-  // callees — dead code included.
-  const construct = treeConstruct(tree, sf, scope);
-  if (construct !== undefined) return construct;
-  const exprs = treeExprs(tree);
-  for (const e of exprs) {
-    const refused = findRefusedOp(e);
-    if (refused !== undefined) return refused;
-  }
-  const callee = failedCalleeIn(
-    exprs.flatMap((e) => callNames(e, scope)),
-    scope,
-  );
-  if (callee !== undefined) return callee;
+  const prescan = bodyPrescan(tree, sf, scope);
+  if (prescan !== undefined) return prescan;
   try {
     const body = lowerTree(
       tree,
@@ -1210,6 +1736,7 @@ function obligationPayload(
   formula: string,
   mapped: ReadonlyMap<string, number>,
   failed: ReadonlyMap<string, FailedDecl>,
+  classes: ReadonlyMap<string, ClassShape>,
   names: ReadonlyMap<string, ModelRef>,
   module: string,
 ): PayloadResult {
@@ -1254,6 +1781,7 @@ function obligationPayload(
       vars: new Set(binders.map((b) => b.varName)),
       mapped,
       failed,
+      classes,
       names,
       module,
     };
@@ -1349,9 +1877,10 @@ interface EmitClosure {
   /** Modules whose walk has not finished: an import reaching back into
    * one closes a cycle. */
   active: Set<string>;
-  declarations: EmitFunction[];
+  declarations: EmitDecl[];
   mapped: Map<string, number>;
   failed: Map<string, FailedDecl>;
+  classes: Map<string, ClassShape>;
 }
 
 /** The top-level names a non-import declaration binds — what a reference
@@ -1462,14 +1991,7 @@ function walkEmitModule(
   for (const stmt of sf.statements) {
     if (ts.isFunctionDeclaration(stmt)) {
       if (stmt.name === undefined) continue;
-      const walked = walkFunction(
-        stmt,
-        sf,
-        c.mapped,
-        c.failed,
-        names,
-        qualifier,
-      );
+      const walked = walkFunction(stmt, sf, c, names, qualifier);
       if ("kind" in walked && walked.kind === "function") {
         c.declarations.push(walked);
         c.mapped.set(key(stmt.name.text), walked.params.length);
@@ -1481,7 +2003,23 @@ function walkEmitModule(
     if (ts.isClassDeclaration(stmt)) {
       if (stmt.name === undefined) continue;
       const className = stmt.name.text;
-      c.failed.set(key(className), constructAt(stmt.name, stmt.kind, sf));
+      const walked = walkClass(stmt, sf, c, names, qualifier);
+      if ("emit" in walked) {
+        c.declarations.push(walked.emit);
+        c.classes.set(key(className), walked.shape);
+        c.mapped.set(
+          key(qualifiedName("constructor", className)),
+          walked.shape.ctorArity,
+        );
+        for (const g of walked.shape.getters) {
+          c.mapped.set(key(qualifiedName(g, className)), 0);
+        }
+        for (const [k, v] of walked.memberFailed) c.failed.set(k, v);
+        continue;
+      }
+      // A class-level failure is every member's failure: the model has no
+      // structure to hang a surviving member on.
+      c.failed.set(key(className), walked);
       for (const member of stmt.members) {
         const name = member.name;
         if (name === undefined || !ts.isIdentifier(name)) continue;
@@ -1490,7 +2028,7 @@ function walkEmitModule(
         ).some((m) => m.kind === ts.SyntaxKind.StaticKeyword);
         c.failed.set(
           key(qualifiedName(name.text, className, isStatic)),
-          constructAt(name, stmt.kind, sf),
+          walked,
         );
       }
       continue;
@@ -1540,6 +2078,7 @@ export function emitModule(
     declarations: [],
     mapped: new Map(),
     failed: new Map(),
+    classes: new Map(),
   };
   // The entry's qualifier is empty: its names are the ones annotations
   // are written about, so they keep their source spelling.
@@ -1574,7 +2113,14 @@ export function emitModule(
       });
       continue;
     }
-    const result = obligationPayload(a.formula, mapped, failed, names, module);
+    const result = obligationPayload(
+      a.formula,
+      mapped,
+      failed,
+      closure.classes,
+      names,
+      module,
+    );
     if (result.kind === "classified") {
       classified.push({
         annotation: a,

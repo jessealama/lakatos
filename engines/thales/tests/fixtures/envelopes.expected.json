@@ -17,7 +17,7 @@
       "function": "Counter#bump",
       "property": "bumps",
       "szs": "Inappropriate",
-      "reason": "'Counter#bump' could not be modeled: unmapped TypeScript construct 'ClassDeclaration' at 13:3"
+      "reason": "'Counter#bump' could not be modeled: class 'Counter' has no constructor implementation to model"
     }
   ],
   "engines/thales/tests/conformance/inappropriate/class-binder.ts": [
@@ -322,7 +322,7 @@
       "function": "Counter#bump",
       "property": "bumps",
       "szs": "Inappropriate",
-      "reason": "'Counter#bump' could not be modeled: unmapped TypeScript construct 'ClassDeclaration' at 3:3"
+      "reason": "'Counter#bump' could not be modeled: class 'Counter' has no constructor implementation to model"
     }
   ],
   "engines/thales/tests/conformance/inappropriate/exponentiation.ts": [

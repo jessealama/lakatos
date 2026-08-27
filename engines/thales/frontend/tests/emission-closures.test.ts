@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { assert, describe, expect, test } from "vitest";
 import * as path from "node:path";
 import { emitModule } from "../src/emission.js";
 import { type ModuleReader } from "../src/module-graph.js";
@@ -49,6 +49,7 @@ describe("emission import closures", () => {
       reader({ "helper.mts": HELPER }),
     );
     const twice = emission.declarations.find((d) => d.name === "twice")!;
+    assert(twice.kind === "function");
     const ret = twice.body[0]!;
     expect(ret.kind).toBe("return");
     expect(JSON.stringify(ret)).toContain('"module":"helper.mts"');
