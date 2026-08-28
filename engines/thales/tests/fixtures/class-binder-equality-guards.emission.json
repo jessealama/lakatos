@@ -1,0 +1,351 @@
+{
+  "file": "engines/thales/tests/conformance/theorem/class-binder-equality-guards.ts",
+  "declarations": [
+    {
+      "kind": "class",
+      "name": "Point",
+      "source": "export class Point {\n  public readonly x: number;\n  public readonly y: number;\n\n  constructor(x: number, y: number) {\n    if (\n      x === -Infinity ||\n      x === Infinity ||\n      y === -Infinity ||\n      y === Infinity\n    ) {\n      throw new RangeError(\"Cannot accept infinite coordinates\");\n    }\n    if (Object.is(x, NaN) || Object.is(y, NaN)) {\n      throw new RangeError(\"Coordinates cannot be NaN\");\n    }\n    if (Object.is(x, -0)) {\n      x = 0;\n    }\n    if (Object.is(y, -0)) {\n      y = 0;\n    }\n    this.x = x;\n    this.y = y;\n  }\n\n  /**\n   * @ensures{nonNegative} ∀ (p q : Point) { 0 <= p.distance(q) }\n   */\n  distance(p: Point): number {\n    const dx = p.x - this.x;\n    const dy = p.y - this.y;\n    return Math.sqrt(dx * dx + dy * dy);\n  }\n}",
+      "fields": ["x", "y"],
+      "ctor": {
+        "params": [
+          {
+            "name": "x",
+            "type": "number"
+          },
+          {
+            "name": "y",
+            "type": "number"
+          }
+        ],
+        "body": [
+          {
+            "kind": "if",
+            "cond": {
+              "kind": "binop",
+              "op": "||",
+              "left": {
+                "kind": "binop",
+                "op": "||",
+                "left": {
+                  "kind": "binop",
+                  "op": "||",
+                  "left": {
+                    "kind": "binop",
+                    "op": "===",
+                    "left": {
+                      "kind": "id",
+                      "name": "x"
+                    },
+                    "right": {
+                      "kind": "unop",
+                      "op": "-",
+                      "operand": {
+                        "kind": "num",
+                        "lit": "Infinity"
+                      }
+                    }
+                  },
+                  "right": {
+                    "kind": "binop",
+                    "op": "===",
+                    "left": {
+                      "kind": "id",
+                      "name": "x"
+                    },
+                    "right": {
+                      "kind": "num",
+                      "lit": "Infinity"
+                    }
+                  }
+                },
+                "right": {
+                  "kind": "binop",
+                  "op": "===",
+                  "left": {
+                    "kind": "id",
+                    "name": "y"
+                  },
+                  "right": {
+                    "kind": "unop",
+                    "op": "-",
+                    "operand": {
+                      "kind": "num",
+                      "lit": "Infinity"
+                    }
+                  }
+                }
+              },
+              "right": {
+                "kind": "binop",
+                "op": "===",
+                "left": {
+                  "kind": "id",
+                  "name": "y"
+                },
+                "right": {
+                  "kind": "num",
+                  "lit": "Infinity"
+                }
+              }
+            },
+            "then": [
+              {
+                "kind": "throw",
+                "error": "RangeError"
+              }
+            ]
+          },
+          {
+            "kind": "if",
+            "cond": {
+              "kind": "binop",
+              "op": "||",
+              "left": {
+                "kind": "same-value",
+                "left": {
+                  "kind": "id",
+                  "name": "x"
+                },
+                "right": {
+                  "kind": "num",
+                  "lit": "NaN"
+                }
+              },
+              "right": {
+                "kind": "same-value",
+                "left": {
+                  "kind": "id",
+                  "name": "y"
+                },
+                "right": {
+                  "kind": "num",
+                  "lit": "NaN"
+                }
+              }
+            },
+            "then": [
+              {
+                "kind": "throw",
+                "error": "RangeError"
+              }
+            ]
+          },
+          {
+            "kind": "if",
+            "cond": {
+              "kind": "same-value",
+              "left": {
+                "kind": "id",
+                "name": "x"
+              },
+              "right": {
+                "kind": "num",
+                "lit": "-0"
+              }
+            },
+            "then": [
+              {
+                "kind": "assign",
+                "name": "x",
+                "expr": {
+                  "kind": "num",
+                  "lit": "0"
+                }
+              }
+            ]
+          },
+          {
+            "kind": "if",
+            "cond": {
+              "kind": "same-value",
+              "left": {
+                "kind": "id",
+                "name": "y"
+              },
+              "right": {
+                "kind": "num",
+                "lit": "-0"
+              }
+            },
+            "then": [
+              {
+                "kind": "assign",
+                "name": "y",
+                "expr": {
+                  "kind": "num",
+                  "lit": "0"
+                }
+              }
+            ]
+          },
+          {
+            "kind": "field-set",
+            "field": "x",
+            "expr": {
+              "kind": "id",
+              "name": "x"
+            }
+          },
+          {
+            "kind": "field-set",
+            "field": "y",
+            "expr": {
+              "kind": "id",
+              "name": "y"
+            }
+          }
+        ]
+      },
+      "getters": [],
+      "methods": [
+        {
+          "name": "distance",
+          "params": [
+            {
+              "name": "p",
+              "type": {
+                "class": "Point"
+              }
+            }
+          ],
+          "body": [
+            {
+              "kind": "const",
+              "name": "dx",
+              "init": {
+                "kind": "binop",
+                "op": "-",
+                "left": {
+                  "kind": "field-read",
+                  "className": "Point",
+                  "field": "x",
+                  "object": {
+                    "kind": "id",
+                    "name": "p"
+                  }
+                },
+                "right": {
+                  "kind": "field-read",
+                  "className": "Point",
+                  "field": "x",
+                  "object": {
+                    "kind": "self"
+                  }
+                }
+              }
+            },
+            {
+              "kind": "const",
+              "name": "dy",
+              "init": {
+                "kind": "binop",
+                "op": "-",
+                "left": {
+                  "kind": "field-read",
+                  "className": "Point",
+                  "field": "y",
+                  "object": {
+                    "kind": "id",
+                    "name": "p"
+                  }
+                },
+                "right": {
+                  "kind": "field-read",
+                  "className": "Point",
+                  "field": "y",
+                  "object": {
+                    "kind": "self"
+                  }
+                }
+              }
+            },
+            {
+              "kind": "return",
+              "expr": {
+                "kind": "math-sqrt",
+                "arg": {
+                  "kind": "binop",
+                  "op": "+",
+                  "left": {
+                    "kind": "binop",
+                    "op": "*",
+                    "left": {
+                      "kind": "id",
+                      "name": "dx"
+                    },
+                    "right": {
+                      "kind": "id",
+                      "name": "dx"
+                    }
+                  },
+                  "right": {
+                    "kind": "binop",
+                    "op": "*",
+                    "left": {
+                      "kind": "id",
+                      "name": "dy"
+                    },
+                    "right": {
+                      "kind": "id",
+                      "name": "dy"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "obligations": [
+    {
+      "function": "Point#distance",
+      "property": "nonNegative",
+      "formula": "∀ (p q : Point) { 0 <= p.distance(q) }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "p",
+            "kind": "class",
+            "className": "Point",
+            "ctorParams": ["x", "y"]
+          },
+          {
+            "name": "q",
+            "kind": "class",
+            "className": "Point",
+            "ctorParams": ["x", "y"]
+          }
+        ],
+        "conclusion": {
+          "kind": "istrue",
+          "expr": {
+            "kind": "binop",
+            "op": "<=",
+            "left": {
+              "kind": "num",
+              "lit": "0"
+            },
+            "right": {
+              "kind": "method-call",
+              "className": "Point",
+              "name": "distance",
+              "object": {
+                "kind": "id",
+                "name": "p"
+              },
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "q"
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  ]
+}
