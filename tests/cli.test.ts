@@ -577,6 +577,12 @@ export function ok(x: number): number { return x; }
     { timeout: 120000 },
     () => {
       const first = JSON.parse(runMain(["refute", "bad.ts"]).stdout[0]!);
+      // Two degenerate runs would agree; pin that the baseline refuted before
+      // comparing, so a degenerate baseline names itself instead of reading
+      // like a seed bug.
+      expect(first.annotations).toMatchObject([
+        { szs: "CounterSatisfiable", kind: "falsified" },
+      ]);
       fs.rmSync(path.join(workDir, RUN_ROOT), { recursive: true, force: true });
       const second = JSON.parse(
         runMain(["refute", "--seed", String(first.seed), "bad.ts"]).stdout[0]!,

@@ -55,37 +55,72 @@ function identityKey(i: PropertyIdentity): string {
   return JSON.stringify([i.file, i.function, i.property]);
 }
 
-/** Parse every failed assertion's tagged payload into an Issue. */
-export function collectIssues(json: VitestJson): Issue[] {
+/** How each failed assertion reads back out of the run: a parsed payload
+ * becomes an Issue; a failed assertion no message of which carries a
+ * readable payload means the reporter never ran, and is returned as a
+ * diagnostic line instead of a verdict. */
+export interface CollectedIssues {
+  issues: Issue[];
+  unreadable: string[];
+}
+
+/** The payload is not always the first failure message vitest reports, so
+ * each entry is searched. */
+export function collectIssues(json: VitestJson): CollectedIssues {
   const issues: Issue[] = [];
+  const unreadable: string[] = [];
   for (const file of json.testResults ?? []) {
     for (const a of file.assertionResults ?? []) {
       if (a.status !== "failed") continue;
-      const issue = parseIssue(a.failureMessages[0] ?? "");
-      if (issue) issues.push(issue);
+      const messages = a.failureMessages ?? [];
+      const issue = messages.map((m) => parseIssue(m)).find((i) => i !== null);
+      if (issue) {
+        issues.push(issue);
+        continue;
+      }
+      const head = messages.find((m) => m.trim() !== "")?.split("\n", 1)[0];
+      unreadable.push(
+        head === undefined
+          ? "a failed test carries no failure message"
+          : `a failed test carries no readable issue payload: ${head}`,
+      );
     }
   }
-  return issues;
+  return { issues, unreadable };
 }
+
+export type RefuteJoin =
+  | { kind: "joined"; annotations: AnnotationResult[] }
+  | {
+      /** The engine reported a failure the join cannot read: no verdict
+       * can be trusted, so none ship. */
+      kind: "unreadable";
+      messages: string[];
+    };
 
 /**
  * Join the generated properties against the run's parsed issues: every
  * identity gets an entry — flagged ones carry the issue's kind and detail,
- * the rest ran without a counterexample and report GaveUp.
+ * the rest ran without a counterexample and report GaveUp. A failed
+ * assertion whose payload cannot be read is not a GaveUp — the run is
+ * returned unreadable and the caller contains it.
  */
 export function joinRefuteVerdicts(
   identities: PropertyIdentity[],
   json: VitestJson,
-): AnnotationResult[] {
+): RefuteJoin {
+  const { issues, unreadable } = collectIssues(json);
+  if (unreadable.length > 0)
+    return { kind: "unreadable", messages: unreadable };
   const flagged = new Map(
-    collectIssues(json).map((i) => [
+    issues.map((i) => [
       identityKey({ file: i.file, function: i.function, property: i.property }),
       i,
     ]),
   );
-  return identities.map((id) => {
+  const annotations = identities.map((id) => {
     const issue = flagged.get(identityKey(id));
-    if (!issue) return { ...id, szs: "GaveUp" };
+    if (!issue) return { ...id, szs: "GaveUp" as const };
     const result: AnnotationResult = {
       ...id,
       szs: szsForIssue(issue.kind),
@@ -96,6 +131,7 @@ export function joinRefuteVerdicts(
     if (issue.error !== undefined) result.error = issue.error;
     return result;
   });
+  return { kind: "joined", annotations };
 }
 
 /** Every annotation an interrupted run never finished evaluating, in
@@ -113,12 +149,16 @@ export function interruptedResults(
   }));
 }
 
-/** The whole envelope for a completed refutation run. */
+/** The whole envelope for a completed, readable refutation run. Only tests
+ * assemble envelopes this way; an unreadable run throws rather than
+ * pretending to verdicts. */
 export function buildEnvelope(
   meta: RunMeta,
   json: VitestJson,
   identities: PropertyIdentity[],
 ): Envelope {
+  const join = joinRefuteVerdicts(identities, json);
+  if (join.kind === "unreadable") throw new Error(join.messages.join("\n"));
   return {
     version: meta.version,
     startedAt: meta.startedAt,
@@ -127,7 +167,7 @@ export function buildEnvelope(
     generated: meta.generated,
     passed: json.numPassedTests,
     failed: json.numFailedTests,
-    annotations: joinRefuteVerdicts(identities, json),
+    annotations: join.annotations,
   };
 }
 
