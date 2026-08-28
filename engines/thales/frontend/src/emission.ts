@@ -2824,8 +2824,11 @@ function obligationPayload(
       module,
     };
     // Guards precede the conclusion in the old elaborator's tree order, so
-    // the first refusal either pipeline reports is the same one.
-    const roots: (ScanRoot & { expected: Expected })[] = [
+    // the first refusal either pipeline reports is the same one. The
+    // conclusion is pre-scanned as written — an equation splits into its
+    // sides only for the typed walk, which lifts them separately.
+    const prescanRoots: ScanRoot[] = [...guardRoots, { expr, sf: parsed.sf }];
+    const walkRoots: (ScanRoot & { expected: Expected })[] = [
       ...guardRoots,
       ...(sides !== undefined
         ? [
@@ -2836,12 +2839,12 @@ function obligationPayload(
     ];
     // A property the model refuses is `Inappropriate`; one the typed walk
     // fails is a failed property elaboration, the engine's `Error`.
-    const found = prescanFailure(roots, scope);
+    const found = prescanFailure(prescanRoots, scope);
     if (found !== undefined) {
       return { kind: "classified", szs: "Inappropriate", reason: found.reason };
     }
     const walkedRoots: EmitExpr[] = [];
-    for (const root of roots) {
+    for (const root of walkRoots) {
       const walked = typedOrFailure(root.expr, root.expected, scope, root.sf);
       if (!("expr" in walked)) {
         return {

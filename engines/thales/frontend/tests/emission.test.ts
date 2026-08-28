@@ -1146,7 +1146,8 @@ describe("formula classification parity with the old pipeline", () => {
     ).toEqual([
       [
         "Inappropriate",
-        "unmapped TypeScript construct 'AwaitExpression' at 1:13",
+        "'Object.is' models numbers only; argument 1 is not a number " +
+          "(AwaitExpression at 1:13)",
       ],
     ]);
   });
@@ -1198,16 +1199,15 @@ describe("formula classification parity with the old pipeline", () => {
     },
   );
 
-  test("a comparison inside an equation side fails property elaboration", () => {
-    expect(
-      classifications(formulaWith("forall (x: int ∈ [0, 5)) { (x < 1) ≡ x }"))
-        .classified,
-    ).toEqual([
-      [
-        "Error",
-        "property elaboration failed: operator '<' yields a boolean, not a number",
-      ],
-    ]);
+  test("a comparison as an equation side is refused as non-numeric", () => {
+    const got = classifications(
+      formulaWith("forall (x: int ∈ [0, 5)) { (x < 1) ≡ x }"),
+    ).classified;
+    expect(got).toHaveLength(1);
+    expect(got[0]![0]).toBe("Inappropriate");
+    expect(got[0]![1]).toContain(
+      "'Object.is' models numbers only; argument 1 is not a number (BinaryExpression",
+    );
   });
 });
 
@@ -2196,9 +2196,9 @@ describe("builtin member calls model as Float primitives", () => {
     const { classified } = emitModule(src, FILE);
     expect(classified).toEqual([
       expect.objectContaining({
-        szs: "Error",
+        szs: "Inappropriate",
         reason: expect.stringContaining(
-          "a call to 'Number.isFinite' yields a boolean, not a number",
+          "'Object.is' models numbers only; argument 1 is not a number (CallExpression",
         ),
       }),
     ]);
@@ -3380,14 +3380,13 @@ describe("new and member access in atoms (#129)", () => {
     expect(got.reason).toBe(`property elaboration failed: ${reason}`);
   });
 
-  // A conclusion's sides are scanned apart, so an instance in one is a
-  // type mismatch on that side rather than a refusal of the call.
-  test("a bare instance as an equation side fails property elaboration", () => {
+  // The conclusion is pre-scanned as written, so an instance in a side
+  // meets the numbers-only refusal, same as in a body or guard.
+  test("a bare instance as an equation side is refused as non-numeric", () => {
     const got = atomClassifiedOf("Object.is(new Box(x), x)");
-    expect(got.szs).toBe("Error");
-    expect(got.reason).toBe(
-      "property elaboration failed: 'new Box(...)' yields an instance of " +
-        "'Box', not a number",
+    expect(got.szs).toBe("Inappropriate");
+    expect(got.reason).toContain(
+      "'Object.is' models numbers only; argument 1 is not a number (NewExpression",
     );
   });
 
@@ -3845,10 +3844,12 @@ describe("instance atoms outside the happy path (#129)", () => {
   }
 
   test.each([
+    // A side that is not numeric-shaped meets the refusal before the walk
+    // reaches whatever construct sits inside it, in every position.
     [
       "a private member on an instance",
       "Object.is(new Box(x).#v, x)",
-      /unmapped TypeScript construct/,
+      /'Object\.is' models numbers only/,
     ],
     [
       "a type argument on new",
@@ -3868,7 +3869,7 @@ describe("instance atoms outside the happy path (#129)", () => {
     [
       "a qualified constructor name",
       "Object.is(new a.B(x).v, x)",
-      /unmapped TypeScript construct 'PropertyAccessExpression'/,
+      /'Object\.is' models numbers only/,
     ],
   ])("%s classifies Inappropriate", (_label, atom, pattern) => {
     const got = atomOf(atom);
