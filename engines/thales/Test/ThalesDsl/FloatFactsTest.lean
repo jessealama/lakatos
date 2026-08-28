@@ -263,3 +263,9 @@ example (x : Float) (hn : x.toModel.unpack ≠ .notANumber)
 example (x : Float) (h : Float.isFinite x = true) :
     Float.lt (-(1.0 / 0.0) : Float) x = true ∧ Float.lt x (1.0 / 0.0 : Float) = true :=
   ⟨FloatFacts.float_lo_of_isFinite h, FloatFacts.float_hi_of_isFinite h⟩
+
+-- The reverse of the isFinite bridge: the two strict bounds alone give
+-- finiteness back, with no NaN hypothesis — IEEE `<` already excludes it.
+example (x : Float) (hLo : (-(1.0 / 0.0) : Float) < x)
+    (hHi : x < (1.0 / 0.0 : Float)) : Float.isFinite x = true :=
+  FloatFacts.isFinite_of_bounds hLo hHi

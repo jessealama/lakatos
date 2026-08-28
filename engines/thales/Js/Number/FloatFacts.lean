@@ -3474,6 +3474,14 @@ theorem float_lo_of_isFinite {x : Float} (h : Float.isFinite x = true) :
     show ((-(1.0 / 0.0) : Float)).toModel.unpack = UnpackedFloat.infinity .negative from rfl]
   exact beq_neg_inf_eq_false_of_isFinite hu
 
+/-- Reverse direction: the strict bounds alone give finiteness. -/
+theorem isFinite_of_bounds {x : Float}
+    (hLo : (-(1.0 / 0.0) : Float) < x) (hHi : x < (1.0 / 0.0 : Float)) :
+    Float.isFinite x = true := by
+  show x.toModel.unpack.isFinite = true
+  rcases unpack_finite_or_zero hLo hHi with ⟨s, h⟩ | ⟨s, m, e, hm, h, _⟩ <;>
+    rw [h] <;> rfl
+
 /-! ## The non-negativity chain: square, sum, sqrt
 
 A distance-style conclusion `0 ≤ √(dx·dx + dy·dy)` needs each link stated

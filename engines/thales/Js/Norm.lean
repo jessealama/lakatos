@@ -226,6 +226,18 @@ theorem float_hi_of_isFinite {x : Float} (h : Float.isFinite x = true) :
     x < floatInf :=
   FloatFacts.float_hi_of_isFinite h
 
+/-- Reverse direction: the strict bounds alone give finiteness back. -/
+theorem isFinite_of_bounds {x : Float} (hLo : -floatInf < x) (hHi : x < floatInf) :
+    Float.isFinite x = true :=
+  FloatFacts.isFinite_of_bounds hLo hHi
+
+/-- Finiteness is exactly the two strict bounds. The NaN conjunct a JS
+reading would add is redundant: IEEE `<` already excludes NaN. -/
+theorem isFinite_iff {x : Float} :
+    Float.isFinite x = true ↔ (-floatInf < x ∧ x < floatInf) :=
+  ⟨fun h => ⟨float_lo_of_isFinite h, float_hi_of_isFinite h⟩,
+   fun ⟨hLo, hHi⟩ => isFinite_of_bounds hLo hHi⟩
+
 /-! A constructor's guards throw, so what follows a triggered guard never
 runs. These two are what let a successful construction refute the guards
 it passed; both are definitional on `Except`, and neither is derivable
@@ -317,5 +329,6 @@ grind_pattern float_gt_neg_inf_of_beq_false => Float.beq x (-floatInf)
 grind_pattern unpack_ne_nan_of_sameValue_false => Number.FloatOps.sameValue x floatNaN
 grind_pattern float_lo_of_isFinite => Float.isFinite x
 grind_pattern float_hi_of_isFinite => Float.isFinite x
+grind_pattern isFinite_of_bounds => Float.isFinite x
 
 end Js
