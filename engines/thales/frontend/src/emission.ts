@@ -1200,11 +1200,15 @@ function walkTyped(
           `${sig.length} argument(s), got ${vcall.args.length}`,
       );
     }
+    /* v8 ignore start -- as for the calls on a fresh instance:
+       `booleanShaped` admits no method call, so no boolean position
+       reaches this. The throw is kept for the same defense. */
     if (expected !== "num") {
       throw new ModelError(
         `a method call yields a number, not ${describeTy(expected)}`,
       );
     }
+    /* v8 ignore stop */
     return {
       kind: "method-call",
       className: vcall.ref.name,
@@ -1217,11 +1221,15 @@ function walkTyped(
   const vaccess = varAccess(e, scope);
   if (vaccess !== undefined) {
     const shape = shapeOfRef(scope, vaccess.ref);
+    /* v8 ignore start -- a bound name is class-typed only inside a body,
+       whose only boolean position is a branch condition, and
+       `booleanShaped` admits no member read. */
     if (expected !== "num") {
       throw new ModelError(
         `a member read yields a number, not ${describeTy(expected)}`,
       );
     }
+    /* v8 ignore stop */
     const module =
       vaccess.ref.module !== "" ? { module: vaccess.ref.module } : {};
     const object: EmitExpr = { kind: "id", name: vaccess.object };

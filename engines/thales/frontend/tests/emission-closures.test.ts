@@ -375,3 +375,115 @@ describe("emission import closures", () => {
     expect(classified[0]?.szs).toBe("Inappropriate");
   });
 });
+
+describe("class-typed parameters across modules", () => {
+  const BOX = [
+    "export class Box {",
+    "  readonly v: number;",
+    "  constructor(v: number) {",
+    "    this.v = v;",
+    "  }",
+    "}",
+    "",
+  ].join("\n");
+
+  test("an imported class types a parameter under its own module", () => {
+    const main = [
+      'import { Box } from "./box.mjs";',
+      "/** @ensures{reads} forall (x: int ∈ [0, 10)) { unwrap(new Box(x)) === x } */",
+      "export function unwrap(b: Box): number {",
+      "  return b.v;",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(
+      main,
+      "main.mts",
+      reader({ "box.mts": BOX }),
+    );
+    expect(classified).toEqual([]);
+    const unwrap = emission.declarations.find((d) => d.name === "unwrap")!;
+    assert(unwrap.kind === "function");
+    expect(unwrap.params).toEqual([
+      { name: "b", type: { class: "Box", module: "box.mts" } },
+    ]);
+    expect(unwrap.body[0]).toEqual({
+      kind: "return",
+      expr: {
+        kind: "field-read",
+        className: "Box",
+        module: "box.mts",
+        field: "v",
+        object: { kind: "id", name: "b" },
+      },
+    });
+  });
+
+  test("a method call on an imported class carries its module", () => {
+    const box = [
+      "export class Box {",
+      "  readonly v: number;",
+      "  constructor(v: number) {",
+      "    this.v = v;",
+      "  }",
+      "  twice(): number {",
+      "    return this.v * 2;",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const main = [
+      'import { Box } from "./box.mjs";',
+      "/** @ensures{reads} forall (x: int ∈ [0, 10)) { unwrap(new Box(x)) === 2 * x } */",
+      "export function unwrap(b: Box): number {",
+      "  return b.twice();",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(
+      main,
+      "main.mts",
+      reader({ "box.mts": box }),
+    );
+    expect(classified).toEqual([]);
+    const unwrap = emission.declarations.find((d) => d.name === "unwrap")!;
+    assert(unwrap.kind === "function");
+    expect(unwrap.body[0]).toEqual({
+      kind: "return",
+      expr: {
+        kind: "method-call",
+        className: "Box",
+        module: "box.mts",
+        name: "twice",
+        object: { kind: "id", name: "b" },
+        args: [],
+      },
+    });
+  });
+
+  test("an instance of a same-named local class is not the imported one", () => {
+    const main = [
+      'import { Box } from "./box.mjs";',
+      "export class Local {",
+      "  readonly v: number;",
+      "  constructor(v: number) {",
+      "    this.v = v;",
+      "  }",
+      "}",
+      "/** @ensures{reads} forall (x: int ∈ [0, 10)) { unwrap(new Local(x)) === x } */",
+      "export function unwrap(b: Box): number {",
+      "  return b.v;",
+      "}",
+      "",
+    ].join("\n");
+    const { classified } = emitModule(
+      main,
+      "main.mts",
+      reader({ "box.mts": BOX }),
+    );
+    expect(classified[0]!.szs).toBe("Error");
+    expect(classified[0]!.reason).toMatch(
+      /yields an instance of 'Local', not an instance of 'box.mts::Box'/,
+    );
+  });
+});
