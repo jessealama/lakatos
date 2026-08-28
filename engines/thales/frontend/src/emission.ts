@@ -801,14 +801,19 @@ function classView(
   const registered = scope.classes.get(modelKey(ref));
   if (registered !== undefined)
     return { shape: registered, failed: scope.failed };
+  const self = scope.self;
+  /* v8 ignore start -- a bound name is class-typed only at a registered
+     class or the enclosing one; every other spelling degrades its
+     declaration before the body that would read off it is walked. */
   if (
-    scope.self !== undefined &&
-    scope.selfFailed !== undefined &&
-    modelKey(ref) === modelKey(scope.self.ref)
+    self === undefined ||
+    scope.selfFailed === undefined ||
+    modelKey(ref) !== modelKey(self.ref)
   ) {
-    return { shape: scope.self.shape, failed: scope.selfFailed };
+    return undefined;
   }
-  return undefined;
+  /* v8 ignore stop */
+  return { shape: self.shape, failed: scope.selfFailed };
 }
 
 /** The first degraded class or class member a use names, in tree order:
