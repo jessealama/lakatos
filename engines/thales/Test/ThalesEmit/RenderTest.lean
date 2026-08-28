@@ -2,6 +2,14 @@ import ThalesEmit
 
 open Lean ThalesEmit
 
+/-- Number-typed parameters, the signature most of these fixtures have. -/
+def nums (names : Array String) : Array Param :=
+  names.map fun n => { name := n, ty := .number }
+
+/-- A number parameter as the wire spells it. -/
+def numParamJson (name : String) : Json :=
+  Json.mkObj [("name", name), ("type", "number")]
+
 -- Schema violations decode to errors naming the offender, never to
 -- defaults.
 #guard (decodeEmission (Json.mkObj [])) matches .error _
@@ -82,7 +90,7 @@ open Lean ThalesEmit
     [("kind", "class"), ("name", "Box"), ("source", "class Box {}"),
      ("fields", Json.arr #["#v"]),
      ("ctor", Json.mkObj
-       [("params", Json.arr #["v"]),
+       [("params", Json.arr #[numParamJson "v"]),
         ("body", Json.arr #[Json.mkObj
           [("kind", "field-set"), ("field", "#v"),
            ("expr", Json.mkObj [("kind", "id"), ("name", "v")])]])]),
@@ -94,11 +102,30 @@ open Lean ThalesEmit
              [("kind", "field-read"), ("className", "Box"), ("field", "#v"),
               ("object", Json.mkObj [("kind", "self")])])]])]]),
      ("methods", Json.arr #[Json.mkObj
-       [("name", "scale"), ("params", Json.arr #["k"]),
+       [("name", "scale"), ("params", Json.arr #[numParamJson "k"]),
         ("body", Json.arr #[Json.mkObj
           [("kind", "return"),
            ("expr", Json.mkObj [("kind", "id"), ("name", "k")])]])]])]))
   matches .ok (.cls { methods := #[{ name := "scale", .. }], .. })
+-- A parameter's type is "number" or a class object; anything else fails
+-- the run rather than defaulting to a number.
+#guard (decodeParam (numParamJson "x")) matches .ok { name := "x", ty := .number }
+#guard
+  (decodeParam (Json.mkObj
+    [("name", "p"), ("type", Json.mkObj [("class", "Point")])]))
+  matches .ok { name := "p", ty := .cls "Point" none }
+#guard
+  (decodeParam (Json.mkObj
+    [("name", "p"),
+     ("type", Json.mkObj [("class", "Point"), ("module", "point.mts")])]))
+  matches .ok { name := "p", ty := .cls "Point" (some "point.mts") }
+#guard
+  (decodeParam (Json.mkObj [("name", "s"), ("type", "string")]))
+  matches .error "unknown parameter type 'string'"
+#guard
+  (decodeParams (Json.mkObj [("params", Json.arr #[Json.mkObj [("name", "x")]])])
+    "params")
+  matches .error "field 'params': property not found: type"
 -- A method missing its params is a field error, not a default.
 #guard
   (decodeClass (Json.mkObj
@@ -196,7 +223,7 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
 #eval show CoreM Unit from do
   let e : Emission := {
     file := "t.ts"
-    declarations := #[.fn { name := "id", params := #["x"], source := "id",
+    declarations := #[.fn { name := "id", params := nums #["x"], source := "id",
                             body := #[.ret (.id "x")] }]
     obligations := #[] }
   let rendered ← renderEmission e
@@ -208,7 +235,7 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
 #eval show CoreM Unit from do
   let e : Emission := {
     file := "t.ts"
-    declarations := #[.fn { name := "bump", params := #["x"], source := "bump",
+    declarations := #[.fn { name := "bump", params := nums #["x"], source := "bump",
                             body := #[.ret (.binop "+" (.id "x") (.num "1"))] }]
     obligations := #[{ function := "bump", property := "p", formula := "f",
                        payload := .structured #[.int "bump"] #[]
@@ -223,7 +250,7 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
 #eval show CoreM Unit from do
   let e : Emission := {
     file := "t.ts"
-    declarations := #[.fn { name := "f", params := #["x"], source := "f",
+    declarations := #[.fn { name := "f", params := nums #["x"], source := "f",
                             body := #[.ret (.id "x")] }]
     obligations := #[{ function := "f", property := "p", formula := "f",
                        payload := .structured #[.int "pure"] #[]
@@ -255,7 +282,7 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
 #eval show CoreM Unit from do
   let e : Emission := {
     file := "t.ts"
-    declarations := #[.fn { name := "clampUp", params := #["x"], source := "clampUp",
+    declarations := #[.fn { name := "clampUp", params := nums #["x"], source := "clampUp",
                             body := #[
                               .ite (.binop "<" (.id "x") (.num "1"))
                                 #[.assign "x" (.num "1")] none,
@@ -278,7 +305,7 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
   let e : Emission := {
     file := "t.ts"
     declarations := #[.fn { name := "applyConversionFactors",
-                            params := #["v", "sf", "so", "tf", "to"],
+                            params := nums #["v", "sf", "so", "tf", "to"],
                             source := "applyConversionFactors",
                             body := #[.ret (.id "v")] }]
     obligations := #[{ function := "applyConversionFactors", property := "p",
@@ -314,7 +341,7 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
 #eval show CoreM Unit from do
   let e : Emission := {
     file := "t.ts"
-    declarations := #[.fn { name := "helper.mts::double", params := #["x"],
+    declarations := #[.fn { name := "helper.mts::double", params := nums #["x"],
                             source := "f", body := #[.ret (.id "x")] }]
     obligations := #[] }
   let refused ← try
@@ -330,9 +357,9 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
   let e : Emission := {
     file := "main.mts"
     declarations := #[
-      .fn { name := "double", module := some "helper.mts", params := #["x"],
+      .fn { name := "double", module := some "helper.mts", params := nums #["x"],
             source := "double", body := #[.ret (.binop "*" (.id "x") (.num "2"))] },
-      .fn { name := "twice", params := #["x"], source := "twice",
+      .fn { name := "twice", params := nums #["x"], source := "twice",
             body := #[.ret (.call "double" (some "helper.mts") #[.id "x"])] }]
     obligations := #[] }
   let rendered ← renderEmission e
@@ -358,7 +385,7 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
   for bad in ["a«b", "/abs.ts", ""] do
     let e : Emission := {
       file := "t.ts"
-      declarations := #[.fn { name := "double", module := some bad, params := #["x"],
+      declarations := #[.fn { name := "double", module := some bad, params := nums #["x"],
                               source := "f", body := #[.ret (.id "x")] }]
       obligations := #[] }
     let refused ← try
@@ -373,7 +400,7 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
 #eval show CoreM Unit from do
   let e : Emission := {
     file := "t.ts"
-    declarations := #[.fn { name := "canon", params := #["x"], source := "canon",
+    declarations := #[.fn { name := "canon", params := nums #["x"], source := "canon",
                             body := #[
                               .ite (.sameValue (.id "x") (.num "-0"))
                                 #[.ret (.num "0")] none,
@@ -396,9 +423,9 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
   let e : Emission := {
     file := "t.ts"
     declarations := #[
-      .fn { name := "addNaN", params := #["x"], source := "addNaN",
+      .fn { name := "addNaN", params := nums #["x"], source := "addNaN",
             body := #[.ret (.binop "+" (.id "x") (.num "NaN"))] },
-      .fn { name := "shadow", params := #["floatNaN"], source := "shadow",
+      .fn { name := "shadow", params := nums #["floatNaN"], source := "shadow",
             body := #[.ret (.id "floatNaN")] }]
     obligations := #[{ function := "addNaN", property := "p", formula := "f",
                        payload := .structured #[.range "n" 0 2] #[]
@@ -417,7 +444,7 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
 #eval show CoreM Unit from do
   let e : Emission := {
     file := "t.ts"
-    declarations := #[.fn { name := "root", params := #["x"], source := "root",
+    declarations := #[.fn { name := "root", params := nums #["x"], source := "root",
                             body := #[.ret (.mathSqrt (.id "x"))] }]
     obligations := #[{ function := "root", property := "p", formula := "f",
                        payload := .structured #[.range "n" 0 2] #[]
@@ -436,9 +463,9 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
   let e : Emission := {
     file := "t.ts"
     declarations := #[
-      .fn { name := "boom", params := #["x"], source := "boom",
+      .fn { name := "boom", params := nums #["x"], source := "boom",
             body := #[.throwErr "RangeError"] },
-      .fn { name := "pick", params := #["x"], source := "pick",
+      .fn { name := "pick", params := nums #["x"], source := "pick",
             body := #[
               .ite (.binop "||" (cmp "x" "0") (cmp "x" "1")) #[.ret (.num "0")] none,
               .ite (.binop "||" (cmp "x" "2")
@@ -474,13 +501,13 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
 #eval show CoreM Unit from do
   let box : EmitClass := {
     name := "Box", source := "class Box"
-    fields := #["#v"], ctorParams := #["v"]
+    fields := #["#v"], ctorParams := nums #["v"]
     ctorBody := #[.fieldSet "#v" (.id "v")]
     getters := #[]
     methods := #[
       { name := "base", params := #[]
         body := #[.ret (.fieldRead "Box" none "#v" .selfRef)] },
-      { name := "scale", params := #["k"]
+      { name := "scale", params := nums #["k"]
         body := #[.ret (.binop "*"
           (.methodCall "Box" none "base" .selfRef #[]) (.id "k"))] }] }
   let e : Emission := { file := "t.ts", declarations := #[.cls box], obligations := #[] }
@@ -496,7 +523,7 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
 #eval show CoreM Unit from do
   let box : EmitClass := {
     name := "Box", source := "class Box"
-    fields := #["#v"], ctorParams := #["v"]
+    fields := #["#v"], ctorParams := nums #["v"]
     ctorBody := #[.fieldSet "#v" (.id "v")]
     getters := #[]
     methods := #[{ name := "double", params := #[]

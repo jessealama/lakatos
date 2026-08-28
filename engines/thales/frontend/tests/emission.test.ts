@@ -30,7 +30,10 @@ describe("emitModule on the tracer fixture", () => {
       {
         kind: "function",
         name: "add",
-        params: ["a", "b"],
+        params: [
+          { name: "a", type: "number" },
+          { name: "b", type: "number" },
+        ],
         source: expect.stringContaining("export function add"),
         body: [
           {
@@ -2536,7 +2539,7 @@ describe("class declarations (#129)", () => {
         source: expect.stringContaining("export class Box"),
         fields: ["#v"],
         ctor: {
-          params: ["v"],
+          params: [{ name: "v", type: "number" }],
           body: [
             { kind: "field-set", field: "#v", expr: { kind: "id", name: "v" } },
           ],
@@ -3556,7 +3559,7 @@ describe("instance methods (#130)", () => {
     expect((cls as EmitClass).methods).toEqual([
       {
         name: "scale",
-        params: ["k"],
+        params: [{ name: "k", type: "number" }],
         body: [
           {
             kind: "return",

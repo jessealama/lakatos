@@ -87,13 +87,19 @@ export type EmitStmt =
   | { kind: "if"; cond: EmitExpr; then: EmitStmt[]; else?: EmitStmt[] }
   | { kind: "field-set"; field: string; expr: EmitExpr };
 
+/** A parameter on the wire: its name and its declared type — a TypeScript
+ * number, or an instance of a modeled class. */
+export interface EmitParam {
+  name: string;
+  type: "number" | { class: string; module?: string };
+}
+
 export interface EmitFunction {
   kind: "function";
   name: string;
   /** The defining module's entry-relative path; absent for the entry. */
   module?: string;
-  /** Parameter names; every parameter is `: number`. */
-  params: string[];
+  params: EmitParam[];
   /** The declaration's original text, echoed as comments above the def. */
   source: string;
   body: EmitStmt[];
@@ -106,8 +112,7 @@ export interface EmitGetter {
 
 export interface EmitMethod {
   name: string;
-  /** Parameter names; every parameter is `: number`. */
-  params: string[];
+  params: EmitParam[];
   body: EmitStmt[];
 }
 
@@ -122,7 +127,7 @@ export interface EmitClass {
   /** Field spellings in declaration order; a private one keeps its '#'. */
   fields: string[];
   source: string;
-  ctor: { params: string[]; body: EmitStmt[] };
+  ctor: { params: EmitParam[]; body: EmitStmt[] };
   getters: EmitGetter[];
   methods: EmitMethod[];
 }
@@ -137,6 +142,16 @@ export type ValueTy = "num" | { instance: ModelRef };
 /** Whether two model references name the same class. */
 function sameClass(a: ModelRef, b: ModelRef): boolean {
   return a.module === b.module && a.name === b.name;
+}
+
+/** A walked parameter as the wire carries it. */
+function wireParam(name: string, ty: ValueTy): EmitParam {
+  if (ty === "num") return { name, type: "number" };
+  const { module, name: cls } = ty.instance;
+  return {
+    name,
+    type: { class: cls, ...(module !== "" ? { module } : {}) },
+  };
 }
 
 /** What a use of a class needs to know: its fields in declaration order,
@@ -2049,7 +2064,7 @@ function walkClass(
     try {
       methods.push({
         name: spelling,
-        params,
+        params: params.map((p) => wireParam(p, "num")),
         body: lowerTree(
           body,
           params.map((p) => [p, "num"] as const),
@@ -2077,7 +2092,10 @@ function walkClass(
       ...(qualifier !== "" ? { module: qualifier } : {}),
       source: cls.getText(sf),
       fields,
-      ctor: { params: ctorParams, body: ctorBody },
+      ctor: {
+        params: ctorParams.map((p) => wireParam(p, "num")),
+        body: ctorBody,
+      },
       getters,
       methods,
     },
@@ -2189,7 +2207,7 @@ function walkFunction(
       kind: "function",
       name: fn.name!.text,
       ...(module !== "" ? { module } : {}),
-      params,
+      params: params.map((p) => wireParam(p, "num")),
       source: fn.getText(sf),
       body,
     };

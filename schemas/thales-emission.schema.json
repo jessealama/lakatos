@@ -40,6 +40,30 @@
       "description": "A dependency's path relative to the entry file, posix-spelled. Absent on a declaration or call means the entry file itself. Guillemets and control characters are excluded: the path is rendered as one Lean name component between guillemets, and either would break it.",
       "pattern": "^(?!/)[^\\u0000-\\u001f\\u00ab\\u00bb]+$"
     },
+    "paramType": {
+      "description": "A parameter's declared type: a TypeScript number, or an instance of a modeled class.",
+      "oneOf": [
+        { "const": "number" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["class"],
+          "properties": {
+            "class": { "$ref": "#/definitions/identifier" },
+            "module": { "$ref": "#/definitions/modulePath" }
+          }
+        }
+      ]
+    },
+    "param": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "type"],
+      "properties": {
+        "name": { "$ref": "#/definitions/identifier" },
+        "type": { "$ref": "#/definitions/paramType" }
+      }
+    },
     "floatBound": {
       "type": "object",
       "additionalProperties": false,
@@ -252,8 +276,8 @@
         "module": { "$ref": "#/definitions/modulePath" },
         "params": {
           "type": "array",
-          "items": { "$ref": "#/definitions/identifier" },
-          "description": "Parameter names; every parameter is a TypeScript number."
+          "items": { "$ref": "#/definitions/param" },
+          "description": "Parameters in declaration order, each with its declared type."
         },
         "source": {
           "type": "string",
@@ -298,7 +322,7 @@
           "properties": {
             "params": {
               "type": "array",
-              "items": { "$ref": "#/definitions/identifier" }
+              "items": { "$ref": "#/definitions/param" }
             },
             "body": {
               "type": "array",
@@ -323,7 +347,7 @@
         },
         "methods": {
           "type": "array",
-          "description": "Modeled instance methods in declaration order; each is a function of the instance and its number parameters.",
+          "description": "Modeled instance methods in declaration order; each is a function of the instance and its parameters.",
           "items": {
             "type": "object",
             "additionalProperties": false,
@@ -332,7 +356,7 @@
               "name": { "$ref": "#/definitions/identifier" },
               "params": {
                 "type": "array",
-                "items": { "$ref": "#/definitions/identifier" }
+                "items": { "$ref": "#/definitions/param" }
               },
               "body": {
                 "type": "array",

@@ -7,7 +7,12 @@
       "source": "export class Box {\n  #v: number;\n  constructor(v: number) {\n    this.#v = v;\n  }\n  /** @ensures{roundTrip} forall (x: number) { Object.is(new Box(x).v, x) } */\n  get v(): number {\n    return this.#v;\n  }\n}",
       "fields": ["#v"],
       "ctor": {
-        "params": ["v"],
+        "params": [
+          {
+            "name": "v",
+            "type": "number"
+          }
+        ],
         "body": [
           {
             "kind": "field-set",
@@ -45,7 +50,12 @@
       "source": "export class Gate {\n  #lo: number;\n  constructor(a: number) {\n    if (a < 0) {\n      throw new RangeError(\"negative\");\n    } else {\n      this.#lo = a;\n    }\n  }\n  /** @ensures{keepsValue} forall (a: number) { 0 <= a → Object.is(new Gate(a).lo, a) } */\n  get lo(): number {\n    return this.#lo;\n  }\n}",
       "fields": ["#lo"],
       "ctor": {
-        "params": ["a"],
+        "params": [
+          {
+            "name": "a",
+            "type": "number"
+          }
+        ],
         "body": [
           {
             "kind": "if",
@@ -106,7 +116,12 @@
       "source": "export class Doubler {\n  #v: number;\n  constructor(v: number) {\n    this.#v = v;\n  }\n  /** @ensures{doubled} forall (x: number) { Object.is(new Doubler(x).double(), 2 * x) } */\n  double(): number {\n    return this.#v * 2;\n  }\n  base(): number {\n    return this.#v;\n  }\n  /** @ensures{chained} forall (x: number) { Object.is(new Doubler(x).twice(), x + x) } */\n  twice(): number {\n    return this.base() + this.base();\n  }\n}",
       "fields": ["#v"],
       "ctor": {
-        "params": ["v"],
+        "params": [
+          {
+            "name": "v",
+            "type": "number"
+          }
+        ],
         "body": [
           {
             "kind": "field-set",
