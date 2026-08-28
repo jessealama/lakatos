@@ -476,10 +476,15 @@ function refuteSpine(seed: number): Spine {
         }
         return { kind: "unhealthy", messages: result.messages };
       }
+      const join = joinRefuteVerdicts(plan.identities, result.json);
+      // A failure the join cannot read means the reporter never ran; that is
+      // engine breakage, contained like a run that reported nothing at all.
+      if (join.kind === "unreadable")
+        return { kind: "unhealthy", messages: join.messages };
       const failed = result.json.numFailedTests;
       return {
         kind: "completed",
-        annotations: joinRefuteVerdicts(plan.identities, result.json),
+        annotations: join.annotations,
         meta: { passed: result.json.numPassedTests, failed },
         degraded: false,
         // A failing test is a refutation whatever kind of issue it carried:

@@ -9,6 +9,7 @@ import {
   buildEnvelope,
   collectIssues,
   joinProveVerdicts,
+  joinRefuteVerdicts,
   type AnnotationResult,
   type PropertyIdentity,
   type ProveVerdict,
@@ -81,21 +82,20 @@ describe("collectIssues", () => {
       1,
       3,
     );
-    expect(collectIssues(v)).toEqual([FALSIFIED, THREW, EXHAUSTED]);
+    expect(collectIssues(v)).toEqual({
+      issues: [FALSIFIED, THREW, EXHAUSTED],
+      unreadable: [],
+    });
   });
 
   it("tolerates missing testResults and assertionResults arrays", () => {
-    expect(collectIssues({} as VitestJson)).toEqual([]);
+    expect(collectIssues({} as VitestJson)).toEqual({
+      issues: [],
+      unreadable: [],
+    });
     expect(
       collectIssues({ testResults: [{}] } as unknown as VitestJson),
-    ).toEqual([]);
-  });
-
-  it("ignores a failed assertion that carries no failure message", () => {
-    expect(collectIssues(json([failed("")], 0, 1))).toEqual([]);
-    expect(
-      collectIssues(json([{ status: "failed", failureMessages: [] }], 0, 1)),
-    ).toEqual([]);
+    ).toEqual({ issues: [], unreadable: [] });
   });
 
   it("finds a payload sitting behind an unrelated failure message", () => {
@@ -106,7 +106,74 @@ describe("collectIssues", () => {
         encodeIssue(FALSIFIED),
       ],
     };
-    expect(collectIssues(json([a], 0, 1))).toEqual([FALSIFIED]);
+    expect(collectIssues(json([a], 0, 1)).issues).toEqual([FALSIFIED]);
+  });
+
+  it("reports a failed assertion with no readable payload as unreadable", () => {
+    const a: AssertionResult = {
+      status: "failed",
+      failureMessages: ["Error: boom\n  at foo (x.ts:1:1)"],
+    };
+    expect(collectIssues(json([a], 0, 1))).toEqual({
+      issues: [],
+      unreadable: [
+        "a failed test carries no readable issue payload: Error: boom",
+      ],
+    });
+  });
+
+  it("reports a failed assertion with no failure message at all", () => {
+    expect(
+      collectIssues(json([{ status: "failed", failureMessages: [] }], 0, 1)),
+    ).toEqual({
+      issues: [],
+      unreadable: ["a failed test carries no failure message"],
+    });
+    expect(collectIssues(json([failed("")], 0, 1))).toEqual({
+      issues: [],
+      unreadable: ["a failed test carries no failure message"],
+    });
+  });
+});
+
+describe("joinRefuteVerdicts", () => {
+  const ISSUE: Issue = {
+    file: "foo.ts",
+    function: "clamp",
+    property: "upper bound",
+    kind: "falsified",
+    counterexample: { n: 0 },
+  };
+
+  it("joins parsed issues onto identities", () => {
+    const v = json([failed(encodeIssue(ISSUE))], 2, 1);
+    expect(joinRefuteVerdicts(IDS, v)).toEqual({
+      kind: "joined",
+      annotations: [
+        {
+          ...IDS[0],
+          szs: "CounterSatisfiable",
+          kind: "falsified",
+          counterexample: { n: 0 },
+        },
+        { ...IDS[1], szs: "GaveUp" },
+        { ...IDS[2], szs: "GaveUp" },
+      ],
+    });
+  });
+
+  it("an unreadable failure withholds every verdict", () => {
+    const v = json(
+      [failed(encodeIssue(ISSUE)), failed("Error: boom\n  at x")],
+      1,
+      2,
+    );
+    expect(joinRefuteVerdicts(IDS, v)).toEqual({
+      kind: "unreadable",
+      messages: [
+        "a failed test carries no readable issue payload: Error: boom",
+      ],
+    });
   });
 });
 
@@ -240,6 +307,13 @@ describe("buildEnvelope", () => {
       kind: "falsified",
       counterexample: { n: 0 },
     });
+  });
+
+  it("throws on an unreadable failure instead of shipping GaveUp", () => {
+    const v = json([failed("Error: boom\n  at x")], 0, 1);
+    expect(() => buildEnvelope(META, v, IDS)).toThrow(
+      /no readable issue payload/,
+    );
   });
 });
 
