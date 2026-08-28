@@ -161,6 +161,28 @@ def numParamJson (name : String) : Json :=
 #guard
   (decodeBinder (Json.mkObj [("name", "a"), ("kind", "number")]))
   matches .ok (.number "a" none none)
+-- A class binder carries the class it ranges over and its constructor's
+-- parameter spellings; the module qualifier is absent for the entry's own.
+#guard
+  (decodeBinder (Json.mkObj
+    [("name", "p"), ("kind", "class"), ("className", "Point"),
+     ("ctorParams", Json.arr #["x", "y"])]))
+  matches .ok (.cls "p" "Point" none #["x", "y"])
+#guard
+  (decodeBinder (Json.mkObj
+    [("name", "p"), ("kind", "class"), ("className", "Point"),
+     ("module", "dep.ts"), ("ctorParams", Json.arr #[])]))
+  matches .ok (.cls "p" "Point" (some "dep.ts") #[])
+-- The parameter spellings are strings, and a missing list fails the run.
+#guard
+  (decodeBinder (Json.mkObj
+    [("name", "p"), ("kind", "class"), ("className", "Point"),
+     ("ctorParams", Json.arr #[(1 : Nat)])]))
+  matches .error _
+#guard
+  (decodeBinder (Json.mkObj
+    [("name", "p"), ("kind", "class"), ("className", "Point")]))
+  matches .error _
 #guard (decodeBinder (Json.mkObj [("name", "x"), ("kind", "real")])) matches .error _
 -- A bound is an op × literal pair; a bare string is not one.
 #guard
@@ -543,3 +565,36 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
   let rendered ← renderEmission e
   unless (rendered.splitOn "← TsModel.Box.double (← TsModel.Box.construct x)").length == 2 do
     throwError "the instance method call did not render:\n{rendered}"
+
+-- A class binder quantifies over the constructor's image: one ungrouped ∀
+-- per synthesized argument, then the instance, then the hypothesis naming
+-- it as the constructor's output. The `-0` normalization and every guard
+-- are inside the domain by construction, since `p` is what `construct`
+-- returned rather than a bare `mk` of the arguments.
+#eval show CoreM Unit from do
+  let point : EmitClass := {
+    name := "Point", source := "class Point"
+    fields := #["x"], ctorParams := nums #["x"]
+    ctorBody := #[.fieldSet "x" (.id "x")]
+    getters := #[]
+    methods := #[{ name := "gap", params := nums #["q"]
+                   body := #[.ret (.fieldRead "Point" none "x" .selfRef)] }] }
+  let e : Emission := {
+    file := "t.ts", declarations := #[.cls point]
+    obligations := #[{ function := "Point#gap", property := "nn"
+                       formula := "forall (p: Point) { … }"
+                       payload := .structured #[.cls "p" "Point" none #["x"]]
+                         #[] (.istrue (.binop "<="
+                           (.num "0")
+                           (.methodCall "Point" none "gap" (.id "p")
+                             #[.num "1"]))) }] }
+  let rendered ← renderEmission e
+  unless (rendered.splitOn "∀ («p.x» : JsNumber),").length == 2 do
+    throwError "the synthesized constructor argument is not its own ∀:\n{rendered}"
+  let underArg := rendered.splitOn "∀ («p.x» : JsNumber),"
+  unless ((underArg[1]!).splitOn "∀ (p : TsModel.Point),").length == 2 do
+    throwError "the instance ∀ is not inside its arguments:\n{rendered}"
+  unless (rendered.splitOn "TsModel.Point.construct «p.x» = .ok p →").length == 2 do
+    throwError "the constructor-image hypothesis did not render:\n{rendered}"
+  unless (rendered.splitOn "Float.ofInt").length == 1 do
+    throwError "a class binder was coerced from Int:\n{rendered}"

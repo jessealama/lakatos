@@ -100,6 +100,10 @@ inductive BinderIR where
   | int (name : String)
   | nat (name : String)
   | number (name : String) (lower upper : Option (String × String))
+  /-- A class-valued binder: the instance ranges over the image of the
+  named class's constructor, applied to one argument per `ctorParams`. -/
+  | cls (name className : String) (module : Option String)
+      (ctorParams : Array String)
 deriving Repr, Inhabited
 
 def BinderIR.name : BinderIR → String
@@ -107,11 +111,12 @@ def BinderIR.name : BinderIR → String
   | .int n => n
   | .nat n => n
   | .number n _ _ => n
+  | .cls n .. => n
 
 /-- Whether the binder enumerates `Int`s, so a use of it inside the body
 crosses to the Float world. A `number` binder is already a double. -/
 def BinderIR.isIntValued : BinderIR → Bool
-  | .number .. => false
+  | .number .. | .cls .. => false
   | _ => true
 
 inductive Conclusion where
@@ -311,6 +316,12 @@ def decodeBinder (j : Json) : Except String BinderIR := do
   | "nat" => pure (.nat name)
   | "number" =>
     pure (.number name (← decodeBound j "lower") (← decodeBound j "upper"))
+  | "class" =>
+    let params ← (← getArr j "ctorParams").mapM fun v =>
+      match v.getStr? with
+      | .ok s => pure s
+      | .error _ => throw "field 'ctorParams' holds a non-string"
+    pure (.cls name (← getStr j "className") (← getStrOpt j "module") params)
   | k => throw s!"unknown binder kind '{k}'"
 
 def decodeConclusion (j : Json) : Except String Conclusion := do

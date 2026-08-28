@@ -1211,39 +1211,120 @@ describe("formula classification parity with the old pipeline", () => {
   });
 });
 
-describe("class-valued binders classify Inappropriate (#158)", () => {
+describe("class-valued binders lower to a binder IR", () => {
   const BOX = "export class Box { constructor(readonly size: number) {} }\n";
+  const POINT = [
+    "export class Point {",
+    "  readonly x: number;",
+    "  readonly y: number;",
+    "  constructor(x: number, y: number) { this.x = x; this.y = y; }",
+    "  /** @ensures{nn} forall (p: Point) (q: Point) { p.gap(q) >= 0 } */",
+    "  gap(q: Point): number { return 0; }",
+    "}",
+    "",
+  ].join("\n");
 
-  test("a class-valued binder names the construct", () => {
+  test("a class binder lowers to a class binder IR", () => {
+    const { emission } = emitModule(POINT, "t.ts");
+    const payload = emission.obligations[0]!.payload;
+    assert(payload.kind === "structured");
+    expect(payload.binders).toEqual([
+      { name: "p", kind: "class", className: "Point", ctorParams: ["x", "y"] },
+      { name: "q", kind: "class", className: "Point", ctorParams: ["x", "y"] },
+    ]);
+  });
+
+  test("a method call on a class binder resolves to the class's method", () => {
+    const { emission } = emitModule(POINT, "t.ts");
+    const payload = emission.obligations[0]!.payload;
+    assert(payload.kind === "structured");
+    assert(payload.conclusion.kind === "istrue");
+    const expr = payload.conclusion.expr;
+    assert(expr.kind === "binop");
+    expect(expr.left).toEqual({
+      kind: "method-call",
+      className: "Point",
+      name: "gap",
+      object: { kind: "id", name: "p" },
+      args: [{ kind: "id", name: "q" }],
+    });
+  });
+
+  test("a class binder carries its constructor's parameter spellings", () => {
+    const src = [
+      "export class Span {",
+      "  readonly lo: number;",
+      "  readonly hi: number;",
+      "  constructor(first: number, second: number) {",
+      "    this.lo = first;",
+      "    this.hi = second;",
+      "  }",
+      "}",
+      "/** @ensures{p} forall (s: Span) { scale(1) >= 0 } */",
+      "export function scale(x: number): number { return x; }",
+      "",
+    ].join("\n");
+    const { emission } = emitModule(src, "t.ts");
+    const payload = emission.obligations[0]!.payload;
+    assert(payload.kind === "structured");
+    expect(payload.binders).toEqual([
+      {
+        name: "s",
+        kind: "class",
+        className: "Span",
+        ctorParams: ["first", "second"],
+      },
+    ]);
+  });
+
+  test("a binder naming a degraded class travels the class's reason", () => {
     const src =
       BOX +
       "/** @ensures{p} forall (b: Box) { scale(1) >= 0 } */\n" +
       "export function scale(x: number): number { return x; }\n";
     const { classified, emission } = emitModule(src, "t.ts");
     expect(classified.map((c) => [c.szs, c.reason])).toEqual([
-      ["Inappropriate", "class-valued binder 'Box' is not yet modeled"],
+      [
+        "Inappropriate",
+        "class-valued binder 'Box' names a class outside the model: " +
+          "unmapped TypeScript construct 'ReadonlyKeyword' at 1:32",
+      ],
     ]);
     expect(emission.obligations).toEqual([]);
     expect(emission.declarations.map((d) => d.name)).toEqual(["scale"]);
   });
 
-  test("the class binder wins over the function's own blocker", () => {
-    const src =
-      BOX +
-      "/** @ensures{p} forall (b: Box) { volume(b) >= 0 } */\n" +
-      "export function volume(b: Box): number { return b.size; }\n";
+  test("a binder whose class takes a non-number constructor parameter refuses", () => {
+    const src = [
+      "export class Inner {",
+      "  readonly v: number;",
+      "  constructor(v: number) { this.v = v; }",
+      "}",
+      "export class Outer { constructor(i: Inner) {} }",
+      "/** @ensures{p} forall (o: Outer) { scale(1) >= 0 } */",
+      "export function scale(x: number): number { return x; }",
+      "",
+    ].join("\n");
     expect(classifications(src).classified).toEqual([
-      ["Inappropriate", "class-valued binder 'Box' is not yet modeled"],
+      [
+        "Inappropriate",
+        "class-valued binder 'Outer' has a constructor parameter " +
+          "outside the model",
+      ],
     ]);
   });
 
-  test("the class binder wins over other blockers in the same property", () => {
+  test("the binder refusal wins over other blockers in the same property", () => {
     const src =
       BOX +
-      "/** @ensures{p} forall (b: Box) (s: string) { volume(b) >= 0 ∧ volume(b) >= 0 } */\n" +
-      "export function volume(b: Box): number { return b.size; }\n";
+      "/** @ensures{p} forall (b: Box) (s: string) { scale(1) >= 0 } */\n" +
+      "export function scale(x: number): number { return x; }\n";
     expect(classifications(src).classified).toEqual([
-      ["Inappropriate", "class-valued binder 'Box' is not yet modeled"],
+      [
+        "Inappropriate",
+        "class-valued binder 'Box' names a class outside the model: " +
+          "unmapped TypeScript construct 'ReadonlyKeyword' at 1:32",
+      ],
     ]);
   });
 });

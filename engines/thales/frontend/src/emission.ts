@@ -166,6 +166,9 @@ export interface ClassShape {
   fields: string[];
   getters: ReadonlySet<string>;
   ctorParams: ValueTy[];
+  /** The constructor parameters' source spellings, positionally aligned
+   * with `ctorParams`. A class binder quantifies over them by name. */
+  ctorParamNames: string[];
   /** Modeled methods by name, with their parameter types. */
   methods: ReadonlyMap<string, ValueTy[]>;
 }
@@ -178,7 +181,14 @@ export type EmitBinder =
   | { name: string; kind: "range"; lo: string; hi: string }
   | { name: string; kind: "int" }
   | { name: string; kind: "nat" }
-  | { name: string; kind: "number"; lower?: FloatBound; upper?: FloatBound };
+  | { name: string; kind: "number"; lower?: FloatBound; upper?: FloatBound }
+  | {
+      name: string;
+      kind: "class";
+      className: string;
+      module?: string;
+      ctorParams: string[];
+    };
 
 export interface EmitObligation {
   /** Qualified function name — the annotation identity's `function`. */
@@ -2249,6 +2259,7 @@ function walkClass(
     fields,
     getters: getterNames,
     ctorParams: ctorParams.map((p) => p.ty),
+    ctorParamNames: ctorParams.map((p) => p.name),
     methods: methodSigs,
   };
   const self = { ref: { module: qualifier, name: className }, shape };
@@ -2622,6 +2633,46 @@ function lowerBinder(b: Binder): EmitBinder | "bare" | { clamped: string[] } {
   };
 }
 
+/** A class binder's IR, or the refusal it earns. The binder ranges over
+ * the image of successful construction, so the class and every one of its
+ * constructor parameters have to be inside the model; nothing about the
+ * clamp or range machinery applies, since the domain is an image. */
+function lowerClassBinder(
+  name: string,
+  className: string,
+  classes: ReadonlyMap<string, ClassShape>,
+  failed: ReadonlyMap<string, FailedDecl>,
+  names: ReadonlyMap<string, ModelRef>,
+  module: string,
+): EmitBinder | { reason: string } {
+  const ref = names.get(className) ?? { module, name: className };
+  const shape = classes.get(modelKey(ref));
+  if (shape === undefined) {
+    const why =
+      failed.get(modelKey(ref))?.reason ??
+      `no model registered for '${displayName(ref)}'`;
+    return {
+      reason:
+        `class-valued binder '${className}' names a class outside ` +
+        `the model: ${why}`,
+    };
+  }
+  if (shape.ctorParams.some((t) => t !== "num")) {
+    return {
+      reason:
+        `class-valued binder '${className}' has a constructor ` +
+        `parameter outside the model`,
+    };
+  }
+  return {
+    name,
+    kind: "class",
+    className,
+    ...(ref.module !== "" ? { module: ref.module } : {}),
+    ctorParams: shape.ctorParamNames,
+  };
+}
+
 type PayloadResult =
   | { kind: "payload"; payload: EmitObligation["payload"] }
   | {
@@ -2652,6 +2703,21 @@ function obligationPayload(
     const loweredBinders: EmitBinder[] = [];
     const clamped: string[] = [];
     for (const b of binders) {
+      if (isClassDomain(b.domain)) {
+        const cls = lowerClassBinder(
+          b.varName,
+          b.domain.className,
+          classes,
+          failed,
+          names,
+          module,
+        );
+        if ("reason" in cls) {
+          return { kind: "classified", szs: "Inappropriate", reason: cls.reason };
+        }
+        loweredBinders.push(cls);
+        continue;
+      }
       const lowered = lowerBinder(b);
       if (lowered === "bare") return bare;
       if ("clamped" in lowered) clamped.push(...lowered.clamped);
@@ -2684,7 +2750,17 @@ function obligationPayload(
     const expr = unwrapParens(parsed.expr);
     const sides = equationSides(expr);
     const scope: WalkScope = {
-      vars: new Map(binders.map((b) => [b.varName, "num" as const])),
+      // A class binder enters the walk as an instance of its class, so
+      // its fields, getters, and methods resolve the way a class-typed
+      // parameter's do; every other binder is a number.
+      vars: new Map(
+        loweredBinders.map((b): [string, ValueTy] => [
+          b.name,
+          b.kind === "class"
+            ? { instance: { module: b.module ?? module, name: b.className } }
+            : "num",
+        ]),
+      ),
       mapped,
       failed,
       classes,
@@ -2752,23 +2828,6 @@ function obligationPayload(
     }
     return bare;
   }
-}
-
-/** The class-binder refusal, checked before everything else the way the
- * old transcriber checks it: outside the model whatever else the formula
- * or the function contains. */
-function classBinderReason(formula: string): string | undefined {
-  try {
-    const { binders } = parsePrefix(formula);
-    for (const b of binders) {
-      if (isClassDomain(b.domain)) {
-        return `class-valued binder '${b.domain.className}' is not yet modeled`;
-      }
-    }
-  } catch {
-    // The prefix parser's rejections degrade elsewhere.
-  }
-  return undefined;
 }
 
 /** One entry file's dependency-closure walk. Artifacts are
@@ -3005,15 +3064,6 @@ export function emitModule(
   const classified: ClassifiedAnnotation[] = [];
   for (const a of annotations) {
     const fn = qualifiedName(a.functionName, a.className, a.isStatic);
-    const classBinder = classBinderReason(a.formula);
-    if (classBinder !== undefined) {
-      classified.push({
-        annotation: a,
-        szs: "Inappropriate",
-        reason: classBinder,
-      });
-      continue;
-    }
     // A failed declaration blocks the annotation only when nothing
     // modeled the name: an overload signature fails while the
     // implementation models.
