@@ -720,6 +720,9 @@ interface WalkScope {
   module: string;
   /** Set inside a getter body, where `this` denotes the instance. */
   self?: { ref: ModelRef; shape: ClassShape };
+  /** Set inside a member body: the enclosing class's member failures,
+   * live while the class is still being walked. */
+  selfFailed?: ReadonlyMap<string, FailedDecl>;
 }
 
 /** Whether the module itself binds a spelling: a top-level declaration or
@@ -769,16 +772,23 @@ function findFailedCallee(
 
 /** A construct-carrying failure as it travels from a declaration to a
  * use; any other failure is left to the typed walk. */
-function travelFailure(
-  scope: WalkScope,
+function travelFrom(
+  failedMap: ReadonlyMap<string, FailedDecl>,
   ref: ModelRef,
 ): FailedDecl | undefined {
-  const failed = scope.failed.get(modelKey(ref));
+  const failed = failedMap.get(modelKey(ref));
   if (failed?.construct === undefined) return undefined;
   return {
     construct: failed.construct,
     reason: `'${displayName(ref)}' could not be modeled: ${failed.reason}`,
   };
+}
+
+function travelFailure(
+  scope: WalkScope,
+  ref: ModelRef,
+): FailedDecl | undefined {
+  return travelFrom(scope.failed, ref);
 }
 
 /** The first degraded class or class member a use names, in tree order:
@@ -815,8 +825,18 @@ function findFailedMemberUse(
   if (builtin !== undefined) return findFailedMemberUse(builtin.arg, scope);
   const selfCall = thisCall(e);
   if (selfCall !== undefined && scope.self !== undefined) {
-    // A member's own failures register only once the class walk ends, so
-    // the call itself has nothing to travel; its arguments still do.
+    // The live registry holds only already-walked siblings, so a forward
+    // call still falls to the typed walk, as source order demands.
+    if (
+      scope.selfFailed !== undefined &&
+      !scope.self.shape.methods.has(selfCall.name)
+    ) {
+      const travelled = travelFrom(scope.selfFailed, {
+        module: scope.self.ref.module,
+        name: qualifiedName(selfCall.name, scope.self.ref.name),
+      });
+      if (travelled !== undefined) return travelled;
+    }
     for (const a of selfCall.args) {
       const found = findFailedMemberUse(a, scope);
       if (found !== undefined) return found;
@@ -2329,7 +2349,12 @@ function walkClass(
       });
       continue;
     }
-    const scope: WalkScope = { ...base, vars: new Map(), self };
+    const scope: WalkScope = {
+      ...base,
+      vars: new Map(),
+      self,
+      selfFailed: memberFailed,
+    };
     const body = g.body!.statements.flatMap((st) =>
       structureStmt(st, sf, new Map(), scope),
     );
@@ -2390,6 +2415,7 @@ function walkClass(
       ...base,
       vars: new Map(params.map((p) => [p.name, p.ty])),
       self: methodSelf,
+      selfFailed: memberFailed,
     };
     const locals: Locals = new Map(
       params.map((p) => [p.name, "mutable" as const]),

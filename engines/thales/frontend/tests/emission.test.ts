@@ -4684,13 +4684,33 @@ describe("method-call scanner recursion (#130)", () => {
     expect(cls.methods.map((m) => m.name)).toEqual(["plus"]);
   });
 
-  test("a this-call to a degraded sibling is the engine's error", () => {
-    // A member's failures register only once the class walk ends, so the
-    // sibling's own reason is not available to travel here.
+  test("a this-call to a degraded sibling travels the sibling's reason", () => {
     const src = withGone(`/** @ensures{p} forall (x: int ∈ [0, 3)) { x < 3 } */
   use(): number {
     return this.gone();
   }`);
+    const { classified } = emitModule(src, "t.ts");
+    expect(classified[0]!.szs).toBe("Inappropriate");
+    expect(classified[0]!.reason).toContain(
+      "'C#gone' could not be modeled: unmapped TypeScript construct 'MethodDeclaration'",
+    );
+  });
+
+  test("a this-call to a later degraded sibling stays the engine's error", () => {
+    const src = `export class C {
+  #v: number;
+  constructor(v: number) {
+    this.#v = v;
+  }
+  /** @ensures{p} forall (x: int ∈ [0, 3)) { x < 3 } */
+  use(): number {
+    return this.gone();
+  }
+  async gone(): number {
+    return 1;
+  }
+}
+`;
     const { classified } = emitModule(src, "t.ts");
     expect(classified[0]!.szs).toBe("Error");
     expect(classified[0]!.reason).toContain(
