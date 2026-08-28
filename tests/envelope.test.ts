@@ -97,6 +97,17 @@ describe("collectIssues", () => {
       collectIssues(json([{ status: "failed", failureMessages: [] }], 0, 1)),
     ).toEqual([]);
   });
+
+  it("finds a payload sitting behind an unrelated failure message", () => {
+    const a: AssertionResult = {
+      status: "failed",
+      failureMessages: [
+        "Error: some unrelated failure\n  at foo (x.ts:1:1)",
+        encodeIssue(FALSIFIED),
+      ],
+    };
+    expect(collectIssues(json([a], 0, 1))).toEqual([FALSIFIED]);
+  });
 });
 
 describe("buildEnvelope", () => {
@@ -204,6 +215,30 @@ describe("buildEnvelope", () => {
       szs: "GaveUp",
       kind: "exhausted",
       error: "too many skipped runs",
+    });
+  });
+
+  it("a refutation is reported even when its payload is not the first message", () => {
+    const issue: Issue = {
+      file: "foo.ts",
+      function: "clamp",
+      property: "upper bound",
+      kind: "falsified",
+      counterexample: { n: 0 },
+    };
+    const a: AssertionResult = {
+      status: "failed",
+      failureMessages: [
+        "Error: some unrelated failure\n  at foo (x.ts:1:1)",
+        encodeIssue(issue),
+      ],
+    };
+    const env = buildEnvelope(META, json([a], 2, 1), IDS);
+    expect(env.annotations[0]).toEqual({
+      ...IDS[0],
+      szs: "CounterSatisfiable",
+      kind: "falsified",
+      counterexample: { n: 0 },
     });
   });
 });

@@ -55,13 +55,17 @@ function identityKey(i: PropertyIdentity): string {
   return JSON.stringify([i.file, i.function, i.property]);
 }
 
-/** Parse every failed assertion's tagged payload into an Issue. */
+/** Parse every failed assertion's tagged payload into an Issue. The payload
+ * is not always the first failure message vitest reports, so each entry is
+ * searched. */
 export function collectIssues(json: VitestJson): Issue[] {
   const issues: Issue[] = [];
   for (const file of json.testResults ?? []) {
     for (const a of file.assertionResults ?? []) {
       if (a.status !== "failed") continue;
-      const issue = parseIssue(a.failureMessages[0] ?? "");
+      const issue = (a.failureMessages ?? [])
+        .map((m) => parseIssue(m))
+        .find((i) => i !== null);
       if (issue) issues.push(issue);
     }
   }
