@@ -2931,14 +2931,18 @@ function walkEmitModule(
       c.failed.set(key(className), walked);
       for (const member of stmt.members) {
         const name = member.name;
-        if (name === undefined || !ts.isIdentifier(name)) continue;
+        // A constructor has no name node; its spelling is synthesized, as
+        // the modeling path synthesizes it when registering the ctor.
+        const spelling = ts.isConstructorDeclaration(member)
+          ? "constructor"
+          : name !== undefined && ts.isIdentifier(name)
+            ? name.text
+            : undefined;
+        if (spelling === undefined) continue;
         const isStatic = (
           ts.getModifiers(member as ts.HasModifiers) ?? []
         ).some((m) => m.kind === ts.SyntaxKind.StaticKeyword);
-        c.failed.set(
-          key(qualifiedName(name.text, className, isStatic)),
-          walked,
-        );
+        c.failed.set(key(qualifiedName(spelling, className, isStatic)), walked);
       }
       continue;
     }
