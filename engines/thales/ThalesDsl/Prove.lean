@@ -224,13 +224,17 @@ def ppResidual (e : Expr) : MetaM Format :=
     (fun ctx => { ctx with openDecls := [.simple `Js [], .simple `ThalesDsl []] })
     (Meta.ppExpr e)
 
+/-- What a rung reports when it has nothing to say about the goal it was
+left holding. -/
+def residualGaveUp (identity : Identity) (residual : Expr) : MetaM Verdict := do
+  return ⟨identity, .GaveUp, s!"unsolved goal: {← ppResidual residual}", none, none⟩
+
 /-- Certifies a closed root metavariable through the kernel; anything off
 about the proof (kernel budget exhaustion aside) degrades to the
 residual-goal GaveUp rather than escaping. -/
 def certifyRoot (identity : Identity) (p root residual : Expr) :
     Term.TermElabM Verdict := do
-  let gaveUp : Verdict :=
-    ⟨identity, .GaveUp, s!"unsolved goal: {← ppResidual residual}", none, none⟩
+  let gaveUp ← residualGaveUp identity residual
   let proof ← instantiateMVars root
   if proof.hasExprMVar then return gaveUp
   try
@@ -315,24 +319,30 @@ two-binder formula over a constructor with a handful of guards. -/
 def ctorImageFuel : Nat := 12
 
 /-- Rung 3: grind on the residual goal rung 2 left. Success certifies
-through the root metavariable like every rung; failure — either resource
-limit included — ships the residual-goal GaveUp. -/
+through the root metavariable like every rung; a grind that simply fails
+ships the residual-goal GaveUp. Neither resource limit is contained here:
+this rung's exhaustion is classified where every other rung's is, so a
+spent budget can still report as the annotation's Timeout. -/
 def attemptGrind (identity : Identity) (p root : Expr) (goal : MVarId)
     (residual : Expr) : Term.TermElabM Verdict := do
-  let solved ← tryCatchRuntimeEx
-    (try
-      let params ← Meta.Grind.mkDefaultParams {}
-      let goals ← invertCtorImage (← goal.intros).2 ctorImageFuel
-      let results ← goals.mapM (Meta.Grind.main · params)
-      pure (results.all (!·.hasFailed))
-    catch _ => pure false)
-    (fun ex => if ex.isRuntime then pure false else throw ex)
+  let solved := (← orFallThrough do
+    let params ← Meta.Grind.mkDefaultParams {}
+    let goals ← invertCtorImage (← goal.intros).2 ctorImageFuel
+    let results ← goals.mapM (Meta.Grind.main · params)
+    pure (results.all (!·.hasFailed))).getD false
   if solved then return ← certifyRoot identity p root residual
-  return ⟨identity, .GaveUp, s!"unsolved goal: {← ppResidual residual}", none, none⟩
+  return ← residualGaveUp identity residual
 
 def timeoutVerdict (identity : Identity) (budget : Nat) : Verdict :=
   ⟨identity, .Timeout,
     s!"the attempt exceeded the per-annotation heartbeat budget (thales.heartbeats = {budget})", none, none⟩
+
+/-- The ladder's exit. A starved rung might have closed the goal given
+budget, so exhaustion plus a residual goal is budget exhaustion rather than
+a dead end. -/
+def ladderVerdict (identity : Identity) (budget : Nat) (starved : Bool)
+    (v : Verdict) : Verdict :=
+  if starved && v.szs == .GaveUp then timeoutVerdict identity budget else v
 
 /-- Runs one rung, turning either resource limit into a fall-through to the
 next. Budget exhaustion — heartbeats, or the kernel's own timeout — reports
@@ -399,19 +409,21 @@ def attemptLadder (identity : Identity) (propStx : TSyntax `term)
   let (outcome, rungStarved) ←
     runRung (withHeartbeats lateShare (attemptGeneric identity p))
   if rungStarved then starved := true
-  let v ← match outcome with
-    | some (.done v) => pure v
-    | some (.stuck root goal residual) =>
-      withHeartbeats lateShare (attemptGrind identity p root goal residual)
+  -- Rung 3 takes the goal rung 2 was left holding, or — when rung 2 blew a
+  -- limit without leaving a residual — starts over from the original
+  -- proposition. One call site either way, so the rung is classified once.
+  let (root, goal, residual) ← match outcome with
+    | some (.done v) => return ladderVerdict identity budget starved v
+    | some (.stuck root goal residual) => pure (root, goal, residual)
     | none => do
-      -- Rung 2 blew a limit without leaving a residual; grind starts over
-      -- from the original proposition.
       let root ← Meta.mkFreshExprMVar p
-      withHeartbeats lateShare (attemptGrind identity p root root.mvarId! p)
-  -- A starved earlier rung might have closed the goal given budget, so
-  -- exhaustion plus a residual goal is budget exhaustion, not a dead end.
-  if starved && v.szs == .GaveUp then
-    return timeoutVerdict identity budget
-  return v
+      pure (root, root.mvarId!, p)
+  let (grindOutcome, grindStarved) ←
+    runRung (withHeartbeats lateShare (attemptGrind identity p root goal residual))
+  if grindStarved then starved := true
+  let v ← match grindOutcome with
+    | some v => pure v
+    | none => residualGaveUp identity residual
+  return ladderVerdict identity budget starved v
 
 end ThalesDsl

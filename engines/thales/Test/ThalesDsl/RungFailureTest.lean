@@ -26,6 +26,18 @@ open ThalesDsl Lean
     return false
   catch _ => return true
 
+-- Grind's own budget exhaustion is starvation too: contained inside the rung,
+-- it would ship as a residual-goal GaveUp, which reads as a dead end rather
+-- than as the budget it was.
+/-- info: true -/
+#guard_msgs in
+#eval show Elab.Term.TermElabM Bool from do
+  let p ← Elab.Term.elabTerm (← `(∀ n : Nat, n < 5 ∨ 5 ≤ n)) (some (mkSort .zero))
+  let root ← Meta.mkFreshExprMVar p
+  let (outcome, starved) ←
+    runRung (withHeartbeats 1 (attemptGrind ⟨"c.ts", "f", "p"⟩ p root root.mvarId! p))
+  return outcome.isNone && starved
+
 -- The real call site. A classical instance is decidable enough for `mkDecide`
 -- to build the goal but noncomputable, so codegen fails inside `nativeEqTrue`
 -- — the rung reports no verdict instead of taking the ladder down with it.
