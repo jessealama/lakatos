@@ -412,7 +412,12 @@ function isPrefixNot(e: ts.Expression): e is ts.PrefixUnaryExpression {
 function numericShaped(e: ts.Expression, scope: WalkScope): boolean {
   const u = unwrapParens(e);
   if (ts.isNumericLiteral(u) || negatedLiteral(u) !== undefined) return true;
-  if (ts.isIdentifier(u)) return true;
+  if (ts.isIdentifier(u)) {
+    // A bound identifier's recorded type is authoritative; an unbound
+    // one stays permissive so it travels its own failure downstream.
+    const ty = scope.vars.get(u.text);
+    return ty === undefined || ty === "num";
+  }
   if (isUnaryArith(u)) return true;
   // A conditional has no shape of its own: it is whatever both arms are.
   if (ts.isConditionalExpression(u))

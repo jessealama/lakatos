@@ -2204,6 +2204,30 @@ describe("builtin member calls model as Float primitives", () => {
     ]);
   });
 
+  test("Object.is on a class-typed identifier refuses like the new spelling", () => {
+    const src = [
+      "export class Point {",
+      "  readonly x: number;",
+      "  constructor(x: number) {",
+      "    this.x = x;",
+      "  }",
+      "}",
+      "/** @ensures{p} forall (a: int ∈ [0, 10)) { Object.is(f(new Point(a)), 0) } */",
+      "export function f(p: Point): number {",
+      "  if (Object.is(p, 0)) {",
+      "    return 1;",
+      "  }",
+      "  return 0;",
+      "}",
+      "",
+    ].join("\n");
+    const { classified } = emitModule(src, "t.ts");
+    expect(classified[0]!.szs).toBe("Inappropriate");
+    expect(classified[0]!.reason).toContain(
+      "'Object.is' models numbers only; argument 1 is not a number (Identifier",
+    );
+  });
+
   test("Number.parseFloat keeps the unmapped-construct refusal", () => {
     const src = [
       "/** @ensures{p} forall (n: int ∈ [0, 3)) { conv(n) >= 0 } */",
