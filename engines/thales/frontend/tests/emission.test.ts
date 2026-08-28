@@ -1314,6 +1314,19 @@ describe("class-valued binders lower to a binder IR", () => {
     ]);
   });
 
+  test("a binder naming nothing the module declares refuses", () => {
+    const src =
+      "/** @ensures{p} forall (b: Nope) { scale(1) >= 0 } */\n" +
+      "export function scale(x: number): number { return x; }\n";
+    expect(classifications(src).classified).toEqual([
+      [
+        "Inappropriate",
+        "class-valued binder 'Nope' names a class outside the model: " +
+          "no model registered for 'Nope'",
+      ],
+    ]);
+  });
+
   test("the binder refusal wins over other blockers in the same property", () => {
     const src =
       BOX +
