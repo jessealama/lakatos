@@ -72,3 +72,13 @@ def TsModel.negNorm (x : JsNumber) : JsM JsNumber := do
 
 example (x : Float) : TsModel.negNorm x = (pure x : JsM Float) := by
   simp only [TsModel.negNorm, js_norm]
+
+-- A throwing statement short-circuits the rest of a constructor, so no
+-- successful construction survives a guard it triggered.
+example (e : JsError) (k : Unit → JsM Nat) (n : Nat) :
+    ((do throw e; k ()) : JsM Nat) = .ok n → False := by
+  grind
+
+-- The bounds a class binder gets, from the guard alone.
+example (x : Float) (h : Float.isFinite x = true) : -floatInf < x ∧ x < floatInf := by
+  grind

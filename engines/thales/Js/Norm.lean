@@ -215,6 +215,29 @@ theorem float_gt_neg_inf_of_beq_false {x : Float}
     (h : Float.beq x (-floatInf) = false) : -floatInf < x :=
   FloatFacts.float_gt_neg_inf_of_beq_false hn h
 
+/-- A `Number.isFinite` guard that let a value through puts it strictly
+above `-∞`. -/
+theorem float_lo_of_isFinite {x : Float} (h : Float.isFinite x = true) :
+    -floatInf < x :=
+  FloatFacts.float_lo_of_isFinite h
+
+/-- The same guard puts it strictly below `+∞`. -/
+theorem float_hi_of_isFinite {x : Float} (h : Float.isFinite x = true) :
+    x < floatInf :=
+  FloatFacts.float_hi_of_isFinite h
+
+/-! A constructor's guards throw, so what follows a triggered guard never
+runs. These two are what let a successful construction refute the guards
+it passed; both are definitional on `Except`, and neither is derivable
+from the monad laws the closers already know. -/
+
+/-- A throw discards its continuation. -/
+@[simp, grind =] theorem jsm_throw_bind {α β : Type} (e : JsError) (k : α → JsM β) :
+    (throw e >>= k) = .error e := rfl
+
+/-- A pure result is an `ok`. -/
+@[simp, grind =] theorem jsm_pure_eq {α : Type} (a : α) : (pure a : JsM α) = .ok a := rfl
+
 /-- A refuted SameValue test against NaN means the value does not unpack
 to NaN — the fact that feeds the two lemmas above. -/
 theorem unpack_ne_nan_of_sameValue_false {x : Float}
@@ -289,5 +312,7 @@ grind_pattern sameValue_nan_eq_false => Number.FloatOps.sameValue x floatNaN
 grind_pattern float_lt_inf_of_beq_false => Float.beq x floatInf
 grind_pattern float_gt_neg_inf_of_beq_false => Float.beq x (-floatInf)
 grind_pattern unpack_ne_nan_of_sameValue_false => Number.FloatOps.sameValue x floatNaN
+grind_pattern float_lo_of_isFinite => Float.isFinite x
+grind_pattern float_hi_of_isFinite => Float.isFinite x
 
 end Js
