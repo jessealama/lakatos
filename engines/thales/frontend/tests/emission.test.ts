@@ -3216,6 +3216,48 @@ describe("class-level degrade paths (#129)", () => {
     );
     expect(reason).toContain("assigns field '#v' on only some paths");
   });
+
+  test("an annotation on a degraded class's constructor travels the class's reason", () => {
+    const src = [
+      "export class Counter {",
+      "  readonly n: number;",
+      "  /** @ensures{p} forall (a: int ∈ [0, 10)) { 0 <= a } */",
+      "  constructor(n: string) {",
+      "    this.n = 1;",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(emission.obligations).toEqual([]);
+    expect(classified).toHaveLength(1);
+    expect(classified[0]!.szs).toBe("Inappropriate");
+    expect(classified[0]!.reason).toBe(
+      "'Counter#constructor' could not be modeled: unmapped TypeScript " +
+        "construct 'StringKeyword' at 4:18",
+    );
+  });
+
+  test("an annotation on a modeling class's constructor still structures", () => {
+    const src = [
+      "export class C {",
+      "  #v: number;",
+      "  /** @ensures{p} forall (x: number) { 0 <= 1 } */",
+      "  constructor(v: number) {",
+      "    this.#v = v;",
+      "  }",
+      "  get v(): number {",
+      "    return this.#v;",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    expect(emission.obligations.map((o) => o.function)).toEqual([
+      "C#constructor",
+    ]);
+  });
 });
 
 describe("class member-level degrade paths (#129)", () => {
