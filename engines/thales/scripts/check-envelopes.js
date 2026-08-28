@@ -119,6 +119,16 @@ const METHOD_FIXTURES = [
   `${CONFORMANCE}/error/method-arity.ts`,
 ];
 
+/** The class-typed-parameter slice: a parameter at its own class, one at
+ * an earlier class through a constructor, a free function over a class,
+ * and the two ways a parameter's type can refuse. */
+const PARAM_FIXTURES = [
+  "engines/thales/tests/fixtures/class-params.ts",
+  `${CONFORMANCE}/theorem/class-param-gap.ts`,
+  `${CONFORMANCE}/error/class-param-number-arg.ts`,
+  `${CONFORMANCE}/inappropriate/class-param-interface.ts`,
+];
+
 /** The degradation slice (#151): unsupported ranges and the names
  * non-function declarations bind, mixed with healthy annotations in one
  * file. */
@@ -146,6 +156,7 @@ const fixtures =
         ...BINDER_FIXTURES,
         ...CLASS_FIXTURES,
         ...METHOD_FIXTURES,
+        ...PARAM_FIXTURES,
         ...DEGRADATION_FIXTURES,
         ...IMPORT_FIXTURES,
       ]

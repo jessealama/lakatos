@@ -1,0 +1,380 @@
+{
+  "file": "engines/thales/tests/fixtures/class-params.ts",
+  "declarations": [
+    {
+      "kind": "class",
+      "name": "Point",
+      "source": "export class Point {\n  readonly x: number;\n  constructor(x: number) {\n    this.x = x;\n  }\n  /** @ensures{selfGap} forall (a: int ∈ [0, 10)) { Object.is(new Point(a).gap(new Point(a)), 0) } */\n  gap(other: Point): number {\n    return other.x - this.x;\n  }\n  /** @ensures{doubleGap} forall (a: int ∈ [0, 10)) { Object.is(new Point(a).twice(new Point(a)), 0) } */\n  twice(other: Point): number {\n    return other.gap(other) + this.gap(other);\n  }\n}",
+      "fields": ["x"],
+      "ctor": {
+        "params": [
+          {
+            "name": "x",
+            "type": "number"
+          }
+        ],
+        "body": [
+          {
+            "kind": "field-set",
+            "field": "x",
+            "expr": {
+              "kind": "id",
+              "name": "x"
+            }
+          }
+        ]
+      },
+      "getters": [],
+      "methods": [
+        {
+          "name": "gap",
+          "params": [
+            {
+              "name": "other",
+              "type": {
+                "class": "Point"
+              }
+            }
+          ],
+          "body": [
+            {
+              "kind": "return",
+              "expr": {
+                "kind": "binop",
+                "op": "-",
+                "left": {
+                  "kind": "field-read",
+                  "className": "Point",
+                  "field": "x",
+                  "object": {
+                    "kind": "id",
+                    "name": "other"
+                  }
+                },
+                "right": {
+                  "kind": "field-read",
+                  "className": "Point",
+                  "field": "x",
+                  "object": {
+                    "kind": "self"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "twice",
+          "params": [
+            {
+              "name": "other",
+              "type": {
+                "class": "Point"
+              }
+            }
+          ],
+          "body": [
+            {
+              "kind": "return",
+              "expr": {
+                "kind": "binop",
+                "op": "+",
+                "left": {
+                  "kind": "method-call",
+                  "className": "Point",
+                  "name": "gap",
+                  "object": {
+                    "kind": "id",
+                    "name": "other"
+                  },
+                  "args": [
+                    {
+                      "kind": "id",
+                      "name": "other"
+                    }
+                  ]
+                },
+                "right": {
+                  "kind": "method-call",
+                  "className": "Point",
+                  "name": "gap",
+                  "object": {
+                    "kind": "self"
+                  },
+                  "args": [
+                    {
+                      "kind": "id",
+                      "name": "other"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "class",
+      "name": "Wrap",
+      "source": "export class Wrap {\n  readonly x: number;\n  constructor(p: Point) {\n    this.x = p.x;\n  }\n  /** @ensures{unwraps} forall (a: int ∈ [0, 10)) { Object.is(new Wrap(new Point(a)).v, a) } */\n  get v(): number {\n    return this.x;\n  }\n}",
+      "fields": ["x"],
+      "ctor": {
+        "params": [
+          {
+            "name": "p",
+            "type": {
+              "class": "Point"
+            }
+          }
+        ],
+        "body": [
+          {
+            "kind": "field-set",
+            "field": "x",
+            "expr": {
+              "kind": "field-read",
+              "className": "Point",
+              "field": "x",
+              "object": {
+                "kind": "id",
+                "name": "p"
+              }
+            }
+          }
+        ]
+      },
+      "getters": [
+        {
+          "name": "v",
+          "body": [
+            {
+              "kind": "return",
+              "expr": {
+                "kind": "field-read",
+                "className": "Wrap",
+                "field": "x",
+                "object": {
+                  "kind": "self"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "methods": []
+    },
+    {
+      "kind": "function",
+      "name": "readX",
+      "params": [
+        {
+          "name": "p",
+          "type": {
+            "class": "Point"
+          }
+        }
+      ],
+      "source": "export function readX(p: Point): number {\n  return p.x;\n}",
+      "body": [
+        {
+          "kind": "return",
+          "expr": {
+            "kind": "field-read",
+            "className": "Point",
+            "field": "x",
+            "object": {
+              "kind": "id",
+              "name": "p"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "obligations": [
+    {
+      "function": "Point#gap",
+      "property": "selfGap",
+      "formula": "forall (a: int ∈ [0, 10)) { Object.is(new Point(a).gap(new Point(a)), 0) }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "a",
+            "kind": "range",
+            "lo": "0",
+            "hi": "10"
+          }
+        ],
+        "conclusion": {
+          "kind": "eq",
+          "left": {
+            "kind": "method-call",
+            "className": "Point",
+            "name": "gap",
+            "object": {
+              "kind": "new",
+              "className": "Point",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "a"
+                }
+              ]
+            },
+            "args": [
+              {
+                "kind": "new",
+                "className": "Point",
+                "args": [
+                  {
+                    "kind": "id",
+                    "name": "a"
+                  }
+                ]
+              }
+            ]
+          },
+          "right": {
+            "kind": "num",
+            "lit": "0"
+          }
+        }
+      }
+    },
+    {
+      "function": "Point#twice",
+      "property": "doubleGap",
+      "formula": "forall (a: int ∈ [0, 10)) { Object.is(new Point(a).twice(new Point(a)), 0) }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "a",
+            "kind": "range",
+            "lo": "0",
+            "hi": "10"
+          }
+        ],
+        "conclusion": {
+          "kind": "eq",
+          "left": {
+            "kind": "method-call",
+            "className": "Point",
+            "name": "twice",
+            "object": {
+              "kind": "new",
+              "className": "Point",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "a"
+                }
+              ]
+            },
+            "args": [
+              {
+                "kind": "new",
+                "className": "Point",
+                "args": [
+                  {
+                    "kind": "id",
+                    "name": "a"
+                  }
+                ]
+              }
+            ]
+          },
+          "right": {
+            "kind": "num",
+            "lit": "0"
+          }
+        }
+      }
+    },
+    {
+      "function": "Wrap#v",
+      "property": "unwraps",
+      "formula": "forall (a: int ∈ [0, 10)) { Object.is(new Wrap(new Point(a)).v, a) }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "a",
+            "kind": "range",
+            "lo": "0",
+            "hi": "10"
+          }
+        ],
+        "conclusion": {
+          "kind": "eq",
+          "left": {
+            "kind": "getter-read",
+            "className": "Wrap",
+            "name": "v",
+            "object": {
+              "kind": "new",
+              "className": "Wrap",
+              "args": [
+                {
+                  "kind": "new",
+                  "className": "Point",
+                  "args": [
+                    {
+                      "kind": "id",
+                      "name": "a"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "right": {
+            "kind": "id",
+            "name": "a"
+          }
+        }
+      }
+    },
+    {
+      "function": "readX",
+      "property": "reads",
+      "formula": "forall (a: int ∈ [0, 10)) { Object.is(readX(new Point(a)), a) }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "a",
+            "kind": "range",
+            "lo": "0",
+            "hi": "10"
+          }
+        ],
+        "conclusion": {
+          "kind": "eq",
+          "left": {
+            "kind": "call",
+            "callee": "readX",
+            "args": [
+              {
+                "kind": "new",
+                "className": "Point",
+                "args": [
+                  {
+                    "kind": "id",
+                    "name": "a"
+                  }
+                ]
+              }
+            ]
+          },
+          "right": {
+            "kind": "id",
+            "name": "a"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -765,6 +765,61 @@
       "reason": "property elaboration failed: 'Box#double' expects 0 argument(s), got 1"
     }
   ],
+  "engines/thales/tests/fixtures/class-params.ts": [
+    {
+      "function": "Point#gap",
+      "property": "selfGap",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_17158361723131697011",
+      "axioms": []
+    },
+    {
+      "function": "Point#twice",
+      "property": "doubleGap",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_18229670749057531231",
+      "axioms": []
+    },
+    {
+      "function": "Wrap#v",
+      "property": "unwraps",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_16717797666697990175",
+      "axioms": []
+    },
+    {
+      "function": "readX",
+      "property": "reads",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_891846020316709071",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/class-param-gap.ts": [
+    {
+      "function": "Point#gap",
+      "property": "selfGap",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_1839765476958811351",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/error/class-param-number-arg.ts": [
+    {
+      "function": "Point#gap",
+      "property": "p",
+      "szs": "Error",
+      "reason": "property elaboration failed: identifier 'a' is a number, not an instance of 'Point'"
+    }
+  ],
+  "engines/thales/tests/conformance/inappropriate/class-param-interface.ts": [
+    {
+      "function": "Point#near",
+      "property": "p",
+      "szs": "Inappropriate",
+      "reason": "'Point#near' could not be modeled: 'Named' could not be modeled: unmapped TypeScript construct 'InterfaceDeclaration' at 1:18"
+    }
+  ],
   "engines/thales/tests/fixtures/degradations.ts": [
     {
       "function": "twice",

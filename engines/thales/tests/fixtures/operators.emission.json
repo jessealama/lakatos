@@ -4,7 +4,12 @@
     {
       "kind": "function",
       "name": "rem7",
-      "params": ["x"],
+      "params": [
+        {
+          "name": "x",
+          "type": "number"
+        }
+      ],
       "source": "export function rem7(x: number): number {\n  return x % 7;\n}",
       "body": [
         {
@@ -27,7 +32,12 @@
     {
       "kind": "function",
       "name": "neg",
-      "params": ["x"],
+      "params": [
+        {
+          "name": "x",
+          "type": "number"
+        }
+      ],
       "source": "export function neg(x: number): number {\n  return -x;\n}",
       "body": [
         {
@@ -46,7 +56,12 @@
     {
       "kind": "function",
       "name": "plus",
-      "params": ["x"],
+      "params": [
+        {
+          "name": "x",
+          "type": "number"
+        }
+      ],
       "source": "export function plus(x: number): number {\n  return +x;\n}",
       "body": [
         {
@@ -65,7 +80,12 @@
     {
       "kind": "function",
       "name": "bump",
-      "params": ["x"],
+      "params": [
+        {
+          "name": "x",
+          "type": "number"
+        }
+      ],
       "source": "export function bump(x: number): number {\n  return x + 1;\n}",
       "body": [
         {
@@ -88,7 +108,12 @@
     {
       "kind": "function",
       "name": "chain",
-      "params": ["x"],
+      "params": [
+        {
+          "name": "x",
+          "type": "number"
+        }
+      ],
       "source": "export function chain(x: number): number {\n  return bump(neg(x)) + 1;\n}",
       "body": [
         {
@@ -123,7 +148,12 @@
     {
       "kind": "function",
       "name": "magnitude",
-      "params": ["x"],
+      "params": [
+        {
+          "name": "x",
+          "type": "number"
+        }
+      ],
       "source": "export function magnitude(x: number): number {\n  return Math.abs(x);\n}",
       "body": [
         {
@@ -141,7 +171,12 @@
     {
       "kind": "function",
       "name": "halveSafe",
-      "params": ["n"],
+      "params": [
+        {
+          "name": "n",
+          "type": "number"
+        }
+      ],
       "source": "export function halveSafe(n: number): number {\n  return n / 2;\n}",
       "body": [
         {
@@ -164,7 +199,12 @@
     {
       "kind": "function",
       "name": "zeroOverZero",
-      "params": ["n"],
+      "params": [
+        {
+          "name": "n",
+          "type": "number"
+        }
+      ],
       "source": "export function zeroOverZero(n: number): number {\n  return (n - n) / (n - n);\n}",
       "body": [
         {

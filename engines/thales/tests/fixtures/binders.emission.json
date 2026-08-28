@@ -4,7 +4,12 @@
     {
       "kind": "function",
       "name": "keep",
-      "params": ["x"],
+      "params": [
+        {
+          "name": "x",
+          "type": "number"
+        }
+      ],
       "source": "export function keep(x: number): number {\n  if (x < 1) {\n    return 1;\n  }\n  return x;\n}",
       "body": [
         {
@@ -43,7 +48,12 @@
     {
       "kind": "function",
       "name": "twice",
-      "params": ["x"],
+      "params": [
+        {
+          "name": "x",
+          "type": "number"
+        }
+      ],
       "source": "export function twice(x: number): number {\n  return x + x;\n}",
       "body": [
         {
@@ -66,7 +76,16 @@
     {
       "kind": "function",
       "name": "scale",
-      "params": ["value", "factor"],
+      "params": [
+        {
+          "name": "value",
+          "type": "number"
+        },
+        {
+          "name": "factor",
+          "type": "number"
+        }
+      ],
       "source": "export function scale(value: number, factor: number): number {\n  return value * factor;\n}",
       "body": [
         {

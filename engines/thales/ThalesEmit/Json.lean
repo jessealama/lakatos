@@ -39,11 +39,23 @@ inductive JsStmt where
   | fieldSet (field : String) (expr : JsExpr)
 deriving Repr, Inhabited
 
+/-- A parameter's declared type: a TypeScript number, or an instance of a
+modeled class, whose module is none for the entry file's own. -/
+inductive ParamTy where
+  | number
+  | cls (name : String) (module : Option String)
+deriving Repr, Inhabited, BEq
+
+structure Param where
+  name : String
+  ty : ParamTy
+deriving Repr, Inhabited
+
 structure EmitFn where
   name : String
   /-- The defining module's entry-relative path; none for the entry. -/
   module : Option String := none
-  params : Array String
+  params : Array Param
   source : String
   body : Array JsStmt
 deriving Repr, Inhabited
@@ -55,7 +67,7 @@ deriving Repr, Inhabited
 
 structure EmitMethod where
   name : String
-  params : Array String
+  params : Array Param
   body : Array JsStmt
 deriving Repr, Inhabited
 
@@ -69,7 +81,7 @@ structure EmitClass where
   source : String
   /-- Field spellings in declaration order — the structure's fields. -/
   fields : Array String
-  ctorParams : Array String
+  ctorParams : Array Param
   ctorBody : Array JsStmt
   getters : Array EmitGetter
   methods : Array EmitMethod := #[]
@@ -230,10 +242,25 @@ def decodeNames (j : Json) (field what : String) :
   (← getArr j field).mapM fun n =>
     n.getStr?.mapError fun _ => s!"a {what} is not a string"
 
+/-- A parameter's type: the string "number", or a class object. -/
+def decodeParamTy (j : Json) : Except String ParamTy :=
+  match j.getStr? with
+  | .ok "number" => pure .number
+  | .ok s => throw s!"unknown parameter type '{s}'"
+  | .error _ => do pure (.cls (← getStr j "class") (← getStrOpt j "module"))
+
+def decodeParam (j : Json) : Except String Param := do
+  pure { name := ← getStr j "name"
+         ty := ← decodeParamTy (← j.getObjVal? "type") }
+
+def decodeParams (j : Json) (field : String) : Except String (Array Param) := do
+  (← getArr j field).mapM fun p =>
+    (decodeParam p).mapError fun m => s!"field '{field}': {m}"
+
 def decodeFn (j : Json) : Except String EmitFn := do
   pure { name := ← getStr j "name"
          module := ← getStrOpt j "module"
-         params := ← decodeNames j "params" "parameter name"
+         params := ← decodeParams j "params"
          source := ← getStr j "source"
          body := ← (← getArr j "body").mapM decodeStmt }
 
@@ -243,7 +270,7 @@ def decodeGetter (j : Json) : Except String EmitGetter := do
 
 def decodeMethod (j : Json) : Except String EmitMethod := do
   pure { name := ← getStr j "name"
-         params := ← decodeNames j "params" "parameter name"
+         params := ← decodeParams j "params"
          body := ← (← getArr j "body").mapM decodeStmt }
 
 def decodeClass (j : Json) : Except String EmitClass := do
@@ -255,7 +282,7 @@ def decodeClass (j : Json) : Except String EmitClass := do
   let fields ← decodeNames j "fields" "field name"
   let ctor ← j.getObjVal? "ctor"
   pure { name, module, source, fields
-         ctorParams := ← decodeNames ctor "params" "parameter name"
+         ctorParams := ← decodeParams ctor "params"
          ctorBody := ← (← getArr ctor "body").mapM decodeStmt
          getters := ← (← getArr j "getters").mapM decodeGetter
          methods := ← (← getArr j "methods").mapM decodeMethod }

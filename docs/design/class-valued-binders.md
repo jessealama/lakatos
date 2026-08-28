@@ -6,30 +6,39 @@ target surface:
 
 ```ts
 export class Point {
-    public readonly x : number;
-    public readonly y : number;
+  public readonly x: number;
+  public readonly y: number;
 
-    constructor(x: number, y: number) {
-        if (x === -Infinity || x === Infinity || y === -Infinity || y === Infinity) {
-            throw new RangeError("Cannot accept infinite coordinates");
-        }
-        if (Object.is(x, NaN) || Object.is(y, NaN)) {
-            throw new RangeError("Coordinates cannot be NaN");
-        }
-        if (Object.is(x, -0)) { x = 0; }
-        if (Object.is(y, -0)) { y = 0; }
-        this.x = x;
-        this.y = y;
+  constructor(x: number, y: number) {
+    if (
+      x === -Infinity ||
+      x === Infinity ||
+      y === -Infinity ||
+      y === Infinity
+    ) {
+      throw new RangeError("Cannot accept infinite coordinates");
     }
+    if (Object.is(x, NaN) || Object.is(y, NaN)) {
+      throw new RangeError("Coordinates cannot be NaN");
+    }
+    if (Object.is(x, -0)) {
+      x = 0;
+    }
+    if (Object.is(y, -0)) {
+      y = 0;
+    }
+    this.x = x;
+    this.y = y;
+  }
 
-    /**
-     * @ensures{nonNegative} ∀ (p q : Point) { 0 <= p.distance(q) }
-     */
-    distance(p: Point): number {
-        const dx = p.x - this.x;
-        const dy = p.y - this.y;
-        return Math.sqrt(dx * dx + dy * dy);
-    }
+  /**
+   * @ensures{nonNegative} ∀ (p q : Point) { 0 <= p.distance(q) }
+   */
+  distance(p: Point): number {
+    const dx = p.x - this.x;
+    const dy = p.y - this.y;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
 }
 ```
 
@@ -37,9 +46,9 @@ Verified baseline (2026-08-25, both engines at main):
 
 - `lakatos refute Point.mts` → exit 2,
   `unknown generation domain 'Point' — valid domains: int, nat, number,
-  boolean, string, bigint` (lemma `prefix-parser.ts:218`).
+boolean, string, bigint` (lemma `prefix-parser.ts:218`).
 - `lakatos prove Point.mts` → `Inappropriate`, `unmapped TypeScript
-  construct 'ClassDeclaration'` (the transcriber refuses the class before
+construct 'ClassDeclaration'` (the transcriber refuses the class before
   the binder domain is ever consulted).
 
 ## D1. Scope: Lemma + pabst now; thales post-parity
@@ -60,7 +69,7 @@ features until emission parity. This work lands in three tiers:
 Racing class support onto the dying `ts.` DSL was considered and
 rejected: throwaway work and the freeze's first violation a day after it
 was set. The talk is a live research demo; `refute` succeeding and
-`prove` declining *with a reason it can name* is the honest slide.
+`prove` declining _with a reason it can name_ is the honest slide.
 
 ## D2. Semantics: the binder ranges over the constructor's image
 
@@ -69,7 +78,7 @@ constructor's parameter domains on which `new C(...)` returns normally,
 φ holds of the returned instance.
 
 - The domain is the **image of successful construction** — the guards
-  in the constructor *define* the domain; a throwing tuple denotes no
+  in the constructor _define_ the domain; a throwing tuple denotes no
   instance and is outside the quantifier. The `-0` normalization comes
   out right for free: the image contains normalized points, not raw
   argument pairs.
@@ -104,7 +113,7 @@ conditions:
 4. **Generability side condition** (parse/validation-time, like the
    regex-generator check): every constructor parameter must have a plain
    generable type annotation — one of `number | boolean | string |
-   bigint`. No class-typed params, unions, optionals, defaults, or rest
+bigint`. No class-typed params, unions, optionals, defaults, or rest
    in v1 (each loosening is a one-way door; start strict).
 
 Parse cases live in the body-syntax JSON corpus (`spec/fixtures/*.json`);
@@ -122,7 +131,7 @@ the **real constructor**:
   as a failing root-level antecedent). Discard exhaustion behaves like
   the guard-chain case (#90): `GaveUp` on heavily-discarding true
   properties is expected.
-- Sharp distinction preserved: a `new C(...)` *in the formula body* that
+- Sharp distinction preserved: a `new C(...)` _in the formula body_ that
   throws is still a refutation (`kind: "threw"`). Binder position is
   what moves ctor guards from obligation to domain definition.
 - **No guard-aware biasing** (e.g. `noDefaultInfinity` to cut discards):
@@ -168,7 +177,7 @@ Engine-neutral contract in `semantics.md` now; Lean shape later:
   `Float.Model`. Soundly modelable, no axioms; becomes the first
   modeled `Math.*` builtin (#88 family), post-parity.
 - **`Math.pow` is doubly refused**: in the spec's imprecise list (same
-  ground as `**`, #98) *and* `Float.pow` is opaque in Lean. Never map
+  ground as `**`, #98) _and_ `Float.pow` is opaque in Lean. Never map
   it. The example's body was rewritten (`dx * dx`) — better JS anyway,
   since `x * x` is exact IEEE while `pow(x, 2)` is spec-licensed to
   approximate.
@@ -223,7 +232,7 @@ semantics of D2 are unchanged by all of it.
 
 - **Image reading reaffirmed.** Quantifying over a class binder is
   quantifying over its constructor's arguments, but a tuple on which the
-  constructor throws is *outside* the quantifier, not a counterexample.
+  constructor throws is _outside_ the quantifier, not a counterexample.
   A direct-substitution reading (`phi(new Point(x, y))`) would make a
   throwing tuple refute, erasing D4's distinction between binder
   position and formula-body position. Filed nowhere: this is D2 as

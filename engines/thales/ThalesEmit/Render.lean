@@ -331,19 +331,44 @@ partial def assignedNames (s : JsStmt) : List String :=
       ++ (els.getD #[]).toList.flatMap assignedNames
   | _ => []
 
+/-- The binder groups a parameter list renders as: a maximal run of one
+type shares a group, so an all-number signature prints as one. -/
+def paramBinders (params : Array Param) :
+    RenderM (Array (TSyntax ``Lean.Parser.Term.bracketedBinder)) := do
+  let mut groups : Array (ParamTy × Array Ident) := #[]
+  for p in params do
+    let x ← scopedIdent p.name
+    match groups.back? with
+    | some (ty, xs) =>
+      if ty == p.ty then groups := groups.set! (groups.size - 1) (ty, xs.push x)
+      else groups := groups.push (p.ty, #[x])
+    | none => groups := groups.push (p.ty, #[x])
+  groups.mapM fun (ty, xs) => do
+    let t : TSyntax `term ← match ty with
+      | .number => `(JsNumber)
+      | .cls n m => do let c ← classIdent m n; `($c)
+    let b ← `(Lean.Parser.Term.bracketedBinderF| ($xs* : $t))
+    return (b : TSyntax ``Lean.Parser.Term.bracketedBinder)
+
+/-- The parameters a statement tree reassigns, rebound `let mut` ahead of
+the body — the way JavaScript has parameters assignable. -/
+def reboundParams (params : Array Param) (body : Array JsStmt) :
+    RenderM (Array (TSyntax `doElem)) := do
+  let assigned := body.toList.flatMap assignedNames
+  params.filterMapM fun p => do
+    unless assigned.contains p.name do return none
+    let pi ← scopedIdent p.name
+    return some (← `(doElem| let mut $pi:ident := $pi))
+
 def fnCommand (f : EmitFn) : RenderM (TSyntax `command) := do
   let name ← modelIdent f.module f.name
-  let params ← f.params.mapM scopedIdent
-  let assigned := f.body.toList.flatMap assignedNames
-  let rebound ← f.params.filterMapM fun p => do
-    unless assigned.contains p do return none
-    let pi ← scopedIdent p
-    return some (← `(doElem| let mut $pi:ident := $pi))
+  let binders ← paramBinders f.params
+  let rebound ← reboundParams f.params f.body
   let body ← f.body.mapM (stmtDoElem none)
   let elems := rebound ++ body
   -- Dual-tagged like the old models: the js_norm closers and the grind
   -- rung both unfold a model by its equations.
-  `(@[js_norm, grind] def $name ($params* : JsNumber) : JsM JsNumber := do
+  `(@[js_norm, grind] def $name $binders* : JsM JsNumber := do
       $[$elems:doElem]*)
 
 /-- Whether a statement tree assigns F anywhere. -/
@@ -372,13 +397,9 @@ is never read, since every falling-through path assigns before the end. -/
 def ctorCommand (c : EmitClass) : RenderM (TSyntax `command) := do
   let name ← classMember c.module c.name "construct"
   let cls ← classIdent c.module c.name
-  let params ← c.ctorParams.mapM scopedIdent
+  let binders ← paramBinders c.ctorParams
   let straight := c.fields.toList.filter (straightSet c.ctorBody)
-  let assigned := c.ctorBody.toList.flatMap assignedNames
-  let rebound ← c.ctorParams.filterMapM fun p => do
-    unless assigned.contains p do return none
-    let pi ← scopedIdent p
-    return some (← `(doElem| let mut $pi:ident := $pi))
+  let rebound ← reboundParams c.ctorParams c.ctorBody
   let prelude ← (c.fields.filter (fun f => !straight.contains f)).mapM fun f => do
     `(doElem| let mut $(← ctorLocal f):ident : JsNumber := 0)
   let body ← c.ctorBody.mapM (stmtDoElem (some straight))
@@ -388,12 +409,8 @@ def ctorCommand (c : EmitClass) : RenderM (TSyntax `command) := do
     if mkArgs.isEmpty then `(doElem| return $mk)
     else `(doElem| return $mk $mkArgs*)
   let elems := rebound ++ prelude ++ body ++ #[ret]
-  if params.isEmpty then
-    `(@[js_norm, grind] def $name : JsM $cls := do
-        $[$elems:doElem]*)
-  else
-    `(@[js_norm, grind] def $name ($params* : JsNumber) : JsM $cls := do
-        $[$elems:doElem]*)
+  `(@[js_norm, grind] def $name $binders* : JsM $cls := do
+      $[$elems:doElem]*)
 
 /-- A method as a function of the instance and its parameters; the
 receiver is `self`, in the reserved vocabulary, so no source name
@@ -403,20 +420,12 @@ def methodCommand (c : EmitClass) (m : EmitMethod) : RenderM (TSyntax `command) 
   let name ← classMember c.module c.name m.name
   let cls ← classIdent c.module c.name
   let self := mkIdent (Name.mkSimple "self")
-  let params ← m.params.mapM scopedIdent
-  let assigned := m.body.toList.flatMap assignedNames
-  let rebound ← m.params.filterMapM fun p => do
-    unless assigned.contains p do return none
-    let pi ← scopedIdent p
-    return some (← `(doElem| let mut $pi:ident := $pi))
+  let binders ← paramBinders m.params
+  let rebound ← reboundParams m.params m.body
   let body ← m.body.mapM (stmtDoElem none)
   let elems := rebound ++ body
-  if params.isEmpty then
-    `(@[js_norm, grind] def $name ($self : $cls) : JsM JsNumber := do
-        $[$elems:doElem]*)
-  else
-    `(@[js_norm, grind] def $name ($self : $cls) ($params* : JsNumber) : JsM JsNumber := do
-        $[$elems:doElem]*)
+  `(@[js_norm, grind] def $name ($self : $cls) $binders* : JsM JsNumber := do
+      $[$elems:doElem]*)
 
 /-- A getter is the zero-parameter method shape. -/
 def getterCommand (c : EmitClass) (g : EmitGetter) : RenderM (TSyntax `command) :=

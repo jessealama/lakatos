@@ -4,7 +4,16 @@
     {
       "kind": "function",
       "name": "add",
-      "params": ["a", "b"],
+      "params": [
+        {
+          "name": "a",
+          "type": "number"
+        },
+        {
+          "name": "b",
+          "type": "number"
+        }
+      ],
       "source": "export function add(a: number, b: number): number {\n  return a + b;\n}",
       "body": [
         {

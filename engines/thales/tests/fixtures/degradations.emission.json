@@ -4,7 +4,12 @@
     {
       "kind": "function",
       "name": "twice",
-      "params": ["n"],
+      "params": [
+        {
+          "name": "n",
+          "type": "number"
+        }
+      ],
       "source": "export function twice(n: number): number {\n  return n + n;\n}",
       "body": [
         {
@@ -27,7 +32,12 @@
     {
       "kind": "function",
       "name": "keep",
-      "params": ["n"],
+      "params": [
+        {
+          "name": "n",
+          "type": "number"
+        }
+      ],
       "source": "export function keep(n: number): number {\n  return n;\n}",
       "body": [
         {
@@ -42,7 +52,12 @@
     {
       "kind": "function",
       "name": "lone",
-      "params": ["n"],
+      "params": [
+        {
+          "name": "n",
+          "type": "number"
+        }
+      ],
       "source": "export function lone(n: number): number {\n  return n;\n}",
       "body": [
         {

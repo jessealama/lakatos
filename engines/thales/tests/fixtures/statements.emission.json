@@ -4,7 +4,12 @@
     {
       "kind": "function",
       "name": "floorAtOne",
-      "params": ["x"],
+      "params": [
+        {
+          "name": "x",
+          "type": "number"
+        }
+      ],
       "source": "export function floorAtOne(x: number): number {\n  let y = x;\n  if (x < 1) {\n    y = 1;\n  }\n  return y;\n}",
       "body": [
         {
@@ -52,7 +57,12 @@
     {
       "kind": "function",
       "name": "grade",
-      "params": ["score"],
+      "params": [
+        {
+          "name": "score",
+          "type": "number"
+        }
+      ],
       "source": "export function grade(score: number): number {\n  const bonus = 2;\n  if (score < 0) {\n    throw new RangeError(`negative score: ${score}`);\n  } else if (score < 10) {\n    return score + bonus;\n  }\n  let rank = 0;\n  if (score < 20) {\n    rank = 1;\n  } else {\n    rank = 2;\n  }\n  return rank * 100;\n}",
       "body": [
         {
@@ -181,7 +191,12 @@
     {
       "kind": "function",
       "name": "clampUp",
-      "params": ["x"],
+      "params": [
+        {
+          "name": "x",
+          "type": "number"
+        }
+      ],
       "source": "export function clampUp(x: number): number {\n  if (x < 1) {\n    x = 1;\n  }\n  return x;\n}",
       "body": [
         {
