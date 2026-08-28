@@ -4,6 +4,7 @@ import { schemaValidator } from "../../../../tests/helpers/schema-validator.js";
 import {
   type EmitClass,
   type EmitDecl,
+  type EmitFunction,
   type EmitStmt,
   emitModule,
 } from "../src/emission.js";
@@ -4372,5 +4373,415 @@ export class Use {
       kind: "return",
       expr: { kind: "getter-read", className: "Src", name: "v" },
     });
+  });
+});
+
+describe("class-typed parameters", () => {
+  const gapSrc = `
+export class Point {
+  readonly x: number;
+  constructor(x: number) {
+    this.x = x;
+  }
+  /** @ensures{p} forall (a: int ∈ [0, 10)) { 0 <= new Point(a).gap(new Point(a)) } */
+  gap(other: Point): number {
+    return other.x - this.x;
+  }
+}
+`;
+
+  test("models a method taking its own class, and the atom over it", () => {
+    const { emission, classified } = emitModule(gapSrc, "t.ts");
+    expect(classified).toEqual([]);
+    const cls = emission.declarations[0] as EmitClass;
+    expect(cls.methods[0]!.params).toEqual([
+      { name: "other", type: { class: "Point" } },
+    ]);
+    expect(emission.obligations).toHaveLength(1);
+  });
+
+  test("a class-typed parameter is a receiver inside the method body", () => {
+    const { emission } = emitModule(gapSrc, "t.ts");
+    const cls = emission.declarations[0] as EmitClass;
+    expect(cls.methods[0]!.body[0]).toEqual({
+      kind: "return",
+      expr: {
+        kind: "binop",
+        op: "-",
+        left: {
+          kind: "field-read",
+          className: "Point",
+          field: "x",
+          object: { kind: "id", name: "other" },
+        },
+        right: {
+          kind: "field-read",
+          className: "Point",
+          field: "x",
+          object: { kind: "self" },
+        },
+      },
+    });
+  });
+
+  test("models a constructor taking an earlier class without degrading it", () => {
+    const src = `
+export class Point {
+  readonly x: number;
+  constructor(x: number) {
+    this.x = x;
+  }
+}
+export class Wrap {
+  readonly x: number;
+  constructor(p: Point) {
+    this.x = p.x;
+  }
+  /** @ensures{p} forall (a: int ∈ [0, 10)) { 0 <= new Wrap(new Point(a)).v } */
+  get v(): number {
+    return this.x;
+  }
+}
+`;
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    const wrap = emission.declarations[1] as EmitClass;
+    expect(wrap.ctor.params).toEqual([{ name: "p", type: { class: "Point" } }]);
+    expect(wrap.ctor.body).toEqual([
+      {
+        kind: "field-set",
+        field: "x",
+        expr: {
+          kind: "field-read",
+          className: "Point",
+          field: "x",
+          object: { kind: "id", name: "p" },
+        },
+      },
+    ]);
+  });
+
+  test("models a free function taking a class", () => {
+    const src = `
+export class Point {
+  readonly x: number;
+  constructor(x: number) {
+    this.x = x;
+  }
+}
+/** @ensures{p} forall (a: int ∈ [0, 10)) { 0 <= gap(new Point(a)) } */
+export function gap(p: Point): number {
+  return p.x;
+}
+`;
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    const fn = emission.declarations[1] as EmitFunction;
+    expect(fn.params).toEqual([{ name: "p", type: { class: "Point" } }]);
+    expect(fn.body[0]).toEqual({
+      kind: "return",
+      expr: {
+        kind: "field-read",
+        className: "Point",
+        field: "x",
+        object: { kind: "id", name: "p" },
+      },
+    });
+  });
+
+  test("types a method call through a class-typed receiver", () => {
+    const src = `
+export class Point {
+  readonly x: number;
+  constructor(x: number) {
+    this.x = x;
+  }
+  gap(other: Point): number {
+    return other.x - this.x;
+  }
+  /** @ensures{p} forall (a: int ∈ [0, 10)) { 0 <= new Point(a).twice(new Point(a)) } */
+  twice(other: Point): number {
+    return other.gap(other) + this.gap(other);
+  }
+}
+`;
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    const cls = emission.declarations[0] as EmitClass;
+    expect(cls.methods[1]!.body[0]).toMatchObject({
+      kind: "return",
+      expr: {
+        kind: "binop",
+        op: "+",
+        left: {
+          kind: "method-call",
+          className: "Point",
+          name: "gap",
+          object: { kind: "id", name: "other" },
+          args: [{ kind: "id", name: "other" }],
+        },
+        right: {
+          kind: "method-call",
+          className: "Point",
+          name: "gap",
+          object: { kind: "self" },
+          args: [{ kind: "id", name: "other" }],
+        },
+      },
+    });
+  });
+
+  test("refuses a later-declared class as a parameter type, member alone", () => {
+    const src = `
+export class A {
+  readonly x: number;
+  constructor(x: number) {
+    this.x = x;
+  }
+  /** @ensures{p} forall (a: int ∈ [0, 10)) { 0 <= new A(a).m(a) } */
+  m(b: B): number {
+    return b.x;
+  }
+}
+export class B {
+  readonly x: number;
+  constructor(x: number) {
+    this.x = x;
+  }
+}
+`;
+    const { classified } = emitModule(src, "t.ts");
+    expect(classified[0]!.szs).toBe("Inappropriate");
+    expect(classified[0]!.reason).toMatch(
+      /unmapped TypeScript construct 'TypeReference'/,
+    );
+  });
+
+  test("travels a degraded class named as a parameter type", () => {
+    const src = `
+export abstract class Bad {}
+export class A {
+  readonly x: number;
+  constructor(x: number) {
+    this.x = x;
+  }
+  /** @ensures{p} forall (a: int ∈ [0, 10)) { 0 <= new A(a).m(a) } */
+  m(b: Bad): number {
+    return 1;
+  }
+}
+`;
+    const { classified } = emitModule(src, "t.ts");
+    expect(classified[0]!.reason).toMatch(/'Bad' could not be modeled/);
+  });
+
+  test("refuses a constructor parameter typed at its own class", () => {
+    // The class is not modeled while its own constructor walks, so the
+    // direct cycle refuses — and the constructor is the model's spine.
+    const src = `
+export class Node {
+  readonly x: number;
+  constructor(n: Node) {
+    this.x = 1;
+  }
+  /** @ensures{p} forall (a: int ∈ [0, 10)) { 0 <= a } */
+  get v(): number {
+    return this.x;
+  }
+}
+`;
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(emission.declarations).toEqual([]);
+    expect(classified[0]!.szs).toBe("Inappropriate");
+    expect(classified[0]!.reason).toMatch(
+      /'Node#v' could not be modeled: unmapped TypeScript construct 'TypeReference'/,
+    );
+  });
+
+  test("rejects a number where an instance is expected", () => {
+    const src = `
+export class Point {
+  readonly x: number;
+  constructor(x: number) {
+    this.x = x;
+  }
+  gap(other: Point): number {
+    return other.x;
+  }
+  /** @ensures{p} forall (a: int ∈ [0, 10)) { 0 <= new Point(a).gap(a) } */
+  get v(): number {
+    return this.x;
+  }
+}
+`;
+    const { classified } = emitModule(src, "t.ts");
+    expect(classified[0]!.szs).toBe("Error");
+    expect(classified[0]!.reason).toMatch(
+      /is a number, not an instance of 'Point'/,
+    );
+  });
+
+  test("rejects an instance where a number is expected", () => {
+    const src = `
+export class Point {
+  readonly x: number;
+  constructor(x: number) {
+    this.x = x;
+  }
+  /** @ensures{p} forall (a: int ∈ [0, 10)) { 0 <= new Point(a).gap(new Point(a)) } */
+  gap(other: Point): number {
+    return other;
+  }
+}
+`;
+    const { classified } = emitModule(src, "t.ts");
+    expect(classified[0]!.szs).toBe("Error");
+    expect(classified[0]!.reason).toMatch(
+      /identifier 'other' is an instance of 'Point', not a number/,
+    );
+  });
+
+  test("rejects an instance of the wrong class", () => {
+    const src = `
+export class Q {
+  readonly x: number;
+  constructor(x: number) {
+    this.x = x;
+  }
+}
+export class Point {
+  readonly x: number;
+  constructor(x: number) {
+    this.x = x;
+  }
+  gap(other: Point): number {
+    return other.x;
+  }
+  /** @ensures{p} forall (a: int ∈ [0, 10)) { 0 <= new Point(a).gap(new Q(a)) } */
+  get v(): number {
+    return this.x;
+  }
+}
+`;
+    const { classified } = emitModule(src, "t.ts");
+    expect(classified[0]!.reason).toMatch(
+      /yields an instance of 'Q', not an instance of 'Point'/,
+    );
+  });
+
+  test("keeps instance-valued locals refused", () => {
+    const src = `
+export class Point {
+  readonly x: number;
+  constructor(x: number) {
+    this.x = x;
+  }
+}
+/** @ensures{p} forall (a: int ∈ [0, 10)) { 0 <= f(a) } */
+export function f(a: number): number {
+  const p = new Point(a);
+  return a;
+}
+`;
+    const { classified } = emitModule(src, "t.ts");
+    expect(classified[0]!.reason).toMatch(
+      /yields an instance of 'Point', not a number/,
+    );
+  });
+
+  test("a class-typed parameter shadows the builtin namespace it spells", () => {
+    const src = `
+export class Math {
+  readonly x: number;
+  constructor(x: number) {
+    this.x = x;
+  }
+  sqrt(): number {
+    return this.x;
+  }
+}
+/** @ensures{p} forall (a: int ∈ [0, 10)) { 0 <= f(new Math(a)) } */
+export function f(Math: Math): number {
+  return Math.sqrt();
+}
+`;
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    const fn = emission.declarations[1] as EmitFunction;
+    expect(fn.body[0]).toEqual({
+      kind: "return",
+      expr: {
+        kind: "method-call",
+        className: "Math",
+        name: "sqrt",
+        object: { kind: "id", name: "Math" },
+        args: [],
+      },
+    });
+  });
+
+  test("the reported method repro models", () => {
+    const src = `export class Point {
+  readonly x: number;
+  constructor(x: number) {
+    this.x = x;
+  }
+  /** @ensures{p} forall (a: number) { 0 <= new Point(a).gap(new Point(a)) } */
+  gap(other: Point): number {
+    return other.x - this.x;
+  }
+}
+`;
+    const { emission, classified } = emitModule(src, "Gap.mts");
+    expect(classified).toEqual([]);
+    expect(emission.obligations).toHaveLength(1);
+  });
+
+  test("the reported constructor repro keeps the source-order refusal", () => {
+    // Wrap's constructor names Point before Point has modeled, which is
+    // the discipline every callee resolution follows.
+    const src = `export class Wrap {
+  readonly x: number;
+  constructor(p: Point) {
+    this.x = p.x;
+  }
+  /** @ensures{p} forall (a: number) { 0 <= a } */
+  get v(): number {
+    return this.x;
+  }
+}
+export class Point {
+  readonly x: number;
+  constructor(x: number) {
+    this.x = x;
+  }
+}
+`;
+    const { classified } = emitModule(src, "Ctor.mts");
+    expect(classified[0]!.szs).toBe("Inappropriate");
+    expect(classified[0]!.reason).toBe(
+      "'Wrap#v' could not be modeled: unmapped TypeScript construct " +
+        "'TypeReference' at 3:18",
+    );
+  });
+
+  test("an unknown member of a class-typed parameter is the engine's error", () => {
+    const src = `
+export class Point {
+  readonly x: number;
+  constructor(x: number) {
+    this.x = x;
+  }
+}
+/** @ensures{p} forall (a: int ∈ [0, 10)) { 0 <= f(new Point(a)) } */
+export function f(p: Point): number {
+  return p.y;
+}
+`;
+    const { classified } = emitModule(src, "t.ts");
+    expect(classified[0]!.szs).toBe("Error");
+    expect(classified[0]!.reason).toMatch(
+      /'Point' has no member 'y' in the model/,
+    );
   });
 });

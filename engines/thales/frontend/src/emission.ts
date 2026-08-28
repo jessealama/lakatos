@@ -154,6 +154,12 @@ function wireParam(name: string, ty: ValueTy): EmitParam {
   };
 }
 
+/** The walk's reading of a wire parameter, for the signature registry. */
+function paramTy(p: EmitParam): ValueTy {
+  if (p.type === "number") return "num";
+  return { instance: { module: p.type.module ?? "", name: p.type.class } };
+}
+
 /** What a use of a class needs to know: its fields in declaration order,
  * the getters that modeled, and its constructor's signature. */
 export interface ClassShape {
@@ -313,6 +319,39 @@ function instanceCall(
   return { object, name: callee.name.text, args: e.arguments };
 }
 
+/** A member access on a class-typed identifier: `p.x`, `p.g`. */
+function varAccess(
+  e: ts.Expression,
+  scope: WalkScope,
+): { ref: ModelRef; object: string; name: string } | undefined {
+  if (!ts.isPropertyAccessExpression(e)) return undefined;
+  const obj = unwrapParens(e.expression);
+  if (!ts.isIdentifier(obj)) return undefined;
+  const ty = scope.vars.get(obj.text);
+  if (ty === undefined || ty === "num") return undefined;
+  if (!ts.isIdentifier(e.name)) return undefined;
+  return { ref: ty.instance, object: obj.text, name: e.name.text };
+}
+
+/** A method call on a class-typed identifier: `p.m(args)`. */
+function varCall(
+  e: ts.Expression,
+  scope: WalkScope,
+):
+  | {
+      ref: ModelRef;
+      object: string;
+      name: string;
+      args: readonly ts.Expression[];
+    }
+  | undefined {
+  if (!ts.isCallExpression(e)) return undefined;
+  const callee = e.expression;
+  if (!ts.isPropertyAccessExpression(callee)) return undefined;
+  const access = varAccess(callee, scope);
+  return access === undefined ? undefined : { ...access, args: e.arguments };
+}
+
 /** A `this.m(...)` call: the only method call a member body can make. */
 function thisCall(
   e: ts.Expression,
@@ -368,6 +407,8 @@ function numericShaped(e: ts.Expression, scope: WalkScope): boolean {
     return ARITH_OPERATORS.has(u.operatorToken.getText());
   if (isThisAccess(u) || instanceAccess(u) !== undefined) return true;
   if (instanceCall(u) !== undefined || thisCall(u) !== undefined) return true;
+  if (varAccess(u, scope) !== undefined || varCall(u, scope) !== undefined)
+    return true;
   const builtin = builtinCall(u, scope);
   if (builtin !== undefined) return builtin.ty === "num";
   return ts.isCallExpression(u) && ts.isIdentifier(u.expression);
@@ -493,6 +534,17 @@ function findConstruct(
   }
   const access = instanceAccess(e);
   if (access !== undefined) return findConstruct(access.object, sf, scope);
+  // A class-typed identifier's member read or call is shaped; its object
+  // is an identifier, so only the arguments carry constructs.
+  const vcall = varCall(e, scope);
+  if (vcall !== undefined) {
+    for (const a of vcall.args) {
+      const found = findConstruct(a, sf, scope);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  }
+  if (varAccess(e, scope) !== undefined) return undefined;
   const built = newCall(e);
   if (built !== undefined) {
     const targ = built.typeArguments?.[0];
@@ -585,6 +637,13 @@ function callNames(
   }
   const access = instanceAccess(e);
   if (access !== undefined) return callNames(access.object, scope, into);
+  const vcall = varCall(e, scope);
+  if (vcall !== undefined) {
+    // The receiver is a bound name, not a callee; the arguments carry them.
+    for (const a of vcall.args) callNames(a, scope, into);
+    return into;
+  }
+  if (varAccess(e, scope) !== undefined) return into;
   const built = newCall(e);
   if (built !== undefined) {
     // A class is not a callee, but its arguments carry them.
@@ -745,6 +804,35 @@ function findFailedMemberUse(
       name: qualifiedName(access.name, ref.name),
     });
   }
+  // A class still being walked registers no member failures yet, so its
+  // own instances have nothing to travel; an earlier class's do.
+  const vcall = varCall(e, scope);
+  if (vcall !== undefined) {
+    const shape = scope.classes.get(modelKey(vcall.ref));
+    if (shape !== undefined && !shape.methods.has(vcall.name)) {
+      const travelled = travelFailure(scope, {
+        module: vcall.ref.module,
+        name: qualifiedName(vcall.name, vcall.ref.name),
+      });
+      if (travelled !== undefined) return travelled;
+    }
+    for (const a of vcall.args) {
+      const inner = findFailedMemberUse(a, scope);
+      if (inner !== undefined) return inner;
+    }
+    return undefined;
+  }
+  const vaccess = varAccess(e, scope);
+  if (vaccess !== undefined) {
+    const shape = scope.classes.get(modelKey(vaccess.ref));
+    if (shape === undefined) return undefined;
+    if (shape.getters.has(vaccess.name) || shape.fields.includes(vaccess.name))
+      return undefined;
+    return travelFailure(scope, {
+      module: vaccess.ref.module,
+      name: qualifiedName(vaccess.name, vaccess.ref.name),
+    });
+  }
   const built = newCall(e);
   if (built !== undefined) {
     const ref = newRef(scope, built);
@@ -793,6 +881,16 @@ function classShapeOf(scope: WalkScope, ref: ModelRef): ClassShape {
     throw new ModelError(`'${name}' has no model: ${failed.reason}`);
   }
   throw new ModelError(`no model registered for '${name}'`);
+}
+
+/** The shape behind a class-typed identifier: the enclosing class's own,
+ * which the registries do not carry until its walk ends, or an earlier
+ * class's. Going through the same shapes the walk already consults is
+ * what inherits the source-order discipline rather than restating it. */
+function shapeOfRef(scope: WalkScope, ref: ModelRef): ClassShape {
+  if (scope.self !== undefined && sameClass(ref, scope.self.ref))
+    return scope.self.shape;
+  return classShapeOf(scope, ref);
 }
 
 /** The typed walk, mirroring `evalExpr`: operand types are checked in the
@@ -1087,14 +1185,93 @@ function walkTyped(
       `'${displayName(ref)}' has no member '${access.name}' in the model`,
     );
   }
+  const vcall = varCall(e, scope);
+  if (vcall !== undefined) {
+    const shape = shapeOfRef(scope, vcall.ref);
+    const sig = shape.methods.get(vcall.name);
+    if (sig === undefined) {
+      throw new ModelError(
+        `'${displayName(vcall.ref)}' has no method '${vcall.name}' in the model`,
+      );
+    }
+    if (sig.length !== vcall.args.length) {
+      throw new ModelError(
+        `'${qualifiedName(vcall.name, vcall.ref.name)}' expects ` +
+          `${sig.length} argument(s), got ${vcall.args.length}`,
+      );
+    }
+    if (expected !== "num") {
+      throw new ModelError(
+        `a method call yields a number, not ${describeTy(expected)}`,
+      );
+    }
+    return {
+      kind: "method-call",
+      className: vcall.ref.name,
+      ...(vcall.ref.module !== "" ? { module: vcall.ref.module } : {}),
+      name: vcall.name,
+      object: { kind: "id", name: vcall.object },
+      args: vcall.args.map((a, i) => walkTyped(a, sig[i]!, scope, sf)),
+    };
+  }
+  const vaccess = varAccess(e, scope);
+  if (vaccess !== undefined) {
+    const shape = shapeOfRef(scope, vaccess.ref);
+    if (expected !== "num") {
+      throw new ModelError(
+        `a member read yields a number, not ${describeTy(expected)}`,
+      );
+    }
+    const module =
+      vaccess.ref.module !== "" ? { module: vaccess.ref.module } : {};
+    const object: EmitExpr = { kind: "id", name: vaccess.object };
+    if (shape.getters.has(vaccess.name)) {
+      return {
+        kind: "getter-read",
+        className: vaccess.ref.name,
+        ...module,
+        name: vaccess.name,
+        object,
+      };
+    }
+    if (shape.fields.includes(vaccess.name)) {
+      return {
+        kind: "field-read",
+        className: vaccess.ref.name,
+        ...module,
+        field: vaccess.name,
+        object,
+      };
+    }
+    throw new ModelError(
+      `'${displayName(vaccess.ref)}' has no member '${vaccess.name}' in the model`,
+    );
+  }
   const built = newCall(e);
   if (built !== undefined) {
     const ref = newRef(scope, built);
-    // The class must exist before the instance can be refused as a value.
-    classShapeOf(scope, ref);
+    // The class must exist before the instance is admitted or refused.
+    const shape = classShapeOf(scope, ref);
+    if (typeof expected !== "string" && sameClass(ref, expected.instance)) {
+      const rawArgs = built.arguments ?? [];
+      if (shape.ctorParams.length !== rawArgs.length) {
+        throw new ModelError(
+          `'${displayName(ref)}' expects ${shape.ctorParams.length} ` +
+            `argument(s), got ${rawArgs.length}`,
+        );
+      }
+      return {
+        kind: "new",
+        className: ref.name,
+        ...(ref.module !== "" ? { module: ref.module } : {}),
+        args: rawArgs.map((a, i) =>
+          walkTyped(a, shape.ctorParams[i]!, scope, sf),
+        ),
+      };
+    }
     throw new ModelError(
       `'new ${displayName(ref)}(...)' yields an instance of ` +
-        `'${displayName(ref)}', not a number`,
+        `'${displayName(ref)}', not ${describeTy(expected)}`,
     );
   }
   if (ts.isCallExpression(e) && ts.isIdentifier(e.expression)) {
@@ -1182,11 +1359,13 @@ function typedOrFailure(
   }
 }
 
-/** The signature check `transcribeFunction` applies, as a failure. */
+/** The signature check `transcribeFunction` applies: the walked
+ * parameters, or the failure that degrades the function. */
 function signatureFailure(
   fn: ts.FunctionDeclaration,
   sf: ts.SourceFile,
-): FailedDecl | undefined {
+  reg: ParamReg,
+): { params: WalkedParams } | FailedDecl {
   for (const m of fn.modifiers ?? []) {
     if (
       m.kind !== ts.SyntaxKind.ExportKeyword &&
@@ -1197,21 +1376,13 @@ function signatureFailure(
   }
   if (fn.asteriskToken !== undefined)
     return constructAt(fn.asteriskToken, fn.asteriskToken.kind, sf);
-  for (const p of fn.parameters) {
-    if (!ts.isIdentifier(p.name)) return constructAt(p.name, p.name.kind, sf);
-    if (p.dotDotDotToken !== undefined)
-      return constructAt(p.dotDotDotToken, p.dotDotDotToken.kind, sf);
-    if (p.questionToken !== undefined || p.initializer !== undefined)
-      return constructAt(p, p.kind, sf);
-    if (p.type === undefined) return constructAt(p, p.kind, sf);
-    if (p.type.kind !== ts.SyntaxKind.NumberKeyword)
-      return constructAt(p.type, p.type.kind, sf);
-  }
+  const params = walkParams(fn.parameters, sf, reg, fnParamFailure);
+  if (!Array.isArray(params)) return params;
   if (fn.type === undefined || fn.body === undefined)
     return constructAt(fn, fn.kind, sf);
   if (fn.type.kind !== ts.SyntaxKind.NumberKeyword)
     return constructAt(fn.type, fn.type.kind, sf);
-  return undefined;
+  return { params };
 }
 
 /** Names a body binds itself, and whether each may be assigned — the old
@@ -1511,7 +1682,10 @@ function lowerTree(
       ];
     }
     case "assign": {
-      const expr = walk(s.expr, "num", vars);
+      // A reassignment is typed at what the target was bound at; only a
+      // parameter can be anything but a number.
+      const target = vars.find(([n]) => n === s.name)?.[1] ?? "num";
+      const expr = walk(s.expr, target, vars);
       const tail = lowerTree(rest, vars, k, scope, sf);
       return [{ kind: "assign", name: s.name, expr }, ...tail];
     }
@@ -1714,8 +1888,24 @@ function memberNameFailure(
   };
 }
 
-/** A constructor parameter passes the function-parameter check; a
- * modifier on it is a parameter property, which declares a field the
+/** The shape checks a parameter passes before its type is read: a
+ * binding pattern, a rest, an optional or defaulted parameter, and a
+ * missing type annotation are all outside the slice. */
+function fnParamFailure(
+  p: ts.ParameterDeclaration,
+  sf: ts.SourceFile,
+): FailedDecl | undefined {
+  if (!ts.isIdentifier(p.name)) return constructAt(p.name, p.name.kind, sf);
+  if (p.dotDotDotToken !== undefined)
+    return constructAt(p.dotDotDotToken, p.dotDotDotToken.kind, sf);
+  if (p.questionToken !== undefined || p.initializer !== undefined)
+    return constructAt(p, p.kind, sf);
+  if (p.type === undefined) return constructAt(p, p.kind, sf);
+  return undefined;
+}
+
+/** A constructor or method parameter passes the function-parameter check;
+ * a modifier on it is a parameter property, which declares a field the
  * body never assigns. */
 function ctorParamFailure(
   p: ts.ParameterDeclaration,
@@ -1723,15 +1913,81 @@ function ctorParamFailure(
 ): FailedDecl | undefined {
   const mods = ts.getModifiers(p) ?? [];
   if (mods.length > 0) return constructAt(mods[0]!, mods[0]!.kind, sf);
-  if (!ts.isIdentifier(p.name)) return constructAt(p.name, p.name.kind, sf);
-  if (p.dotDotDotToken !== undefined)
-    return constructAt(p.dotDotDotToken, p.dotDotDotToken.kind, sf);
-  if (p.questionToken !== undefined || p.initializer !== undefined)
-    return constructAt(p, p.kind, sf);
-  if (p.type === undefined) return constructAt(p, p.kind, sf);
-  if (p.type.kind !== ts.SyntaxKind.NumberKeyword)
-    return constructAt(p.type, p.type.kind, sf);
-  return undefined;
+  return fnParamFailure(p, sf);
+}
+
+/** The registries a parameter's type resolves against — a `WalkScope`
+ * before there is one. `self` is the class a member's parameter may name;
+ * a constructor has none, its class not being modeled yet. */
+interface ParamReg {
+  classes: ReadonlyMap<string, ClassShape>;
+  failed: ReadonlyMap<string, FailedDecl>;
+  names: ReadonlyMap<string, ModelRef>;
+  module: string;
+  self?: ModelRef;
+}
+
+/** A parameter's declared type: a number, an already-modeled class, or
+ * the failure that degrades the declaration. A class resolves under the
+ * source-order discipline member calls follow, and one that degraded
+ * travels its own failure, the way a call to it would. */
+function paramValueTy(
+  p: ts.ParameterDeclaration,
+  sf: ts.SourceFile,
+  reg: ParamReg,
+): ValueTy | FailedDecl {
+  const t = p.type!;
+  if (t.kind === ts.SyntaxKind.NumberKeyword) return "num";
+  if (
+    ts.isTypeReferenceNode(t) &&
+    ts.isIdentifier(t.typeName) &&
+    t.typeArguments === undefined
+  ) {
+    const spelling = t.typeName.text;
+    const ref = reg.names.get(spelling) ?? {
+      module: reg.module,
+      name: spelling,
+    };
+    if (reg.self !== undefined && sameClass(ref, reg.self))
+      return { instance: ref };
+    if (reg.classes.has(modelKey(ref))) return { instance: ref };
+    const failed = reg.failed.get(modelKey(ref));
+    if (failed !== undefined) {
+      return {
+        ...(failed.construct !== undefined
+          ? { construct: failed.construct }
+          : {}),
+        reason: `'${displayName(ref)}' could not be modeled: ${failed.reason}`,
+      };
+    }
+  }
+  return constructAt(t, t.kind, sf);
+}
+
+/** A walked parameter list: names with their types, in declaration
+ * order. */
+type WalkedParams = { name: string; ty: ValueTy }[];
+
+/** Names and types for a parameter list, or the first failure — the
+ * shape check ahead of the type, as the old order has it. */
+function walkParams(
+  params: readonly ts.ParameterDeclaration[],
+  sf: ts.SourceFile,
+  reg: ParamReg,
+  shapeFailure: (
+    p: ts.ParameterDeclaration,
+    sf: ts.SourceFile,
+  ) => FailedDecl | undefined,
+): WalkedParams | FailedDecl {
+  const out: WalkedParams = [];
+  for (const p of params) {
+    const failure = shapeFailure(p, sf);
+    if (failure !== undefined) return failure;
+    const ty = paramValueTy(p, sf, reg);
+    if (typeof ty !== "string" && "reason" in ty) return ty;
+    out.push({ name: (p.name as ts.Identifier).text, ty });
+  }
+  return out;
 }
 
 /** The modifier kinds a field may carry. `static` is handled apart: a
@@ -1912,11 +2168,16 @@ function walkClass(
   }
   if (ctors[1] !== undefined) return constructAt(ctors[1], ctors[1].kind, sf);
   const ctor = ctors[0]!;
-  for (const p of ctor.parameters) {
-    const failure = ctorParamFailure(p, sf);
-    if (failure !== undefined) return failure;
-  }
-  const ctorParams = ctor.parameters.map((p) => (p.name as ts.Identifier).text);
+  // The class is not in the registries while its own constructor walks,
+  // so a parameter typed at it refuses — the direct cycle has no model.
+  const ctorReg: ParamReg = {
+    classes: c.classes,
+    failed: c.failed,
+    names,
+    module: qualifier,
+  };
+  const ctorParams = walkParams(ctor.parameters, sf, ctorReg, ctorParamFailure);
+  if (!Array.isArray(ctorParams)) return ctorParams;
   const base = {
     mapped: c.mapped,
     failed: c.failed,
@@ -1926,11 +2187,11 @@ function walkClass(
   };
   const ctorScope: WalkScope = {
     ...base,
-    vars: new Map(ctorParams.map((p) => [p, "num" as const])),
+    vars: new Map(ctorParams.map((p) => [p.name, p.ty])),
   };
   const fieldSet = new Set(fields);
   const ctorLocals: Locals = new Map(
-    ctorParams.map((p) => [p, "mutable" as const]),
+    ctorParams.map((p) => [p.name, "mutable" as const]),
   );
   const tree = ctor.body!.statements.flatMap((s) =>
     structureStmt(s, sf, ctorLocals, ctorScope, fieldSet),
@@ -1962,7 +2223,7 @@ function walkClass(
     // appends the instance return.
     ctorBody = lowerTree(
       tree,
-      ctorParams.map((p) => [p, "num"] as const),
+      ctorParams.map((p) => [p.name, p.ty] as const),
       () => {},
       ctorScope,
       sf,
@@ -1979,7 +2240,7 @@ function walkClass(
   const shape: ClassShape = {
     fields,
     getters: getterNames,
-    ctorParams: ctorParams.map(() => "num" as const),
+    ctorParams: ctorParams.map((p) => p.ty),
     methods: methodSigs,
   };
   const self = { ref: { module: qualifier, name: className }, shape };
@@ -2026,13 +2287,20 @@ function walkClass(
     }
   }
   // Getters render ahead of methods, so a getter body sees an empty
-  // method map: a getter calling a method degrades alone.
+  // method map: a getter calling a method degrades alone. A method reads
+  // members off an instance of its own class, so its receiver shape
+  // carries the getters that actually modeled, not the declared ones.
+  const methodSelf = {
+    ref: self.ref,
+    shape: { ...shape, getters: new Set(getters.map((g) => g.name)) },
+  };
+  const methodReg: ParamReg = { ...ctorReg, self: self.ref };
   const methods: EmitMethod[] = [];
   for (const m of methodDecls) {
     const spelling = (m.name as ts.Identifier | ts.PrivateIdentifier).text;
-    const failure = methodFailure(m, className, spelling, sf);
-    if (failure !== undefined) {
-      memberFailed.set(memberKey(spelling), failure);
+    const walked = methodFailure(m, className, spelling, sf, methodReg);
+    if (!("params" in walked)) {
+      memberFailed.set(memberKey(spelling), walked);
       continue;
     }
     const written = firstThisAssignment(m.body!.statements, fieldSet);
@@ -2046,13 +2314,15 @@ function walkClass(
       });
       continue;
     }
-    const params = m.parameters.map((p) => (p.name as ts.Identifier).text);
+    const params = walked.params;
     const scope: WalkScope = {
       ...base,
-      vars: new Map(params.map((p) => [p, "num" as const])),
-      self,
+      vars: new Map(params.map((p) => [p.name, p.ty])),
+      self: methodSelf,
     };
-    const locals: Locals = new Map(params.map((p) => [p, "mutable" as const]));
+    const locals: Locals = new Map(
+      params.map((p) => [p.name, "mutable" as const]),
+    );
     const body = m.body!.statements.flatMap((st) =>
       structureStmt(st, sf, locals, scope),
     );
@@ -2064,10 +2334,10 @@ function walkClass(
     try {
       methods.push({
         name: spelling,
-        params: params.map((p) => wireParam(p, "num")),
+        params: params.map((p) => wireParam(p.name, p.ty)),
         body: lowerTree(
           body,
-          params.map((p) => [p, "num"] as const),
+          params.map((p) => [p.name, p.ty] as const),
           () => {
             throw new ModelError("the body must return on every path");
           },
@@ -2077,7 +2347,7 @@ function walkClass(
       });
       methodSigs.set(
         spelling,
-        params.map(() => "num" as const),
+        params.map((p) => p.ty),
       );
     } catch (err) {
       /* v8 ignore next -- the walk throws nothing else */
@@ -2093,7 +2363,7 @@ function walkClass(
       source: cls.getText(sf),
       fields,
       ctor: {
-        params: ctorParams.map((p) => wireParam(p, "num")),
+        params: ctorParams.map((p) => wireParam(p.name, p.ty)),
         body: ctorBody,
       },
       getters,
@@ -2109,13 +2379,15 @@ function walkClass(
 }
 
 /** A method outside the slice degrades alone: privacy, asynchrony, a
- * signature the model cannot read, or a name the model reserves. */
+ * signature the model cannot read, or a name the model reserves. Its
+ * walked parameters come back with it. */
 function methodFailure(
   m: ts.MethodDeclaration,
   className: string,
   spelling: string,
   sf: ts.SourceFile,
-): FailedDecl | undefined {
+  reg: ParamReg,
+): { params: WalkedParams } | FailedDecl {
   if (
     ts.isPrivateIdentifier(m.name) ||
     hasModifier(m, ts.SyntaxKind.PrivateKeyword)
@@ -2130,14 +2402,12 @@ function methodFailure(
   if (m.questionToken !== undefined) return constructAt(m, m.kind, sf);
   if (RESERVED_MEMBERS.has(spelling))
     return memberNameFailure(className, spelling, "reserves the name");
-  for (const p of m.parameters) {
-    const failure = ctorParamFailure(p, sf);
-    if (failure !== undefined) return failure;
-  }
+  const params = walkParams(m.parameters, sf, reg, ctorParamFailure);
+  if (!Array.isArray(params)) return params;
   if (m.type === undefined) return constructAt(m, m.kind, sf);
   if (m.type.kind !== ts.SyntaxKind.NumberKeyword)
     return constructAt(m.type, m.type.kind, sf);
-  return undefined;
+  return { params };
 }
 
 /** A getter outside the slice degrades alone: privacy, a signature the
@@ -2173,11 +2443,16 @@ function walkFunction(
   names: ReadonlyMap<string, ModelRef>,
   module: string,
 ): EmitFunction | FailedDecl {
-  const sig = signatureFailure(fn, sf);
-  if (sig !== undefined) return sig;
-  const params = fn.parameters.map((p) => (p.name as ts.Identifier).text);
+  const sig = signatureFailure(fn, sf, {
+    classes: c.classes,
+    failed: c.failed,
+    names,
+    module,
+  });
+  if (!("params" in sig)) return sig;
+  const params = sig.params;
   const scope: WalkScope = {
-    vars: new Map(params.map((p) => [p, "num" as const])),
+    vars: new Map(params.map((p) => [p.name, p.ty])),
     mapped: c.mapped,
     failed: c.failed,
     classes: c.classes,
@@ -2185,7 +2460,9 @@ function walkFunction(
     module,
   };
   // Parameters are assignable, the way JavaScript has them.
-  const locals: Locals = new Map(params.map((p) => [p, "mutable" as const]));
+  const locals: Locals = new Map(
+    params.map((p) => [p.name, "mutable" as const]),
+  );
   const tree = fn.body!.statements.flatMap((s) =>
     structureStmt(s, sf, locals, scope),
   );
@@ -2194,7 +2471,7 @@ function walkFunction(
   try {
     const body = lowerTree(
       tree,
-      params.map((p) => [p, "num"] as const),
+      params.map((p) => [p.name, p.ty] as const),
       () => {
         // A `number` function that runs off the end returns undefined,
         // which this slice has no value for.
@@ -2207,7 +2484,7 @@ function walkFunction(
       kind: "function",
       name: fn.name!.text,
       ...(module !== "" ? { module } : {}),
-      params: params.map((p) => wireParam(p, "num")),
+      params: params.map((p) => wireParam(p.name, p.ty)),
       source: fn.getText(sf),
       body,
     };
@@ -2615,10 +2892,7 @@ function walkEmitModule(
       const walked = walkFunction(stmt, sf, c, names, qualifier);
       if ("kind" in walked && walked.kind === "function") {
         c.declarations.push(walked);
-        c.mapped.set(
-          key(stmt.name.text),
-          walked.params.map(() => "num" as const),
-        );
+        c.mapped.set(key(stmt.name.text), walked.params.map(paramTy));
       } else {
         c.failed.set(key(stmt.name.text), walked as FailedDecl);
       }
