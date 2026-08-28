@@ -104,6 +104,7 @@ const CLASS_FIXTURES = [
   "engines/thales/tests/fixtures/classes.ts",
   `${CONFORMANCE}/theorem/class-box-roundtrip.ts`,
   `${CONFORMANCE}/theorem/class-binder-distance.ts`,
+  `${CONFORMANCE}/theorem/class-binder-equality-guards.ts`,
   `${CONFORMANCE}/inappropriate/ctor-assigns-twice.ts`,
   `${CONFORMANCE}/inappropriate/ctor-partial-assign.ts`,
   `${CONFORMANCE}/inappropriate/class-extends.ts`,
