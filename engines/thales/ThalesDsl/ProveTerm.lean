@@ -25,14 +25,17 @@ partial def intLitTerm? : TSyntax `term → Option Int
   | `(($inner)) => intLitTerm? inner
   | _ => none
 
-/-- One recovered binder: a bounded int range, or an unbounded head
-(bare int, nat-shaped, or a Float binder). -/
+/-- One recovered binder: a bounded int range, an unbounded head (bare
+int, nat-shaped, or a Float binder), or an opaque one — a class binder,
+whose domain is a constructor's image rather than a range, so it is
+neither enumerable nor searchable. -/
 inductive SpineBinder where
   | ranged (name : String) (lo hi : Int)
   | unbounded (name : String)
+  | opaque (name : String)
 
 def SpineBinder.name : SpineBinder → String
-  | .ranged n .. | .unbounded n => n
+  | .ranged n .. | .unbounded n | .opaque n => n
 
 /-- The renderer primes a binder spelled like the artifact's reserved
 vocabulary (`pure` → `pure'`); no TS identifier contains a prime, so a
@@ -78,6 +81,15 @@ partial def peelBounds (x : Name) (t : TSyntax `term) : TSyntax `term :=
   | `($h → $rest) => if isBoundHyp x h then peelBounds x rest else t
   | _ => t
 
+/-- Whether a hypothesis names `x` as some computation's successful
+result — the shape a class binder's domain is written as, since the
+binder ranges over the constructor's image. -/
+partial def isCtorImage (x : Name) : TSyntax `term → Bool
+  | `(($inner)) => isCtorImage x inner
+  | `($_:term = .ok $y:ident) | `($_:term = Except.ok $y:ident) =>
+    y.getId.eraseMacroScopes == x
+  | _ => false
+
 /-- The binder spine of a plain-Prop payload: the heads emission writes,
 outermost first, then the guard hypotheses under them, and the leaf under
 those — the same data the old grammar carried structurally, recovered here
@@ -93,24 +105,38 @@ partial def propSpine (t : TSyntax `term) : PropSpine :=
     | some l, some h =>
       let inner := propSpine body
       { inner with
-        binders := .ranged x.getId.toString l h :: inner.binders }
-    | _, _ => ⟨[], [], t⟩
+        binders := .ranged x.getId.eraseMacroScopes.toString l h :: inner.binders }
+    | _, _ => ({ binders := [], guards := [], leaf := t } : PropSpine)
   | `(∀ ($x:ident : Int), $body) =>
     let inner := propSpine body
-    { inner with binders := .unbounded x.getId.toString :: inner.binders }
+    { inner with binders := .unbounded x.getId.eraseMacroScopes.toString :: inner.binders }
   | `(∀ ($x:ident : JsNumber), $body)
   | `(∀ ($x:ident : Float), $body) =>
     let inner := propSpine (peelBounds x.getId.eraseMacroScopes body)
-    { inner with binders := .unbounded x.getId.toString :: inner.binders }
+    { inner with binders := .unbounded x.getId.eraseMacroScopes.toString :: inner.binders }
+  -- A constructor-image head: the instance and the hypothesis that names
+  -- it as the constructor's output. Placed after the numeric heads, which
+  -- claim their own types first.
+  | `(∀ ($x:ident : $_ty:term), $body) =>
+    -- The head's implication is matched one level down: alongside the
+    -- concrete-typed arms above, an arrow inside this pattern leaves the
+    -- syntax-match compiler unable to type its holes.
+    match body with
+    | `($hyp → $rest) =>
+      if isCtorImage x.getId.eraseMacroScopes hyp then
+        let inner := propSpine rest
+        { inner with binders := .opaque x.getId.eraseMacroScopes.toString :: inner.binders }
+      else ({ binders := [], guards := [], leaf := t } : PropSpine)
+    | _ => ({ binders := [], guards := [], leaf := t } : PropSpine)
   | `($g → $rest) =>
     if isGuardProp g then
       let inner := propSpine rest
       -- Guards sit inside every binder; one wrapping a binder is no shape
       -- emission writes, so the implication stays the leaf instead.
       if inner.binders.isEmpty then { inner with guards := g :: inner.guards }
-      else ⟨[], [], t⟩
-    else ⟨[], [], t⟩
-  | _ => ⟨[], [], t⟩
+      else ({ binders := [], guards := [], leaf := t } : PropSpine)
+    else ({ binders := [], guards := [], leaf := t } : PropSpine)
+  | _ => ({ binders := [], guards := [], leaf := t } : PropSpine)
 
 def intTerm (i : Int) : CommandElabM (TSyntax `term) := do
   let n := Syntax.mkNumLit (toString i.natAbs)
@@ -151,7 +177,7 @@ elab_rules : command
         let allBounded := spine.binders.all (· matches .ranged ..)
         let ranged := spine.binders.filterMap fun
           | .ranged x lo hi => some (x, lo, hi)
-          | .unbounded _ => none
+          | .unbounded _ | .opaque _ => none
         -- How many assignments the enumeration would visit; an empty range
         -- contributes 0, since there is nothing to evaluate.
         let domainSize := ranged.foldl
