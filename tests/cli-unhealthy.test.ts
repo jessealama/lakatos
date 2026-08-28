@@ -77,4 +77,43 @@ describe("cli refute on unhealthy runs", () => {
     ]);
     expect(stderr).toContain("error: Cannot find module 'lakatos/runtime'");
   });
+
+  it("a failure with no readable payload: NotTried envelope, exit 2", () => {
+    // The runtime throws a tagged payload for every failing property, so a
+    // failure carrying none means the reporter never ran.
+    runTestsMock.mockReturnValue({
+      kind: "completed",
+      json: {
+        numPassedTests: 0,
+        numFailedTests: 1,
+        success: false,
+        testResults: [
+          {
+            assertionResults: [
+              {
+                status: "failed",
+                failureMessages: ["Error: boom\n    at x (y.ts:1:1)"],
+              },
+            ],
+          },
+        ],
+      },
+    });
+    const { code, stdout, stderr } = runMain(["refute", "annotated.ts"]);
+    expect(code).toBe(2);
+    expect(stdout).toHaveLength(1);
+    const env = JSON.parse(stdout[0]!);
+    expectValidEnvelope(env);
+    expect(env.annotations).toEqual([
+      {
+        file: "annotated.ts",
+        function: "annotated",
+        property: "pos",
+        szs: "NotTried",
+      },
+    ]);
+    expect(stderr).toContain(
+      "error: a failed test carries no readable issue payload: Error: boom",
+    );
+  });
 });

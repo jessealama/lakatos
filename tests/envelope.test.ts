@@ -98,6 +98,17 @@ describe("collectIssues", () => {
     ).toEqual({ issues: [], unreadable: [] });
   });
 
+  it("tolerates a failed assertion with no failureMessages array", () => {
+    expect(
+      collectIssues(
+        json([{ status: "failed" } as unknown as AssertionResult], 0, 1),
+      ),
+    ).toEqual({
+      issues: [],
+      unreadable: ["a failed test carries no failure message"],
+    });
+  });
+
   it("finds a payload sitting behind an unrelated failure message", () => {
     const a: AssertionResult = {
       status: "failed",
