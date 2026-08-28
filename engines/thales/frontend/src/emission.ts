@@ -43,6 +43,7 @@ export type EmitExpr =
   | { kind: "unop"; op: "-" | "+" | "!"; operand: EmitExpr }
   | { kind: "binop"; op: string; left: EmitExpr; right: EmitExpr }
   | { kind: "same-value"; left: EmitExpr; right: EmitExpr }
+  | { kind: "cond"; cond: EmitExpr; then: EmitExpr; else: EmitExpr }
   | { kind: "math-sqrt"; arg: EmitExpr }
   | { kind: "math-abs"; arg: EmitExpr }
   | { kind: "number-is-finite"; arg: EmitExpr }
@@ -413,6 +414,11 @@ function numericShaped(e: ts.Expression, scope: WalkScope): boolean {
   if (ts.isNumericLiteral(u) || negatedLiteral(u) !== undefined) return true;
   if (ts.isIdentifier(u)) return true;
   if (isUnaryArith(u)) return true;
+  // A conditional has no shape of its own: it is whatever both arms are.
+  if (ts.isConditionalExpression(u))
+    return (
+      numericShaped(u.whenTrue, scope) && numericShaped(u.whenFalse, scope)
+    );
   if (ts.isBinaryExpression(u))
     return ARITH_OPERATORS.has(u.operatorToken.getText());
   if (isThisAccess(u) || instanceAccess(u) !== undefined) return true;
@@ -434,6 +440,11 @@ function booleanShaped(e: ts.Expression, scope: WalkScope): boolean {
     return COMPARISON_OPERATORS.has(op) || LOGICAL_OPERATORS.has(op);
   }
   if (isPrefixNot(u)) return true;
+  // A conditional has no shape of its own: it is whatever both arms are.
+  if (ts.isConditionalExpression(u))
+    return (
+      booleanShaped(u.whenTrue, scope) && booleanShaped(u.whenFalse, scope)
+    );
   if (builtinCall(u, scope)?.ty === "bool") return true;
   return equationSides(u) !== undefined;
 }
@@ -488,6 +499,15 @@ function findConstruct(
     if (!booleanShaped(e.operand, scope))
       return nonBooleanOperand("!", "the operand", e.operand, sf);
     return findConstruct(e.operand, sf, scope);
+  }
+  if (ts.isConditionalExpression(e)) {
+    if (!booleanShaped(e.condition, scope))
+      return nonBooleanOperand("?:", "the condition", e.condition, sf);
+    return (
+      findConstruct(e.condition, sf, scope) ??
+      findConstruct(e.whenTrue, sf, scope) ??
+      findConstruct(e.whenFalse, sf, scope)
+    );
   }
   const sides = equationSides(e);
   if (sides !== undefined) {
@@ -576,6 +596,13 @@ function findRefusedOp(e: ts.Expression): FailedDecl | undefined {
     return findRefusedOp(e.operand);
   }
   if (isPrefixNot(e)) return findRefusedOp(e.operand);
+  if (ts.isConditionalExpression(e)) {
+    return (
+      findRefusedOp(e.condition) ??
+      findRefusedOp(e.whenTrue) ??
+      findRefusedOp(e.whenFalse)
+    );
+  }
   if (ts.isBinaryExpression(e)) {
     const op = e.operatorToken.getText();
     const reason = REFUSED_OPERATORS.get(op);
@@ -621,6 +648,11 @@ function callNames(
     return callNames(e.expression, scope, into);
   if (isUnaryArith(e)) return callNames(e.operand, scope, into);
   if (isPrefixNot(e)) return callNames(e.operand, scope, into);
+  if (ts.isConditionalExpression(e)) {
+    callNames(e.condition, scope, into);
+    callNames(e.whenTrue, scope, into);
+    return callNames(e.whenFalse, scope, into);
+  }
   if (ts.isBinaryExpression(e)) {
     callNames(e.left, scope, into);
     return callNames(e.right, scope, into);
@@ -755,6 +787,13 @@ function findFailedMemberUse(
     return findFailedMemberUse(e.expression, scope);
   if (isUnaryArith(e) || isPrefixNot(e))
     return findFailedMemberUse(e.operand, scope);
+  if (ts.isConditionalExpression(e)) {
+    return (
+      findFailedMemberUse(e.condition, scope) ??
+      findFailedMemberUse(e.whenTrue, scope) ??
+      findFailedMemberUse(e.whenFalse, scope)
+    );
+  }
   if (ts.isBinaryExpression(e)) {
     return (
       findFailedMemberUse(e.left, scope) ?? findFailedMemberUse(e.right, scope)
@@ -973,6 +1012,14 @@ function walkTyped(
       );
     }
     return { kind: "unop", op: "!", operand };
+  }
+  if (ts.isConditionalExpression(e)) {
+    // Both arms answer at the position's own type, so a conditional is
+    // whatever type its context asks for; only the condition is pinned.
+    const cond = walkTyped(e.condition, "bool", scope, sf);
+    const whenTrue = walkTyped(e.whenTrue, expected, scope, sf);
+    const whenFalse = walkTyped(e.whenFalse, expected, scope, sf);
+    return { kind: "cond", cond, then: whenTrue, else: whenFalse };
   }
   if (ts.isBinaryExpression(e)) {
     const op = e.operatorToken.getText(sf);

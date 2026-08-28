@@ -14,6 +14,7 @@ inductive JsExpr where
   | unop (op : String) (operand : JsExpr)
   | binop (op : String) (left right : JsExpr)
   | sameValue (left right : JsExpr)
+  | cond (c thn els : JsExpr)
   | mathSqrt (arg : JsExpr)
   | mathAbs (arg : JsExpr)
   | numberIsFinite (arg : JsExpr)
@@ -184,6 +185,10 @@ partial def decodeExpr (j : Json) : Except String JsExpr := do
   | "same-value" =>
     pure (.sameValue (← decodeExpr (← j.getObjVal? "left"))
       (← decodeExpr (← j.getObjVal? "right")))
+  | "cond" =>
+    pure (.cond (← decodeExpr (← j.getObjVal? "cond"))
+      (← decodeExpr (← j.getObjVal? "then"))
+      (← decodeExpr (← j.getObjVal? "else")))
   | "math-sqrt" =>
     pure (.mathSqrt (← decodeExpr (← j.getObjVal? "arg")))
   | "math-abs" =>
