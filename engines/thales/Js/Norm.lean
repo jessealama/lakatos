@@ -303,6 +303,9 @@ grind_pattern float_le_of_not_lt => Float.lt x y
 grind_pattern float_lt_eq_false_of_le => Float.lt x y
 grind_pattern float_ne_nan_of_bounds => c.toModel.unpack
 grind_pattern float_sub_ne_nan_of_bounds => (a - b).toModel.unpack
+-- Normalization rewrites subtraction to addition of the negation, so the
+-- residual a closer actually sees carries the second spelling.
+grind_pattern float_sub_ne_nan_of_bounds => (a + -b).toModel.unpack
 grind_pattern float_sq_nonneg => x * x
 grind_pattern float_add_nonneg => a + b
 grind_pattern float_sqrt_nonneg => Float.sqrt x
