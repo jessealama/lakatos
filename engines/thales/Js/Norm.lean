@@ -288,7 +288,8 @@ def reduceGroundFloatCmp (e : Expr) : SimpM Step := do
 
 /-- A literal factor instantiates a monotonicity fact with ground bound
 hypotheses; these evaluate away during normalization. Registered in
-`seval` because that is the set grind draws its simprocs from. -/
+`seval` because that is the set both grind and the generic rung draw
+their simprocs from. -/
 simproc [seval] reduceFloatLt ((_ : Float) < _) := reduceGroundFloatCmp
 
 simproc [seval] reduceFloatLe ((_ : Float) ≤ _) := reduceGroundFloatCmp

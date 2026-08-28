@@ -179,6 +179,13 @@ const FIXTURES = [
       ["Point#distance", "Theorem", /generic proof search, kernel-checked as/],
     ],
   },
+  {
+    // Five guards, two of them clamps. The arms a normalization already
+    // settled prune before the closers run, which is what keeps this at
+    // the default budget.
+    file: "class-binder-clamp.lean",
+    expected: [["Clamp#distance", "Theorem"]],
+  },
 ];
 
 const { check, done } = checker("verdict-channel");

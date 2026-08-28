@@ -258,7 +258,7 @@ def attemptGeneric (identity : Identity) (p : Expr) :
     (simpTheorems := #[← ext.getTheorems])
     (congrTheorems := ← Meta.getSimpCongrTheorems)
   let simped ←
-    try Meta.simpGoal mvar.mvarId! ctx
+    try Meta.simpGoal mvar.mvarId! ctx (simprocs := #[← Meta.Simp.getSEvalSimprocs])
     catch _ => pure (some (#[], mvar.mvarId!), {})
   match simped.1 with
   | none => return .done (← certifyRoot identity p mvar p)
