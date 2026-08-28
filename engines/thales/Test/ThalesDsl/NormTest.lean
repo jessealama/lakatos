@@ -82,3 +82,19 @@ example (e : JsError) (k : Unit → JsM Nat) (n : Nat) :
 -- The bounds a class binder gets, from the guard alone.
 example (x : Float) (h : Float.isFinite x = true) : -floatInf < x ∧ x < floatInf := by
   grind
+
+-- A branch whose arms agree carries nothing: collapsing it is what keeps a
+-- guard on a value the goal never reads from doubling the tree.
+example (c : Bool) (a : JsM Nat) : (bif c then a else a) = a := by
+  simp only [js_norm]
+
+example (c : Prop) [Decidable c] (a : JsM Nat) : (if c then a else a) = a := by
+  simp only [js_norm]
+
+-- A branch whose condition a ground evaluator settled keeps only the arm
+-- it selected, in both the cond and the ite spelling.
+example (a b : JsM Nat) : (bif Float.lt 0 0 then a else b) = b := by
+  simp only [js_norm, seval]
+
+example (a b : JsM Nat) : (if Float.lt 0 0 = true then a else b) = b := by
+  simp only [js_norm, seval]
