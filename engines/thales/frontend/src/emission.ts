@@ -129,14 +129,24 @@ export interface EmitClass {
 
 export type EmitDecl = EmitFunction | EmitClass;
 
+/** A value's type in the walk: a number, or an instance of a modeled
+ * class. Only parameters can carry the instance type; locals, fields, and
+ * returns are numbers. */
+export type ValueTy = "num" | { instance: ModelRef };
+
+/** Whether two model references name the same class. */
+function sameClass(a: ModelRef, b: ModelRef): boolean {
+  return a.module === b.module && a.name === b.name;
+}
+
 /** What a use of a class needs to know: its fields in declaration order,
- * the getters that modeled, and its constructor's arity. */
+ * the getters that modeled, and its constructor's signature. */
 export interface ClassShape {
   fields: string[];
   getters: ReadonlySet<string>;
-  ctorArity: number;
-  /** Modeled methods by name, with their arities. */
-  methods: ReadonlyMap<string, number>;
+  ctorParams: ValueTy[];
+  /** Modeled methods by name, with their parameter types. */
+  methods: ReadonlyMap<string, ValueTy[]>;
 }
 
 /** A binder's denoted domain: a finite half-open integer range, the whole
@@ -578,8 +588,8 @@ function callNames(
  * keyed across the whole closure, so a reference resolves through
  * `names` — which module a source spelling belongs to — before lookup. */
 interface WalkScope {
-  vars: ReadonlySet<string>;
-  mapped: ReadonlyMap<string, number>;
+  vars: ReadonlyMap<string, ValueTy>;
+  mapped: ReadonlyMap<string, ValueTy[]>;
   failed: ReadonlyMap<string, FailedDecl>;
   classes: ReadonlyMap<string, ClassShape>;
   /** Source spellings this module binds elsewhere: imported names, and
@@ -742,10 +752,12 @@ function findFailedMemberUse(
   return undefined;
 }
 
-type Expected = "num" | "bool";
+type Expected = ValueTy | "bool";
 
 function describeTy(t: Expected): string {
-  return t === "num" ? "a number" : "a boolean";
+  if (t === "num") return "a number";
+  if (t === "bool") return "a boolean";
+  return `an instance of '${displayName(t.instance)}'`;
 }
 
 /** An engine-route failure: the walk found something with no model, or a
@@ -794,18 +806,31 @@ function walkTyped(
     return { kind: "num", lit };
   }
   if (ts.isIdentifier(e)) {
-    const bound = scope.vars.has(e.text);
+    const bound = scope.vars.get(e.text);
     const global =
-      !bound && GLOBAL_NUMBER_ATOMS.has(e.text) && !moduleBinds(scope, e.text);
-    if (!bound && !global) {
+      bound === undefined &&
+      GLOBAL_NUMBER_ATOMS.has(e.text) &&
+      !moduleBinds(scope, e.text);
+    if (bound === undefined && !global) {
       throw new ModelError(`unbound identifier '${e.text}'`);
     }
-    if (expected !== "num") {
+    // The atoms are numbers; a bound name carries whatever type it was
+    // bound at, and an instance matches only its own class.
+    const actual: ValueTy = bound ?? "num";
+    const ok =
+      typeof expected === "string"
+        ? expected === actual
+        : typeof actual !== "string" &&
+          sameClass(actual.instance, expected.instance);
+    if (!ok) {
       throw new ModelError(
-        `identifier '${e.text}' is a number, not ${describeTy(expected)}`,
+        `identifier '${e.text}' is ${describeTy(actual)}, ` +
+          `not ${describeTy(expected)}`,
       );
     }
-    return bound ? { kind: "id", name: e.text } : { kind: "num", lit: e.text };
+    return bound !== undefined
+      ? { kind: "id", name: e.text }
+      : { kind: "num", lit: e.text };
   }
   if (isUnaryArith(e)) {
     const operand = walkTyped(e.operand, "num", scope, sf);
@@ -917,17 +942,17 @@ function walkTyped(
   if (scope.self !== undefined) {
     const selfCall = thisCall(e);
     if (selfCall !== undefined) {
-      const arity = scope.self.shape.methods.get(selfCall.name);
-      if (arity === undefined) {
+      const sig = scope.self.shape.methods.get(selfCall.name);
+      if (sig === undefined) {
         throw new ModelError(
           `'this.${selfCall.name}' does not name a modeled method of ` +
             `'${scope.self.ref.name}'`,
         );
       }
-      if (arity !== selfCall.args.length) {
+      if (sig.length !== selfCall.args.length) {
         throw new ModelError(
           `'${qualifiedName(selfCall.name, scope.self.ref.name)}' expects ` +
-            `${arity} argument(s), got ${selfCall.args.length}`,
+            `${sig.length} argument(s), got ${selfCall.args.length}`,
         );
       }
       /* v8 ignore start -- no boolean position admits a method call:
@@ -947,7 +972,7 @@ function walkTyped(
           : {}),
         name: selfCall.name,
         object: { kind: "self" },
-        args: selfCall.args.map((a) => walkTyped(a, "num", scope, sf)),
+        args: selfCall.args.map((a, i) => walkTyped(a, sig[i]!, scope, sf)),
       };
     }
   }
@@ -956,21 +981,21 @@ function walkTyped(
     const ref = newRef(scope, icall.object);
     const shape = classShapeOf(scope, ref);
     const rawCtorArgs = icall.object.arguments ?? [];
-    if (shape.ctorArity !== rawCtorArgs.length) {
+    if (shape.ctorParams.length !== rawCtorArgs.length) {
       throw new ModelError(
-        `'${displayName(ref)}' expects ${shape.ctorArity} argument(s), ` +
-          `got ${rawCtorArgs.length}`,
+        `'${displayName(ref)}' expects ${shape.ctorParams.length} ` +
+          `argument(s), got ${rawCtorArgs.length}`,
       );
     }
-    const arity = shape.methods.get(icall.name);
-    if (arity === undefined) {
+    const sig = shape.methods.get(icall.name);
+    if (sig === undefined) {
       throw new ModelError(
         `'${displayName(ref)}' has no method '${icall.name}' in the model`,
       );
     }
-    if (arity !== icall.args.length) {
+    if (sig.length !== icall.args.length) {
       throw new ModelError(
-        `'${qualifiedName(icall.name, ref.name)}' expects ${arity} ` +
+        `'${qualifiedName(icall.name, ref.name)}' expects ${sig.length} ` +
           `argument(s), got ${icall.args.length}`,
       );
     }
@@ -987,7 +1012,9 @@ function walkTyped(
       kind: "new",
       className: ref.name,
       ...module,
-      args: rawCtorArgs.map((a) => walkTyped(a, "num", scope, sf)),
+      args: rawCtorArgs.map((a, i) =>
+        walkTyped(a, shape.ctorParams[i]!, scope, sf),
+      ),
     };
     return {
       kind: "method-call",
@@ -995,7 +1022,7 @@ function walkTyped(
       ...module,
       name: icall.name,
       object,
-      args: icall.args.map((a) => walkTyped(a, "num", scope, sf)),
+      args: icall.args.map((a, i) => walkTyped(a, sig[i]!, scope, sf)),
     };
   }
   const access = instanceAccess(e);
@@ -1003,10 +1030,10 @@ function walkTyped(
     const ref = newRef(scope, access.object);
     const shape = classShapeOf(scope, ref);
     const rawArgs = access.object.arguments ?? [];
-    if (shape.ctorArity !== rawArgs.length) {
+    if (shape.ctorParams.length !== rawArgs.length) {
       throw new ModelError(
-        `'${displayName(ref)}' expects ${shape.ctorArity} argument(s), ` +
-          `got ${rawArgs.length}`,
+        `'${displayName(ref)}' expects ${shape.ctorParams.length} ` +
+          `argument(s), got ${rawArgs.length}`,
       );
     }
     if (expected !== "num") {
@@ -1019,7 +1046,9 @@ function walkTyped(
       kind: "new",
       className: ref.name,
       ...module,
-      args: rawArgs.map((a) => walkTyped(a, "num", scope, sf)),
+      args: rawArgs.map((a, i) =>
+        walkTyped(a, shape.ctorParams[i]!, scope, sf),
+      ),
     };
     if (shape.getters.has(access.name)) {
       return {
@@ -1064,17 +1093,17 @@ function walkTyped(
         `'${name}' is a class; it is only modeled under 'new'`,
       );
     }
-    const arity = scope.mapped.get(key);
-    if (arity === undefined) {
+    const sig = scope.mapped.get(key);
+    if (sig === undefined) {
       const failed = scope.failed.get(key);
       if (failed !== undefined) {
         throw new ModelError(`'${name}' has no model: ${failed.reason}`);
       }
       throw new ModelError(`no model registered for '${name}'`);
     }
-    if (arity !== e.arguments.length) {
+    if (sig.length !== e.arguments.length) {
       throw new ModelError(
-        `'${name}' expects ${arity} argument(s), got ${e.arguments.length}`,
+        `'${name}' expects ${sig.length} argument(s), got ${e.arguments.length}`,
       );
     }
     if (expected !== "num") {
@@ -1082,7 +1111,7 @@ function walkTyped(
         `a call to '${name}' yields a number, not ${describeTy(expected)}`,
       );
     }
-    const args = e.arguments.map((a) => walkTyped(a, "num", scope, sf));
+    const args = e.arguments.map((a, i) => walkTyped(a, sig[i]!, scope, sf));
     return {
       kind: "call",
       callee: ref.name,
@@ -1429,7 +1458,7 @@ type Cont = () => void;
  * join order, and stays after the branch — do-notation needs no join. */
 function lowerTree(
   stmts: readonly TStmt[],
-  vars: readonly string[],
+  vars: readonly (readonly [string, ValueTy])[],
   k: Cont,
   scope: WalkScope,
   sf: ts.SourceFile,
@@ -1437,8 +1466,8 @@ function lowerTree(
   const walk = (
     e: ts.Expression,
     expected: Expected,
-    names: readonly string[],
-  ) => walkTyped(e, expected, { ...scope, vars: new Set(names) }, sf);
+    names: readonly (readonly [string, ValueTy])[],
+  ) => walkTyped(e, expected, { ...scope, vars: new Map(names) }, sf);
   if (stmts.length === 0) {
     k();
     return [];
@@ -1454,7 +1483,13 @@ function lowerTree(
       // A binding whose scope is the rest of the list; a bind rather than
       // a substitution, so an unused initializer still evaluates.
       const init = walk(s.init, "num", vars);
-      const tail = lowerTree(rest, [...vars, s.name], k, scope, sf);
+      const tail = lowerTree(
+        rest,
+        [...vars, [s.name, "num"] as const],
+        k,
+        scope,
+        sf,
+      );
       return [
         { kind: s.mutable ? "let" : "const", name: s.name, init },
         ...tail,
@@ -1874,7 +1909,10 @@ function walkClass(
     names,
     module: qualifier,
   };
-  const ctorScope: WalkScope = { ...base, vars: new Set(ctorParams) };
+  const ctorScope: WalkScope = {
+    ...base,
+    vars: new Map(ctorParams.map((p) => [p, "num" as const])),
+  };
   const fieldSet = new Set(fields);
   const ctorLocals: Locals = new Map(
     ctorParams.map((p) => [p, "mutable" as const]),
@@ -1907,7 +1945,13 @@ function walkClass(
     if (failure !== undefined) return failure;
     // Falling off the end is a constructor's normal exit: the renderer
     // appends the instance return.
-    ctorBody = lowerTree(tree, ctorParams, () => {}, ctorScope, sf);
+    ctorBody = lowerTree(
+      tree,
+      ctorParams.map((p) => [p, "num"] as const),
+      () => {},
+      ctorScope,
+      sf,
+    );
   } catch (err) {
     if (err instanceof CtorPrecondition)
       return { construct: "constructor", reason: err.message };
@@ -1916,12 +1960,12 @@ function walkClass(
     return { reason: err.message };
   }
 
-  const methodArities = new Map<string, number>();
+  const methodSigs = new Map<string, ValueTy[]>();
   const shape: ClassShape = {
     fields,
     getters: getterNames,
-    ctorArity: ctorParams.length,
-    methods: methodArities,
+    ctorParams: ctorParams.map(() => "num" as const),
+    methods: methodSigs,
   };
   const self = { ref: { module: qualifier, name: className }, shape };
   const getters: EmitGetter[] = [];
@@ -1938,7 +1982,7 @@ function walkClass(
       });
       continue;
     }
-    const scope: WalkScope = { ...base, vars: new Set(), self };
+    const scope: WalkScope = { ...base, vars: new Map(), self };
     const body = g.body!.statements.flatMap((st) =>
       structureStmt(st, sf, new Map(), scope),
     );
@@ -1988,7 +2032,11 @@ function walkClass(
       continue;
     }
     const params = m.parameters.map((p) => (p.name as ts.Identifier).text);
-    const scope: WalkScope = { ...base, vars: new Set(params), self };
+    const scope: WalkScope = {
+      ...base,
+      vars: new Map(params.map((p) => [p, "num" as const])),
+      self,
+    };
     const locals: Locals = new Map(params.map((p) => [p, "mutable" as const]));
     const body = m.body!.statements.flatMap((st) =>
       structureStmt(st, sf, locals, scope),
@@ -2004,7 +2052,7 @@ function walkClass(
         params,
         body: lowerTree(
           body,
-          params,
+          params.map((p) => [p, "num"] as const),
           () => {
             throw new ModelError("the body must return on every path");
           },
@@ -2012,7 +2060,10 @@ function walkClass(
           sf,
         ),
       });
-      methodArities.set(spelling, params.length);
+      methodSigs.set(
+        spelling,
+        params.map(() => "num" as const),
+      );
     } catch (err) {
       /* v8 ignore next -- the walk throws nothing else */
       if (!(err instanceof ModelError)) throw err;
@@ -2033,7 +2084,7 @@ function walkClass(
     shape: {
       ...shape,
       getters: new Set(getters.map((g) => g.name)),
-      methods: methodArities,
+      methods: methodSigs,
     },
     memberFailed,
   };
@@ -2108,7 +2159,7 @@ function walkFunction(
   if (sig !== undefined) return sig;
   const params = fn.parameters.map((p) => (p.name as ts.Identifier).text);
   const scope: WalkScope = {
-    vars: new Set(params),
+    vars: new Map(params.map((p) => [p, "num" as const])),
     mapped: c.mapped,
     failed: c.failed,
     classes: c.classes,
@@ -2125,7 +2176,7 @@ function walkFunction(
   try {
     const body = lowerTree(
       tree,
-      params,
+      params.map((p) => [p, "num"] as const),
       () => {
         // A `number` function that runs off the end returns undefined,
         // which this slice has no value for.
@@ -2286,7 +2337,7 @@ type PayloadResult =
  * failed property elaboration does. */
 function obligationPayload(
   formula: string,
-  mapped: ReadonlyMap<string, number>,
+  mapped: ReadonlyMap<string, ValueTy[]>,
   failed: ReadonlyMap<string, FailedDecl>,
   classes: ReadonlyMap<string, ClassShape>,
   names: ReadonlyMap<string, ModelRef>,
@@ -2330,7 +2381,7 @@ function obligationPayload(
     const expr = unwrapParens(parsed.expr);
     const sides = equationSides(expr);
     const scope: WalkScope = {
-      vars: new Set(binders.map((b) => b.varName)),
+      vars: new Map(binders.map((b) => [b.varName, "num" as const])),
       mapped,
       failed,
       classes,
@@ -2430,7 +2481,7 @@ interface EmitClosure {
    * one closes a cycle. */
   active: Set<string>;
   declarations: EmitDecl[];
-  mapped: Map<string, number>;
+  mapped: Map<string, ValueTy[]>;
   failed: Map<string, FailedDecl>;
   classes: Map<string, ClassShape>;
 }
@@ -2546,7 +2597,10 @@ function walkEmitModule(
       const walked = walkFunction(stmt, sf, c, names, qualifier);
       if ("kind" in walked && walked.kind === "function") {
         c.declarations.push(walked);
-        c.mapped.set(key(stmt.name.text), walked.params.length);
+        c.mapped.set(
+          key(stmt.name.text),
+          walked.params.map(() => "num" as const),
+        );
       } else {
         c.failed.set(key(stmt.name.text), walked as FailedDecl);
       }
@@ -2561,13 +2615,13 @@ function walkEmitModule(
         c.classes.set(key(className), walked.shape);
         c.mapped.set(
           key(qualifiedName("constructor", className)),
-          walked.shape.ctorArity,
+          walked.shape.ctorParams,
         );
         for (const g of walked.shape.getters) {
-          c.mapped.set(key(qualifiedName(g, className)), 0);
+          c.mapped.set(key(qualifiedName(g, className)), []);
         }
-        for (const [m, arity] of walked.shape.methods) {
-          c.mapped.set(key(qualifiedName(m, className)), arity);
+        for (const [m, sig] of walked.shape.methods) {
+          c.mapped.set(key(qualifiedName(m, className)), sig);
         }
         for (const [k, v] of walked.memberFailed) c.failed.set(k, v);
         continue;
