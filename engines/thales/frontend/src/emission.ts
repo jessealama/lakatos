@@ -2713,7 +2713,11 @@ function obligationPayload(
           module,
         );
         if ("reason" in cls) {
-          return { kind: "classified", szs: "Inappropriate", reason: cls.reason };
+          return {
+            kind: "classified",
+            szs: "Inappropriate",
+            reason: cls.reason,
+          };
         }
         loweredBinders.push(cls);
         continue;

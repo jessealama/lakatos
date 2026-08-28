@@ -1,9 +1,9 @@
-// A class-valued binder over an exported class whose constructor guards
-// define the domain: the binder ranges over the image of successful
-// construction.
+// A class-valued binder over the image of a guarding constructor: the
+// binder's only finiteness is what the passed guards leave behind, and the
+// `-0` normalization is inside the domain by construction.
 export class Point {
-  public readonly x: number;
-  public readonly y: number;
+  readonly x: number;
+  readonly y: number;
 
   constructor(x: number, y: number) {
     if (!Number.isFinite(x) || !Number.isFinite(y)) {
@@ -20,9 +20,9 @@ export class Point {
   }
 
   /** @ensures{nonNegative} ∀ (p q : Point) { 0 <= p.distance(q) } */
-  distance(p: Point): number {
-    const dx = p.x - this.x;
-    const dy = p.y - this.y;
+  distance(q: Point): number {
+    const dx = this.x - q.x;
+    const dy = this.y - q.y;
     return Math.sqrt(dx * dx + dy * dy);
   }
 }

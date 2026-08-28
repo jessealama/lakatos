@@ -25,7 +25,7 @@
       "function": "scale",
       "property": "scaled",
       "szs": "Inappropriate",
-      "reason": "class-valued binder 'Box' is not yet modeled"
+      "reason": "class-valued binder 'Box' names a class outside the model: unmapped TypeScript construct 'ReadonlyKeyword' at 2:15"
     }
   ],
   "engines/thales/tests/fixtures/operators.ts": [
@@ -670,6 +670,15 @@
       "property": "roundTrip",
       "szs": "Theorem",
       "reason": "proved by generic proof search, kernel-checked as TsProof.thm_5912744196769564160",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/class-binder-distance.ts": [
+    {
+      "function": "Point#distance",
+      "property": "nonNegative",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_3742070529438897747",
       "axioms": []
     }
   ],

@@ -135,7 +135,9 @@ describe("cli prove, plain pipeline", () => {
           function: "volume",
           property: "p",
           szs: "Inappropriate",
-          reason: "class-valued binder 'Box' is not yet modeled",
+          reason:
+            "'volume' could not be modeled: 'Box' could not be modeled: " +
+            "unmapped TypeScript construct 'ReadonlyKeyword' at 1:32",
         },
       ]),
     );
