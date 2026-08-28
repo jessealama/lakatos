@@ -147,6 +147,18 @@
         },
         {
           "type": "object",
+          "description": "A conditional expression: the condition is boolean-valued, and both arms answer at the position's own type.",
+          "additionalProperties": false,
+          "required": ["kind", "cond", "then", "else"],
+          "properties": {
+            "kind": { "const": "cond" },
+            "cond": { "$ref": "#/definitions/expr" },
+            "then": { "$ref": "#/definitions/expr" },
+            "else": { "$ref": "#/definitions/expr" }
+          }
+        },
+        {
+          "type": "object",
           "description": "Math.sqrt: ECMA-262's correctly rounded square root.",
           "additionalProperties": false,
           "required": ["kind", "arg"],

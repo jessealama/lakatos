@@ -176,6 +176,17 @@ partial def valueTerm (coerced : String → Bool) : JsExpr → RenderM Rendered
     let ⟨lt, ll⟩ ← valueTerm coerced l
     let ⟨rt, rl⟩ ← valueTerm coerced r
     return ⟨← `(Number.FloatOps.sameValue $lt $rt), ll || rl⟩
+  -- A `(← ...)` cannot sit in a bare `if` arm, so a lifting arm renders
+  -- behind an ascribed nested do — which is also what keeps the arm the
+  -- condition passed over from running. Pure arms need neither.
+  | .cond c t e => do
+    let ⟨ct, cl⟩ ← valueTerm coerced c
+    let ⟨tt, tl⟩ ← valueTerm coerced t
+    let ⟨et, el⟩ ← valueTerm coerced e
+    if tl || el then
+      return ⟨← `((← if $ct then ((do return $tt) : JsM _)
+        else ((do return $et) : JsM _))), true⟩
+    return ⟨← `(if $ct then $tt else $et), cl⟩
   | .mathSqrt a => do
     let ⟨t, lifted⟩ ← valueTerm coerced a
     return ⟨← `(Float.sqrt $t), lifted⟩

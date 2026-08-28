@@ -294,6 +294,18 @@ def ctorImageHyp? (goal : MVarId) : MetaM (Option FVarId) :=
           return some decl.fvarId
     return none
 
+/-- The conditionals an inversion leaves in the goal. A constructor that
+computes a field value with one — the shape a `?:` normalization takes —
+has it substituted into the goal, where `grind` does not split it either,
+so the field would keep its whole `ite` term. Shares the inversion's fuel,
+which bounds the fan-out the same way. -/
+partial def splitFieldIfs (goal : MVarId) (fuel : Nat) : MetaM (List MVarId) := do
+  if fuel == 0 then return [goal]
+  match ← observing? (Meta.splitTarget? goal) with
+  | some (some goals) =>
+    return (← goals.mapM (splitFieldIfs · (fuel - 1))).flatten
+  | _ => return [goal]
+
 /-- `grind` neither case-splits an `if` sitting inside a hypothesis nor
 carries a constructor equation into the goal, so a class binder's
 constructor-image hypothesis never reaches the field values the closers
@@ -301,16 +313,19 @@ need. Split those hypotheses until each names a constructor, invert them,
 and substitute. The fuel bounds the fan-out: a constructor with several
 guards would otherwise branch past any budget, and reaching the bound
 just leaves the goal for grind to fail on. -/
-partial def invertCtorImage (goal : MVarId) (fuel : Nat) : MetaM (List MVarId) := do
+partial def invertCtorImage (goal : MVarId) (fuel : Nat) (inverted := false) :
+    MetaM (List MVarId) := do
   if fuel == 0 then return [goal]
-  let some fvarId ← ctorImageHyp? goal | return [goal]
+  let some fvarId ← ctorImageHyp? goal
+    | if inverted then return ← splitFieldIfs goal fuel else return [goal]
   match ← observing? (Meta.injection goal fvarId) with
   | some .solved => return []
-  | some (.subgoal g _ _) => invertCtorImage (← Meta.substVars g) (fuel - 1)
+  | some (.subgoal g _ _) => invertCtorImage (← Meta.substVars g) (fuel - 1) true
   | none =>
     match ← Meta.splitIfLocalDecl? goal fvarId with
     | some (g₁, g₂) =>
-      return (← invertCtorImage g₁ (fuel - 1)) ++ (← invertCtorImage g₂ (fuel - 1))
+      return (← invertCtorImage g₁ (fuel - 1) inverted)
+        ++ (← invertCtorImage g₂ (fuel - 1) inverted)
     | none => return [goal]
 
 /-- How deep the inversion may branch. Each level either discharges one

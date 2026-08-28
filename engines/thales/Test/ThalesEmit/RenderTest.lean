@@ -39,6 +39,13 @@ def numParamJson (name : String) : Json :=
   matches .ok (.sameValue (.id "x") (.num "-0"))
 #guard
   (decodeExpr (Json.mkObj
+    [("kind", "cond"),
+     ("cond", Json.mkObj [("kind", "id"), ("name", "b")]),
+     ("then", Json.mkObj [("kind", "num"), ("lit", "0")]),
+     ("else", Json.mkObj [("kind", "id"), ("name", "x")])]))
+  matches .ok (.cond (.id "b") (.num "0") (.id "x"))
+#guard
+  (decodeExpr (Json.mkObj
     [("kind", "math-sqrt"),
      ("arg", Json.mkObj [("kind", "id"), ("name", "x")])]))
   matches .ok (.mathSqrt (.id "x"))
@@ -205,8 +212,8 @@ def payloadShell (guards : Json) : Json :=
   matches .ok (.structured #[] #[.id "g", .id "h"] (.istrue (.id "b")))
 #guard (decodePayload (payloadShell "g")) matches .error "field 'guards' is not an array"
 #guard
-  (decodePayload (payloadShell (Json.arr #[Json.mkObj [("kind", "cond")]])))
-  matches .error "field 'guards': unknown expression kind 'cond'"
+  (decodePayload (payloadShell (Json.arr #[Json.mkObj [("kind", "typeof")]])))
+  matches .error "field 'guards': unknown expression kind 'typeof'"
 
 -- The pinned emissions render to the golden artifacts — files a human
 -- inspected and accepted. #eval runs CoreM inside this module's own
@@ -318,6 +325,53 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
     throwError "the assigned parameter is not rebound:\n{rendered}"
   unless (rendered.splitOn "fun").length == 1 do
     throwError "a helper lambda leaked into the source text:\n{rendered}"
+
+-- Pure arms render as one `if`, both in place: no lift barrier, since a
+-- pure arm has nothing to fire.
+#eval show CoreM Unit from do
+  let e : Emission := {
+    file := "t.ts"
+    declarations := #[.fn { name := "canon", params := nums #["x"], source := "canon",
+                            body := #[.ret (.cond (.binop "<" (.id "x") (.num "1"))
+                                                  (.num "0") (.id "x"))] }]
+    obligations := #[] }
+  let rendered ← renderEmission e
+  unless (rendered.splitOn "if Float.lt x 1 then 0 else x").length == 2 do
+    throwError "the conditional did not render as a plain if:\n{rendered}"
+  unless (rendered.splitOn "JsM _").length == 1 do
+    throwError "pure arms took the lift barrier:\n{rendered}"
+
+-- A lifting arm renders behind a nested `do`, so a throwing call in the
+-- arm the condition did not take never fires.
+#eval show CoreM Unit from do
+  let e : Emission := {
+    file := "t.ts"
+    declarations := #[.fn { name := "g", params := nums #["x"], source := "g",
+                            body := #[.ret (.id "x")] },
+                      .fn { name := "pick", params := nums #["x"], source := "pick",
+                            body := #[.ret (.cond (.binop "<" (.id "x") (.num "1"))
+                                                  (.call "g" none #[.id "x"])
+                                                  (.num "0"))] }]
+    obligations := #[] }
+  let rendered ← renderEmission e
+  unless (rendered.splitOn "JsM _").length == 3 do
+    throwError "a lifting arm did not take the lift barrier:\n{rendered}"
+  -- Only the ascription's presence distinguishes the two renderings: drop
+  -- it and the text still reads as if the call sat in the arm, but the
+  -- `←` no longer elaborates there at all.
+
+-- What that shape buys, written out by hand: the arm the condition passed
+-- over does not run, so its throw does not escape.
+section
+open Js
+private def boom : JsM JsNumber := JsM.throw (JsError.error "E")
+
+private def barrier (c : Bool) : JsM JsNumber := do
+  return (← if c then ((do return 1) : JsM _) else ((do return (← boom)) : JsM _))
+
+#guard (barrier true) matches .ok _
+#guard (barrier false) matches .error _
+end
 
 -- A number binder is a Float ∀ carrying its bounds as hypotheses, lower
 -- outermost, with an infinite endpoint spelled `floatInf` — and no use of

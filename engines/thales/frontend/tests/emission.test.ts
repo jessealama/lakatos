@@ -2595,6 +2595,300 @@ describe("logical operators on boolean operands", () => {
   });
 });
 
+describe("conditional expressions", () => {
+  const FILE = "engines/thales/tests/fixtures/tracer.ts";
+
+  test("the -0 normalization walks to a cond node", () => {
+    const { emission, classified } = emitModule(
+      [
+        "/** @ensures{p} forall (x: number) { Object.is(canon(x), canon(x)) } */",
+        "export function canon(x: number): number {",
+        "  return Object.is(x, -0) ? 0 : x;",
+        "}",
+      ].join("\n"),
+      FILE,
+    );
+    expect(classified).toEqual([]);
+    expectValidEmission(emission);
+    expect(fnBody(emission.declarations[0]!)).toEqual([
+      {
+        kind: "return",
+        expr: {
+          kind: "cond",
+          cond: {
+            kind: "same-value",
+            left: { kind: "id", name: "x" },
+            right: { kind: "num", lit: "-0" },
+          },
+          then: { kind: "num", lit: "0" },
+          else: { kind: "id", name: "x" },
+        },
+      },
+    ]);
+  });
+
+  test("a non-boolean condition refuses the declaration", () => {
+    const { classified } = emitModule(
+      [
+        "/** @ensures{p} forall (x: number) { Object.is(pick(x), pick(x)) } */",
+        "export function pick(x: number): number {",
+        "  return x ? 0 : 1;",
+        "}",
+      ].join("\n"),
+      FILE,
+    );
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason:
+          "'pick' could not be modeled: '?:' models boolean operands only; " +
+          "the condition is not a boolean (Identifier at 3:10)",
+      }),
+    ]);
+  });
+
+  test("a refused operator in an arm refuses the declaration", () => {
+    const { classified } = emitModule(
+      [
+        "/** @ensures{p} forall (x: number) { Object.is(pick(x), pick(x)) } */",
+        "export function pick(x: number): number {",
+        "  return x < 1 ? 0 : x ** 2;",
+        "}",
+      ].join("\n"),
+      FILE,
+    );
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason:
+          "'pick' could not be modeled: '**' is implementation-approximated " +
+          "in JavaScript, so any model would certify results a conforming " +
+          "engine may disagree with",
+      }),
+    ]);
+  });
+
+  test("a degraded callee in an arm travels to the caller", () => {
+    const { classified } = emitModule(
+      [
+        "export function g(x: number): number {",
+        "  return x ** 2;",
+        "}",
+        "/** @ensures{p} forall (x: number) { Object.is(pick(x), pick(x)) } */",
+        "export function pick(x: number): number {",
+        "  return x < 1 ? g(x) : 0;",
+        "}",
+      ].join("\n"),
+      FILE,
+    );
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining("'g' could not be modeled: '**'"),
+      }),
+    ]);
+  });
+
+  test("a degraded member in an arm travels to the caller", () => {
+    const { classified } = emitModule(
+      [
+        "export class Dep {",
+        "  #v: number;",
+        "  constructor(v: number) {",
+        "    this.#v = v;",
+        "  }",
+        "  async gone(): number {",
+        "    return 1;",
+        "  }",
+        "  get v(): number {",
+        "    return this.#v;",
+        "  }",
+        "}",
+        "/** @ensures{p} forall (x: number) { Object.is(pick(x), pick(x)) } */",
+        "export function pick(x: number): number {",
+        "  return x < 1 ? new Dep(1).gone() : 0;",
+        "}",
+      ].join("\n"),
+      FILE,
+    );
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining("'Dep#gone' could not be modeled"),
+      }),
+    ]);
+  });
+
+  test("numeric arms make a conditional an Object.is argument", () => {
+    const { emission, classified } = emitModule(
+      [
+        "/** @ensures{p} forall (x: number) { Object.is(canon(x), canon(x)) } */",
+        "export function canon(x: number): number {",
+        "  if (Object.is(x < 1 ? x : 0, -0)) {",
+        "    return 0;",
+        "  }",
+        "  return x;",
+        "}",
+      ].join("\n"),
+      FILE,
+    );
+    expect(classified).toEqual([]);
+    expectValidEmission(emission);
+    expect(fnBody(emission.declarations[0]!)[0]).toMatchObject({
+      kind: "if",
+      cond: { kind: "same-value", left: { kind: "cond" } },
+    });
+  });
+
+  test("boolean arms make a conditional a logical operand", () => {
+    const { emission, classified } = emitModule(
+      [
+        "/** @ensures{p} forall (x: number) { Object.is(pick(x), pick(x)) } */",
+        "export function pick(x: number): number {",
+        "  if ((x < 1 ? x > 0 : x > 2) && x < 5) {",
+        "    return 0;",
+        "  }",
+        "  return 1;",
+        "}",
+      ].join("\n"),
+      FILE,
+    );
+    expect(classified).toEqual([]);
+    expectValidEmission(emission);
+    expect(fnBody(emission.declarations[0]!)[0]).toMatchObject({
+      kind: "if",
+      cond: { kind: "binop", op: "&&", left: { kind: "cond" } },
+    });
+  });
+
+  test("boolean arms do not make a conditional an Object.is argument", () => {
+    const { classified } = emitModule(
+      [
+        "/** @ensures{p} forall (x: number) { Object.is(pick(x), pick(x)) } */",
+        "export function pick(x: number): number {",
+        "  if (Object.is(x < 1 ? x > 0 : x > 2, -0)) {",
+        "    return 0;",
+        "  }",
+        "  return 1;",
+        "}",
+      ].join("\n"),
+      FILE,
+    );
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining(
+          "argument 1 is not a number (ConditionalExpression at 3:17)",
+        ),
+      }),
+    ]);
+  });
+
+  test("a chain of conditionals nests to the right", () => {
+    const { emission, classified } = emitModule(
+      [
+        "/** @ensures{p} forall (x: number) { Object.is(sign(x), sign(x)) } */",
+        "export function sign(x: number): number {",
+        "  return x < 0 ? -1 : x > 0 ? 1 : 0;",
+        "}",
+      ].join("\n"),
+      FILE,
+    );
+    expect(classified).toEqual([]);
+    expectValidEmission(emission);
+    expect(fnBody(emission.declarations[0]!)[0]).toMatchObject({
+      kind: "return",
+      expr: {
+        kind: "cond",
+        cond: { kind: "binop", op: "<" },
+        then: { kind: "num", lit: "-1" },
+        else: {
+          kind: "cond",
+          cond: { kind: "binop", op: ">" },
+          then: { kind: "num", lit: "1" },
+          else: { kind: "num", lit: "0" },
+        },
+      },
+    });
+  });
+
+  test("arms that disagree with the position are the engine's error", () => {
+    const { classified } = emitModule(
+      [
+        "/** @ensures{p} forall (x: number) { Object.is(pick(x), pick(x)) } */",
+        "export function pick(x: number): number {",
+        "  return x < 1 ? 0 : x < 2;",
+        "}",
+      ].join("\n"),
+      FILE,
+    );
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Error",
+        reason:
+          "'pick' could not be modeled: operator '<' yields a boolean, " +
+          "not a number",
+      }),
+    ]);
+  });
+
+  test("a conditional chooses between class-typed arguments", () => {
+    const src = `
+export class Point {
+  readonly x: number;
+  constructor(x: number) {
+    this.x = x;
+  }
+}
+export function pull(p: Point): number {
+  return p.x;
+}
+/** @ensures{p} forall (x: int ∈ [0, 4)) { 0 <= pick(new Point(x), new Point(x), x) } */
+export function pick(a: Point, b: Point, t: number): number {
+  return pull(t < 1 ? a : b);
+}
+`;
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    expectValidEmission(emission);
+    expect(fnBody(emission.declarations[2]!)[0]).toMatchObject({
+      kind: "return",
+      expr: {
+        kind: "call",
+        callee: "pull",
+        args: [
+          {
+            kind: "cond",
+            then: { kind: "id", name: "a" },
+            else: { kind: "id", name: "b" },
+          },
+        ],
+      },
+    });
+  });
+
+  test("a conditional models inside a formula atom", () => {
+    const { emission, classified } = emitModule(
+      [
+        "/** @ensures{p} forall (x: int in [0, 4)) { 0 <= keep(x < 1 ? x : 0) } */",
+        "export function keep(x: number): number {",
+        "  return x;",
+        "}",
+      ].join("\n"),
+      FILE,
+    );
+    expect(classified).toEqual([]);
+    expectValidEmission(emission);
+    expect(emission.obligations[0]!.payload).toMatchObject({
+      kind: "structured",
+      conclusion: {
+        kind: "istrue",
+        expr: { kind: "binop", op: "<=", right: { args: [{ kind: "cond" }] } },
+      },
+    });
+  });
+});
+
 const BOX = `export class Box {
   #v: number;
   constructor(v: number) {
