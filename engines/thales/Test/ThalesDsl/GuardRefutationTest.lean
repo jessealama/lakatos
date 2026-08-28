@@ -99,3 +99,38 @@ example : ∀ (a : JsNumber),
         (pure a : JsM JsNumber) := by
   intro a h
   grind
+
+/-! The remaining converse: guard refutation recovers the strict bounds,
+and the bounds alone must walk back to `Float.isFinite` — the shape an
+annotation concluding `Number.isFinite` leaves on the grind rung. -/
+
+-- The bridge pinned by application, on the floatInf spelling.
+example (x : Float) (hLo : -floatInf < x) (hHi : x < floatInf) :
+    Float.isFinite x = true :=
+  isFinite_of_bounds hLo hHi
+
+-- The recorded equivalence, both directions.
+example (x : Float) (h : Float.isFinite x = true) :
+    -floatInf < x ∧ x < floatInf :=
+  isFinite_iff.mp h
+
+example (x : Float) (hLo : -floatInf < x) (hHi : x < floatInf) :
+    Float.isFinite x = true :=
+  isFinite_iff.mpr ⟨hLo, hHi⟩
+
+-- The isolated shape from the missing arrow: bounds in, isFinite out,
+-- plain grind, no lemma list.
+example {x : Float}
+    (_hn : Number.FloatOps.sameValue x floatNaN = false)
+    (hLo : -floatInf < x) (hHi : x < floatInf) :
+    Float.isFinite x = true := by
+  grind
+
+-- Exactly the hypotheses a successful constructor leaves behind, driven
+-- all the way to the isFinite conclusion: refuted equality guards →
+-- bounds → finiteness, chained by grind alone.
+example (x : Float)
+    (hInf : (Float.beq x (-floatInf) || Float.beq x floatInf) = false)
+    (hNan : Number.FloatOps.sameValue x floatNaN = false) :
+    Float.isFinite x = true := by
+  grind
