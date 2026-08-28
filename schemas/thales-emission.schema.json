@@ -508,6 +508,21 @@
                           "lower": { "$ref": "#/definitions/floatBound" },
                           "upper": { "$ref": "#/definitions/floatBound" }
                         }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["name", "kind", "className", "ctorParams"],
+                        "properties": {
+                          "name": { "$ref": "#/definitions/identifier" },
+                          "kind": { "const": "class" },
+                          "className": { "$ref": "#/definitions/identifier" },
+                          "module": { "$ref": "#/definitions/modulePath" },
+                          "ctorParams": {
+                            "type": "array",
+                            "items": { "$ref": "#/definitions/identifier" }
+                          }
+                        }
                       }
                     ]
                   }

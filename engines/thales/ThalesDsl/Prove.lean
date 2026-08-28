@@ -277,6 +277,43 @@ def attemptGeneric (identity : Identity) (p : Expr) :
     if closed then return .done (← certifyRoot identity p mvar residual)
     return .stuck mvar g residual
 
+/-- A hypothesis that names a local as some computation's successful
+result: `<computation> = .ok x`. That is the shape a class binder's
+constructor-image hypothesis has, and the only one the step below
+touches. -/
+def ctorImageHyp? (goal : MVarId) : MetaM (Option FVarId) :=
+  goal.withContext do
+    for decl in ← getLCtx do
+      if decl.isImplementationDetail then continue
+      if let some (_, _, rhs) := decl.type.eq? then
+        if rhs.isAppOfArity ``Except.ok 3 && (rhs.getArg! 2).isFVar then
+          return some decl.fvarId
+    return none
+
+/-- `grind` neither case-splits an `if` sitting inside a hypothesis nor
+carries a constructor equation into the goal, so a class binder's
+constructor-image hypothesis never reaches the field values the closers
+need. Split those hypotheses until each names a constructor, invert them,
+and substitute. The fuel bounds the fan-out: a constructor with several
+guards would otherwise branch past any budget, and reaching the bound
+just leaves the goal for grind to fail on. -/
+partial def invertCtorImage (goal : MVarId) (fuel : Nat) : MetaM (List MVarId) := do
+  if fuel == 0 then return [goal]
+  let some fvarId ← ctorImageHyp? goal | return [goal]
+  match ← observing? (Meta.injection goal fvarId) with
+  | some .solved => return []
+  | some (.subgoal g _ _) => invertCtorImage (← Meta.substVars g) (fuel - 1)
+  | none =>
+    match ← Meta.splitIfLocalDecl? goal fvarId with
+    | some (g₁, g₂) =>
+      return (← invertCtorImage g₁ (fuel - 1)) ++ (← invertCtorImage g₂ (fuel - 1))
+    | none => return [goal]
+
+/-- How deep the inversion may branch. Each level either discharges one
+constructor-image hypothesis or splits one guard, so this covers a
+two-binder formula over a constructor with a handful of guards. -/
+def ctorImageFuel : Nat := 12
+
 /-- Rung 3: grind on the residual goal rung 2 left. Success certifies
 through the root metavariable like every rung; failure — either resource
 limit included — ships the residual-goal GaveUp. -/
@@ -285,8 +322,9 @@ def attemptGrind (identity : Identity) (p root : Expr) (goal : MVarId)
   let solved ← tryCatchRuntimeEx
     (try
       let params ← Meta.Grind.mkDefaultParams {}
-      let result ← Meta.Grind.main goal params
-      pure !result.hasFailed
+      let goals ← invertCtorImage (← goal.intros).2 ctorImageFuel
+      let results ← goals.mapM (Meta.Grind.main · params)
+      pure (results.all (!·.hasFailed))
     catch _ => pure false)
     (fun ex => if ex.isRuntime then pure false else throw ex)
   if solved then return ← certifyRoot identity p root residual

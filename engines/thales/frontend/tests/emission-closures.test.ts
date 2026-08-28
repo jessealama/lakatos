@@ -104,6 +104,46 @@ describe("emission import closures", () => {
     });
   });
 
+  test("a binder over an imported class carries the class's module", () => {
+    const boxed = [
+      'import { Box } from "./box.mjs";',
+      "/** @ensures{nn} forall (b: Box) { b.v >= 0 } */",
+      "export function keep(x: number): number {",
+      "  return x;",
+      "}",
+      "",
+    ].join("\n");
+    const box = [
+      "export class Box {",
+      "  #v: number;",
+      "  constructor(v: number) {",
+      "    this.#v = v;",
+      "  }",
+      "  get v(): number {",
+      "    return this.#v;",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(
+      boxed,
+      "main.mts",
+      reader({ "box.mts": box }),
+    );
+    expect(classified).toEqual([]);
+    const payload = emission.obligations[0]!.payload;
+    assert(payload.kind === "structured");
+    expect(payload.binders).toEqual([
+      {
+        name: "b",
+        kind: "class",
+        className: "Box",
+        module: "box.mts",
+        ctorParams: ["v"],
+      },
+    ]);
+  });
+
   test("a method call on an imported class carries its module", () => {
     const boxed = [
       'import { Dep } from "./dep.mjs";',

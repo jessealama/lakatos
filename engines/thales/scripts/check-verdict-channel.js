@@ -163,6 +163,15 @@ const FIXTURES = [
       ["Gate#lo", "Theorem", /generic proof search, kernel-checked as/],
     ],
   },
+  {
+    // A class-valued binder: the instance ranges over the constructor's
+    // image, so the ladder has to invert that hypothesis before any closer
+    // sees the fields. Kernel-checked, on the guarding constructor.
+    file: "class-binder-plain.lean",
+    expected: [
+      ["Point#distance", "Theorem", /generic proof search, kernel-checked as/],
+    ],
+  },
 ];
 
 const { check, done } = checker("verdict-channel");

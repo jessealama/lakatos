@@ -216,7 +216,7 @@ describe.runIf(enabled)("lakatos prove end-to-end (tracer)", () => {
   );
 
   it(
-    "the class-valued Point binder reports the honest refusal",
+    "the class-valued Point binder proves over the constructor's image",
     { timeout: proveTimeoutMs(1) },
     () => {
       const env = runForEnvelope(["prove", "point.ts"]);
@@ -224,8 +224,8 @@ describe.runIf(enabled)("lakatos prove end-to-end (tracer)", () => {
       expect(env.annotations[0]).toMatchObject({
         function: "Point#distance",
         property: "nonNegative",
-        szs: "Inappropriate",
-        reason: "class-valued binder 'Point' is not yet modeled",
+        szs: "Theorem",
+        axioms: [],
       });
     },
   );

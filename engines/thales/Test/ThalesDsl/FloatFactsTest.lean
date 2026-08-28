@@ -258,3 +258,8 @@ example (x : Float) (hn : x.toModel.unpack ≠ .notANumber)
     (h : Float.beq x (-(1.0 / 0.0)) = false) :
     Float.lt (-(1.0 / 0.0)) x = true :=
   FloatFacts.float_gt_neg_inf_of_beq_false hn h
+
+-- The guard `Number.isFinite` emits: strict bounds from the boolean.
+example (x : Float) (h : Float.isFinite x = true) :
+    Float.lt (-(1.0 / 0.0) : Float) x = true ∧ Float.lt x (1.0 / 0.0 : Float) = true :=
+  ⟨FloatFacts.float_lo_of_isFinite h, FloatFacts.float_hi_of_isFinite h⟩

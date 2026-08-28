@@ -3436,6 +3436,44 @@ theorem float_gt_neg_inf_of_beq_false {x : Float}
     show ((-(1.0 / 0.0) : Float)).toModel.unpack = UnpackedFloat.infinity .negative from rfl]
   exact lt_neg_inf_of_beq_false hn h
 
+/-! `Number.isFinite` guards spell their refutation as a single boolean
+rather than as two refuted equality tests, so the bounds have to be
+recovered from `isFinite` directly. -/
+
+/-- Finiteness excludes NaN. -/
+theorem isFinite_ne_nan {u : UnpackedFloat} (h : u.isFinite = true) :
+    u ≠ .notANumber := by
+  cases u <;> simp_all [UnpackedFloat.isFinite]
+
+/-- Finiteness refutes IEEE equality with `+∞`. -/
+theorem beq_pos_inf_eq_false_of_isFinite {u : UnpackedFloat} (h : u.isFinite = true) :
+    UnpackedFloat.beq u (.infinity .positive) = false := by
+  cases u <;> simp_all [UnpackedFloat.isFinite, UnpackedFloat.beq, UnpackedFloat.compare]
+
+/-- Finiteness refutes IEEE equality with `-∞`. -/
+theorem beq_neg_inf_eq_false_of_isFinite {u : UnpackedFloat} (h : u.isFinite = true) :
+    UnpackedFloat.beq u (.infinity .negative) = false := by
+  cases u <;> simp_all [UnpackedFloat.isFinite, UnpackedFloat.beq, UnpackedFloat.compare]
+
+/-- The boolean `Number.isFinite` guard, unpacked to the strict upper
+bound every downstream Float fact is stated against. -/
+theorem float_hi_of_isFinite {x : Float} (h : Float.isFinite x = true) :
+    Float.lt x (1.0 / 0.0 : Float) = true := by
+  have hu : x.toModel.unpack.isFinite = true := h
+  refine float_lt_inf_of_beq_false (isFinite_ne_nan hu) ?_
+  rw [float_beq_unpack,
+    show ((1.0 / 0.0 : Float)).toModel.unpack = UnpackedFloat.infinity .positive from rfl]
+  exact beq_pos_inf_eq_false_of_isFinite hu
+
+/-- The same guard, unpacked to the strict lower bound. -/
+theorem float_lo_of_isFinite {x : Float} (h : Float.isFinite x = true) :
+    Float.lt (-(1.0 / 0.0) : Float) x = true := by
+  have hu : x.toModel.unpack.isFinite = true := h
+  refine float_gt_neg_inf_of_beq_false (isFinite_ne_nan hu) ?_
+  rw [float_beq_unpack,
+    show ((-(1.0 / 0.0) : Float)).toModel.unpack = UnpackedFloat.infinity .negative from rfl]
+  exact beq_neg_inf_eq_false_of_isFinite hu
+
 /-! ## The non-negativity chain: square, sum, sqrt
 
 A distance-style conclusion `0 ≤ √(dx·dx + dy·dy)` needs each link stated

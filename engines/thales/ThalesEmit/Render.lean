@@ -496,6 +496,21 @@ def obligationCommand (e : Emission) (o : Obligation) : RenderM (TSyntax `comman
             | "<=" => `($e ≤ $xi → $body)
             | _ => throw s!"unsupported lower bound '{op}'"
         `(∀ ($xi : JsNumber), $body)
+      | .cls name className module ctorParams =>
+        -- The binder ranges over the constructor's image, so `-0`
+        -- normalization and every guard are part of the domain by
+        -- construction. One ungrouped ∀ per head, like the number arm:
+        -- `ProveTerm.propSpine` recovers no other spelling.
+        let pi ← scopedIdent name
+        let cls ← classIdent module className
+        let ctor ← classMember module className "construct"
+        let args ← ctorParams.mapM fun a => do
+          pure (mkIdent (← fieldComponent (name ++ "." ++ a)))
+        let mut body ← `($ctor $args* = .ok $pi → $acc)
+        body ← `(∀ ($pi : $cls), $body)
+        for a in args.reverse do
+          body ← `(∀ ($a : JsNumber), $body)
+        pure body
     `(#thales_prove $file $fn $prop := $propTerm:term)
 
 /-- The artifact's fixed header: scaffolding, not code the printer owns.
