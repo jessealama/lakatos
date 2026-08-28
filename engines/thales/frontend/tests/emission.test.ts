@@ -4718,6 +4718,37 @@ describe("method-call scanner recursion (#130)", () => {
     );
   });
 
+  test("a degraded member off a class-typed parameter travels in and out of class", () => {
+    const src = `export class Point {
+  readonly x: number;
+  constructor(x: number) {
+    this.x = x;
+  }
+  get bad(): number {
+    const q = [1];
+    return q[0];
+  }
+  /** @ensures{fromInside} forall (a: int ∈ [0, 10)) { Object.is(new Point(a).use(new Point(a)), 0) } */
+  use(other: Point): number {
+    return other.bad;
+  }
+}
+
+/** @ensures{fromOutside} forall (a: int ∈ [0, 10)) { Object.is(readBad(new Point(a)), 0) } */
+export function readBad(p: Point): number {
+  return p.bad;
+}
+`;
+    const { classified } = emitModule(src, "t.ts");
+    expect(classified).toHaveLength(2);
+    for (const entry of classified) {
+      expect(entry.szs).toBe("Inappropriate");
+      expect(entry.reason).toContain(
+        "'Point#bad' could not be modeled: unmapped TypeScript construct 'ArrayLiteralExpression'",
+      );
+    }
+  });
+
   test("a degraded member inside a this-call argument travels", () => {
     const src = `export class Dep {
   #v: number;

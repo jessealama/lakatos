@@ -791,6 +791,26 @@ function travelFailure(
   return travelFrom(scope.failed, ref);
 }
 
+/** The shape and failure registry a class ref resolves against: the
+ * closure's for a registered class, the walk-in-progress ones when the
+ * ref names the class currently being walked. */
+function classView(
+  scope: WalkScope,
+  ref: ModelRef,
+): { shape: ClassShape; failed: ReadonlyMap<string, FailedDecl> } | undefined {
+  const registered = scope.classes.get(modelKey(ref));
+  if (registered !== undefined)
+    return { shape: registered, failed: scope.failed };
+  if (
+    scope.self !== undefined &&
+    scope.selfFailed !== undefined &&
+    modelKey(ref) === modelKey(scope.self.ref)
+  ) {
+    return { shape: scope.self.shape, failed: scope.selfFailed };
+  }
+  return undefined;
+}
+
 /** The first degraded class or class member a use names, in tree order:
  * `new C(...)` where C's declaration failed on a construct, or member
  * access on an instance whose member failed on one. */
@@ -878,13 +898,11 @@ function findFailedMemberUse(
       name: qualifiedName(access.name, ref.name),
     });
   }
-  // A class still being walked registers no member failures yet, so its
-  // own instances have nothing to travel; an earlier class's do.
   const vcall = varCall(e, scope);
   if (vcall !== undefined) {
-    const shape = scope.classes.get(modelKey(vcall.ref));
-    if (shape !== undefined && !shape.methods.has(vcall.name)) {
-      const travelled = travelFailure(scope, {
+    const view = classView(scope, vcall.ref);
+    if (view !== undefined && !view.shape.methods.has(vcall.name)) {
+      const travelled = travelFrom(view.failed, {
         module: vcall.ref.module,
         name: qualifiedName(vcall.name, vcall.ref.name),
       });
@@ -898,11 +916,15 @@ function findFailedMemberUse(
   }
   const vaccess = varAccess(e, scope);
   if (vaccess !== undefined) {
-    const shape = scope.classes.get(modelKey(vaccess.ref));
-    if (shape === undefined) return undefined;
-    if (shape.getters.has(vaccess.name) || shape.fields.includes(vaccess.name))
+    const view = classView(scope, vaccess.ref);
+    if (view === undefined) return undefined;
+    if (
+      view.shape.getters.has(vaccess.name) ||
+      view.shape.fields.includes(vaccess.name)
+    ) {
       return undefined;
-    return travelFailure(scope, {
+    }
+    return travelFrom(view.failed, {
       module: vaccess.ref.module,
       name: qualifiedName(vaccess.name, vaccess.ref.name),
     });
