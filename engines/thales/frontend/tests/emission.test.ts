@@ -176,6 +176,12 @@ function classifiedOf(decl: string, fn = "f"): string | undefined {
   return emitModule(src, "t.ts").classified[0]?.reason;
 }
 
+test("a free function's defaulted parameter still refuses", () => {
+  expect(
+    classifiedOf("export function f(x: number = 0): number { return x; }"),
+  ).toMatch(/unmapped TypeScript construct 'Parameter' at 2:\d+/);
+});
+
 /** The payload of one obligation on a mappable identity function. */
 function payloadOf(formula: string) {
   const src = `/** @ensures{p} ${formula} */\nexport function f(x: number): number {\n  return x;\n}\n`;
@@ -1382,6 +1388,77 @@ describe("class-valued binders lower to a binder IR", () => {
           "unmapped TypeScript construct 'ReadonlyKeyword' at 1:32",
       ],
     ]);
+  });
+
+  test("a defaulted constructor parameter models, quantified at full arity", () => {
+    const src = [
+      "export class P {",
+      "  readonly x: number;",
+      "  readonly y: number;",
+      "  constructor(x: number, y: number = 0) {",
+      "    this.x = x;",
+      "    this.y = y;",
+      "  }",
+      "  /** @ensures{nn} forall (p: P) { p.span() >= 0 } */",
+      "  span(): number { return this.x * this.x + this.y * this.y; }",
+      "}",
+      "",
+    ].join("\n");
+    const { classified, emission } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    const payload = emission.obligations[0]!.payload;
+    assert(payload.kind === "structured");
+    expect(payload.binders).toEqual([
+      { name: "p", kind: "class", className: "P", ctorParams: ["x", "y"] },
+    ]);
+  });
+
+  test("a full-arity formula call to a defaulted constructor models", () => {
+    const src = [
+      "export class P {",
+      "  readonly x: number;",
+      "  readonly y: number;",
+      "  constructor(x: number, y: number = 0) {",
+      "    this.x = x;",
+      "    this.y = y;",
+      "  }",
+      "  /** @ensures{p} forall (a: int ∈ [0, 5)) { new P(a, a).span() >= 0 } */",
+      "  span(): number { return this.x * this.x + this.y * this.y; }",
+      "}",
+      "",
+    ].join("\n");
+    const { classified, emission } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    expect(emission.obligations).toHaveLength(1);
+  });
+
+  test("a defaulted method parameter models", () => {
+    const src = [
+      "export class C {",
+      "  readonly x: number;",
+      "  constructor(x: number) { this.x = x; }",
+      "  /** @ensures{p} forall (a: int ∈ [0, 5)) { new C(a).plus(a) >= 0 } */",
+      "  plus(k: number = 1): number { return this.x + k; }",
+      "}",
+      "",
+    ].join("\n");
+    const { classified, emission } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    expect(emission.obligations).toHaveLength(1);
+  });
+
+  test("a defaulted parameter with no type annotation still degrades the class", () => {
+    const src = [
+      "export class C { constructor(y = 0) {} }",
+      "/** @ensures{p} forall (c: C) { scale(1) >= 0 } */",
+      "export function scale(x: number): number { return x; }",
+      "",
+    ].join("\n");
+    const { classified } = emitModule(src, "t.ts");
+    expect(classified.map((c) => c.szs)).toEqual(["Inappropriate"]);
+    expect(classified[0]!.reason).toMatch(
+      /class-valued binder 'C' names a class outside the model: unmapped TypeScript construct 'Parameter' at 1:\d+/,
+    );
   });
 });
 

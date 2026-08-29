@@ -2091,31 +2091,41 @@ function memberNameFailure(
 }
 
 /** The shape checks a parameter passes before its type is read: a
- * binding pattern, a rest, an optional or defaulted parameter, and a
- * missing type annotation are all outside the slice. */
-function fnParamFailure(
+ * binding pattern, a rest, an optional parameter, and a missing type
+ * annotation are all outside the slice. */
+function paramShapeFailure(
   p: ts.ParameterDeclaration,
   sf: ts.SourceFile,
 ): FailedDecl | undefined {
   if (!ts.isIdentifier(p.name)) return constructAt(p.name, p.name.kind, sf);
   if (p.dotDotDotToken !== undefined)
     return constructAt(p.dotDotDotToken, p.dotDotDotToken.kind, sf);
-  if (p.questionToken !== undefined || p.initializer !== undefined)
-    return constructAt(p, p.kind, sf);
+  if (p.questionToken !== undefined) return constructAt(p, p.kind, sf);
   if (p.type === undefined) return constructAt(p, p.kind, sf);
   return undefined;
 }
 
-/** A constructor or method parameter passes the function-parameter check;
- * a modifier on it is a parameter property, which declares a field the
- * body never assigns. */
+/** A free function's parameter additionally refuses a default; only the
+ * class walks model defaulted parameters so far. */
+function fnParamFailure(
+  p: ts.ParameterDeclaration,
+  sf: ts.SourceFile,
+): FailedDecl | undefined {
+  if (p.initializer !== undefined) return constructAt(p, p.kind, sf);
+  return paramShapeFailure(p, sf);
+}
+
+/** A constructor or method parameter passes the shape check with
+ * defaults admitted — every modeled call supplies full arity, so the
+ * initializer is dead code. A modifier on it is a parameter property,
+ * which declares a field the body never assigns. */
 function ctorParamFailure(
   p: ts.ParameterDeclaration,
   sf: ts.SourceFile,
 ): FailedDecl | undefined {
   const mods = ts.getModifiers(p) ?? [];
   if (mods.length > 0) return constructAt(mods[0]!, mods[0]!.kind, sf);
-  return fnParamFailure(p, sf);
+  return paramShapeFailure(p, sf);
 }
 
 /** The registries a parameter's type resolves against — a `WalkScope`
