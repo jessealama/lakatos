@@ -3087,6 +3087,8 @@ function constantLiteral(d: ts.VariableDeclaration): string | undefined {
   if (!ts.isIdentifier(d.name)) return undefined;
   if (d.type !== undefined && d.type.kind !== ts.SyntaxKind.NumberKeyword)
     return undefined;
+  /* v8 ignore next -- an uninitialized `const` does not typecheck, and the
+     run is gated on the project typechecking; `declare` is not admissible. */
   if (d.initializer === undefined) return undefined;
   const init = unwrapParens(d.initializer);
   if (ts.isNumericLiteral(init)) return numberToken(init);
@@ -3105,6 +3107,8 @@ function builtinAlias(
   binds: (name: string) => boolean,
 ): BuiltinEntry | undefined {
   if (!ts.isIdentifier(d.name) || d.type !== undefined) return undefined;
+  /* v8 ignore next -- as in `constantLiteral`: the declarator reaching here
+     is a `const` a typechecked project admits, so it has an initializer. */
   if (d.initializer === undefined) return undefined;
   const init = unwrapParens(d.initializer);
   if (!ts.isPropertyAccessExpression(init) || !ts.isIdentifier(init.expression))

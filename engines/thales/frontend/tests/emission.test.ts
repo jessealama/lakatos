@@ -791,6 +791,20 @@ describe("body classification parity with the old pipeline", () => {
       ],
     ]);
   });
+
+  // A construct-less failure has nothing to travel, so the value-position
+  // read reports the reason itself rather than the alias or travel wording.
+  test("a value read of an engine-failed declaration reports its reason", () => {
+    const src =
+      "export function g(x: number): number { return x & 7; }\n" + fnWith("g");
+    expect(classifications(src).classified).toEqual([
+      [
+        "Error",
+        "'f' could not be modeled: 'g' has no model: operator '&' has no " +
+          "model in this slice",
+      ],
+    ]);
+  });
 });
 
 describe("statement bodies (#148)", () => {
@@ -5715,6 +5729,22 @@ describe("module-level const bindings", () => {
     );
     expect(classified[0]!.szs).toBe("Inappropriate");
     expect(classified[0]!.reason).toContain("'narrow' could not be modeled");
+  });
+
+  test("a negated literal initializer models with its sign", () => {
+    const src = [
+      "const floor = -5;",
+      "/** @ensures{p} forall (n: int ∈ [0, 4)) { f(n) >= floor } */",
+      "export function f(n: number): number {",
+      "  return n;",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, "negated.ts");
+    expect(classified).toEqual([]);
+    expect(emission.declarations[0]).toEqual(
+      expect.objectContaining({ kind: "constant", name: "floor", lit: "-5" }),
+    );
   });
 
   test("a declarator mixing admitted and degraded siblings contains the damage", () => {
