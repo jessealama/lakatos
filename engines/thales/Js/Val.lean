@@ -45,4 +45,12 @@ def JsVal.typeof : JsVal → TypeofResult
   | .undef => .undefined
   | .null => .object
 
+/-- Project the `num` tag. The wrong-tag throw is the model refusing
+coercion, not a claim JS throws here — hence a kind no `throw new X`
+can spell. -/
+@[js_norm, grind]
+def JsVal.toNumber : JsVal → JsM Float
+  | .num x => pure x
+  | _ => JsM.throw (.error "type-projection")
+
 end Js
