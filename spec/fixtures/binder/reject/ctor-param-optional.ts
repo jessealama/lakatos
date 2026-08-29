@@ -1,12 +1,12 @@
-// A defaulted constructor parameter is refused: v1 generation supplies
-// every argument explicitly.
+// An optional constructor parameter is refused: an omitted argument
+// takes the value undefined, which no generation domain contains.
 export class Offset {
   public readonly x: number;
   public readonly y: number;
 
-  constructor(x: number, y: number = 0) {
+  constructor(x: number, y?: number) {
     this.x = x;
-    this.y = y;
+    this.y = y ?? 0;
   }
 }
 
