@@ -48,3 +48,22 @@ open Js
 #guard !JsVal.sameValue (.num 0.0) .undef
 #guard !JsVal.sameValue .undef .null
 #guard !JsVal.sameValue (.bigint 1) (.num 1.0)
+
+-- The norm set must evaluate the domain on constructor heads: this is
+-- the discharge story union-typed models rely on, pinned symbolically
+-- (with a variable payload, so kernel reduction can't do it alone).
+example (x : Float) : (JsVal.num x).toNumber = pure x := by
+  simp only [js_norm]
+example (x : Float) : (JsVal.num x).typeof = TypeofResult.number := by
+  simp only [js_norm]
+example (s : String) : (JsVal.str s).toNumber =
+    (JsM.throw (.error "type-projection") : JsM Float) := by
+  simp only [js_norm]
+example (x : Float) : JsVal.strictEq (.num x) .undef = false := by
+  simp only [js_norm]
+example (x : Float) : JsVal.sameValue .undef (.num x) = false := by
+  simp only [js_norm]
+
+-- grind opens the same doors on its own.
+example (x : Float) : (JsVal.num x).toNumber = pure x := by grind
+example (x : Float) : JsVal.strictEq (.num x) .undef = false := by grind

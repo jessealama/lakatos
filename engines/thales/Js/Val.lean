@@ -77,4 +77,10 @@ def JsVal.sameValue : JsVal → JsVal → Bool
   | .null, .null => true
   | _, _ => false
 
+-- The catch-all arm compiles into an equation guarded by one hypothesis
+-- per earlier arm, which `grind` cannot discharge; a cross-tag shape it
+-- meets in practice therefore needs its own unconditional rewrite.
+@[js_norm, grind =] theorem JsVal.strictEq_num_undef (x : Float) :
+    JsVal.strictEq (.num x) .undef = false := rfl
+
 end Js
