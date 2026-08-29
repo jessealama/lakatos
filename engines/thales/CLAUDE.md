@@ -45,7 +45,7 @@ Always wrap `lake env lean` invocations in a timeout when running them by hand; 
 
 `lakatos prove` (in root `src/cli.ts`) runs one spine. Its stages:
 
-1. **Discover + extract** — `lemma/`'s `resolveFiles` and `extractFromSource` find `@ensures` annotations; malformed ones become `InputError` envelope entries.
+1. **Discover + extract** — `lemma/`'s `resolveFiles` and `extractFromSource` find `@ensures` annotations; malformed ones become `InputError` envelope entries, and a formula lemma's parsers reject aborts the run before emission with the same exit-2 diagnostic `refute` reports.
 2. **Emit** (`frontend/src/emission.ts`, `frontend/src/emission-artifacts.ts`) — described below: per-declaration JSON per annotated file, written into the run directory's `thales/` mirror (gitignored in the target project; a file whose annotations are all classified gets no artifact).
 3. **Render + run** (`frontend/src/run.ts`) — `findEngineRoot()` walks up from this module looking for the lakefile (absent → `no-project`); then `lake build` once, `lake build thales-emit`, the emitter per artifact, and `lake env lean <artifact>` per file (timeouts: `BUILD_TIMEOUT_MS` 600s, `LEAN_TIMEOUT_MS` 300s; injectable `spawn` for tests). A failing artifact is contained as a per-file `FileFailure` — the run still completes and healthy verdicts still ship.
 4. **Join** — root `src/envelope.ts` matches verdict lines to annotation identities; missing, duplicate, surplus, or unrepresentable statuses make the run unhealthy (NotTried envelope, stderr diagnostics, exit 2).
