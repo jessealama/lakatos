@@ -116,6 +116,8 @@ function buildSpec(
  * ones are constructed by name in the generated file too. */
 function collectCtorClasses(domain: ClassCtorDomain, into: string[]): void {
   if (!into.includes(domain.className)) into.push(domain.className);
+  /* v8 ignore next -- resolveClassBinders ran first and fills ctorParams at
+     every level of the tree, so the empty fallback is unreachable here. */
   for (const p of domain.ctorParams ?? []) {
     if (isClassCtorDomain(p.domain)) collectCtorClasses(p.domain, into);
   }
