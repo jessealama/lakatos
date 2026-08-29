@@ -136,9 +136,13 @@ export interface EmitClass {
 }
 
 /** A module-level `const` with a literal number initializer: a named
- * value the model admits, read wherever a number is expected. `const`
- * only — a `let` or `var` at module scope is reassignable from any
- * function, so its reads have no one value to model. */
+ * value the model admits, read wherever a number is expected. Soundness
+ * needs two immutabilities at once: `const` pins the binding (a `let` or
+ * `var` is reassignable from any function, so its reads have no one
+ * value to model), and the numeric value pins itself — a primitive has
+ * no mutable state, so no code can change what a read denotes. A
+ * `const` over an object value would satisfy only the first, which is
+ * why object initializers stay degraded. */
 export interface EmitConstant {
   kind: "constant";
   name: string;
