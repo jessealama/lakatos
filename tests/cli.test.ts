@@ -276,6 +276,10 @@ interface CompileErrorCase {
   source: string;
   wrapped: boolean;
   property: string;
+  /** True when lemma's own parsers throw the error — the rejects both
+   * engines must refuse identically. False marks refute-only resolution
+   * checks (unexported references, unresolvable domains). */
+  parseLevel: boolean;
   expected: string[];
 }
 
@@ -286,6 +290,7 @@ const COMPILE_ERROR_CASES: CompileErrorCase[] = [
     source: `/** @ensures{shapely} for every (n: nat), malformed(n) >= 0 */\nexport function malformed(n: number): number { return n; }\n`,
     wrapped: true,
     property: "shapely",
+    parseLevel: true,
     expected: ["expected 'forall'"],
   },
   {
@@ -294,6 +299,7 @@ const COMPILE_ERROR_CASES: CompileErrorCase[] = [
     source: `/** @ensures{agrees} forall (n: nat) { unexported(n) === helper(n) } */\nexport function unexported(n: number): number { return n; }\nfunction helper(n: number): number { return n; }\n`,
     wrapped: true,
     property: "agrees",
+    parseLevel: false,
     expected: ["'helper'", "not exported"],
   },
   {
@@ -302,6 +308,7 @@ const COMPILE_ERROR_CASES: CompileErrorCase[] = [
     source: `/** @ensures{someone} exists (n: nat), ex(n) > 0 */\nexport function ex(n: number): number { return n; }\n`,
     wrapped: true,
     property: "someone",
+    parseLevel: true,
     expected: ["existential quantifiers"],
   },
   {
@@ -310,6 +317,7 @@ const COMPILE_ERROR_CASES: CompileErrorCase[] = [
     source: `/** @ensures{rounds} forall (x: float) { rounder(x) >= 0 } */\nexport function rounder(x: number): number { return x; }\n`,
     wrapped: true,
     property: "rounds",
+    parseLevel: false,
     expected: [
       "domain 'float' is neither a primitive domain",
       "nor an exported class declared in",
@@ -321,6 +329,7 @@ const COMPILE_ERROR_CASES: CompileErrorCase[] = [
     source: `/** @ensures{someInBody} forall (n: nat) { inBody(n) > 0 ∧ exists m, inBody(m) === 0 } */\nexport function inBody(n: number): number { return n; }\n`,
     wrapped: true,
     property: "someInBody",
+    parseLevel: true,
     expected: ["existential quantifiers"],
   },
   {
@@ -329,6 +338,7 @@ const COMPILE_ERROR_CASES: CompileErrorCase[] = [
     source: `/** @ensures{deep} forall (n: nat) { forall (m: nat) { nested(n) >= 0 } } */\nexport function nested(n: number): number { return n; }\n`,
     wrapped: true,
     property: "deep",
+    parseLevel: true,
     expected: ["nested quantifiers"],
   },
   {
@@ -337,7 +347,17 @@ const COMPILE_ERROR_CASES: CompileErrorCase[] = [
     source: `/** @ensures{conj} forall (n: nat) { jsconj(n) >= 0 && jsconj(n) >= 0 } */\nexport function jsconj(n: number): number { return n; }\n`,
     wrapped: true,
     property: "conj",
+    parseLevel: true,
     expected: ["use ∧ for conjunction"],
+  },
+  {
+    name: "a comma-separated binder group (prefix-parser)",
+    file: "commagroup.ts",
+    source: `/** @ensures{p} forall (a: number, b: number) { 0 <= commagroup(a) } */\nexport function commagroup(a: number, b: number): number { return a; }\n`,
+    wrapped: true,
+    property: "p",
+    parseLevel: true,
+    expected: ["invalid domain 'number, b: number'"],
   },
 ];
 
@@ -363,6 +383,21 @@ describe("cli compile errors (exit-code contract)", () => {
       for (const fragment of c.expected) {
         expect(diagnostics[0]).toContain(fragment);
       }
+    },
+  );
+
+  const PARSE_LEVEL_CASES = COMPILE_ERROR_CASES.filter((c) => c.parseLevel);
+
+  it.each(PARSE_LEVEL_CASES)(
+    "prove on $name exits 2 with the same diagnostic as refute",
+    (c) => {
+      const refute = runMain(["refute", c.file]);
+      const prove = runMain(["prove", c.file]);
+      expect(prove.code).toBe(2);
+      expect(prove.stdout).toEqual(refute.stdout);
+      expect(withoutSkipWarning(prove.stderr)).toEqual(
+        withoutSkipWarning(refute.stderr),
+      );
     },
   );
 });
