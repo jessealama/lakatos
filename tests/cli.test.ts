@@ -101,6 +101,7 @@ describe("check stub", () => {
     "annotated.ts": `/** @ensures{pos} forall (n: nat) { annotated(n) >= 0 } */\nexport function annotated(n: number): number { return n; }\n`,
     "unexported.ts": `/** @ensures{agrees} forall (n: nat) { unexported(n) === helper(n) } */\nexport function unexported(n: number): number { return n; }\nfunction helper(n: number): number { return n; }\n`,
     "malformed.ts": `/** @ensures{shapely} for every (n: nat), malformed(n) >= 0 */\nexport function malformed(n: number): number { return n; }\n`,
+    "clampempty.ts": `/** @ensures{narrow} forall (x: int ∈ [1000000000000000000000000000000, 10000000000000000000000000000000]) { clampempty(x) >= 0 } */\nexport function clampempty(x: number): number { return x; }\n`,
   });
 
   it("lists every annotation as NotTried and exits 1", () => {
@@ -147,6 +148,18 @@ describe("check stub", () => {
     expect(diagnostics).toHaveLength(1);
     expect(diagnostics[0]).toContain("malformed.ts:1: @ensures{shapely}:");
     expect(diagnostics[0]).toContain("expected 'forall'");
+  });
+
+  // A clamp-emptied interval parses, so it passes the shared gate that
+  // refuses unreadable formulas; only this stub's own enumeration refuses
+  // it, where prove and refute both contain it per annotation.
+  it("exits 2 on an interval the safe-integer clamp empties", () => {
+    const { code, stderr } = runMain(["check", "clampempty.ts"]);
+    expect(code).toBe(2);
+    const diagnostics = withoutSkipWarning(stderr);
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0]).toContain("clampempty.ts:1: @ensures{narrow}:");
+    expect(diagnostics[0]).toContain("empty interval");
   });
 });
 
