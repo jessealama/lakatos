@@ -1,9 +1,7 @@
--- The grind rung's own budget exhaustion. One more guard than the
--- constructor `class-binder-plain.lean` proves through, which is enough to
--- put the obligation past the default budget: the inversion branches once
--- per guard, and grind runs on every leaf. The obligation is provable — a
--- wide enough budget closes it — so the annotation reports the budget it
--- ran out of rather than the goal it was left holding.
+-- One more guard than class-binder-plain.lean, on a fourth field the
+-- property never reads. A guard on a dead field doubles the inversion's
+-- leaf count without changing any leaf's meaning; deduplication is what
+-- keeps this at the default budget.
 import ThalesDsl
 
 open Js ThalesDsl
@@ -45,7 +43,7 @@ def TsModel.Wide.distance (self : TsModel.Wide) (q : TsModel.Wide) :
   let dy : JsNumber := TsModel.Wide.y self - TsModel.Wide.y q
   return Float.sqrt (dx * dx + dy * dy)
 
-#thales_prove "timeout-grind.ts" "Wide#distance" "nonNegative" :=
+#thales_prove "class-binder-wide.ts" "Wide#distance" "nonNegative" :=
   ∀ («p.w» : JsNumber), ∀ («p.x» : JsNumber), ∀ («p.y» : JsNumber),
     ∀ («p.z» : JsNumber),
       ∀ (p : TsModel.Wide),

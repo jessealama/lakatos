@@ -333,18 +333,107 @@ constructor-image hypothesis or splits one guard, so this covers a
 two-binder formula over a constructor with a handful of guards. -/
 def ctorImageFuel : Nat := 12
 
+/-- Drops the hypotheses that cannot bear on the target. Reach spreads:
+a hypothesis counts once it mentions a variable the target already
+reaches, and then its own variables are reached too — a guard on a
+constructor argument is live while the hypothesis naming that
+constructor's image is, even before the image has been inverted. What
+never gets reached links to nothing the goal asks about, and dropping it
+is what lets two goals that differ only in a dead guard recognize each
+other. -/
+def clearDeadHyps (goal : MVarId) : MetaM MVarId := goal.withContext do
+  let mut hyps : Array (FVarId × Array FVarId) := #[]
+  for decl in ← getLCtx do
+    if decl.isImplementationDetail then continue
+    unless ← Meta.isProp decl.type do continue
+    hyps := hyps.push
+      (decl.fvarId, (collectFVars {} (← instantiateMVars decl.type)).fvarIds)
+  let mut reached := (collectFVars {} (← instantiateMVars (← goal.getType))).fvarSet
+  let mut live : FVarIdSet := {}
+  -- Each pass reaches at least one more hypothesis or there is no next one.
+  for _ in [0:hyps.size] do
+    let mut grew := false
+    for (fvarId, vars) in hyps do
+      if live.contains fvarId then continue
+      -- A hypothesis over no variable at all — a contradiction among them
+      -- — is about the goal as much as anything is.
+      if vars.isEmpty || vars.any (reached.contains ·) then
+        live := live.insert fvarId
+        for v in vars do reached := reached.insert v
+        grew := true
+    unless grew do break
+  let mut g := goal
+  for (fvarId, _) in hyps do
+    unless live.contains fvarId do
+      g ← g.tryClear fvarId
+  return g
+
+/-- Normalizes a goal and drops what cannot bear on its target: the shape
+every leaf is measured and closed in. `none` means normalization closed the
+goal outright. -/
+def normalizeLeaf (ctx : Meta.Simp.Context) (simprocs : Meta.Simp.SimprocsArray)
+    (goal : MVarId) : MetaM (Option MVarId) := do
+  -- A goal simp has nothing to say about is the goal itself: the
+  -- no-progress failure is not the rung's failure.
+  let simped ←
+    try
+      let r ← Meta.simpGoal goal ctx (simprocs := simprocs)
+      pure r.1
+    catch _ => pure (some (#[], goal))
+  let some (_, g) := simped | return none
+  return some (← clearDeadHyps g)
+
 /-- Rung 3: grind on the residual goal rung 2 left. Success certifies
 through the root metavariable like every rung; a grind that simply fails
 ships the residual-goal GaveUp. Neither resource limit is contained here:
 this rung's exhaustion is classified where every other rung's is, so a
-spent budget can still report as the annotation's Timeout. -/
+spent budget can still report as the annotation's Timeout.
+
+Each leaf is normalized, stripped of what cannot bear on it, and closed
+over what survives, and leaves that agree there are merged: a guard on a
+field the property never reads leaves no trace in the leaves it doubled,
+so they prove once between them. -/
 def attemptGrind (identity : Identity) (p root : Expr) (goal : MVarId)
     (residual : Expr) : Term.TermElabM Verdict := do
   let solved := (← orFallThrough do
     let params ← Meta.Grind.mkDefaultParams {}
+    -- Normalization is what makes two leaves comparable, not what makes
+    -- them provable: without the rule set every leaf simply stands alone.
+    let norm? ← do
+      let some ext ← Meta.getSimpExtension? `js_norm | pure none
+      let ctx ← Meta.Simp.mkContext (config := {})
+        (simpTheorems := #[← ext.getTheorems])
+        (congrTheorems := ← Meta.getSimpCongrTheorems)
+      pure (some (ctx, (#[← Meta.Simp.getSEvalSimprocs] : Meta.Simp.SimprocsArray)))
     let goals ← invertCtorImage (← goal.intros).2 ctorImageFuel
-    let results ← goals.mapM (Meta.Grind.main · params)
-    pure (results.all (!·.hasFailed))).getD false
+    -- Two leaves that agree once closed over their own contexts are one
+    -- sequent: syntactic equality on a closed type is α-equivalence, so
+    -- they share a single grind run and a single proof term.
+    let mut classes : Std.HashMap Expr (Array MVarId) := {}
+    let mut alone : Array MVarId := #[]
+    for g in goals do
+      match norm? with
+      | none => alone := alone.push g
+      | some (ctx, simprocs) =>
+        let some g ← normalizeLeaf ctx simprocs g | continue
+        let g ← g.revertAll
+        let ty ← instantiateMVars (← g.getType)
+        classes := classes.insert ty ((classes.getD ty #[]).push g)
+    let mut ok := true
+    for g in alone do
+      if (← Meta.Grind.main g params).hasFailed then
+        ok := false
+        break
+    if ok then
+      for (_, members) in classes do
+        let rep := members[0]!
+        if (← Meta.Grind.main rep params).hasFailed then
+          ok := false
+          break
+        let proof ← instantiateMVars (Expr.mvar rep)
+        for dup in members[1:] do
+          dup.assign proof
+    pure ok).getD false
   if solved then return ← certifyRoot identity p root residual
   return ← residualGaveUp identity residual
 
@@ -398,12 +487,16 @@ def attemptLadder (identity : Identity) (propStx : TSyntax `term)
   -- would let an early rung's blowout starve the ones after it. Four rungs
   -- now. A bounded run splits the budget evenly across the two decide tiers
   -- and the two symbolic ones; an unbounded run has no decide tier to fund,
-  -- so the symbolic rungs take half each. Every share floors at 1, since a
+  -- and the two symbolic rungs are not the same kind of work — the generic
+  -- rung normalizes, which costs what the goal's size costs, while the grind
+  -- rung searches, which is where a wide goal spends — so the search takes
+  -- what the decide tiers would have had. Every share floors at 1, since a
   -- zero budget reads as unlimited.
   let quarter := max (budget / 4) 1
   let half := max (budget / 2) 1
   let decideShare := quarter
-  let lateShare := if allBounded then quarter else half
+  let genericShare := quarter
+  let grindShare := if allBounded then quarter else half + quarter
   let mut starved := false
   if allBounded then
     let (outcome, rungStarved) ←
@@ -422,7 +515,7 @@ def attemptLadder (identity : Identity) (propStx : TSyntax `term)
       nStarved := s
     if rungStarved || nStarved then starved := true
   let (outcome, rungStarved) ←
-    runRung (withHeartbeats lateShare (attemptGeneric identity p))
+    runRung (withHeartbeats genericShare (attemptGeneric identity p))
   if rungStarved then starved := true
   -- Rung 3 takes the goal rung 2 was left holding, or — when rung 2 blew a
   -- limit without leaving a residual — starts over from the original
@@ -434,7 +527,7 @@ def attemptLadder (identity : Identity) (propStx : TSyntax `term)
       let root ← Meta.mkFreshExprMVar p
       pure (root, root.mvarId!, p)
   let (grindOutcome, grindStarved) ←
-    runRung (withHeartbeats lateShare (attemptGrind identity p root goal residual))
+    runRung (withHeartbeats grindShare (attemptGrind identity p root goal residual))
   if grindStarved then starved := true
   let v ← match grindOutcome with
     | some v => pure v
