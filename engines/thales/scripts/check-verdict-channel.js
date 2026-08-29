@@ -154,6 +154,13 @@ const FIXTURES = [
     expected: [["Wide#distance", "Theorem"]],
   },
   {
+    // The grind rung's own starvation. The obligation is provable — the
+    // default budget closes it — so a reduced budget must report as
+    // budget-bound rather than as a residual goal nobody can move.
+    file: "timeout-grind.lean",
+    expected: [["Wide#distance", "Timeout", /heartbeat budget/]],
+  },
+  {
     file: "theorem-rescue.lean",
     expected: [["dbl", "Theorem"]],
   },
