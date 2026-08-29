@@ -159,11 +159,6 @@ function analyzeCtor(
     if (p.questionToken !== undefined) {
       return { ctorProblem: `constructor parameter '${name}' is optional` };
     }
-    if (p.initializer !== undefined) {
-      return {
-        ctorProblem: `constructor parameter '${name}' has a default value`,
-      };
-    }
     if (p.type === undefined) {
       return {
         ctorProblem: `constructor parameter '${name}' has no type annotation`,
