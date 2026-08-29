@@ -373,11 +373,21 @@ def normalizeLeaf (ctx : Meta.Simp.Context) (simprocs : Meta.Simp.SimprocsArray)
   let some (_, g) := simped | return none
   return some (← clearDeadHyps g)
 
+/-- grind reports its own heartbeat exhaustion as a stuck goal plus an
+issue, not as the runtime exception every other rung's shows up as. -/
+def grindRanOut (r : Meta.Grind.Result) : CoreM Bool := do
+  for msg in r.issues do
+    if ((← msg.toString).splitOn "maximum number of heartbeats").length > 1 then
+      return true
+  return false
+
 /-- Rung 3: grind on the residual goal rung 2 left. Success certifies
 through the root metavariable like every rung; a grind that simply fails
-ships the residual-goal GaveUp. Neither resource limit is contained here:
-this rung's exhaustion is classified where every other rung's is, so a
-spent budget can still report as the annotation's Timeout.
+ships the residual-goal GaveUp. grind contains its own heartbeat
+exhaustion — a starved search comes back as a stuck goal carrying the
+exhaustion as an issue — so the rung reads it back off the result and
+rethrows, and a spent budget still reports as the annotation's Timeout. A
+blown recursion depth stays a plain failure, as in every rung.
 
 The goal is normalized first, which is what flattens a class binder's
 constructor image; the facts are then read off that normal form rather
@@ -388,7 +398,7 @@ agree there are merged: two that differ only in a hypothesis neither
 reads prove once between them. -/
 def attemptGrind (identity : Identity) (p root : Expr) (goal : MVarId)
     (residual : Expr) : Term.TermElabM Verdict := do
-  let solved := (← orFallThrough do
+  let (solved, ranOut) := (← orFallThrough do
     let params ← Meta.Grind.mkDefaultParams {}
     -- Normalization is what makes two leaves comparable, not what makes
     -- them provable: without the rule set every leaf simply stands alone.
@@ -424,21 +434,29 @@ def attemptGrind (identity : Identity) (p root : Expr) (goal : MVarId)
         let ty ← instantiateMVars (← g.getType)
         classes := classes.insert ty ((classes.getD ty #[]).push g)
     let mut ok := true
+    let mut ranOut := false
     for g in alone do
-      if (← Meta.Grind.main g params).hasFailed then
+      let r ← Meta.Grind.main g params
+      if r.hasFailed then
         ok := false
+        ranOut ← grindRanOut r
         break
     if ok then
       for (_, members) in classes do
         let rep := members[0]!
-        if (← Meta.Grind.main rep params).hasFailed then
+        let r ← Meta.Grind.main rep params
+        if r.hasFailed then
           ok := false
+          ranOut ← grindRanOut r
           break
         let proof ← instantiateMVars (Expr.mvar rep)
         for dup in members[1:] do
           dup.assign proof
-    pure ok).getD false
+    pure (ok, ranOut)).getD (false, false)
   if solved then return ← certifyRoot identity p root residual
+  -- The counter really is spent, so the check rethrows the exception
+  -- grind converted into a plain failure; runRung classifies it.
+  if ranOut then Core.checkMaxHeartbeats "grind"
   return ← residualGaveUp identity residual
 
 def timeoutVerdict (identity : Identity) (budget : Nat) : Verdict :=
