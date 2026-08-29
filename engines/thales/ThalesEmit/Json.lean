@@ -106,6 +106,19 @@ inductive Decl where
   | const (c : EmitConstant)
 deriving Repr, Inhabited
 
+/-- One constructor parameter of a class binder's class: a number, or an
+instance of a class carrying its own parameters. The graph is acyclic, so
+the tree bottoms out in numbers. -/
+inductive CtorParamIR where
+  | number (name : String)
+  | cls (name className : String) (module : Option String)
+      (ctorParams : Array CtorParamIR)
+deriving Repr, Inhabited
+
+def CtorParamIR.name : CtorParamIR → String
+  | .number n => n
+  | .cls n .. => n
+
 /-- A binder's denoted domain: a finite half-open `[lo, hi)` integer
 range, the whole int line, the naturals, or the doubles a `number`
 binder's bounds admit — each bound an op × endpoint-literal pair. -/
@@ -117,7 +130,7 @@ inductive BinderIR where
   /-- A class-valued binder: the instance ranges over the image of the
   named class's constructor, applied to one argument per `ctorParams`. -/
   | cls (name className : String) (module : Option String)
-      (ctorParams : Array String)
+      (ctorParams : Array CtorParamIR)
 deriving Repr, Inhabited
 
 def BinderIR.name : BinderIR → String
@@ -333,6 +346,15 @@ def decodeBound (j : Json) (field : String) :
   | .error _ => pure none
   | .ok v => pure (some (← getStr v "op", ← getStr v "lit"))
 
+partial def decodeCtorParam (j : Json) : Except String CtorParamIR := do
+  let name ← getStr j "name"
+  match ← getStr j "kind" with
+  | "number" => pure (.number name)
+  | "class" =>
+    let params ← (← getArr j "ctorParams").mapM decodeCtorParam
+    pure (.cls name (← getStr j "className") (← getStrOpt j "module") params)
+  | k => throw s!"unknown constructor parameter kind '{k}'"
+
 def decodeBinder (j : Json) : Except String BinderIR := do
   let name ← getStr j "name"
   match ← getStr j "kind" with
@@ -344,10 +366,7 @@ def decodeBinder (j : Json) : Except String BinderIR := do
   | "number" =>
     pure (.number name (← decodeBound j "lower") (← decodeBound j "upper"))
   | "class" =>
-    let params ← (← getArr j "ctorParams").mapM fun v =>
-      match v.getStr? with
-      | .ok s => pure s
-      | .error _ => throw "field 'ctorParams' holds a non-string"
+    let params ← (← getArr j "ctorParams").mapM decodeCtorParam
     pure (.cls name (← getStr j "className") (← getStrOpt j "module") params)
   | k => throw s!"unknown binder kind '{k}'"
 
