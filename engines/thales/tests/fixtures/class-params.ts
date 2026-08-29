@@ -1,6 +1,6 @@
 export class Point {
   readonly x: number;
-  constructor(x: number) {
+  constructor(x: number = 0) {
     this.x = x;
   }
   /** @ensures{selfGap} forall (a: int ∈ [0, 10)) { Object.is(new Point(a).gap(new Point(a)), 0) } */

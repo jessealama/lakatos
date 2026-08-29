@@ -4,7 +4,7 @@
     {
       "kind": "class",
       "name": "Point",
-      "source": "export class Point {\n  readonly x: number;\n  constructor(x: number) {\n    this.x = x;\n  }\n  /** @ensures{selfGap} forall (a: int ∈ [0, 10)) { Object.is(new Point(a).gap(new Point(a)), 0) } */\n  gap(other: Point): number {\n    return other.x - this.x;\n  }\n  /** @ensures{doubleGap} forall (a: int ∈ [0, 10)) { Object.is(new Point(a).twice(new Point(a)), 0) } */\n  twice(other: Point): number {\n    return other.gap(other) + this.gap(other);\n  }\n}",
+      "source": "export class Point {\n  readonly x: number;\n  constructor(x: number = 0) {\n    this.x = x;\n  }\n  /** @ensures{selfGap} forall (a: int ∈ [0, 10)) { Object.is(new Point(a).gap(new Point(a)), 0) } */\n  gap(other: Point): number {\n    return other.x - this.x;\n  }\n  /** @ensures{doubleGap} forall (a: int ∈ [0, 10)) { Object.is(new Point(a).twice(new Point(a)), 0) } */\n  twice(other: Point): number {\n    return other.gap(other) + this.gap(other);\n  }\n}",
       "fields": ["x"],
       "ctor": {
         "params": [
