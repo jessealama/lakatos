@@ -111,9 +111,13 @@ A domain may be a class name: `∀ (p q : Point) { 0 <= p.distance(q) }`.
   class is not yet an admissible domain. The six primitive domain
   spellings are reserved and shadow any class of the same name. A class
   domain admits no `∈` constraint. Every constructor parameter must be
-  annotated with one of `number`, `boolean`, `string`, or `bigint`;
-  class-typed, union, optional, and rest parameters are refused, with a
-  diagnostic naming the parameter. A parameter default is admitted:
+  annotated with one of `number`, `boolean`, `string`, or `bigint`, or
+  with a class that is itself admissible as a binder domain in the same
+  module; union, optional, and rest parameters are refused, with a
+  diagnostic naming the parameter. The constructor-parameter graph over
+  the module's classes must be acyclic: a cycle — direct or mutual —
+  has no base case and so no image to quantify over, and is refused
+  with a diagnostic naming the cycle. A parameter default is admitted:
   quantification is at full arity, every argument supplied, and since a
   default inhabits its own parameter's declared type, every instance a
   defaulted call can reach is already reached at full arity.
@@ -128,6 +132,14 @@ A domain may be a class name: `∀ (p q : Point) { 0 <= p.distance(q) }`.
   denotes the constructor's outputs, never its raw inputs. A binder
   group `(p q : C)` is two independent quantifications over the same
   image, exactly as with primitive domains.
+
+  A class-typed constructor parameter is read the same way, one level
+  down: its domain is the image of *its* class's construction, so the
+  domain expands recursively, innermost first, until it bottoms out in
+  primitives. Acyclicity guarantees it bottoms out. A tuple of primitive
+  values on which any inner construction throws denotes no inner
+  instance, hence no outer one, and lies outside the quantifier —
+  exactly the reading a single level has, applied at each level.
 
   The claim is about constructed, unmutated, exact instances. Three
   families of values TypeScript's type system would call `C` are
@@ -145,22 +157,29 @@ A domain may be a class name: `∀ (p q : Point) { 0 <= p.distance(q) }`.
 - **Engine obligations**: the refuter draws argument tuples from the
   constructor's parameter domains, runs the real constructor, and
   discards any tuple on which construction throws — the same discard
-  channel as a failing root-level antecedent. It must not derive its
-  sampling from the guards' text, only from the parameter types: a
-  refuter that pre-filters by reading the guards can never catch a
-  defective guard. A constructor invocation in the *formula body* enjoys
-  no such reading — there it is an ordinary island call, and a throw is
-  a counterexample. A refuted property's counterexample reports the
-  constructor argument tuples, the reproducible identity of an instance.
-  The prover quantifies over every tuple in the parameter domains — for
-  `number`, all of binary64, `NaN` and the infinities included, exactly
-  as an unguarded binder — and takes "construction completed normally,
-  with this result" as its hypothesis; the constructor's guards, not
-  free hypotheses, are what restrict the domain, so weakening a guard
-  genuinely weakens what the annotation claims. The engines therefore
-  agree on the domain — the image — and differ only in how they explore
-  it: a refuter sampling policy that omits a value on which the
-  constructor always throws leaves no image value uncovered.
+  channel as a failing root-level antecedent. Where a parameter is
+  class-typed, the values drawn are the innermost primitives and the
+  real constructors run outward, a throw at any level discarding the
+  whole tuple through that same channel; discard rates multiply with
+  depth, so exhausting the discard budget is likelier the deeper the
+  nesting. It must not derive its sampling from the guards' text, only
+  from the parameter types: a refuter that pre-filters by reading the
+  guards can never catch a defective guard. A constructor invocation in
+  the *formula body* enjoys no such reading — there it is an ordinary
+  island call, and a throw is a counterexample. A refuted property's
+  counterexample reports the constructor argument tuples — nested,
+  where a parameter is class-typed — the reproducible identity of an
+  instance. The prover quantifies over every tuple in the parameter
+  domains — for `number`, all of binary64, `NaN` and the infinities
+  included, exactly as an unguarded binder — and takes "construction
+  completed normally, with this result" as its hypothesis, one such
+  hypothesis per level of nesting, each level's in scope for the levels
+  outside it; the constructor's guards, not free hypotheses, are what
+  restrict the domain, so weakening a guard genuinely weakens what the
+  annotation claims. The engines therefore agree on the domain — the
+  image — and differ only in how they explore it: a refuter sampling
+  policy that omits a value on which the constructor always throws
+  leaves no image value uncovered.
 
 ### Guards (`∈` constraints)
 
