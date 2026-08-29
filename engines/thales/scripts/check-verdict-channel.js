@@ -168,6 +168,14 @@ const FIXTURES = [
     expected: [["Wide#distance", "Timeout", /heartbeat budget/]],
   },
   {
+    // The grind rung's starvation: enough budget for the generic rung to
+    // normalize and hand over a residual, not enough for grind to close
+    // it. Grind converts its own exhaustion into a plain failure, so the
+    // ladder has to read the spent budget back out of the result.
+    file: "timeout-grind.lean",
+    expected: [["Wide#distance", "Timeout", /thales\.heartbeats = 8000\)$/]],
+  },
+  {
     file: "theorem-rescue.lean",
     expected: [["dbl", "Theorem"]],
   },
