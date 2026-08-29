@@ -113,8 +113,9 @@ conditions:
 4. **Generability side condition** (parse/validation-time, like the
    regex-generator check): every constructor parameter must have a plain
    generable type annotation — one of `number | boolean | string |
-bigint`. No class-typed params, unions, optionals, defaults, or rest
-   in v1 (each loosening is a one-way door; start strict).
+bigint`. No class-typed params, unions, optionals, or rest in v1 (each
+   loosening is a one-way door; start strict); defaults were since
+   admitted (D9, #221).
 
 Parse cases live in the body-syntax JSON corpus (`spec/fixtures/*.json`);
 resolution/eligibility cases are context-sensitive and live in the

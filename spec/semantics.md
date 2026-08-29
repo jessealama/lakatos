@@ -112,8 +112,11 @@ A domain may be a class name: `∀ (p q : Point) { 0 <= p.distance(q) }`.
   spellings are reserved and shadow any class of the same name. A class
   domain admits no `∈` constraint. Every constructor parameter must be
   annotated with one of `number`, `boolean`, `string`, or `bigint`;
-  class-typed, union, optional, defaulted, and rest parameters are all
-  refused, with a diagnostic naming the parameter.
+  class-typed, union, optional, and rest parameters are refused, with a
+  diagnostic naming the parameter. A parameter default is admitted:
+  quantification is at full arity, every argument supplied, and since a
+  default inhabits its own parameter's declared type, every instance a
+  defaulted call can reach is already reached at full arity.
 - **Truth conditions**: the binder ranges over the *image of successful
   construction*: the property holds iff, for every tuple of argument
   values drawn from the constructor's parameter domains on which
@@ -131,7 +134,11 @@ A domain may be a class name: `∀ (p q : Point) { 0 <= p.distance(q) }`.
   explicitly outside it: structurally-typed values that never passed
   through the constructor (object literals, casts), instances of
   subclasses, and instances mutated after construction (including
-  through `readonly`, which is erased at runtime). An always-throwing
+  through `readonly`, which is erased at runtime). A fourth lies outside
+  it for the same reason defaults are admitted: a constructor that
+  observes its own arity (through `arguments.length` or its kin) can
+  make a defaulted call construct an instance no full-arity call
+  produces, and such instances are outside the claim. An always-throwing
   constructor yields an empty domain, over which every property holds
   vacuously — the same situation as an interval guard denoting the
   empty set.
