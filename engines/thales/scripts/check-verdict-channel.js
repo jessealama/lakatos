@@ -148,8 +148,14 @@ const FIXTURES = [
     ],
   },
   {
-    // The grind rung's own starvation. The obligation is provable — a wide
-    // enough budget closes it — so the default budget must report as
+    // Five guards, one of them on a field the property never reads: the
+    // leaves that differ only in dead hypotheses prove once.
+    file: "class-binder-wide.lean",
+    expected: [["Wide#distance", "Theorem"]],
+  },
+  {
+    // The grind rung's own starvation. The obligation is provable — the
+    // default budget closes it — so a reduced budget must report as
     // budget-bound rather than as a residual goal nobody can move.
     file: "timeout-grind.lean",
     expected: [["Wide#distance", "Timeout", /heartbeat budget/]],
@@ -178,6 +184,13 @@ const FIXTURES = [
     expected: [
       ["Point#distance", "Theorem", /generic proof search, kernel-checked as/],
     ],
+  },
+  {
+    // Five guards, two of them clamps. The arms a normalization already
+    // settled prune before the closers run, which is what keeps this at
+    // the default budget.
+    file: "class-binder-clamp.lean",
+    expected: [["Clamp#distance", "Theorem"]],
   },
 ];
 

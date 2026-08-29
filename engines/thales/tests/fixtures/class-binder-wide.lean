@@ -1,7 +1,7 @@
--- The grind rung's own starvation, under a budget wide enough for
--- normalization but not for the leaves: the symbolic rungs split it, the
--- grind half starves, and starvation must report as the annotation's
--- Timeout rather than a residual-goal GaveUp.
+-- One more guard than class-binder-plain.lean, on a fourth field the
+-- property never reads. A guard on a dead field doubles the inversion's
+-- leaf count without changing any leaf's meaning; deduplication is what
+-- keeps this at the default budget.
 import ThalesDsl
 
 open Js ThalesDsl
@@ -43,9 +43,7 @@ def TsModel.Wide.distance (self : TsModel.Wide) (q : TsModel.Wide) :
   let dy : JsNumber := TsModel.Wide.y self - TsModel.Wide.y q
   return Float.sqrt (dx * dx + dy * dy)
 
-set_option thales.heartbeats 40000
-
-#thales_prove "timeout-grind.ts" "Wide#distance" "nonNegative" :=
+#thales_prove "class-binder-wide.ts" "Wide#distance" "nonNegative" :=
   ∀ («p.w» : JsNumber), ∀ («p.x» : JsNumber), ∀ («p.y» : JsNumber),
     ∀ («p.z» : JsNumber),
       ∀ (p : TsModel.Wide),

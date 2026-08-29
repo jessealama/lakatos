@@ -691,6 +691,15 @@
       "axioms": []
     }
   ],
+  "engines/thales/tests/conformance/theorem/class-binder-wide.ts": [
+    {
+      "function": "Wide#distance",
+      "property": "nonNegative",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_14140805322761562970",
+      "axioms": []
+    }
+  ],
   "engines/thales/tests/conformance/inappropriate/ctor-assigns-twice.ts": [
     {
       "function": "Pair#a",

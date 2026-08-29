@@ -32,7 +32,9 @@ of it is pushed into both arms — and splits it into the two implications
 its arms carry, which is what hands the closers the branch condition as a
 hypothesis on the arm it selects. Only that shape lets a literal arm
 reduce: while a branch sits under an operation, neither arm is a term the
-ground evaluators can see. -/
+ground evaluators can see. A branch both of whose arms came out as one
+term collapses to that term instead of splitting, so it never reaches the
+closers at all. -/
 
 /-- What follows a branch runs in whichever arm was taken. -/
 @[js_norm] theorem jsm_cond_bind {α β : Type} (c : Bool)
@@ -52,6 +54,12 @@ ground evaluators can see. -/
 
 -- Boolean islands: after jsm_pure_inj, `decide P = true` becomes `P`.
 attribute [js_norm] decide_eq_true_eq
+
+-- A branch both of whose arms are one term, and a branch whose condition a
+-- ground evaluator settled: neither carries information, and each collapse
+-- halves the tree the closers walk.
+attribute [js_norm] Bool.cond_self ite_self Bool.cond_true Bool.cond_false
+  Bool.false_eq_true
 
 -- Binary64 theory from FloatFacts. Rewriting subtraction away leaves the
 -- closers one operator fewer to reason about.
@@ -280,7 +288,8 @@ def reduceGroundFloatCmp (e : Expr) : SimpM Step := do
 
 /-- A literal factor instantiates a monotonicity fact with ground bound
 hypotheses; these evaluate away during normalization. Registered in
-`seval` because that is the set grind draws its simprocs from. -/
+`seval` because that is the set both grind and the generic rung draw
+their simprocs from. -/
 simproc [seval] reduceFloatLt ((_ : Float) < _) := reduceGroundFloatCmp
 
 simproc [seval] reduceFloatLe ((_ : Float) ≤ _) := reduceGroundFloatCmp
