@@ -147,6 +147,11 @@ const CLASS_BINDER = new URL(
   import.meta.url,
 ).pathname;
 
+const NESTED_CLASS_BINDER = new URL(
+  "./fixtures/build-spec/nested-class-binder.ts",
+  import.meta.url,
+).pathname;
+
 describe("buildSpecs — class binders", () => {
   it("resolves class binders and imports the class", () => {
     const { specs } = buildSpecs(CLASS_BINDER);
@@ -163,6 +168,32 @@ describe("buildSpecs — class binders", () => {
       { varName: "p", domain },
       { varName: "q", domain },
     ]);
+    expect(s.freeExports).toContain("Point");
+  });
+
+  it("imports every class the nested construction names", () => {
+    const { specs } = buildSpecs(NESTED_CLASS_BINDER);
+    const s = specs[0]!;
+    const point = {
+      className: "Point",
+      ctorParams: [
+        { name: "x", domain: "number" },
+        { name: "y", domain: "number" },
+      ],
+    };
+    expect(s.binders).toEqual([
+      {
+        varName: "s",
+        domain: {
+          className: "Span",
+          ctorParams: [
+            { name: "p", domain: point },
+            { name: "q", domain: point },
+          ],
+        },
+      },
+    ]);
+    expect(s.freeExports).toContain("Span");
     expect(s.freeExports).toContain("Point");
   });
 });

@@ -7,8 +7,15 @@ import {
   RUNTIME_SPECIFIER,
 } from "./contract.js";
 import { arbitraryFor } from "./domains.js";
-import { isClassDomain, qualifiedName } from "../../../lemma/src/index.js";
+import {
+  type ClassCtorDomain,
+  type CtorParam,
+  isClassCtorDomain,
+  isClassDomain,
+  qualifiedName,
+} from "../../../lemma/src/index.js";
 import type { PropertySpec } from "./ir.js";
+import type { CtorShape } from "./runtime.js";
 
 const SRC_EXT = /\.(ts|tsx|mts|cts|js|mjs|cjs)$/;
 
@@ -85,11 +92,11 @@ function emitProp(
   // A class binder's generated value is its constructor-argument tuple;
   // the instance is constructed in the test body so a throwing tuple can
   // discard the sample (it denotes no instance — spec/semantics.md).
-  const classNames = s.binders.map((b) =>
-    isClassDomain(b.domain) ? b.domain.className : null,
+  const shapes = s.binders.map((b) =>
+    isClassDomain(b.domain) ? ctorShape(b.domain) : null,
   );
   const vars = s.binders
-    .map((b, i) => (classNames[i] === null ? b.varName : `__args_${b.varName}`))
+    .map((b, i) => (shapes[i] === null ? b.varName : `__args_${b.varName}`))
     .join(", ");
   const varNames = s.binders.map((b) => JSON.stringify(b.varName)).join(", ");
   const name = JSON.stringify(s.name);
@@ -97,9 +104,9 @@ function emitProp(
   const fn = JSON.stringify(
     qualifiedName(s.functionName, s.className, s.isStatic),
   );
-  const hasClass = classNames.some((c) => c !== null);
+  const hasClass = shapes.some((c) => c !== null);
   const ctors = hasClass
-    ? `, [${classNames.map((c) => JSON.stringify(c)).join(", ")}]`
+    ? `, [${shapes.map((c) => JSON.stringify(c)).join(", ")}]`
     : "";
   const reporter = `(d) => ${REPORT_ALIAS}(${file}, ${fn}, ${name}, [${varNames}], d${ctors})`;
   const params = `{ seed: ${seed}, reporter: ${reporter} }`;
@@ -109,14 +116,39 @@ function emitProp(
     if (!isClassDomain(b.domain)) continue;
     const v = b.varName;
     const cls = b.domain.className;
+    const call = ctorCall(cls, b.domain.ctorParams!, `__args_${v}`);
     out.push(`${indent}  let ${v}!: ${cls};`);
-    out.push(
-      `${indent}  try { ${v} = new ${cls}(...__args_${v}); } catch { fc.pre(false); }`,
-    );
+    out.push(`${indent}  try { ${v} = ${call}; } catch { fc.pre(false); }`);
   }
   for (const p of s.preconditions) out.push(`${indent}  fc.pre(${p});`);
   out.push(`${indent}  const __r = (${s.body});`);
   out.push(`${indent}  return __r;`);
   out.push(`${indent}});`);
   return out.join("\n");
+}
+
+/** The construction expression for one binder. JS evaluates arguments
+ * left to right and innermost first, so a single try around this call
+ * discards the tuple whichever level throws. */
+function ctorCall(cls: string, params: CtorParam[], tuple: string): string {
+  if (params.every((p) => !isClassCtorDomain(p.domain))) {
+    return `new ${cls}(...${tuple})`;
+  }
+  const args = params.map((p, i) =>
+    isClassCtorDomain(p.domain)
+      ? ctorCall(p.domain.className, p.domain.ctorParams!, `${tuple}[${i}]`)
+      : `${tuple}[${i}]`,
+  );
+  return `new ${cls}(${args.join(", ")})`;
+}
+
+/** The same tree, for the reporter: it renders the counterexample tuple
+ * back as the construction that reproduces the instance. */
+function ctorShape(domain: ClassCtorDomain): CtorShape {
+  return {
+    className: domain.className,
+    params: domain.ctorParams!.map((p) =>
+      isClassCtorDomain(p.domain) ? ctorShape(p.domain) : null,
+    ),
+  };
 }

@@ -133,7 +133,7 @@ describe("runtime report — class binders", () => {
           counterexample: [[0, 5], 3],
           errorInstance: { message: "Property failed by returning false" },
         },
-        ["Point", null],
+        [{ className: "Point", params: [null, null] }, null],
       ),
     );
     expect(issue).toEqual({
@@ -157,11 +157,36 @@ describe("runtime report — class binders", () => {
           counterexample: [["a", 5n, true]],
           errorInstance: { message: "Property failed by returning false" },
         },
-        ["Tag"],
+        [{ className: "Tag", params: [null, null, null] }],
       ),
     );
     expect(issue).toMatchObject({
       counterexample: { t: 'new Tag("a",5n,true)' },
+    });
+  });
+
+  it("renders a nested class binder as nested construction", () => {
+    const issue = thrownIssue(() =>
+      report(
+        "f.ts",
+        "Box#width",
+        "wide",
+        ["b"],
+        {
+          failed: true,
+          counterexample: [[[1, 2], 3]],
+          errorInstance: { message: "Property failed by returning false" },
+        },
+        [
+          {
+            className: "Box",
+            params: [{ className: "Point", params: [null, null] }, null],
+          },
+        ],
+      ),
+    );
+    expect(issue).toMatchObject({
+      counterexample: { b: "new Box(new Point(1,2),3)" },
     });
   });
 });

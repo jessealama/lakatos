@@ -26,6 +26,24 @@ function encodeValue(v: unknown): unknown {
   return stringify(v);
 }
 
+/**
+ * How a class binder's generated tuple maps back onto constructor calls:
+ * one entry per parameter, a nested shape where the parameter is itself
+ * class-typed and `null` where it is a primitive slot.
+ */
+export interface CtorShape {
+  className: string;
+  params: Array<CtorShape | null>;
+}
+
+function renderCtor(shape: CtorShape, args: unknown[]): string {
+  const parts = args.map((a, i) => {
+    const inner = shape.params[i];
+    return inner ? renderCtor(inner, a as unknown[]) : stringify(a);
+  });
+  return `new ${shape.className}(${parts.join(",")})`;
+}
+
 function throwIssue(issue: Issue): never {
   throw new Error(encodeIssue(issue));
 }
@@ -63,7 +81,7 @@ export function report(
   name: string,
   varNames: string[],
   d: ReportDetails,
-  ctors?: Array<string | null>,
+  ctors?: Array<CtorShape | null>,
 ): void {
   if (!d.failed) return;
   const base = { file, function: functionName, property: name };
@@ -82,7 +100,7 @@ export function report(
     // A class binder's generated value is its constructor-argument tuple;
     // the rendered construction is the instance's reproducible identity.
     counterexample[n] = ctor
-      ? `new ${ctor}(${(d.counterexample![i] as unknown[]).map(stringify).join(",")})`
+      ? renderCtor(ctor, d.counterexample![i] as unknown[])
       : encodeValue(d.counterexample![i]);
   });
 
