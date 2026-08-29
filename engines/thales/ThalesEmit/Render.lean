@@ -225,6 +225,8 @@ partial def valueTerm (coerced : String → Bool) : JsExpr → RenderM Rendered
     let argTerms ← args.mapM (fun a => return (← valueTerm coerced a).term)
     return ⟨← `((← $m:term $o:term $argTerms*)), true⟩
   | .selfRef => return ⟨mkIdent (Name.mkSimple "self"), false⟩
+  -- A module constant's def is a pure JsNumber; the read is a reference.
+  | .constRead name module => return ⟨← modelIdent module name, false⟩
 
 /-- A call as the `JsM` value it denotes, its arguments still
 value-level. -/
@@ -381,6 +383,12 @@ def fnCommand (f : EmitFn) : RenderM (TSyntax `command) := do
   -- rung both unfold a model by its equations.
   `(@[js_norm, grind] def $name $binders* : JsM JsNumber := do
       $[$elems:doElem]*)
+
+/-- A module constant: a pure `JsNumber` def, dual-tagged like the
+models so the closers and the grind rung can unfold it to its literal. -/
+def constCommand (c : EmitConstant) : RenderM (TSyntax `command) := do
+  let name ← modelIdent c.module c.name
+  `(@[js_norm, grind] def $name : JsNumber := $(← numTerm c.lit))
 
 /-- Whether a statement tree assigns F anywhere. -/
 partial def hasSetOf (f : String) : JsStmt → Bool
@@ -583,7 +591,8 @@ def renderEmission (e : Emission) : CoreM String := do
   -- module, the way the old pipeline writes it; the entry's carry none.
   let mut fromModule : Option String := none
   for d in e.declarations do
-    let module := match d with | .fn f => f.module | .cls c => c.module
+    let module := match d with
+      | .fn f => f.module | .cls c => c.module | .const c => c.module
     if module != fromModule then
       fromModule := module
       if let some m := module then
@@ -593,6 +602,10 @@ def renderEmission (e : Emission) : CoreM String := do
       let cmd ← rendered (fnCommand f)
       blocks := blocks.push
         (commentLines f.source ++ "\n" ++ prettyLines (← ppCommand cmd))
+    | .const c =>
+      let cmd ← rendered (constCommand c)
+      blocks := blocks.push
+        (commentLines c.source ++ "\n" ++ prettyLines (← ppCommand cmd))
     | .cls c =>
       -- The source echo introduces the structure; the constructor and
       -- each getter follow as their own blocks.

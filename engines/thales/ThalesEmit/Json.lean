@@ -28,6 +28,7 @@ inductive JsExpr where
   | methodCall (className : String) (module : Option String) (name : String)
       (object : JsExpr) (args : Array JsExpr)
   | selfRef
+  | constRead (name : String) (module : Option String)
 deriving Repr, Inhabited
 
 inductive JsStmt where
@@ -88,9 +89,21 @@ structure EmitClass where
   methods : Array EmitMethod := #[]
 deriving Repr, Inhabited
 
+/-- A module-level `const` with a literal number initializer, rendered as
+a `JsNumber` def the reads reference. -/
+structure EmitConstant where
+  name : String
+  /-- The defining module's entry-relative path; none for the entry. -/
+  module : Option String := none
+  /-- The literal's source text, unary minus included. -/
+  lit : String
+  source : String
+deriving Repr, Inhabited
+
 inductive Decl where
   | fn (f : EmitFn)
   | cls (c : EmitClass)
+  | const (c : EmitConstant)
 deriving Repr, Inhabited
 
 /-- A binder's denoted domain: a finite half-open `[lo, hi)` integer
@@ -214,6 +227,8 @@ partial def decodeExpr (j : Json) : Except String JsExpr := do
       (← getStr j "name") (← decodeExpr (← j.getObjVal? "object"))
       (← (← getArr j "args").mapM decodeExpr))
   | "self" => pure .selfRef
+  | "const-read" =>
+    pure (.constRead (← getStr j "name") (← getStrOpt j "module"))
   | k => throw s!"unknown expression kind '{k}'"
 
 partial def decodeStmt (j : Json) : Except String JsStmt := do
@@ -297,10 +312,17 @@ def decodeClass (j : Json) : Except String EmitClass := do
          getters := ← (← getArr j "getters").mapM decodeGetter
          methods := ← (← getArr j "methods").mapM decodeMethod }
 
+def decodeConstant (j : Json) : Except String EmitConstant := do
+  pure { name := ← getStr j "name"
+         module := ← getStrOpt j "module"
+         lit := ← getStr j "lit"
+         source := ← getStr j "source" }
+
 def decodeDecl (j : Json) : Except String Decl := do
   match ← getStr j "kind" with
   | "function" => .fn <$> decodeFn j
   | "class" => .cls <$> decodeClass j
+  | "constant" => .const <$> decodeConstant j
   | k => throw s!"unknown declaration kind '{k}'"
 
 /-- One side of a `number` binder's interval, absent when unbounded: an

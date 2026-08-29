@@ -16,7 +16,8 @@
       "items": {
         "oneOf": [
           { "$ref": "#/definitions/function" },
-          { "$ref": "#/definitions/class" }
+          { "$ref": "#/definitions/class" },
+          { "$ref": "#/definitions/constant" }
         ]
       }
     },
@@ -275,6 +276,17 @@
           "additionalProperties": false,
           "required": ["kind"],
           "properties": { "kind": { "const": "self" } }
+        },
+        {
+          "type": "object",
+          "description": "A read of a module-level constant: a reference to that constant's def.",
+          "additionalProperties": false,
+          "required": ["kind", "name"],
+          "properties": {
+            "kind": { "const": "const-read" },
+            "name": { "$ref": "#/definitions/identifier" },
+            "module": { "$ref": "#/definitions/modulePath" }
+          }
         }
       ]
     },
@@ -376,6 +388,25 @@
               }
             }
           }
+        }
+      }
+    },
+    "constant": {
+      "type": "object",
+      "description": "A module-level const with a literal number initializer: a named value rendered as a JsNumber def.",
+      "additionalProperties": false,
+      "required": ["kind", "name", "lit", "source"],
+      "properties": {
+        "kind": { "const": "constant" },
+        "name": { "$ref": "#/definitions/identifier" },
+        "module": { "$ref": "#/definitions/modulePath" },
+        "lit": {
+          "type": "string",
+          "description": "The literal as JavaScript prints the double it denotes; a leading '-' folds a negation in."
+        },
+        "source": {
+          "type": "string",
+          "description": "The declaration's original text, echoed as comments above the def."
         }
       }
     },

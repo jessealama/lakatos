@@ -925,5 +925,70 @@
       "szs": "Inappropriate",
       "reason": "'total' could not be modeled: 'cycle.ts::scaled' could not be modeled: 'cycle.ts::base' could not be modeled: unmapped TypeScript construct 'ImportDeclaration' at 1:10"
     }
+  ],
+  "engines/thales/tests/fixtures/module-consts.ts": [
+    {
+      "function": "secondsToMilliseconds",
+      "property": "nonNegative",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_5405041171285102127",
+      "axioms": []
+    },
+    {
+      "function": "magnitude",
+      "property": "nonNegative",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_16274712596195012333",
+      "axioms": []
+    },
+    {
+      "function": "keepBelowSecond",
+      "property": "bounded",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_11719682040379937164",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/module-const-scale.ts": [
+    {
+      "function": "secondsToMilliseconds",
+      "property": "nonNegative",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_17457512373712028133",
+      "axioms": []
+    },
+    {
+      "function": "keepBelowSecond",
+      "property": "bounded",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_18300619214628618275",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/builtin-alias-magnitude.ts": [
+    {
+      "function": "magnitude",
+      "property": "nonNegative",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_8914276800650011391",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/imported-constants/main.ts": [
+    {
+      "function": "daysToWeeks",
+      "property": "nonNegative",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_16982873862515653733",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/inappropriate/module-let-read.ts": [
+    {
+      "function": "scale",
+      "property": "nonNegative",
+      "szs": "Inappropriate",
+      "reason": "'scale' could not be modeled: 'factor' could not be modeled: unmapped TypeScript construct 'VariableStatement' at 1:5"
+    }
   ]
 }
