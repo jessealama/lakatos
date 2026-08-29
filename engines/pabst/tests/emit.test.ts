@@ -213,7 +213,8 @@ describe("emit — class binders", () => {
   });
 
   it("tells the reporter which binders are constructions", () => {
-    expect(out).toContain('["p", "q"], d, ["Point", "Point"])');
+    const shape = '{"className":"Point","params":[null,null]}';
+    expect(out).toContain(`["p", "q"], d, [${shape}, ${shape}])`);
   });
 
   it("imports the binder class from the module under test", () => {
@@ -223,5 +224,49 @@ describe("emit — class binders", () => {
   it("passes no constructor list when every binder is primitive", () => {
     const plain = emit([spec], "foo.ts", "out/foo.pabst.test.ts", 42);
     expect(plain).not.toContain("], d, [");
+  });
+});
+
+const boxDomain = {
+  className: "Box",
+  ctorParams: [
+    { name: "p", domain: pointDomain },
+    { name: "k", domain: "number" as const },
+  ],
+};
+
+const nestedSpec: PropertySpec = {
+  name: "wide",
+  functionName: "width",
+  className: "Box",
+  binders: [{ varName: "b", domain: boxDomain }],
+  body: '__bool(0 <= b.width(), "0 <= b.width()")',
+  preconditions: [],
+  freeExports: ["Box", "Point"],
+  location: { file: "box.ts", line: 1 },
+};
+
+describe("emit — nested class binders", () => {
+  const out = emit([nestedSpec], "box.ts", "out/box.pabst.test.ts", 42);
+
+  it("draws the nested tuple", () => {
+    expect(out).toContain(
+      "test.prop([fc.tuple(fc.tuple(fc.double(), fc.double()), fc.double())]",
+    );
+  });
+
+  it("constructs innermost-out inside one try, so any throw discards", () => {
+    expect(out).toContain("let b!: Box;");
+    expect(out).toContain(
+      "try { b = new Box(new Point(...__args_b[0]), __args_b[1]); } " +
+        "catch { fc.pre(false); }",
+    );
+  });
+
+  it("tells the reporter the whole construction tree", () => {
+    expect(out).toContain(
+      '["b"], d, [{"className":"Box","params":' +
+        '[{"className":"Point","params":[null,null]},null]}])',
+    );
   });
 });

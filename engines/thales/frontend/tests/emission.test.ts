@@ -116,6 +116,7 @@ describe("emitModule on the tracer fixture", () => {
     ["engines/thales/tests/fixtures/classes.ts"],
     ["engines/thales/tests/fixtures/class-params.ts"],
     ["engines/thales/tests/fixtures/module-consts.ts"],
+    ["engines/thales/tests/fixtures/nested-class-binder.ts"],
     [
       "engines/thales/tests/conformance/theorem/class-binder-equality-guards.ts",
     ],
@@ -142,6 +143,10 @@ describe("emitModule on the tracer fixture", () => {
     [
       "engines/thales/tests/fixtures/module-consts.ts",
       "module-consts.emission.json",
+    ],
+    [
+      "engines/thales/tests/fixtures/nested-class-binder.ts",
+      "nested-class-binder.emission.json",
     ],
     [
       "engines/thales/tests/conformance/theorem/class-binder-equality-guards.ts",
@@ -175,6 +180,12 @@ function classifiedOf(decl: string, fn = "f"): string | undefined {
   const src = `/** @ensures{p} forall (x: int ∈ [0, 5)) { ${fn}(x) ≡ x } */\n${decl}\n`;
   return emitModule(src, "t.ts").classified[0]?.reason;
 }
+
+test("a free function's defaulted parameter still refuses", () => {
+  expect(
+    classifiedOf("export function f(x: number = 0): number { return x; }"),
+  ).toMatch(/unmapped TypeScript construct 'Parameter' at 2:\d+/);
+});
 
 /** The payload of one obligation on a mappable identity function. */
 function payloadOf(formula: string) {
@@ -1271,9 +1282,13 @@ describe("class-valued binders lower to a binder IR", () => {
     const { emission } = emitModule(POINT, "t.ts");
     const payload = emission.obligations[0]!.payload;
     assert(payload.kind === "structured");
+    const xy = [
+      { name: "x", kind: "number" },
+      { name: "y", kind: "number" },
+    ];
     expect(payload.binders).toEqual([
-      { name: "p", kind: "class", className: "Point", ctorParams: ["x", "y"] },
-      { name: "q", kind: "class", className: "Point", ctorParams: ["x", "y"] },
+      { name: "p", kind: "class", className: "Point", ctorParams: xy },
+      { name: "q", kind: "class", className: "Point", ctorParams: xy },
     ]);
   });
 
@@ -1315,7 +1330,10 @@ describe("class-valued binders lower to a binder IR", () => {
         name: "s",
         kind: "class",
         className: "Span",
-        ctorParams: ["first", "second"],
+        ctorParams: [
+          { name: "first", kind: "number" },
+          { name: "second", kind: "number" },
+        ],
       },
     ]);
   });
@@ -1337,7 +1355,7 @@ describe("class-valued binders lower to a binder IR", () => {
     expect(emission.declarations.map((d) => d.name)).toEqual(["scale"]);
   });
 
-  test("a binder whose class takes a non-number constructor parameter refuses", () => {
+  test("a binder whose class takes a class-typed parameter lowers recursively", () => {
     const src = [
       "export class Inner {",
       "  readonly v: number;",
@@ -1348,12 +1366,79 @@ describe("class-valued binders lower to a binder IR", () => {
       "export function scale(x: number): number { return x; }",
       "",
     ].join("\n");
-    expect(classifications(src).classified).toEqual([
-      [
-        "Inappropriate",
-        "class-valued binder 'Outer' has a constructor parameter " +
-          "outside the model",
-      ],
+    const { emission } = emitModule(src, "t.ts");
+    const payload = emission.obligations[0]!.payload;
+    assert(payload.kind === "structured");
+    expect(payload.binders).toEqual([
+      {
+        name: "o",
+        kind: "class",
+        className: "Outer",
+        ctorParams: [
+          {
+            name: "i",
+            kind: "class",
+            className: "Inner",
+            ctorParams: [{ name: "v", kind: "number" }],
+          },
+        ],
+      },
+    ]);
+  });
+
+  test("a mixed constructor signature keeps its parameters in order", () => {
+    const src = [
+      "export class Inner {",
+      "  readonly v: number;",
+      "  constructor(v: number) { this.v = v; }",
+      "}",
+      "export class Outer { constructor(i: Inner, k: number) {} }",
+      "/** @ensures{p} forall (o: Outer) { scale(1) >= 0 } */",
+      "export function scale(x: number): number { return x; }",
+      "",
+    ].join("\n");
+    const { emission } = emitModule(src, "t.ts");
+    const payload = emission.obligations[0]!.payload;
+    assert(payload.kind === "structured");
+    assert(payload.binders[0]!.kind === "class");
+    expect(payload.binders[0]!.ctorParams).toEqual([
+      {
+        name: "i",
+        kind: "class",
+        className: "Inner",
+        ctorParams: [{ name: "v", kind: "number" }],
+      },
+      { name: "k", kind: "number" },
+    ]);
+  });
+
+  test("a three-class chain lowers all the way down", () => {
+    const src = [
+      "export class A { constructor(a: number) {} }",
+      "export class B { constructor(a: A) {} }",
+      "export class C { constructor(b: B) {} }",
+      "/** @ensures{p} forall (c: C) { scale(1) >= 0 } */",
+      "export function scale(x: number): number { return x; }",
+      "",
+    ].join("\n");
+    const { emission } = emitModule(src, "t.ts");
+    const payload = emission.obligations[0]!.payload;
+    assert(payload.kind === "structured");
+    assert(payload.binders[0]!.kind === "class");
+    expect(payload.binders[0]!.ctorParams).toEqual([
+      {
+        name: "b",
+        kind: "class",
+        className: "B",
+        ctorParams: [
+          {
+            name: "a",
+            kind: "class",
+            className: "A",
+            ctorParams: [{ name: "a", kind: "number" }],
+          },
+        ],
+      },
     ]);
   });
 
@@ -1382,6 +1467,85 @@ describe("class-valued binders lower to a binder IR", () => {
           "unmapped TypeScript construct 'ReadonlyKeyword' at 1:32",
       ],
     ]);
+  });
+
+  test("a defaulted constructor parameter models, quantified at full arity", () => {
+    const src = [
+      "export class P {",
+      "  readonly x: number;",
+      "  readonly y: number;",
+      "  constructor(x: number, y: number = 0) {",
+      "    this.x = x;",
+      "    this.y = y;",
+      "  }",
+      "  /** @ensures{nn} forall (p: P) { p.span() >= 0 } */",
+      "  span(): number { return this.x * this.x + this.y * this.y; }",
+      "}",
+      "",
+    ].join("\n");
+    const { classified, emission } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    const payload = emission.obligations[0]!.payload;
+    assert(payload.kind === "structured");
+    expect(payload.binders).toEqual([
+      {
+        name: "p",
+        kind: "class",
+        className: "P",
+        ctorParams: [
+          { name: "x", kind: "number" },
+          { name: "y", kind: "number" },
+        ],
+      },
+    ]);
+  });
+
+  test("a full-arity formula call to a defaulted constructor models", () => {
+    const src = [
+      "export class P {",
+      "  readonly x: number;",
+      "  readonly y: number;",
+      "  constructor(x: number, y: number = 0) {",
+      "    this.x = x;",
+      "    this.y = y;",
+      "  }",
+      "  /** @ensures{p} forall (a: int ∈ [0, 5)) { new P(a, a).span() >= 0 } */",
+      "  span(): number { return this.x * this.x + this.y * this.y; }",
+      "}",
+      "",
+    ].join("\n");
+    const { classified, emission } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    expect(emission.obligations).toHaveLength(1);
+  });
+
+  test("a defaulted method parameter models", () => {
+    const src = [
+      "export class C {",
+      "  readonly x: number;",
+      "  constructor(x: number) { this.x = x; }",
+      "  /** @ensures{p} forall (a: int ∈ [0, 5)) { new C(a).plus(a) >= 0 } */",
+      "  plus(k: number = 1): number { return this.x + k; }",
+      "}",
+      "",
+    ].join("\n");
+    const { classified, emission } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    expect(emission.obligations).toHaveLength(1);
+  });
+
+  test("a defaulted parameter with no type annotation still degrades the class", () => {
+    const src = [
+      "export class C { constructor(y = 0) {} }",
+      "/** @ensures{p} forall (c: C) { scale(1) >= 0 } */",
+      "export function scale(x: number): number { return x; }",
+      "",
+    ].join("\n");
+    const { classified } = emitModule(src, "t.ts");
+    expect(classified.map((c) => c.szs)).toEqual(["Inappropriate"]);
+    expect(classified[0]!.reason).toMatch(
+      /class-valued binder 'C' names a class outside the model: unmapped TypeScript construct 'Parameter' at 1:\d+/,
+    );
   });
 });
 

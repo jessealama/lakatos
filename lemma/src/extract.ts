@@ -159,11 +159,6 @@ function analyzeCtor(
     if (p.questionToken !== undefined) {
       return { ctorProblem: `constructor parameter '${name}' is optional` };
     }
-    if (p.initializer !== undefined) {
-      return {
-        ctorProblem: `constructor parameter '${name}' has a default value`,
-      };
-    }
     if (p.type === undefined) {
       return {
         ctorProblem: `constructor parameter '${name}' has no type annotation`,
@@ -171,10 +166,17 @@ function analyzeCtor(
     }
     const domain = PARAM_TYPES[p.type.kind];
     if (domain === undefined) {
+      // A bare identifier type is a class reference; whether it names an
+      // admissible class is resolution's business, not extraction's.
+      if (ts.isTypeReferenceNode(p.type) && ts.isIdentifier(p.type.typeName)) {
+        params.push({ name, domain: { className: p.type.typeName.text } });
+        continue;
+      }
       return {
         ctorProblem:
           `constructor parameter '${name}' has type '${p.type.getText(sf)}' — ` +
-          `constructor parameters must be annotated number, boolean, string, or bigint`,
+          `constructor parameters must be annotated number, boolean, string, ` +
+          `bigint, or a class declared in the same module`,
       };
     }
     params.push({ name, domain });

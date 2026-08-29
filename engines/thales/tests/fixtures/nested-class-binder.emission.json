@@ -1,0 +1,206 @@
+{
+  "file": "engines/thales/tests/fixtures/nested-class-binder.ts",
+  "declarations": [
+    {
+      "kind": "class",
+      "name": "Point",
+      "source": "export class Point {\n  public readonly x: number;\n\n  constructor(x: number) {\n    if (x === -Infinity || x === Infinity) {\n      throw new RangeError(\"Cannot accept an infinite coordinate\");\n    }\n    this.x = x;\n  }\n}",
+      "fields": ["x"],
+      "ctor": {
+        "params": [
+          {
+            "name": "x",
+            "type": "number"
+          }
+        ],
+        "body": [
+          {
+            "kind": "if",
+            "cond": {
+              "kind": "binop",
+              "op": "||",
+              "left": {
+                "kind": "binop",
+                "op": "===",
+                "left": {
+                  "kind": "id",
+                  "name": "x"
+                },
+                "right": {
+                  "kind": "unop",
+                  "op": "-",
+                  "operand": {
+                    "kind": "num",
+                    "lit": "Infinity"
+                  }
+                }
+              },
+              "right": {
+                "kind": "binop",
+                "op": "===",
+                "left": {
+                  "kind": "id",
+                  "name": "x"
+                },
+                "right": {
+                  "kind": "num",
+                  "lit": "Infinity"
+                }
+              }
+            },
+            "then": [
+              {
+                "kind": "throw",
+                "error": "RangeError"
+              }
+            ]
+          },
+          {
+            "kind": "field-set",
+            "field": "x",
+            "expr": {
+              "kind": "id",
+              "name": "x"
+            }
+          }
+        ]
+      },
+      "getters": [],
+      "methods": []
+    },
+    {
+      "kind": "class",
+      "name": "Span",
+      "source": "export class Span {\n  public readonly d: number;\n\n  constructor(p: Point, q: Point) {\n    this.d = q.x - p.x;\n  }\n\n  /**\n   * @ensures{selfSame} ∀ (s : Span) { s.width() ≡ s.width() }\n   */\n  width(): number {\n    return this.d;\n  }\n}",
+      "fields": ["d"],
+      "ctor": {
+        "params": [
+          {
+            "name": "p",
+            "type": {
+              "class": "Point"
+            }
+          },
+          {
+            "name": "q",
+            "type": {
+              "class": "Point"
+            }
+          }
+        ],
+        "body": [
+          {
+            "kind": "field-set",
+            "field": "d",
+            "expr": {
+              "kind": "binop",
+              "op": "-",
+              "left": {
+                "kind": "field-read",
+                "className": "Point",
+                "field": "x",
+                "object": {
+                  "kind": "id",
+                  "name": "q"
+                }
+              },
+              "right": {
+                "kind": "field-read",
+                "className": "Point",
+                "field": "x",
+                "object": {
+                  "kind": "id",
+                  "name": "p"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "getters": [],
+      "methods": [
+        {
+          "name": "width",
+          "params": [],
+          "body": [
+            {
+              "kind": "return",
+              "expr": {
+                "kind": "field-read",
+                "className": "Span",
+                "field": "d",
+                "object": {
+                  "kind": "self"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "obligations": [
+    {
+      "function": "Span#width",
+      "property": "selfSame",
+      "formula": "∀ (s : Span) { s.width() ≡ s.width() }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "s",
+            "kind": "class",
+            "className": "Span",
+            "ctorParams": [
+              {
+                "name": "p",
+                "kind": "class",
+                "className": "Point",
+                "ctorParams": [
+                  {
+                    "name": "x",
+                    "kind": "number"
+                  }
+                ]
+              },
+              {
+                "name": "q",
+                "kind": "class",
+                "className": "Point",
+                "ctorParams": [
+                  {
+                    "name": "x",
+                    "kind": "number"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "conclusion": {
+          "kind": "eq",
+          "left": {
+            "kind": "method-call",
+            "className": "Span",
+            "name": "width",
+            "object": {
+              "kind": "id",
+              "name": "s"
+            },
+            "args": []
+          },
+          "right": {
+            "kind": "method-call",
+            "className": "Span",
+            "name": "width",
+            "object": {
+              "kind": "id",
+              "name": "s"
+            },
+            "args": []
+          }
+        }
+      }
+    }
+  ]
+}

@@ -32,6 +32,18 @@ const binderFailSrc = path.join(
   root,
   "engines/pabst/tests/fixtures/e2e/binder-fail.ts",
 );
+const binderNestedPassSrc = path.join(
+  root,
+  "engines/pabst/tests/fixtures/e2e/binder-nested-pass.ts",
+);
+const binderNestedFailSrc = path.join(
+  root,
+  "engines/pabst/tests/fixtures/e2e/binder-nested-fail.ts",
+);
+const binderNestedExhaustedSrc = path.join(
+  root,
+  "engines/pabst/tests/fixtures/e2e/binder-nested-exhausted.ts",
+);
 const accessorPassSrc = path.join(
   root,
   "engines/pabst/tests/fixtures/e2e/accessor-pass.ts",
@@ -258,6 +270,58 @@ describe("end-to-end", () => {
         .counterexample;
       expect(cx.p).toMatch(/^new Point\(/);
       expect(cx.q).toMatch(/^new Point\(/);
+    },
+  );
+
+  it(
+    "a true property over a nested class binder passes",
+    { timeout: 30000 },
+    () => {
+      const [r] = generate([binderNestedPassSrc], OUT_ROOT, 3);
+      expect(r).toBeDefined();
+      const env = run(r!);
+      expect(env.failed).toBe(0);
+      expect(issuesOf(env)).toEqual([]);
+    },
+  );
+
+  it(
+    "a nested counterexample reports the whole construction tree",
+    { timeout: 30000 },
+    () => {
+      const [r] = generate([binderNestedFailSrc], OUT_ROOT, 3);
+      expect(r).toBeDefined();
+      const env = run(r!);
+      expect(env.failed).toBeGreaterThan(0);
+      expect(issuesOf(env)).toHaveLength(1);
+      expectValidIssue(issuesOf(env)[0]);
+      const issue = issuesOf(env)[0]!;
+      expect(issue).toMatchObject({
+        function: "Span#length",
+        property: "tight",
+        kind: "falsified",
+      });
+      const cx = (issue as { counterexample: Record<string, string> })
+        .counterexample;
+      expect(cx.s).toMatch(/^new Span\(new Point\(.+\),new Point\(.+\)\)$/);
+    },
+  );
+
+  it(
+    "compounded constructor discards are reported as kind 'exhausted'",
+    { timeout: 30000 },
+    () => {
+      const [r] = generate([binderNestedExhaustedSrc], OUT_ROOT, 3);
+      expect(r).toBeDefined();
+      const env = run(r!);
+      expect(env.failed).toBeGreaterThan(0);
+      expect(issuesOf(env)).toHaveLength(1);
+      expectValidIssue(issuesOf(env)[0]);
+      expect(issuesOf(env)[0]).toMatchObject({
+        property: "onTheMark",
+        kind: "exhausted",
+      });
+      expect(issuesOf(env)[0]!.counterexample).toBeUndefined();
     },
   );
 

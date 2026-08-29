@@ -208,7 +208,19 @@ export type EmitBinder =
       kind: "class";
       className: string;
       module?: string;
-      ctorParams: string[];
+      ctorParams: EmitCtorParam[];
+    };
+
+/** One constructor parameter of a class binder's class. A class-typed one
+ * carries its own parameters, so the tree bottoms out in numbers. */
+export type EmitCtorParam =
+  | { name: string; kind: "number" }
+  | {
+      name: string;
+      kind: "class";
+      className: string;
+      module?: string;
+      ctorParams: EmitCtorParam[];
     };
 
 export interface EmitObligation {
@@ -2091,31 +2103,41 @@ function memberNameFailure(
 }
 
 /** The shape checks a parameter passes before its type is read: a
- * binding pattern, a rest, an optional or defaulted parameter, and a
- * missing type annotation are all outside the slice. */
-function fnParamFailure(
+ * binding pattern, a rest, an optional parameter, and a missing type
+ * annotation are all outside the slice. */
+function paramShapeFailure(
   p: ts.ParameterDeclaration,
   sf: ts.SourceFile,
 ): FailedDecl | undefined {
   if (!ts.isIdentifier(p.name)) return constructAt(p.name, p.name.kind, sf);
   if (p.dotDotDotToken !== undefined)
     return constructAt(p.dotDotDotToken, p.dotDotDotToken.kind, sf);
-  if (p.questionToken !== undefined || p.initializer !== undefined)
-    return constructAt(p, p.kind, sf);
+  if (p.questionToken !== undefined) return constructAt(p, p.kind, sf);
   if (p.type === undefined) return constructAt(p, p.kind, sf);
   return undefined;
 }
 
-/** A constructor or method parameter passes the function-parameter check;
- * a modifier on it is a parameter property, which declares a field the
- * body never assigns. */
+/** A free function's parameter additionally refuses a default; only the
+ * class walks model defaulted parameters so far. */
+function fnParamFailure(
+  p: ts.ParameterDeclaration,
+  sf: ts.SourceFile,
+): FailedDecl | undefined {
+  if (p.initializer !== undefined) return constructAt(p, p.kind, sf);
+  return paramShapeFailure(p, sf);
+}
+
+/** A constructor or method parameter passes the shape check with
+ * defaults admitted — every modeled call supplies full arity, so the
+ * initializer is dead code. A modifier on it is a parameter property,
+ * which declares a field the body never assigns. */
 function ctorParamFailure(
   p: ts.ParameterDeclaration,
   sf: ts.SourceFile,
 ): FailedDecl | undefined {
   const mods = ts.getModifiers(p) ?? [];
   if (mods.length > 0) return constructAt(mods[0]!, mods[0]!.kind, sf);
-  return fnParamFailure(p, sf);
+  return paramShapeFailure(p, sf);
 }
 
 /** The registries a parameter's type resolves against — a `WalkScope`
@@ -2863,20 +2885,35 @@ function lowerClassBinder(
         `the model: ${why}`,
     };
   }
-  if (shape.ctorParams.some((t) => t !== "num")) {
-    return {
-      reason:
-        `class-valued binder '${className}' has a constructor ` +
-        `parameter outside the model`,
-    };
-  }
   return {
     name,
     kind: "class",
     className,
     ...(ref.module !== "" ? { module: ref.module } : {}),
-    ctorParams: shape.ctorParamNames,
+    ctorParams: lowerCtorParams(shape, classes),
   };
+}
+
+/** A class's constructor parameters as the wire carries them. A class walks
+ * only after every class its parameters name, so the lookup always hits and
+ * the recursion always bottoms out. */
+function lowerCtorParams(
+  shape: ClassShape,
+  classes: ReadonlyMap<string, ClassShape>,
+): EmitCtorParam[] {
+  return shape.ctorParams.map((ty, i) => {
+    const name = shape.ctorParamNames[i]!;
+    if (ty === "num") return { name, kind: "number" };
+    const ref = ty.instance;
+    const inner = classes.get(modelKey(ref))!;
+    return {
+      name,
+      kind: "class",
+      className: ref.name,
+      ...(ref.module !== "" ? { module: ref.module } : {}),
+      ctorParams: lowerCtorParams(inner, classes),
+    };
+  });
 }
 
 type PayloadResult =

@@ -2,7 +2,9 @@ import {
   anchoredSource,
   bigintBounds,
   type Binder,
+  type CtorParam,
   intBounds,
+  isClassCtorDomain,
   isClassDomain,
   LemmaError,
   numberConstraints,
@@ -29,13 +31,8 @@ export function arbitraryFor(
   if (isClassDomain(domain)) {
     // Generation draws the constructor's argument tuple; the emitted test
     // runs the real constructor on it (spec/semantics.md).
-    if (domain.ctorParams === undefined) {
-      throw new LemmaError(
-        `unresolved class binder '${domain.className}' reached codegen`,
-      );
-    }
-    const args = domain.ctorParams.map((p) => DOMAIN_TABLE[p.domain]);
-    return `fc.tuple(${args.join(", ")})`;
+    if (domain.ctorParams === undefined) throw unresolved(domain.className);
+    return ctorTuple(domain.ctorParams);
   }
   if (pattern) {
     if (domain !== "string") {
@@ -83,6 +80,23 @@ export function arbitraryFor(
         `domain '${domain}' does not support interval constraints`,
       );
   }
+}
+
+/** A class-typed parameter draws the tuple its own constructor needs, so
+ * the drawn value is nested exactly as deep as the constructor graph. */
+function ctorTuple(params: CtorParam[]): string {
+  const args = params.map((p) => {
+    if (!isClassCtorDomain(p.domain)) return DOMAIN_TABLE[p.domain];
+    if (p.domain.ctorParams === undefined) throw unresolved(p.domain.className);
+    return ctorTuple(p.domain.ctorParams);
+  });
+  return `fc.tuple(${args.join(", ")})`;
+}
+
+function unresolved(className: string): LemmaError {
+  return new LemmaError(
+    `unresolved class binder '${className}' reached codegen`,
+  );
 }
 
 function render(...opts: Array<string | undefined>): string {

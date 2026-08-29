@@ -1,10 +1,12 @@
 import {
+  type ClassCtorDomain,
   clampedEndpoints,
   type ClassTable,
   collectAtoms,
   EmptyAfterClampError,
   extract,
   type InvalidAnnotation,
+  isClassCtorDomain,
   isClassDomain,
   LemmaError,
   parseBody,
@@ -92,11 +94,10 @@ function buildSpec(
   }
   const { freeExports } = classify(idents, boundVars, exports);
   // Binder classes may never appear in the formula text, but the generated
-  // spec must import them to construct instances.
+  // spec must import them to construct instances — every class the nested
+  // construction names, not just the binder's own.
   for (const b of binders) {
-    if (isClassDomain(b.domain) && !freeExports.includes(b.domain.className)) {
-      freeExports.push(b.domain.className);
-    }
+    if (isClassDomain(b.domain)) collectCtorClasses(b.domain, freeExports);
   }
   return {
     name: a.propertyName,
@@ -109,4 +110,15 @@ function buildSpec(
     freeExports,
     location: { file, line: a.line },
   };
+}
+
+/** Every class named anywhere in a binder's construction tree; the inner
+ * ones are constructed by name in the generated file too. */
+function collectCtorClasses(domain: ClassCtorDomain, into: string[]): void {
+  if (!into.includes(domain.className)) into.push(domain.className);
+  /* v8 ignore next -- resolveClassBinders ran first and fills ctorParams at
+     every level of the tree, so the empty fallback is unreachable here. */
+  for (const p of domain.ctorParams ?? []) {
+    if (isClassCtorDomain(p.domain)) collectCtorClasses(p.domain, into);
+  }
 }

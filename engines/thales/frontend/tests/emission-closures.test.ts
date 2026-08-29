@@ -139,7 +139,58 @@ describe("emission import closures", () => {
         kind: "class",
         className: "Box",
         module: "box.mts",
-        ctorParams: ["v"],
+        ctorParams: [{ name: "v", kind: "number" }],
+      },
+    ]);
+  });
+
+  test("a class-typed constructor parameter carries its module too", () => {
+    const spanned = [
+      'import { Span } from "./span.mjs";',
+      "/** @ensures{nn} forall (s: Span) { keep(1) >= 0 } */",
+      "export function keep(x: number): number {",
+      "  return x;",
+      "}",
+      "",
+    ].join("\n");
+    const span = [
+      "export class Point {",
+      "  readonly x: number;",
+      "  constructor(x: number) {",
+      "    this.x = x;",
+      "  }",
+      "}",
+      "export class Span {",
+      "  readonly d: number;",
+      "  constructor(p: Point) {",
+      "    this.d = p.x;",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(
+      spanned,
+      "main.mts",
+      reader({ "span.mts": span }),
+    );
+    expect(classified).toEqual([]);
+    const payload = emission.obligations[0]!.payload;
+    assert(payload.kind === "structured");
+    expect(payload.binders).toEqual([
+      {
+        name: "s",
+        kind: "class",
+        className: "Span",
+        module: "span.mts",
+        ctorParams: [
+          {
+            name: "p",
+            kind: "class",
+            className: "Point",
+            module: "span.mts",
+            ctorParams: [{ name: "x", kind: "number" }],
+          },
+        ],
       },
     ]);
   });

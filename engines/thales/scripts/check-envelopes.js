@@ -99,12 +99,14 @@ const BINDER_FIXTURES = [
 
 /** The class slice (#129): structures, single-assignment constructors,
  * getters, and new in atoms — the theorem path and each degrade path —
- * plus a class-valued binder over a guarding constructor's image. */
+ * plus a class-valued binder over a guarding constructor's image, and one
+ * whose class is itself built from classes. */
 const CLASS_FIXTURES = [
   "engines/thales/tests/fixtures/classes.ts",
   `${CONFORMANCE}/theorem/class-box-roundtrip.ts`,
   `${CONFORMANCE}/theorem/class-binder-distance.ts`,
   `${CONFORMANCE}/theorem/class-binder-equality-guards.ts`,
+  `${CONFORMANCE}/theorem/class-binder-nested.ts`,
   `${CONFORMANCE}/theorem/class-binder-wide.ts`,
   `${CONFORMANCE}/inappropriate/ctor-assigns-twice.ts`,
   `${CONFORMANCE}/inappropriate/ctor-partial-assign.ts`,
