@@ -1,7 +1,6 @@
--- The grind rung's own starvation, under a budget wide enough for
--- normalization but not for the leaves: the symbolic rungs split it, the
--- grind half starves, and starvation must report as the annotation's
--- Timeout rather than a residual-goal GaveUp.
+-- A provable class-binder obligation under a budget too small to
+-- normalize it: the symbolic rung that runs out must report as the
+-- annotation's Timeout rather than as a residual-goal GaveUp.
 import ThalesDsl
 
 open Js ThalesDsl
@@ -43,9 +42,9 @@ def TsModel.Wide.distance (self : TsModel.Wide) (q : TsModel.Wide) :
   let dy : JsNumber := TsModel.Wide.y self - TsModel.Wide.y q
   return Float.sqrt (dx * dx + dy * dy)
 
-set_option thales.heartbeats 40000
+set_option thales.heartbeats 4000
 
-#thales_prove "timeout-grind.ts" "Wide#distance" "nonNegative" :=
+#thales_prove "timeout-symbolic.ts" "Wide#distance" "nonNegative" :=
   ∀ («p.w» : JsNumber), ∀ («p.x» : JsNumber), ∀ («p.y» : JsNumber),
     ∀ («p.z» : JsNumber),
       ∀ (p : TsModel.Wide),

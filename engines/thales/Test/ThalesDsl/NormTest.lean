@@ -98,3 +98,35 @@ example (a b : JsM Nat) : (bif Float.lt 0 0 then a else b) = b := by
 
 example (a b : JsM Nat) : (if Float.lt 0 0 = true then a else b) = b := by
   simp only [js_norm, seval]
+
+-- A guarded constructor's image flattens instead of branching: each
+-- throwing guard becomes a `= false` conjunct and each field an `ite`
+-- term under one `mk`, so the shape is linear in the guard count.
+structure TsModel.GuardedNorm where
+  x : JsNumber
+  y : JsNumber
+  z : JsNumber
+
+@[js_norm, grind]
+def TsModel.GuardedNorm.construct (x y z : JsNumber) : JsM TsModel.GuardedNorm := do
+  let mut x := x
+  let mut y := y
+  let mut z := z
+  if !Float.isFinite x then
+    throw (JsError.error "RangeError")
+  if FloatOps.sameValue x (-0) then
+    x := 0
+  if FloatOps.sameValue y (-0) then
+    y := 0
+  if FloatOps.sameValue z (-0) then
+    z := 0
+  return TsModel.GuardedNorm.mk x y z
+
+example (x y z : JsNumber) (p : TsModel.GuardedNorm)
+    (h : TsModel.GuardedNorm.construct x y z = .ok p) :
+    (!Float.isFinite x) = false ∧
+      TsModel.GuardedNorm.mk (if FloatOps.sameValue x (-0) = true then 0 else x)
+          (if FloatOps.sameValue y (-0) = true then 0 else y)
+          (if FloatOps.sameValue z (-0) = true then 0 else z) = p := by
+  simp only [js_norm] at h
+  exact h
