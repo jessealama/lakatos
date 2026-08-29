@@ -244,6 +244,16 @@ def certifyRoot (identity : Identity) (p root residual : Expr) :
     if ← isKernelTimeout ex then throw ex
     return gaveUp
 
+/-- The procedures the normalization set runs, the symbolic evaluator's
+alongside `js_norm`'s own. A set whose simprocs are left behind normalizes
+to a different shape than the set says it does, and the constructor-image
+flattening is one of them. -/
+def normSimprocs : CoreM Meta.Simp.SimprocsArray := do
+  let seval ← Meta.Simp.getSEvalSimprocs
+  match ← Meta.Simp.getSimprocExtension? `js_norm with
+  | some ext => return #[seval, ← ext.getSimprocs]
+  | none => return #[seval]
+
 /-- Rung 2, the generic stage: normalize with the `js_norm` simp set,
 then close with omega. Success is kernel-checked like the decide rung; a
 closer that fails leaves the residual goal — rolled back to its
@@ -258,7 +268,7 @@ def attemptGeneric (identity : Identity) (p : Expr) :
     (simpTheorems := #[← ext.getTheorems])
     (congrTheorems := ← Meta.getSimpCongrTheorems)
   let simped ←
-    try Meta.simpGoal mvar.mvarId! ctx (simprocs := #[← Meta.Simp.getSEvalSimprocs])
+    try Meta.simpGoal mvar.mvarId! ctx (simprocs := ← normSimprocs)
     catch _ => pure (some (#[], mvar.mvarId!), {})
   match simped.1 with
   | none => return .done (← certifyRoot identity p mvar p)
@@ -281,57 +291,37 @@ def attemptGeneric (identity : Identity) (p : Expr) :
     if closed then return .done (← certifyRoot identity p mvar residual)
     return .stuck mvar g residual
 
-/-- A hypothesis that names a local as some computation's successful
-result: `<computation> = .ok x`. That is the shape a class binder's
-constructor-image hypothesis has, and the only one the step below
-touches. -/
-def ctorImageHyp? (goal : MVarId) : MetaM (Option FVarId) :=
-  goal.withContext do
-    for decl in ← getLCtx do
-      if decl.isImplementationDetail then continue
-      if let some (_, _, rhs) := decl.type.eq? then
-        if rhs.isAppOfArity ``Except.ok 3 && (rhs.getArg! 2).isFVar then
-          return some decl.fvarId
-    return none
-
-/-- The conditionals an inversion leaves in the goal. A constructor that
-computes a field value with one — the shape a `?:` normalization takes —
-has it substituted into the goal, where `grind` does not split it either,
-so the field would keep its whole `ite` term. Shares the inversion's fuel,
-which bounds the fan-out the same way. -/
-partial def splitFieldIfs (goal : MVarId) (fuel : Nat) : MetaM (List MVarId) := do
-  if fuel == 0 then return [goal]
+/-- The conditionals the constructor image leaves in the goal. A field
+computed with one — the shape a `?:` or a `-0` normalization takes — is
+substituted into the goal, where `grind` splits the condition but does not
+rewrite the arm it selected into the term, so the field would keep its
+whole `ite`. No fuel: each split settles its own condition in both
+children, so the number of distinct splittable conditions strictly falls,
+and it is bounded by the fields the property actually reads rather than by
+the constructor's guards. -/
+partial def splitFieldIfs (goal : MVarId) : MetaM (List MVarId) := do
   match ← observing? (Meta.splitTarget? goal) with
-  | some (some goals) =>
-    return (← goals.mapM (splitFieldIfs · (fuel - 1))).flatten
+  | some (some goals) => return (← goals.mapM splitFieldIfs).flatten
   | _ => return [goal]
 
-/-- `grind` neither case-splits an `if` sitting inside a hypothesis nor
-carries a constructor equation into the goal, so a class binder's
-constructor-image hypothesis never reaches the field values the closers
-need. Split those hypotheses until each names a constructor, invert them,
-and substitute. The fuel bounds the fan-out: a constructor with several
-guards would otherwise branch past any budget, and reaching the bound
-just leaves the goal for grind to fail on. -/
-partial def invertCtorImage (goal : MVarId) (fuel : Nat) (inverted := false) :
-    MetaM (List MVarId) := do
-  if fuel == 0 then return [goal]
-  let some fvarId ← ctorImageHyp? goal
-    | if inverted then return ← splitFieldIfs goal fuel else return [goal]
-  match ← observing? (Meta.injection goal fvarId) with
-  | some .solved => return []
-  | some (.subgoal g _ _) => invertCtorImage (← Meta.substVars g) (fuel - 1) true
-  | none =>
-    match ← Meta.splitIfLocalDecl? goal fvarId with
-    | some (g₁, g₂) =>
-      return (← invertCtorImage g₁ (fuel - 1) inverted)
-        ++ (← invertCtorImage g₂ (fuel - 1) inverted)
-    | none => return [goal]
-
-/-- How deep the inversion may branch. Each level either discharges one
-constructor-image hypothesis or splits one guard, so this covers a
-two-binder formula over a constructor with a handful of guards. -/
-def ctorImageFuel : Nat := 12
+/-- Normalization flattens a class binder's constructor image to
+`guard = false ∧ … ∧ C.mk t₁ … tₙ = p`, which is one hypothesis per guard
+and one equation naming the instance — linear in the guards, where
+splitting the image's own branches was exponential in them. Splitting the
+conjunctions and substituting is all that is left: the `mk` term lands in
+the goal, where a projection reduces to its field, so a guard on a field
+the property never reads leaves no trace at all. -/
+partial def deriveCtorImageFacts (goal : MVarId) : MetaM MVarId := do
+  let some fvarId ← goal.withContext do
+      (← getLCtx).findDeclM? fun decl => do
+        if decl.isImplementationDetail then return none
+        if (← instantiateMVars decl.type).isAppOfArity ``And 2 then
+          return some decl.fvarId
+        return none
+    | Meta.substVars goal
+  match ← observing? (goal.cases fvarId) with
+  | some #[sub] => deriveCtorImageFacts sub.mvarId
+  | _ => Meta.substVars goal
 
 /-- Drops the hypotheses that cannot bear on the target. Reach spreads:
 a hypothesis counts once it mentions a variable the target already
@@ -389,10 +379,13 @@ ships the residual-goal GaveUp. Neither resource limit is contained here:
 this rung's exhaustion is classified where every other rung's is, so a
 spent budget can still report as the annotation's Timeout.
 
-Each leaf is normalized, stripped of what cannot bear on it, and closed
-over what survives, and leaves that agree there are merged: a guard on a
-field the property never reads leaves no trace in the leaves it doubled,
-so they prove once between them. -/
+The goal is normalized first, which is what flattens a class binder's
+constructor image; the facts are then read off that normal form rather
+than split out of the term, and only the conditionals the goal still
+carries afterwards fan out. Each leaf is normalized again, stripped of
+what cannot bear on it, and closed over what survives, and leaves that
+agree there are merged: two that differ only in a hypothesis neither
+reads prove once between them. -/
 def attemptGrind (identity : Identity) (p root : Expr) (goal : MVarId)
     (residual : Expr) : Term.TermElabM Verdict := do
   let solved := (← orFallThrough do
@@ -404,8 +397,19 @@ def attemptGrind (identity : Identity) (p root : Expr) (goal : MVarId)
       let ctx ← Meta.Simp.mkContext (config := {})
         (simpTheorems := #[← ext.getTheorems])
         (congrTheorems := ← Meta.getSimpCongrTheorems)
-      pure (some (ctx, (#[← Meta.Simp.getSEvalSimprocs] : Meta.Simp.SimprocsArray)))
-    let goals ← invertCtorImage (← goal.intros).2 ctorImageFuel
+      pure (some (ctx, ← normSimprocs))
+    let normalize : MVarId → MetaM (Option MVarId) := fun g =>
+      match norm? with
+      | none => pure (some g)
+      | some (ctx, simprocs) => normalizeLeaf ctx simprocs g
+    -- Normalizing before the derivation is what flattens the image; doing
+    -- it again after reduces the substituted constructor's projections, so
+    -- only the fields the property actually reads keep a conditional and
+    -- the split below is bounded by those rather than by the guards.
+    let goals ← do
+      let some g ← normalize (← goal.intros).2 | pure ([] : List MVarId)
+      let some g ← normalize (← deriveCtorImageFacts g) | pure []
+      splitFieldIfs g
     -- Two leaves that agree once closed over their own contexts are one
     -- sequent: syntactic equality on a closed type is α-equivalence, so
     -- they share a single grind run and a single proof term.

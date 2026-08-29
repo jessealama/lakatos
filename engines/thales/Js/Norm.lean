@@ -55,6 +55,42 @@ closers at all. -/
 -- Boolean islands: after jsm_pure_inj, `decide P = true` becomes `P`.
 attribute [js_norm] decide_eq_true_eq
 
+/-! A guarded constructor lowers to an `ite` per guard with the whole
+continuation copied into both arms, so its image is exponential in the
+guards before anything reasons about it. The lemmas below flatten it back:
+the throw guard becomes a `= false` conjunct, the branches migrate out of
+the monad and then inside the constructor, and `ite_self` drops the fields
+an arm did not touch. What is left is one `mk` over one `ite` per guarded
+field. -/
+
+/-- A throw is an `error`, and nothing runs after it: one spelling for a
+triggered guard, and no copy of what followed it. -/
+@[js_norm] theorem jsm_throw_eq_error {α : Type} (e : JsError) :
+    (throw e : JsM α) = .error e := rfl
+
+@[js_norm] theorem jsm_error_bind {α β : Type} (e : JsError) (k : α → JsM β) :
+    ((Except.error e : JsM α) >>= k) = .error e := rfl
+
+/-- A guard that throws succeeds exactly when it was down and the rest
+succeeded. The rest is named once, which is what keeps the fact linear. -/
+@[js_norm] theorem jsm_ite_error_ok_iff {α : Type} (c : Bool) (e : JsError)
+    (r : JsM α) (v : α) :
+    ((if c = true then (Except.error e : JsM α) else r) = Except.ok v) ↔
+      (c = false ∧ r = Except.ok v) := by
+  cases c <;> simp
+
+/-- A branch between two successes is one success over a branch. -/
+@[js_norm] theorem jsm_ite_pure_pure {α : Type} (c : Bool) (a b : α) :
+    (if c = true then (pure a : JsM α) else pure b) =
+      pure (if c = true then a else b) := by
+  cases c <;> rfl
+
+/-- The emitted image equation spells its right-hand side `.ok`, so the
+`pure`-on-both-sides injection never reaches it. -/
+@[js_norm] theorem jsm_pure_eq_ok {α : Type} (a b : α) :
+    ((pure a : JsM α) = Except.ok b) ↔ a = b :=
+  ⟨fun h => Except.ok.inj h, fun h => h ▸ rfl⟩
+
 -- A branch both of whose arms are one term, and a branch whose condition a
 -- ground evaluator settled: neither carries information, and each collapse
 -- halves the tree the closers walk.
@@ -310,6 +346,46 @@ simproc [seval] reduceFloatLtBool (Float.lt _ _) := reduceGroundFloatBool
 simproc [seval] reduceFloatLeBool (Float.le _ _) := reduceGroundFloatBool
 
 simproc [seval] reduceFloatBeqBool (Float.beq _ _) := reduceGroundFloatBool
+
+universe u v
+
+/-- One argument's worth of pushing a branch inside an application. -/
+theorem ite_app_push {α : Sort u} {β : Sort v} (c : Prop) (inst : Decidable c)
+    (f g : α → β) (x y : α) :
+    (@ite _ c inst (f x) (g y)) = (@ite _ c inst f g) (@ite _ c inst x y) := by
+  cases inst <;> rfl
+
+open Lean Meta Simp in
+/-- A branch whose arms build the same constructor is that constructor over
+branches. There is no first-order pattern for "the same constructor on both
+sides", and pushing unconditionally would fire on every `ite` between two
+applications, so the guard lives here rather than in a lemma. One argument
+moves per step and simp revisits the head, so the arms of an inner guard
+have already collapsed by the time an outer one is reached — which is what
+keeps a guarded constructor's image linear in its guards. -/
+simproc [js_norm] iteCtorPush (ite _ _ _) := fun e => do
+  unless e.isAppOfArity ``ite 5 do return .continue
+  let args := e.getAppArgs
+  let a := args[3]!
+  let b := args[4]!
+  let .const ctorName _ := a.getAppFn | return .continue
+  let .const otherName _ := b.getAppFn | return .continue
+  unless ctorName == otherName do return .continue
+  let some (.ctorInfo ctor) := (← getEnv).find? ctorName | return .continue
+  let arity := a.getAppNumArgs
+  -- Below the fields are the constructor's parameters, which the arms
+  -- share: pushing those would branch over types, and `ite_self` collapses
+  -- what is left anyway.
+  unless arity == b.getAppNumArgs && arity > ctor.numParams do return .continue
+  let some pf ← (do
+      try
+        return some (← mkAppOptM ``ite_app_push
+          #[none, none, some args[1]!, some args[2]!,
+            some a.appFn!, some b.appFn!, some a.appArg!, some b.appArg!])
+      catch _ => return none)
+    | return .continue
+  let some (_, _, pushed) := (← inferType pf).eq? | return .continue
+  return .visit { expr := pushed, proof? := some pf }
 
 grind_pattern float_le_mul_of_le => x * c, y * c
 grind_pattern float_le_add_of_le => x + c, y + c
