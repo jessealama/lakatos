@@ -1,4 +1,5 @@
 import Js.Val
+import Js.Number.Basic
 
 open Js
 
@@ -19,3 +20,31 @@ open Js
 #guard decide ((JsVal.bool false).toNumber = (JsM.throw (.error "type-projection") : JsM Float))
 #guard decide (JsVal.undef.toNumber = (JsM.throw (.error "type-projection") : JsM Float))
 #guard decide (JsVal.null.toNumber = (JsM.throw (.error "type-projection") : JsM Float))
+
+-- The two JS equalities diverge only at the num corners: strictEq is
+-- IEEE (NaN unequal, zeros conflated), sameValue is SameValue.
+#guard JsVal.strictEq (.num 1.5) (.num 1.5)
+#guard !JsVal.strictEq (.num floatNaN) (.num floatNaN)
+#guard JsVal.strictEq (.num (-0.0)) (.num 0.0)
+#guard JsVal.sameValue (.num floatNaN) (.num floatNaN)
+#guard !JsVal.sameValue (.num (-0.0)) (.num 0.0)
+
+-- Same-tag payload comparison on the other tags.
+#guard JsVal.strictEq (.str "a") (.str "a")
+#guard !JsVal.strictEq (.str "a") (.str "b")
+#guard JsVal.strictEq (.bigint 3) (.bigint 3)
+#guard !JsVal.strictEq (.bigint 3) (.bigint 4)
+#guard JsVal.strictEq (.bool true) (.bool true)
+#guard !JsVal.strictEq (.bool true) (.bool false)
+#guard JsVal.strictEq .undef .undef
+#guard JsVal.strictEq .null .null
+#guard JsVal.sameValue (.str "a") (.str "a")
+#guard JsVal.sameValue .undef .undef
+
+-- Neither predicate coerces: cross-tag is false, undef/null included.
+#guard !JsVal.strictEq (.num 0.0) .undef
+#guard !JsVal.strictEq .undef .null
+#guard !JsVal.strictEq (.num 1.0) (.str "1")
+#guard !JsVal.sameValue (.num 0.0) .undef
+#guard !JsVal.sameValue .undef .null
+#guard !JsVal.sameValue (.bigint 1) (.num 1.0)

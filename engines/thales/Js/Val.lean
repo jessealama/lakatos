@@ -53,4 +53,28 @@ def JsVal.toNumber : JsVal → JsM Float
   | .num x => pure x
   | _ => JsM.throw (.error "type-projection")
 
+/-- JS `===` on the domain: no coercion, so cross-tag is `false`; on
+`num` it is IEEE equality (NaN unequal to itself, the zeros equal). -/
+@[js_norm, grind]
+def JsVal.strictEq : JsVal → JsVal → Bool
+  | .num x, .num y => x == y
+  | .str a, .str b => a == b
+  | .bigint a, .bigint b => a == b
+  | .bool a, .bool b => a == b
+  | .undef, .undef => true
+  | .null, .null => true
+  | _, _ => false
+
+/-- SameValue on the domain — `Object.is`: like `strictEq` everywhere
+except the `num` corners (NaN equals itself, the zeros differ). -/
+@[js_norm, grind]
+def JsVal.sameValue : JsVal → JsVal → Bool
+  | .num x, .num y => Number.FloatOps.sameValue x y
+  | .str a, .str b => a == b
+  | .bigint a, .bigint b => a == b
+  | .bool a, .bool b => a == b
+  | .undef, .undef => true
+  | .null, .null => true
+  | _, _ => false
+
 end Js
