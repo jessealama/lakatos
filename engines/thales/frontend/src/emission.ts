@@ -412,7 +412,12 @@ function isPrefixNot(e: ts.Expression): e is ts.PrefixUnaryExpression {
 function numericShaped(e: ts.Expression, scope: WalkScope): boolean {
   const u = unwrapParens(e);
   if (ts.isNumericLiteral(u) || negatedLiteral(u) !== undefined) return true;
-  if (ts.isIdentifier(u)) return true;
+  if (ts.isIdentifier(u)) {
+    // A bound identifier's recorded type is authoritative; an unbound
+    // one stays permissive so it travels its own failure downstream.
+    const ty = scope.vars.get(u.text);
+    return ty === undefined || ty === "num";
+  }
   if (isUnaryArith(u)) return true;
   // A conditional has no shape of its own: it is whatever both arms are.
   if (ts.isConditionalExpression(u))
@@ -715,6 +720,9 @@ interface WalkScope {
   module: string;
   /** Set inside a getter body, where `this` denotes the instance. */
   self?: { ref: ModelRef; shape: ClassShape };
+  /** Set inside a member body: the enclosing class's member failures,
+   * live while the class is still being walked. */
+  selfFailed?: ReadonlyMap<string, FailedDecl>;
 }
 
 /** Whether the module itself binds a spelling: a top-level declaration or
@@ -764,16 +772,48 @@ function findFailedCallee(
 
 /** A construct-carrying failure as it travels from a declaration to a
  * use; any other failure is left to the typed walk. */
-function travelFailure(
-  scope: WalkScope,
+function travelFrom(
+  failedMap: ReadonlyMap<string, FailedDecl>,
   ref: ModelRef,
 ): FailedDecl | undefined {
-  const failed = scope.failed.get(modelKey(ref));
+  const failed = failedMap.get(modelKey(ref));
   if (failed?.construct === undefined) return undefined;
   return {
     construct: failed.construct,
     reason: `'${displayName(ref)}' could not be modeled: ${failed.reason}`,
   };
+}
+
+function travelFailure(
+  scope: WalkScope,
+  ref: ModelRef,
+): FailedDecl | undefined {
+  return travelFrom(scope.failed, ref);
+}
+
+/** The shape and failure registry a class ref resolves against: the
+ * closure's for a registered class, the walk-in-progress ones when the
+ * ref names the class currently being walked. */
+function classView(
+  scope: WalkScope,
+  ref: ModelRef,
+): { shape: ClassShape; failed: ReadonlyMap<string, FailedDecl> } | undefined {
+  const registered = scope.classes.get(modelKey(ref));
+  if (registered !== undefined)
+    return { shape: registered, failed: scope.failed };
+  const self = scope.self;
+  /* v8 ignore start -- a bound name is class-typed only at a registered
+     class or the enclosing one; every other spelling degrades its
+     declaration before the body that would read off it is walked. */
+  if (
+    self === undefined ||
+    scope.selfFailed === undefined ||
+    modelKey(ref) !== modelKey(self.ref)
+  ) {
+    return undefined;
+  }
+  /* v8 ignore stop */
+  return { shape: self.shape, failed: scope.selfFailed };
 }
 
 /** The first degraded class or class member a use names, in tree order:
@@ -810,8 +850,18 @@ function findFailedMemberUse(
   if (builtin !== undefined) return findFailedMemberUse(builtin.arg, scope);
   const selfCall = thisCall(e);
   if (selfCall !== undefined && scope.self !== undefined) {
-    // A member's own failures register only once the class walk ends, so
-    // the call itself has nothing to travel; its arguments still do.
+    // The live registry holds only already-walked siblings, so a forward
+    // call still falls to the typed walk, as source order demands.
+    if (
+      scope.selfFailed !== undefined &&
+      !scope.self.shape.methods.has(selfCall.name)
+    ) {
+      const travelled = travelFrom(scope.selfFailed, {
+        module: scope.self.ref.module,
+        name: qualifiedName(selfCall.name, scope.self.ref.name),
+      });
+      if (travelled !== undefined) return travelled;
+    }
     for (const a of selfCall.args) {
       const found = findFailedMemberUse(a, scope);
       if (found !== undefined) return found;
@@ -853,13 +903,11 @@ function findFailedMemberUse(
       name: qualifiedName(access.name, ref.name),
     });
   }
-  // A class still being walked registers no member failures yet, so its
-  // own instances have nothing to travel; an earlier class's do.
   const vcall = varCall(e, scope);
   if (vcall !== undefined) {
-    const shape = scope.classes.get(modelKey(vcall.ref));
-    if (shape !== undefined && !shape.methods.has(vcall.name)) {
-      const travelled = travelFailure(scope, {
+    const view = classView(scope, vcall.ref);
+    if (view !== undefined && !view.shape.methods.has(vcall.name)) {
+      const travelled = travelFrom(view.failed, {
         module: vcall.ref.module,
         name: qualifiedName(vcall.name, vcall.ref.name),
       });
@@ -873,11 +921,15 @@ function findFailedMemberUse(
   }
   const vaccess = varAccess(e, scope);
   if (vaccess !== undefined) {
-    const shape = scope.classes.get(modelKey(vaccess.ref));
-    if (shape === undefined) return undefined;
-    if (shape.getters.has(vaccess.name) || shape.fields.includes(vaccess.name))
+    const view = classView(scope, vaccess.ref);
+    if (view === undefined) return undefined;
+    if (
+      view.shape.getters.has(vaccess.name) ||
+      view.shape.fields.includes(vaccess.name)
+    ) {
       return undefined;
-    return travelFailure(scope, {
+    }
+    return travelFrom(view.failed, {
       module: vaccess.ref.module,
       name: qualifiedName(vaccess.name, vaccess.ref.name),
     });
@@ -2324,7 +2376,12 @@ function walkClass(
       });
       continue;
     }
-    const scope: WalkScope = { ...base, vars: new Map(), self };
+    const scope: WalkScope = {
+      ...base,
+      vars: new Map(),
+      self,
+      selfFailed: memberFailed,
+    };
     const body = g.body!.statements.flatMap((st) =>
       structureStmt(st, sf, new Map(), scope),
     );
@@ -2385,6 +2442,7 @@ function walkClass(
       ...base,
       vars: new Map(params.map((p) => [p.name, p.ty])),
       self: methodSelf,
+      selfFailed: memberFailed,
     };
     const locals: Locals = new Map(
       params.map((p) => [p.name, "mutable" as const]),
@@ -2819,8 +2877,11 @@ function obligationPayload(
       module,
     };
     // Guards precede the conclusion in the old elaborator's tree order, so
-    // the first refusal either pipeline reports is the same one.
-    const roots: (ScanRoot & { expected: Expected })[] = [
+    // the first refusal either pipeline reports is the same one. The
+    // conclusion is pre-scanned as written — an equation splits into its
+    // sides only for the typed walk, which lifts them separately.
+    const prescanRoots: ScanRoot[] = [...guardRoots, { expr, sf: parsed.sf }];
+    const walkRoots: (ScanRoot & { expected: Expected })[] = [
       ...guardRoots,
       ...(sides !== undefined
         ? [
@@ -2831,12 +2892,12 @@ function obligationPayload(
     ];
     // A property the model refuses is `Inappropriate`; one the typed walk
     // fails is a failed property elaboration, the engine's `Error`.
-    const found = prescanFailure(roots, scope);
+    const found = prescanFailure(prescanRoots, scope);
     if (found !== undefined) {
       return { kind: "classified", szs: "Inappropriate", reason: found.reason };
     }
     const walkedRoots: EmitExpr[] = [];
-    for (const root of roots) {
+    for (const root of walkRoots) {
       const walked = typedOrFailure(root.expr, root.expected, scope, root.sf);
       if (!("expr" in walked)) {
         return {

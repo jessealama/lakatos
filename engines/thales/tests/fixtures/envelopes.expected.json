@@ -682,6 +682,15 @@
       "axioms": []
     }
   ],
+  "engines/thales/tests/conformance/theorem/class-binder-equality-guards.ts": [
+    {
+      "function": "Point#distance",
+      "property": "nonNegative",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_1076007880463810670",
+      "axioms": []
+    }
+  ],
   "engines/thales/tests/conformance/theorem/class-binder-wide.ts": [
     {
       "function": "Wide#distance",

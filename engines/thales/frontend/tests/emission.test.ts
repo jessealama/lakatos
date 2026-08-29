@@ -114,6 +114,9 @@ describe("emitModule on the tracer fixture", () => {
     ["engines/thales/tests/fixtures/degradations.ts"],
     ["engines/thales/tests/fixtures/classes.ts"],
     ["engines/thales/tests/fixtures/class-params.ts"],
+    [
+      "engines/thales/tests/conformance/theorem/class-binder-equality-guards.ts",
+    ],
   ])("the emission for %s validates against the schema", (fixture) => {
     expectValidEmission(
       emitModule(fs.readFileSync(fixture, "utf8"), fixture).emission,
@@ -133,6 +136,10 @@ describe("emitModule on the tracer fixture", () => {
     [
       "engines/thales/tests/fixtures/class-params.ts",
       "class-params.emission.json",
+    ],
+    [
+      "engines/thales/tests/conformance/theorem/class-binder-equality-guards.ts",
+      "class-binder-equality-guards.emission.json",
     ],
   ])(
     "the pinned emission for %s is exactly what the frontend emits",
@@ -1146,7 +1153,8 @@ describe("formula classification parity with the old pipeline", () => {
     ).toEqual([
       [
         "Inappropriate",
-        "unmapped TypeScript construct 'AwaitExpression' at 1:13",
+        "'Object.is' models numbers only; argument 1 is not a number " +
+          "(AwaitExpression at 1:13)",
       ],
     ]);
   });
@@ -1198,16 +1206,15 @@ describe("formula classification parity with the old pipeline", () => {
     },
   );
 
-  test("a comparison inside an equation side fails property elaboration", () => {
-    expect(
-      classifications(formulaWith("forall (x: int ∈ [0, 5)) { (x < 1) ≡ x }"))
-        .classified,
-    ).toEqual([
-      [
-        "Error",
-        "property elaboration failed: operator '<' yields a boolean, not a number",
-      ],
-    ]);
+  test("a comparison as an equation side is refused as non-numeric", () => {
+    const got = classifications(
+      formulaWith("forall (x: int ∈ [0, 5)) { (x < 1) ≡ x }"),
+    ).classified;
+    expect(got).toHaveLength(1);
+    expect(got[0]![0]).toBe("Inappropriate");
+    expect(got[0]![1]).toContain(
+      "'Object.is' models numbers only; argument 1 is not a number (BinaryExpression",
+    );
   });
 });
 
@@ -2196,12 +2203,36 @@ describe("builtin member calls model as Float primitives", () => {
     const { classified } = emitModule(src, FILE);
     expect(classified).toEqual([
       expect.objectContaining({
-        szs: "Error",
+        szs: "Inappropriate",
         reason: expect.stringContaining(
-          "a call to 'Number.isFinite' yields a boolean, not a number",
+          "'Object.is' models numbers only; argument 1 is not a number (CallExpression",
         ),
       }),
     ]);
+  });
+
+  test("Object.is on a class-typed identifier refuses like the new spelling", () => {
+    const src = [
+      "export class Point {",
+      "  readonly x: number;",
+      "  constructor(x: number) {",
+      "    this.x = x;",
+      "  }",
+      "}",
+      "/** @ensures{p} forall (a: int ∈ [0, 10)) { Object.is(f(new Point(a)), 0) } */",
+      "export function f(p: Point): number {",
+      "  if (Object.is(p, 0)) {",
+      "    return 1;",
+      "  }",
+      "  return 0;",
+      "}",
+      "",
+    ].join("\n");
+    const { classified } = emitModule(src, "t.ts");
+    expect(classified[0]!.szs).toBe("Inappropriate");
+    expect(classified[0]!.reason).toContain(
+      "'Object.is' models numbers only; argument 1 is not a number (Identifier",
+    );
   });
 
   test("Number.parseFloat keeps the unmapped-construct refusal", () => {
@@ -3356,14 +3387,13 @@ describe("new and member access in atoms (#129)", () => {
     expect(got.reason).toBe(`property elaboration failed: ${reason}`);
   });
 
-  // A conclusion's sides are scanned apart, so an instance in one is a
-  // type mismatch on that side rather than a refusal of the call.
-  test("a bare instance as an equation side fails property elaboration", () => {
+  // The conclusion is pre-scanned as written, so an instance in a side
+  // meets the numbers-only refusal, same as in a body or guard.
+  test("a bare instance as an equation side is refused as non-numeric", () => {
     const got = atomClassifiedOf("Object.is(new Box(x), x)");
-    expect(got.szs).toBe("Error");
-    expect(got.reason).toBe(
-      "property elaboration failed: 'new Box(...)' yields an instance of " +
-        "'Box', not a number",
+    expect(got.szs).toBe("Inappropriate");
+    expect(got.reason).toContain(
+      "'Object.is' models numbers only; argument 1 is not a number (NewExpression",
     );
   });
 
@@ -3821,10 +3851,12 @@ describe("instance atoms outside the happy path (#129)", () => {
   }
 
   test.each([
+    // A side that is not numeric-shaped meets the refusal before the walk
+    // reaches whatever construct sits inside it, in every position.
     [
       "a private member on an instance",
       "Object.is(new Box(x).#v, x)",
-      /unmapped TypeScript construct/,
+      /'Object\.is' models numbers only/,
     ],
     [
       "a type argument on new",
@@ -3844,7 +3876,7 @@ describe("instance atoms outside the happy path (#129)", () => {
     [
       "a qualified constructor name",
       "Object.is(new a.B(x).v, x)",
-      /unmapped TypeScript construct 'PropertyAccessExpression'/,
+      /'Object\.is' models numbers only/,
     ],
   ])("%s classifies Inappropriate", (_label, atom, pattern) => {
     const got = atomOf(atom);
@@ -4659,18 +4691,69 @@ describe("method-call scanner recursion (#130)", () => {
     expect(cls.methods.map((m) => m.name)).toEqual(["plus"]);
   });
 
-  test("a this-call to a degraded sibling is the engine's error", () => {
-    // A member's failures register only once the class walk ends, so the
-    // sibling's own reason is not available to travel here.
+  test("a this-call to a degraded sibling travels the sibling's reason", () => {
     const src = withGone(`/** @ensures{p} forall (x: int ∈ [0, 3)) { x < 3 } */
   use(): number {
     return this.gone();
   }`);
     const { classified } = emitModule(src, "t.ts");
+    expect(classified[0]!.szs).toBe("Inappropriate");
+    expect(classified[0]!.reason).toContain(
+      "'C#gone' could not be modeled: unmapped TypeScript construct 'MethodDeclaration'",
+    );
+  });
+
+  test("a this-call to a later degraded sibling stays the engine's error", () => {
+    const src = `export class C {
+  #v: number;
+  constructor(v: number) {
+    this.#v = v;
+  }
+  /** @ensures{p} forall (x: int ∈ [0, 3)) { x < 3 } */
+  use(): number {
+    return this.gone();
+  }
+  async gone(): number {
+    return 1;
+  }
+}
+`;
+    const { classified } = emitModule(src, "t.ts");
     expect(classified[0]!.szs).toBe("Error");
     expect(classified[0]!.reason).toContain(
       "'this.gone' does not name a modeled method of 'C'",
     );
+  });
+
+  test("a degraded member off a class-typed parameter travels in and out of class", () => {
+    const src = `export class Point {
+  readonly x: number;
+  constructor(x: number) {
+    this.x = x;
+  }
+  get bad(): number {
+    const q = [1];
+    return q[0];
+  }
+  /** @ensures{fromInside} forall (a: int ∈ [0, 10)) { Object.is(new Point(a).use(new Point(a)), 0) } */
+  use(other: Point): number {
+    return other.bad;
+  }
+}
+
+/** @ensures{fromOutside} forall (a: int ∈ [0, 10)) { Object.is(readBad(new Point(a)), 0) } */
+export function readBad(p: Point): number {
+  return p.bad;
+}
+`;
+    const { classified } = emitModule(src, "t.ts");
+    expect(classified).toHaveLength(2);
+    for (const entry of classified) {
+      expect(entry.szs).toBe("Inappropriate");
+      expect(entry.reason).toContain(
+        "'Point#bad' could not be modeled: unmapped TypeScript construct 'ArrayLiteralExpression'",
+      );
+    }
   });
 
   test("a degraded member inside a this-call argument travels", () => {
