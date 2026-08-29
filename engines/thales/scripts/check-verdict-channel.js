@@ -148,16 +148,23 @@ const FIXTURES = [
     ],
   },
   {
-    // Five guards, one of them on a field the property never reads: the
-    // leaves that differ only in dead hypotheses prove once.
+    // Five guards, one of them on a field the property never reads: a
+    // guard the goal never reaches leaves no trace to prove twice.
     file: "class-binder-wide.lean",
     expected: [["Wide#distance", "Theorem"]],
   },
   {
-    // The grind rung's own starvation. The obligation is provable — the
+    // Seven guards over two binders, the shape a split of the image could
+    // not reach: the facts are linear in the guards, so it proves at the
+    // default budget like the narrower ones.
+    file: "class-binder-wider.lean",
+    expected: [["Wide#distance", "Theorem"]],
+  },
+  {
+    // A symbolic rung's starvation. The obligation is provable — the
     // default budget closes it — so a reduced budget must report as
     // budget-bound rather than as a residual goal nobody can move.
-    file: "timeout-grind.lean",
+    file: "timeout-symbolic.lean",
     expected: [["Wide#distance", "Timeout", /heartbeat budget/]],
   },
   {

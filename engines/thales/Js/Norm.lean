@@ -63,21 +63,25 @@ the monad and then inside the constructor, and `ite_self` drops the fields
 an arm did not touch. What is left is one `mk` over one `ite` per guarded
 field. -/
 
-/-- A throw is an `error`, and nothing runs after it: one spelling for a
-triggered guard, and no copy of what followed it. -/
-@[js_norm] theorem jsm_throw_eq_error {α : Type} (e : JsError) :
-    (throw e : JsM α) = .error e := rfl
-
-@[js_norm] theorem jsm_error_bind {α β : Type} (e : JsError) (k : α → JsM β) :
-    ((Except.error e : JsM α) >>= k) = .error e := rfl
-
 /-- A guard that throws succeeds exactly when it was down and the rest
-succeeded. The rest is named once, which is what keeps the fact linear. -/
-@[js_norm] theorem jsm_ite_error_ok_iff {α : Type} (c : Bool) (e : JsError)
+succeeded. Only the rest survives, so the fact is linear in the guards
+however much the lowering copied under the throw. The `throw` stays
+spelled as it was: the facts grind brings to a guard it could not refute
+are keyed on that spelling, and normalizing it away puts them out of
+reach. -/
+@[js_norm] theorem jsm_ite_throw_ok_iff {α : Type} (c : Bool) (e : JsError)
     (r : JsM α) (v : α) :
-    ((if c = true then (Except.error e : JsM α) else r) = Except.ok v) ↔
+    ((if c = true then (throw e : JsM α) else r) = Except.ok v) ↔
       (c = false ∧ r = Except.ok v) := by
   cases c <;> simp
+
+/-- The same, for the guard that has statements after it. -/
+@[js_norm] theorem jsm_ite_throw_bind_ok_iff {α β : Type} (c : Bool) (e : JsError)
+    (k : β → JsM α) (r : JsM α) (v : α) :
+    ((if c = true then ((throw e : JsM β) >>= k) else r) = Except.ok v) ↔
+      (c = false ∧ r = Except.ok v) := by
+  have discards : ((throw e : JsM β) >>= k) = (Except.error e : JsM α) := rfl
+  cases c <;> simp [discards]
 
 /-- A branch between two successes is one success over a branch. -/
 @[js_norm] theorem jsm_ite_pure_pure {α : Type} (c : Bool) (a b : α) :
