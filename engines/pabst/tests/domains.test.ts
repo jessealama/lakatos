@@ -251,4 +251,38 @@ describe("arbitraryFor — class binders", () => {
       /unresolved class binder/,
     );
   });
+
+  it("nests the tuple of a class-typed constructor parameter", () => {
+    expect(
+      arbitraryFor({
+        domain: {
+          className: "Box",
+          ctorParams: [
+            {
+              name: "p",
+              domain: {
+                className: "Point",
+                ctorParams: [
+                  { name: "x", domain: "number" },
+                  { name: "y", domain: "number" },
+                ],
+              },
+            },
+            { name: "k", domain: "number" },
+          ],
+        },
+      }),
+    ).toBe("fc.tuple(fc.tuple(fc.double(), fc.double()), fc.double())");
+  });
+
+  it("throws for an unresolved nested class reaching codegen", () => {
+    expect(() =>
+      arbitraryFor({
+        domain: {
+          className: "Box",
+          ctorParams: [{ name: "p", domain: { className: "Point" } }],
+        },
+      }),
+    ).toThrow(/unresolved class binder 'Point'/);
+  });
 });

@@ -208,7 +208,19 @@ export type EmitBinder =
       kind: "class";
       className: string;
       module?: string;
-      ctorParams: string[];
+      ctorParams: EmitCtorParam[];
+    };
+
+/** One constructor parameter of a class binder's class. A class-typed one
+ * carries its own parameters, so the tree bottoms out in numbers. */
+export type EmitCtorParam =
+  | { name: string; kind: "number" }
+  | {
+      name: string;
+      kind: "class";
+      className: string;
+      module?: string;
+      ctorParams: EmitCtorParam[];
     };
 
 export interface EmitObligation {
@@ -2873,20 +2885,35 @@ function lowerClassBinder(
         `the model: ${why}`,
     };
   }
-  if (shape.ctorParams.some((t) => t !== "num")) {
-    return {
-      reason:
-        `class-valued binder '${className}' has a constructor ` +
-        `parameter outside the model`,
-    };
-  }
   return {
     name,
     kind: "class",
     className,
     ...(ref.module !== "" ? { module: ref.module } : {}),
-    ctorParams: shape.ctorParamNames,
+    ctorParams: lowerCtorParams(shape, classes),
   };
+}
+
+/** A class's constructor parameters as the wire carries them. A class walks
+ * only after every class its parameters name, so the lookup always hits and
+ * the recursion always bottoms out. */
+function lowerCtorParams(
+  shape: ClassShape,
+  classes: ReadonlyMap<string, ClassShape>,
+): EmitCtorParam[] {
+  return shape.ctorParams.map((ty, i) => {
+    const name = shape.ctorParamNames[i]!;
+    if (ty === "num") return { name, kind: "number" };
+    const ref = ty.instance;
+    const inner = classes.get(modelKey(ref))!;
+    return {
+      name,
+      kind: "class",
+      className: ref.name,
+      ...(ref.module !== "" ? { module: ref.module } : {}),
+      ctorParams: lowerCtorParams(inner, classes),
+    };
+  });
 }
 
 type PayloadResult =

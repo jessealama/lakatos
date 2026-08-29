@@ -11,13 +11,16 @@ export { LemmaError } from "./errors.js";
 
 export type {
   Binder,
+  ClassCtorDomain,
   ClassDomain,
   CtorParam,
+  CtorParamDomain,
   GenerablePrimitive,
   Primitive,
   Range,
   StringPattern,
 } from "./binder.js";
+export { isClassCtorDomain } from "./binder.js";
 
 export { collectAtoms } from "./formula-ast.js";
 export type { Formula } from "./formula-ast.js";

@@ -13,6 +13,11 @@ function resolve(src: string, formula: string, file = "mod.ts"): Binder[] {
   return binders;
 }
 
+const ANCHOR_ROPE = `
+export class Anchor { constructor(x: number) {} }
+export class Rope { constructor(from: Anchor) {} }
+`;
+
 const POINT = `
 export class Point {
   public readonly x: number;
@@ -139,18 +144,7 @@ export class Tag {
     const src = `export class Label { constructor(text: string | number) {} }`;
     expectLemmaError(
       () => resolve(src, "forall (l: Label) { l === l }"),
-      /constructor parameter 'text' has type 'string \| number' — constructor parameters must be annotated number, boolean, string, or bigint/,
-    );
-  });
-
-  it("rejects a class-typed constructor parameter", () => {
-    const src = `
-export class Anchor { constructor(x: number) {} }
-export class Rope { constructor(from: Anchor) {} }
-`;
-    expectLemmaError(
-      () => resolve(src, "forall (r: Rope) { r === r }"),
-      /constructor parameter 'from' has type 'Anchor'/,
+      /constructor parameter 'text' has type 'string \| number' — constructor parameters must be annotated number, boolean, string, bigint, or a class declared in the same module/,
     );
   });
 
@@ -181,6 +175,140 @@ export class Multi {
     expectLemmaError(
       () => resolve(src, "forall (v: Vec) { v === v }"),
       /constructor parameter is destructured/,
+    );
+  });
+});
+
+describe("class-typed constructor parameters", () => {
+  it("extracts a bare class-name parameter type as a class reference", () => {
+    const { classes } = extractFromSource(ANCHOR_ROPE, "mod.ts");
+    expect(classes.get("Rope")!.ctorParams).toEqual([
+      { name: "from", domain: { className: "Anchor" } },
+    ]);
+  });
+
+  it("resolves a class-typed parameter recursively down to primitives", () => {
+    const [b] = resolve(ANCHOR_ROPE, "forall (r: Rope) { r === r }");
+    expect(b!.domain).toEqual({
+      className: "Rope",
+      ctorParams: [
+        {
+          name: "from",
+          domain: {
+            className: "Anchor",
+            ctorParams: [{ name: "x", domain: "number" }],
+          },
+        },
+      ],
+    });
+  });
+
+  it("resolves a mixed signature and a three-deep chain", () => {
+    const src = `
+export class Leaf { constructor(v: number) {} }
+export class Mid { constructor(leaf: Leaf, k: number) {} }
+export class Top { constructor(mid: Mid, s: string) {} }
+`;
+    const [b] = resolve(src, "forall (t: Top) { t === t }");
+    expect(b!.domain).toEqual({
+      className: "Top",
+      ctorParams: [
+        {
+          name: "mid",
+          domain: {
+            className: "Mid",
+            ctorParams: [
+              {
+                name: "leaf",
+                domain: {
+                  className: "Leaf",
+                  ctorParams: [{ name: "v", domain: "number" }],
+                },
+              },
+              { name: "k", domain: "number" },
+            ],
+          },
+        },
+        { name: "s", domain: "string" },
+      ],
+    });
+  });
+
+  it("resolves a diamond, reaching the shared class down both arms", () => {
+    const src = `
+export class D { constructor(v: number) {} }
+export class B { constructor(d: D) {} }
+export class C { constructor(d: D) {} }
+export class A { constructor(b: B, c: C) {} }
+`;
+    const [b] = resolve(src, "forall (a: A) { a === a }");
+    const arm = (name: string) => ({
+      className: name,
+      ctorParams: [
+        {
+          name: "d",
+          domain: {
+            className: "D",
+            ctorParams: [{ name: "v", domain: "number" }],
+          },
+        },
+      ],
+    });
+    expect(b!.domain).toEqual({
+      className: "A",
+      ctorParams: [
+        { name: "b", domain: arm("B") },
+        { name: "c", domain: arm("C") },
+      ],
+    });
+  });
+
+  it("rejects a direct constructor-parameter cycle, naming the cycle", () => {
+    const src = `export class Node { constructor(next: Node) {} }`;
+    expectLemmaError(
+      () => resolve(src, "forall (n: Node) { n === n }"),
+      /closes the cycle Node → Node — a cyclic constructor-parameter graph has no base case/,
+    );
+  });
+
+  it("rejects a mutual constructor-parameter cycle, naming the cycle", () => {
+    const src = `
+export class A { constructor(b: B) {} }
+export class B { constructor(a: A) {} }
+`;
+    expectLemmaError(
+      () => resolve(src, "forall (a: A) { a === a }"),
+      /closes the cycle A → B → A/,
+    );
+  });
+
+  it("rejects a parameter naming no class in the module", () => {
+    const src = `export class Wrap { constructor(m: Missing) {} }`;
+    expectLemmaError(
+      () => resolve(src, "forall (w: Wrap) { w === w }"),
+      /domain 'Missing' is neither a primitive domain .* nor an exported class declared in mod\.ts/,
+    );
+  });
+
+  it("rejects a parameter naming an unexported class", () => {
+    const src = `
+class Inner { constructor(v: number) {} }
+export class Wrap { constructor(i: Inner) {} }
+`;
+    expectLemmaError(
+      () => resolve(src, "forall (w: Wrap) { w === w }"),
+      /class 'Inner' is not exported from mod\.ts/,
+    );
+  });
+
+  it("rejects a parameter whose class has an ungenerable constructor", () => {
+    const src = `
+export class Odd { constructor(...xs: number[]) {} }
+export class Wrap { constructor(o: Odd) {} }
+`;
+    expectLemmaError(
+      () => resolve(src, "forall (w: Wrap) { w === w }"),
+      /class 'Odd' cannot be generated: constructor parameter 'xs' is a rest parameter/,
     );
   });
 });

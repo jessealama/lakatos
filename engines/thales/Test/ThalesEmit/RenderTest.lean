@@ -169,22 +169,42 @@ def numParamJson (name : String) : Json :=
   (decodeBinder (Json.mkObj [("name", "a"), ("kind", "number")]))
   matches .ok (.number "a" none none)
 -- A class binder carries the class it ranges over and its constructor's
--- parameter spellings; the module qualifier is absent for the entry's own.
+-- parameters; the module qualifier is absent for the entry's own.
+/-- A number constructor parameter as the binder wire spells it. -/
+def ctorParamJson (n : String) : Json :=
+  Json.mkObj [("name", n), ("kind", "number")]
+
 #guard
   (decodeBinder (Json.mkObj
     [("name", "p"), ("kind", "class"), ("className", "Point"),
-     ("ctorParams", Json.arr #["x", "y"])]))
-  matches .ok (.cls "p" "Point" none #["x", "y"])
+     ("ctorParams", Json.arr #[ctorParamJson "x", ctorParamJson "y"])]))
+  matches .ok (.cls "p" "Point" none #[.number "x", .number "y"])
 #guard
   (decodeBinder (Json.mkObj
     [("name", "p"), ("kind", "class"), ("className", "Point"),
      ("module", "dep.ts"), ("ctorParams", Json.arr #[])]))
   matches .ok (.cls "p" "Point" (some "dep.ts") #[])
--- The parameter spellings are strings, and a missing list fails the run.
+-- A class-typed parameter carries its own parameters, so the tree bottoms
+-- out in numbers.
+#guard
+  (decodeBinder (Json.mkObj
+    [("name", "s"), ("kind", "class"), ("className", "Span"),
+     ("ctorParams", Json.arr #[Json.mkObj
+       [("name", "p"), ("kind", "class"), ("className", "Point"),
+        ("ctorParams", Json.arr #[ctorParamJson "x"])]])]))
+  matches .ok (.cls "s" "Span" none #[.cls "p" "Point" none #[.number "x"]])
+-- The parameters are objects with a known kind, and a missing list fails
+-- the run.
 #guard
   (decodeBinder (Json.mkObj
     [("name", "p"), ("kind", "class"), ("className", "Point"),
      ("ctorParams", Json.arr #[(1 : Nat)])]))
+  matches .error _
+#guard
+  (decodeBinder (Json.mkObj
+    [("name", "p"), ("kind", "class"), ("className", "Point"),
+     ("ctorParams", Json.arr #[Json.mkObj
+       [("name", "x"), ("kind", "bigint")]])]))
   matches .error _
 #guard
   (decodeBinder (Json.mkObj
@@ -271,6 +291,9 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
 
 #eval goldenCheck "tests/fixtures/class-binder-equality-guards.emission.json"
   "tests/fixtures/class-binder-equality-guards.emitted.lean.expected"
+
+#eval goldenCheck "tests/fixtures/nested-class-binder.emission.json"
+  "tests/fixtures/nested-class-binder.emitted.lean.expected"
 
 #eval goldenCheck "tests/fixtures/module-consts.emission.json"
   "tests/fixtures/module-consts.emitted.lean.expected"
@@ -696,7 +719,8 @@ end
     file := "t.ts", declarations := #[.cls point]
     obligations := #[{ function := "Point#gap", property := "nn"
                        formula := "forall (p: Point) { … }"
-                       payload := .structured #[.cls "p" "Point" none #["x"]]
+                       payload := .structured
+                         #[.cls "p" "Point" none #[.number "x"]]
                          #[] (.istrue (.binop "<="
                            (.num "0")
                            (.methodCall "Point" none "gap" (.id "p")

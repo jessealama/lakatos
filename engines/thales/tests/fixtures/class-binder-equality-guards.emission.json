@@ -310,13 +310,31 @@
             "name": "p",
             "kind": "class",
             "className": "Point",
-            "ctorParams": ["x", "y"]
+            "ctorParams": [
+              {
+                "name": "x",
+                "kind": "number"
+              },
+              {
+                "name": "y",
+                "kind": "number"
+              }
+            ]
           },
           {
             "name": "q",
             "kind": "class",
             "className": "Point",
-            "ctorParams": ["x", "y"]
+            "ctorParams": [
+              {
+                "name": "x",
+                "kind": "number"
+              },
+              {
+                "name": "y",
+                "kind": "number"
+              }
+            ]
           }
         ],
         "conclusion": {

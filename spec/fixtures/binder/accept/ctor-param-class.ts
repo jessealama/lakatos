@@ -1,5 +1,5 @@
-// A class-typed constructor parameter is refused: v1 does not generate
-// classes recursively.
+// A class-typed constructor parameter is admissible: the domain expands
+// recursively, and the Anchor/Rope graph is acyclic, so it bottoms out.
 export class Anchor {
   public readonly x: number;
 
@@ -9,14 +9,14 @@ export class Anchor {
 }
 
 export class Rope {
-  public readonly from: Anchor;
+  public readonly at: number;
 
   constructor(from: Anchor) {
-    this.from = from;
+    this.at = from.x;
   }
 }
 
 /** @ensures{selfSame} forall (r: Rope) { start(r) === start(r) } */
 export function start(r: Rope): number {
-  return r.from.x;
+  return r.at;
 }
