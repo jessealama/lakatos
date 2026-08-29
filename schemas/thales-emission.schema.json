@@ -65,6 +65,35 @@
         "type": { "$ref": "#/definitions/paramType" }
       }
     },
+    "ctorParamNode": {
+      "description": "One constructor parameter of a class binder's class. A class-typed parameter carries its own parameters, so the tree bottoms out in numbers; the constructor-parameter graph is acyclic, so it terminates.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "kind"],
+          "properties": {
+            "name": { "$ref": "#/definitions/identifier" },
+            "kind": { "const": "number" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "kind", "className", "ctorParams"],
+          "properties": {
+            "name": { "$ref": "#/definitions/identifier" },
+            "kind": { "const": "class" },
+            "className": { "$ref": "#/definitions/identifier" },
+            "module": { "$ref": "#/definitions/modulePath" },
+            "ctorParams": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/ctorParamNode" }
+            }
+          }
+        }
+      ]
+    },
     "floatBound": {
       "type": "object",
       "additionalProperties": false,
@@ -563,7 +592,7 @@
                           "module": { "$ref": "#/definitions/modulePath" },
                           "ctorParams": {
                             "type": "array",
-                            "items": { "$ref": "#/definitions/identifier" }
+                            "items": { "$ref": "#/definitions/ctorParamNode" }
                           }
                         }
                       }

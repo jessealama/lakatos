@@ -139,7 +139,7 @@ describe("emission import closures", () => {
         kind: "class",
         className: "Box",
         module: "box.mts",
-        ctorParams: ["v"],
+        ctorParams: [{ name: "v", kind: "number" }],
       },
     ]);
   });
