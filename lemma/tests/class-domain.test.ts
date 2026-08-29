@@ -107,11 +107,23 @@ export class Tag {
     );
   });
 
-  it("rejects a defaulted constructor parameter, naming it", () => {
+  it("accepts a defaulted constructor parameter at full arity", () => {
     const src = `export class Offset { constructor(x: number, y: number = 0) {} }`;
+    const [b] = resolve(src, "forall (o: Offset) { o === o }");
+    expect(b!.domain).toEqual({
+      className: "Offset",
+      ctorParams: [
+        { name: "x", domain: "number" },
+        { name: "y", domain: "number" },
+      ],
+    });
+  });
+
+  it("rejects a defaulted parameter with no type annotation", () => {
+    const src = `export class Offset { constructor(x: number, y = 0) {} }`;
     expectLemmaError(
       () => resolve(src, "forall (o: Offset) { o === o }"),
-      /constructor parameter 'y' has a default value/,
+      /constructor parameter 'y' has no type annotation/,
     );
   });
 
