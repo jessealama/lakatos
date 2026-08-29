@@ -8,6 +8,7 @@ import {
   intInterval,
   type InvalidAnnotation,
   isClassDomain,
+  LemmaError,
   parseBody,
   parsePrefix,
   qualifiedName,
@@ -2938,6 +2939,10 @@ function obligationPayload(
         reason: unsupportedRangeReason(e.endpoints),
       };
     }
+    // An unreadable formula is the input's fault, never a verdict; the
+    // CLI rejects it before emission, so a reject reaching here must
+    // travel, not degrade.
+    if (e instanceof LemmaError) throw e;
     return bare;
   }
 }
