@@ -691,6 +691,15 @@
       "axioms": []
     }
   ],
+  "engines/thales/tests/conformance/theorem/class-binder-nested.ts": [
+    {
+      "function": "Span#length",
+      "property": "nonNegative",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_8413864274006098534",
+      "axioms": []
+    }
+  ],
   "engines/thales/tests/conformance/theorem/class-binder-wide.ts": [
     {
       "function": "Wide#distance",
