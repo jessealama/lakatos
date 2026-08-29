@@ -35,12 +35,15 @@ export default defineConfig({
         // from the baseline on 2026-08-17 — bump only happens via
         // autoUpdate. Reseeded 2026-08-26 after the transcriber's deletion
         // changed the denominator; emission.ts still carries two defensive
-        // branches no input can reach.
+        // branches no input can reach. Reseeded 2026-08-29: the shared
+        // parse gate refuses every unreadable formula before any spine
+        // runs, so the enumeration's own rethrow and the emitter's bare
+        // fallthrough joined that unreachable set.
         autoUpdate: true,
-        statements: 99.45,
-        branches: 98.39,
+        statements: 99.39,
+        branches: 98.31,
         functions: 100,
-        lines: 99.69,
+        lines: 99.61,
       },
     },
   },

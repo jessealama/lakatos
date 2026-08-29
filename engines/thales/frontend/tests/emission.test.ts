@@ -8,6 +8,7 @@ import {
   type EmitStmt,
   emitModule,
 } from "../src/emission.js";
+import { LemmaError } from "../../../../lemma/src/index.js";
 
 /** A function declaration's body, narrowed out of the declaration union. */
 function fnBody(d: EmitDecl): EmitStmt[] {
@@ -283,7 +284,6 @@ describe("signature and body blockers", () => {
 describe("obligation payload degradations", () => {
   test.each([
     ["a half-bounded range", "forall (x: int ∈ (-∞, 10]) { f(x) ≡ x }"],
-    ["an unparseable atom", "forall (x: int ∈ [0, 5)) { 2x ≡ x }"],
     [
       "an atom that is not valid JavaScript",
       "forall (x: int ∈ [0, 5)) { f(x) is wonderful }",
@@ -291,10 +291,6 @@ describe("obligation payload degradations", () => {
     [
       "a half-bounded floor above zero",
       "forall (x: int ∈ [3, ∞)) { f(x) ≡ x }",
-    ],
-    [
-      "a formula the prefix parser rejects",
-      "forall (x: int ∈ [0, 5)) (x: int ∈ [0, 5)) { f(x) ≡ x }",
     ],
     [
       "a connective outside the chain shape",
@@ -308,6 +304,27 @@ describe("obligation payload degradations", () => {
     ["a bigint binder", "forall (b: bigint) { f(b) ≡ b }"],
   ])("%s degrades to a bare payload", (_label, formula) => {
     expect(payloadOf(formula)).toEqual({ kind: "bare" });
+  });
+
+  test("a prefix the parser rejects escapes as the parser's own error", () => {
+    const src =
+      "/** @ensures{p} forall (x: int ∈ [0, 5)) (x: int ∈ [0, 5)) { f(x) ≡ x } */\n" +
+      "export function f(x: number): number {\n  return x;\n}\n";
+    expect(() => emitModule(src, "t.ts")).toThrow(LemmaError);
+  });
+
+  test("a body the formula parser rejects escapes as the parser's own error", () => {
+    const src =
+      "/** @ensures{p} forall (x: int ∈ [0, 5)) { f(x) >= 0 && f(x) <= 9 } */\n" +
+      "export function f(x: number): number {\n  return x;\n}\n";
+    expect(() => emitModule(src, "t.ts")).toThrow("∧ for conjunction");
+  });
+
+  test("an atom the formula parser rejects escapes as the parser's own error", () => {
+    const src =
+      "/** @ensures{p} forall (x: int ∈ [0, 5)) { 2x ≡ x } */\n" +
+      "export function f(x: number): number {\n  return x;\n}\n";
+    expect(() => emitModule(src, "t.ts")).toThrow("cannot parse atom");
   });
 
   test.each([
@@ -1473,9 +1490,9 @@ describe("unsupported ranges classify NotTried before emission", () => {
   });
 
   test("a clamp that is not the sole blocker degrades to bare", () => {
-    // The conjunction keeps the body unstructurable, so the clamp never wins.
+    // The disjunction keeps the body unstructurable, so the clamp never wins.
     const src =
-      "/** @ensures{p} forall (x: int ∈ [0, 1000000000000000000000000000000]) { keep(x) >= 0 && keep(x) <= x } */\n" +
+      "/** @ensures{p} forall (x: int ∈ [0, 1000000000000000000000000000000]) { keep(x) >= 0 ∨ keep(x) <= x } */\n" +
       "export function keep(x: number): number {\n  return x;\n}\n";
     const { classified, emission } = emitModule(src, "huge-bare.ts");
     expect(classified).toEqual([]);

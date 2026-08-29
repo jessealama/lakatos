@@ -13,6 +13,7 @@ import { generate } from "../engines/pabst/src/codegen.js";
 import { runTests } from "../engines/pabst/src/run.js";
 import { parseSeed, randomSeed } from "../engines/pabst/src/seed.js";
 import {
+  EmptyAfterClampError,
   extract,
   type InvalidAnnotation,
   LemmaError,
@@ -227,6 +228,7 @@ function runCommand(spine: Spine, patterns: string[]): number {
     emitEnvelope({ ...base, annotations });
     return 2;
   }
+  rejectUnreadableFormulas(files);
   const runDir = claimRunDir(base.startedAt);
   const plan = spine.plan(files, runDir);
   noteUnsupportedRanges(plan.untried);
@@ -382,6 +384,28 @@ function resolve(patterns: string[]): string[] {
     );
   }
   return files;
+}
+
+/** Reject a formula lemma's parsers cannot read before any engine runs: a
+ * parse-level reject is a compile error whichever command asked, so every
+ * command aborts on the same diagnostic. A clamp-emptied interval parses;
+ * the engines contain it per annotation. */
+function rejectUnreadableFormulas(files: string[]): void {
+  for (const file of files) {
+    for (const a of extract(file).annotations) {
+      try {
+        parseBody(parsePrefix(a.formula).body);
+      } catch (e) {
+        if (e instanceof EmptyAfterClampError) continue;
+        if (e instanceof LemmaError)
+          throw new LemmaError(
+            `${file}:${a.line}: @ensures{${a.propertyName}}: ${e.message}`,
+            { cause: e },
+          );
+        throw e;
+      }
+    }
+  }
 }
 
 /** The engine-independent enumeration: every annotation lemma can extract
