@@ -69,7 +69,10 @@ Each fixture is one TypeScript module carrying exactly one `@ensures`
 whose quantifier prefix contains a class-valued binder. Like attachment,
 class-name resolution is context-sensitive: only a whole module can say
 whether the name denotes an exported, non-default class declared there,
-and whether that class's constructor parameters are generable.
+and whether that class's constructor parameters are generable. A
+class-typed parameter widens that question to the whole module: the
+parameter's own class must be admissible too, and the graph they form
+must be acyclic, since a cycle reaches no base case.
 
 A `binder/accept/` module must yield exactly one annotation whose prefix
 parses and validates with no diagnostic. A `binder/reject/` module must

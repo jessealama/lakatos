@@ -4,9 +4,23 @@ export type Primitive =
 /** The ES primitives a constructor parameter may be annotated with. */
 export type GenerablePrimitive = "number" | "boolean" | "string" | "bigint";
 
+/** A parameter typed at a class. Extraction records only the name;
+ * resolution fills ctorParams recursively, so a resolved domain bottoms
+ * out in primitives. */
+export interface ClassCtorDomain {
+  className: string;
+  ctorParams?: CtorParam[];
+}
+
+export type CtorParamDomain = GenerablePrimitive | ClassCtorDomain;
+
 export interface CtorParam {
   name: string;
-  domain: GenerablePrimitive;
+  domain: CtorParamDomain;
+}
+
+export function isClassCtorDomain(d: CtorParamDomain): d is ClassCtorDomain {
+  return typeof d !== "string";
 }
 
 /** A class-valued domain: the binder ranges over the image of successful
