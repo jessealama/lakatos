@@ -197,6 +197,25 @@ def numParamJson (name : String) : Json :=
     [("name", "a"), ("kind", "number"), ("lower", "0")]))
   matches .error _
 
+-- Module constants decode strictly, reads and declarations alike.
+#guard
+  (decodeExpr (Json.mkObj [("kind", "const-read"), ("name", "cap")]))
+  matches .ok (.constRead "cap" none)
+#guard
+  (decodeExpr (Json.mkObj
+    [("kind", "const-read"), ("name", "cap"), ("module", "constants.mts")]))
+  matches .ok (.constRead "cap" (some "constants.mts"))
+#guard (decodeExpr (Json.mkObj [("kind", "const-read")])) matches .error _
+#guard
+  (decodeDecl (Json.mkObj
+    [("kind", "constant"), ("name", "cap"), ("lit", "-10"),
+     ("source", "const cap = -10;")]))
+  matches .ok (.const { name := "cap", module := none, lit := "-10",
+                        source := "const cap = -10;" })
+#guard
+  (decodeDecl (Json.mkObj [("kind", "constant"), ("name", "cap")]))
+  matches .error _
+
 -- Guards are optional, decode in order, and name their own field when
 -- they break the schema.
 def payloadShell (guards : Json) : Json :=
@@ -252,6 +271,43 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
 
 #eval goldenCheck "tests/fixtures/class-binder-equality-guards.emission.json"
   "tests/fixtures/class-binder-equality-guards.emitted.lean.expected"
+
+#eval goldenCheck "tests/fixtures/module-consts.emission.json"
+  "tests/fixtures/module-consts.emitted.lean.expected"
+
+-- A module constant renders as a dual-tagged JsNumber def, and a read of
+-- it as a qualified reference, so no binder can capture it.
+#eval show CoreM Unit from do
+  let e : Emission := {
+    file := "t.ts"
+    declarations := #[
+      .const { name := "cap", lit := "1000", source := "const cap = 1000;" },
+      .fn { name := "scale", params := nums #["x"], source := "scale",
+            body := #[.ret (.binop "*" (.id "x") (.constRead "cap" none))] }]
+    obligations := #[] }
+  let rendered ← renderEmission e
+  unless (rendered.splitOn "def TsModel.cap : JsNumber :=").length == 2 do
+    throwError "the constant def did not render:\n{rendered}"
+  -- Both the constant and the function carry the dual tag.
+  unless (rendered.splitOn "@[js_norm, grind]").length == 3 do
+    throwError "the constant def is not dual-tagged:\n{rendered}"
+  unless (rendered.splitOn "x * TsModel.cap").length == 2 do
+    throwError "the constant read is not a qualified reference:\n{rendered}"
+
+-- A dependency's constant sits one component deeper, like its functions.
+#eval show CoreM Unit from do
+  let e : Emission := {
+    file := "t.ts"
+    declarations := #[
+      .const { name := "cap", module := some "constants.mts",
+               lit := "-0.5", source := "export const cap = -0.5;" }]
+    obligations := #[] }
+  let rendered ← renderEmission e
+  unless (rendered.splitOn "def TsModel.«constants.mts».cap : JsNumber :=").length == 2 do
+    throwError "the dependency constant is not module-qualified:\n{rendered}"
+  -- Once in the source echo, once as the def's value.
+  unless (rendered.splitOn "-0.5").length == 3 do
+    throwError "the negated literal did not render:\n{rendered}"
 
 -- Emitted defs live under the model namespace: a TS function named
 -- after a root-level Lean name (`id`) must still define.

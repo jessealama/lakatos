@@ -50,6 +50,7 @@ export type EmitExpr =
   | { kind: "number-is-finite"; arg: EmitExpr }
   | { kind: "number-is-nan"; arg: EmitExpr }
   | { kind: "call"; callee: string; module?: string; args: EmitExpr[] }
+  | { kind: "const-read"; name: string; module?: string }
   | { kind: "new"; className: string; module?: string; args: EmitExpr[] }
   | {
       kind: "getter-read";
@@ -134,7 +135,21 @@ export interface EmitClass {
   methods: EmitMethod[];
 }
 
-export type EmitDecl = EmitFunction | EmitClass;
+/** A module-level `const` with a literal number initializer: a named
+ * value the model admits, read wherever a number is expected. `const`
+ * only — a `let` or `var` at module scope is reassignable from any
+ * function, so its reads have no one value to model. */
+export interface EmitConstant {
+  kind: "constant";
+  name: string;
+  /** The defining module's entry-relative path; absent for the entry. */
+  module?: string;
+  /** The literal's source text, unary minus included. */
+  lit: string;
+  source: string;
+}
+
+export type EmitDecl = EmitFunction | EmitClass | EmitConstant;
 
 /** A value's type in the walk: a number, or an instance of a modeled
  * class. Only parameters can carry the instance type; locals, fields, and
@@ -714,6 +729,10 @@ interface WalkScope {
   mapped: ReadonlyMap<string, ValueTy[]>;
   failed: ReadonlyMap<string, FailedDecl>;
   classes: ReadonlyMap<string, ClassShape>;
+  /** Module-level constants the model admits, by model key. */
+  constants: ReadonlySet<string>;
+  /** Module-level aliases of whitelisted builtins, by model key. */
+  aliases: ReadonlyMap<string, BuiltinEntry>;
   /** Source spellings this module binds elsewhere: imported names, and
    * only those. A spelling absent here is this module's own. */
   names: ReadonlyMap<string, ModelRef>;
@@ -966,8 +985,25 @@ function describeTy(t: Expected): string {
 }
 
 /** An engine-route failure: the walk found something with no model, or a
- * type mismatch — the failures the old pipeline reports as `Error`. */
-class ModelError extends Error {}
+ * type mismatch — the failures the old pipeline reports as `Error`. A
+ * construct rides along when the failure travels from a declaration the
+ * input itself degraded, keeping the classification `Inappropriate`
+ * through every catch that wraps the walk. */
+class ModelError extends Error {
+  constructor(
+    reason: string,
+    readonly construct?: string,
+  ) {
+    super(reason);
+  }
+}
+
+/** A caught walk failure as a `FailedDecl`, construct preserved. */
+function modelFailure(err: ModelError): FailedDecl {
+  return err.construct !== undefined
+    ? { construct: err.construct, reason: err.message }
+    : { reason: err.message };
+}
 
 /** The shape of the class a `new` names, or the failure the use earns:
  * a bound name, a degraded declaration, a function, or nothing at all. */
@@ -1022,15 +1058,41 @@ function walkTyped(
   }
   if (ts.isIdentifier(e)) {
     const bound = scope.vars.get(e.text);
+    const constRef = bound === undefined ? refOf(scope, e.text) : undefined;
+    const constant =
+      constRef !== undefined && scope.constants.has(modelKey(constRef));
     const global =
       bound === undefined &&
+      !constant &&
       GLOBAL_NUMBER_ATOMS.has(e.text) &&
       !moduleBinds(scope, e.text);
-    if (bound === undefined && !global) {
+    if (bound === undefined && !constant && !global) {
+      // A value-position read of a module binding travels the
+      // declaration's own failure, exactly as a call through one does.
+      const ref = refOf(scope, e.text);
+      const alias = scope.aliases.get(modelKey(ref));
+      if (alias !== undefined) {
+        throw new ModelError(
+          `'${e.text}' aliases '${alias.name}', which is modeled only ` +
+            `as a callee`,
+          alias.name,
+        );
+      }
+      const travel = travelFailure(scope, ref);
+      if (travel !== undefined) {
+        throw new ModelError(travel.reason, travel.construct);
+      }
+      const failed = scope.failed.get(modelKey(ref));
+      if (failed !== undefined) {
+        throw new ModelError(
+          `'${displayName(ref)}' has no model: ${failed.reason}`,
+        );
+      }
       throw new ModelError(`unbound identifier '${e.text}'`);
     }
-    // The atoms are numbers; a bound name carries whatever type it was
-    // bound at, and an instance matches only its own class.
+    // The atoms and module constants are numbers; a bound name carries
+    // whatever type it was bound at, and an instance matches only its
+    // own class.
     const actual: ValueTy = bound ?? "num";
     const ok =
       typeof expected === "string"
@@ -1043,9 +1105,15 @@ function walkTyped(
           `not ${describeTy(expected)}`,
       );
     }
-    return bound !== undefined
-      ? { kind: "id", name: e.text }
-      : { kind: "num", lit: e.text };
+    if (bound !== undefined) return { kind: "id", name: e.text };
+    if (constant) {
+      return {
+        kind: "const-read",
+        name: constRef!.name,
+        ...(constRef!.module !== "" ? { module: constRef!.module } : {}),
+      };
+    }
+    return { kind: "num", lit: e.text };
   }
   if (isUnaryArith(e)) {
     const operand = walkTyped(e.operand, "num", scope, sf);
@@ -1403,6 +1471,18 @@ function walkTyped(
         `'${name}' is a class; it is only modeled under 'new'`,
       );
     }
+    if (!scope.vars.has(e.expression.text)) {
+      if (scope.constants.has(key)) {
+        throw new ModelError(`'${name}' is a constant; it cannot be called`);
+      }
+      // An arity-1 alias call was claimed as the builtin above; whatever
+      // alias call survives to here misuses it, exactly as a stray use
+      // of the direct spelling would.
+      if (scope.aliases.has(key)) {
+        const misuse = constructAt(e, e.kind, sf);
+        throw new ModelError(misuse.reason, misuse.construct);
+      }
+    }
     const sig = scope.mapped.get(key);
     if (sig === undefined) {
       const failed = scope.failed.get(key);
@@ -1472,7 +1552,7 @@ function typedOrFailure(
   try {
     return { expr: walkTyped(e, expected, scope, sf) };
   } catch (err) {
-    if (err instanceof ModelError) return { reason: err.message };
+    if (err instanceof ModelError) return modelFailure(err);
     throw err;
   }
 }
@@ -2300,6 +2380,8 @@ function walkClass(
     mapped: c.mapped,
     failed: c.failed,
     classes: c.classes,
+    constants: c.constants,
+    aliases: c.aliases,
     names,
     module: qualifier,
   };
@@ -2351,7 +2433,7 @@ function walkClass(
       return { construct: "constructor", reason: err.message };
     /* v8 ignore next -- the walk throws nothing else */
     if (!(err instanceof ModelError)) throw err;
-    return { reason: err.message };
+    return modelFailure(err);
   }
 
   const methodSigs = new Map<string, ValueTy[]>();
@@ -2407,7 +2489,7 @@ function walkClass(
     } catch (err) {
       /* v8 ignore next -- the walk throws nothing else */
       if (!(err instanceof ModelError)) throw err;
-      memberFailed.set(memberKey(spelling), { reason: err.message });
+      memberFailed.set(memberKey(spelling), modelFailure(err));
     }
   }
   // Getters render ahead of methods, so a getter body sees an empty
@@ -2477,7 +2559,7 @@ function walkClass(
     } catch (err) {
       /* v8 ignore next -- the walk throws nothing else */
       if (!(err instanceof ModelError)) throw err;
-      memberFailed.set(memberKey(spelling), { reason: err.message });
+      memberFailed.set(memberKey(spelling), modelFailure(err));
     }
   }
   return {
@@ -2581,6 +2663,8 @@ function walkFunction(
     mapped: c.mapped,
     failed: c.failed,
     classes: c.classes,
+    constants: c.constants,
+    aliases: c.aliases,
     names,
     module,
   };
@@ -2614,7 +2698,7 @@ function walkFunction(
       body,
     };
   } catch (err) {
-    if (err instanceof ModelError) return { reason: err.message };
+    if (err instanceof ModelError) return modelFailure(err);
     /* v8 ignore next 2 -- the walk throws nothing else */
     throw err;
   }
@@ -2658,6 +2742,14 @@ function equationSides(
 type BuiltinKind =
   "math-sqrt" | "math-abs" | "number-is-finite" | "number-is-nan";
 
+/** A whitelisted builtin as a use site needs it: the source spelling
+ * (for messages), the IR kind, and the value type it yields. */
+interface BuiltinEntry {
+  name: string;
+  kind: BuiltinKind;
+  ty: Expected;
+}
+
 /** The builtin member calls with models, keyed by source spelling. The
  * namespaces are immutable objects of the standard library, so each entry
  * is a fixed unary primitive — `Math.pow` and every other member stays an
@@ -2681,11 +2773,15 @@ const BUILTIN_MEMBER_CALLS: ReadonlyMap<
 function builtinCall(
   e: ts.Expression,
   scope: WalkScope,
-):
-  | { name: string; kind: BuiltinKind; ty: Expected; arg: ts.Expression }
-  | undefined {
+): (BuiltinEntry & { arg: ts.Expression }) | undefined {
   if (!ts.isCallExpression(e) || e.arguments.length !== 1) return undefined;
   const callee = e.expression;
+  // A call through a module-level alias of a builtin lowers as the
+  // builtin itself; a local binding of the spelling shadows the alias.
+  if (ts.isIdentifier(callee) && !scope.vars.has(callee.text)) {
+    const alias = scope.aliases.get(modelKey(refOf(scope, callee.text)));
+    if (alias !== undefined) return { ...alias, arg: e.arguments[0]! };
+  }
   if (
     !ts.isPropertyAccessExpression(callee) ||
     !ts.isIdentifier(callee.expression)
@@ -2800,6 +2896,8 @@ function obligationPayload(
   mapped: ReadonlyMap<string, ValueTy[]>,
   failed: ReadonlyMap<string, FailedDecl>,
   classes: ReadonlyMap<string, ClassShape>,
+  constants: ReadonlySet<string>,
+  aliases: ReadonlyMap<string, BuiltinEntry>,
   names: ReadonlyMap<string, ModelRef>,
   module: string,
 ): PayloadResult {
@@ -2874,6 +2972,8 @@ function obligationPayload(
       mapped,
       failed,
       classes,
+      constants,
+      aliases,
       names,
       module,
     };
@@ -2901,6 +3001,15 @@ function obligationPayload(
     for (const root of walkRoots) {
       const walked = typedOrFailure(root.expr, root.expected, scope, root.sf);
       if (!("expr" in walked)) {
+        // A failure that traveled from a degraded declaration is the
+        // input's refusal; only the engine's own gaps are its `Error`.
+        if (walked.construct !== undefined) {
+          return {
+            kind: "classified",
+            szs: "Inappropriate",
+            reason: walked.reason,
+          };
+        }
         return {
           kind: "classified",
           szs: "Error",
@@ -2963,6 +3072,45 @@ interface EmitClosure {
   mapped: Map<string, ValueTy[]>;
   failed: Map<string, FailedDecl>;
   classes: Map<string, ClassShape>;
+  constants: Set<string>;
+  aliases: Map<string, BuiltinEntry>;
+}
+
+/** The literal a module-scope declarator pins, when the model admits it:
+ * a `const` with an identifier name, a numeric-literal initializer (unary
+ * minus included), and no type annotation other than `number`. */
+function constantLiteral(d: ts.VariableDeclaration): string | undefined {
+  if (!ts.isIdentifier(d.name)) return undefined;
+  if (d.type !== undefined && d.type.kind !== ts.SyntaxKind.NumberKeyword)
+    return undefined;
+  if (d.initializer === undefined) return undefined;
+  const init = unwrapParens(d.initializer);
+  if (ts.isNumericLiteral(init)) return numberToken(init);
+  const negated = negatedLiteral(init);
+  if (negated !== undefined) return `-${numberToken(negated)}`;
+  return undefined;
+}
+
+/** The whitelisted builtin a module-scope declarator aliases, when the
+ * model admits it: a `const` with an identifier name, no type annotation,
+ * and exactly a whitelisted member spelling as initializer — declined
+ * when the module itself binds the namespace spelling, since the
+ * initializer then reads that binding, not the standard library. */
+function builtinAlias(
+  d: ts.VariableDeclaration,
+  binds: (name: string) => boolean,
+): BuiltinEntry | undefined {
+  if (!ts.isIdentifier(d.name) || d.type !== undefined) return undefined;
+  if (d.initializer === undefined) return undefined;
+  const init = unwrapParens(d.initializer);
+  if (!ts.isPropertyAccessExpression(init) || !ts.isIdentifier(init.expression))
+    return undefined;
+  const namespace = init.expression.text;
+  if (binds(namespace)) return undefined;
+  const name = `${namespace}.${init.name.text}`;
+  const entry = BUILTIN_MEMBER_CALLS.get(name);
+  if (entry === undefined) return undefined;
+  return { name, ...entry };
 }
 
 /** The top-level names a non-import declaration binds — what a reference
@@ -3123,9 +3271,35 @@ function walkEmitModule(
       continue;
     }
     // Every other name a declaration binds degrades to the old pipeline's
-    // opaque failure, position on the binding identifier.
+    // opaque failure, position on the binding identifier — except a
+    // declarator the constant scan positively admits.
     if (ts.isVariableStatement(stmt)) {
+      const admissible =
+        (stmt.declarationList.flags & ts.NodeFlags.Const) !== 0 &&
+        (ts.getModifiers(stmt) ?? []).every(
+          (m) => m.kind === ts.SyntaxKind.ExportKeyword,
+        );
+      const binds = (name: string) =>
+        names.has(name) || c.failed.has(key(name));
       for (const d of stmt.declarationList.declarations) {
+        const lit = admissible ? constantLiteral(d) : undefined;
+        if (lit !== undefined) {
+          const name = (d.name as ts.Identifier).text;
+          c.declarations.push({
+            kind: "constant",
+            name,
+            ...(qualifier !== "" ? { module: qualifier } : {}),
+            lit,
+            source: stmt.getText(sf),
+          });
+          c.constants.add(key(name));
+          continue;
+        }
+        const alias = admissible ? builtinAlias(d, binds) : undefined;
+        if (alias !== undefined) {
+          c.aliases.set(key((d.name as ts.Identifier).text), alias);
+          continue;
+        }
         for (const id of bindingIdentifiers(d.name)) {
           c.failed.set(key(id.text), constructAt(id, stmt.kind, sf));
         }
@@ -3168,6 +3342,8 @@ export function emitModule(
     mapped: new Map(),
     failed: new Map(),
     classes: new Map(),
+    constants: new Set(),
+    aliases: new Map(),
   };
   // The entry's qualifier is empty: its names are the ones annotations
   // are written about, so they keep their source spelling.
@@ -3198,6 +3374,8 @@ export function emitModule(
       mapped,
       failed,
       closure.classes,
+      closure.constants,
+      closure.aliases,
       names,
       module,
     );

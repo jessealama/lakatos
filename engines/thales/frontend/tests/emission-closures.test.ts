@@ -527,3 +527,112 @@ describe("class-typed parameters across modules", () => {
     );
   });
 });
+
+describe("imported module constants", () => {
+  const CONSTANTS = ["export const daysInWeek = 7;", ""].join("\n");
+
+  test("a constant imported from a sibling models under its module", () => {
+    const main = [
+      'import { daysInWeek } from "./constants.mjs";',
+      "/** @ensures{p} forall (d: int ∈ [0, 70)) { daysToWeeks(d) >= 0 } */",
+      "export function daysToWeeks(d: number): number {",
+      "  return d / daysInWeek;",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(
+      main,
+      "main.mts",
+      reader({ "constants.mts": CONSTANTS }),
+    );
+    expect(classified).toEqual([]);
+    expect(emission.declarations[0]).toEqual({
+      kind: "constant",
+      name: "daysInWeek",
+      module: "constants.mts",
+      lit: "7",
+      source: "export const daysInWeek = 7;",
+    });
+    const fn = emission.declarations[1]!;
+    assert(fn.kind === "function");
+    expect(fn.body[0]).toEqual({
+      kind: "return",
+      expr: {
+        kind: "binop",
+        op: "/",
+        left: { kind: "id", name: "d" },
+        right: {
+          kind: "const-read",
+          name: "daysInWeek",
+          module: "constants.mts",
+        },
+      },
+    });
+  });
+
+  test("a renamed constant import resolves to the exporting module's name", () => {
+    const main = [
+      'import { daysInWeek as week } from "./constants.mjs";',
+      "/** @ensures{p} forall (d: int ∈ [0, 70)) { daysToWeeks(d) >= 0 } */",
+      "export function daysToWeeks(d: number): number {",
+      "  return d / week;",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(
+      main,
+      "main.mts",
+      reader({ "constants.mts": CONSTANTS }),
+    );
+    expect(classified).toEqual([]);
+    const fn = emission.declarations[1]!;
+    assert(fn.kind === "function");
+    expect(fn.body[0]).toEqual({
+      kind: "return",
+      expr: {
+        kind: "binop",
+        op: "/",
+        left: { kind: "id", name: "d" },
+        right: {
+          kind: "const-read",
+          name: "daysInWeek",
+          module: "constants.mts",
+        },
+      },
+    });
+  });
+
+  test("a formula atom reads an imported constant", () => {
+    const main = [
+      'import { daysInWeek } from "./constants.mjs";',
+      "/** @ensures{p} forall (d: int ∈ [0, 70)) { daysToWeeks(d) <= daysInWeek } */",
+      "export function daysToWeeks(d: number): number {",
+      "  return d / daysInWeek;",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(
+      main,
+      "main.mts",
+      reader({ "constants.mts": CONSTANTS }),
+    );
+    expect(classified).toEqual([]);
+    const payload = emission.obligations[0]!.payload;
+    assert(payload.kind === "structured");
+    assert(payload.conclusion.kind === "istrue");
+    expect(payload.conclusion.expr).toEqual({
+      kind: "binop",
+      op: "<=",
+      left: {
+        kind: "call",
+        callee: "daysToWeeks",
+        args: [{ kind: "id", name: "d" }],
+      },
+      right: {
+        kind: "const-read",
+        name: "daysInWeek",
+        module: "constants.mts",
+      },
+    });
+  });
+});

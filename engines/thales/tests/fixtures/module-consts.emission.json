@@ -1,0 +1,195 @@
+{
+  "file": "engines/thales/tests/fixtures/module-consts.ts",
+  "declarations": [
+    {
+      "kind": "constant",
+      "name": "millisecondsInSecond",
+      "lit": "1000",
+      "source": "const millisecondsInSecond = 1000;"
+    },
+    {
+      "kind": "function",
+      "name": "secondsToMilliseconds",
+      "params": [
+        {
+          "name": "seconds",
+          "type": "number"
+        }
+      ],
+      "source": "export function secondsToMilliseconds(seconds: number): number {\n  return seconds * millisecondsInSecond;\n}",
+      "body": [
+        {
+          "kind": "return",
+          "expr": {
+            "kind": "binop",
+            "op": "*",
+            "left": {
+              "kind": "id",
+              "name": "seconds"
+            },
+            "right": {
+              "kind": "const-read",
+              "name": "millisecondsInSecond"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "kind": "function",
+      "name": "magnitude",
+      "params": [
+        {
+          "name": "n",
+          "type": "number"
+        }
+      ],
+      "source": "export function magnitude(n: number): number {\n  return safeMathAbs(n);\n}",
+      "body": [
+        {
+          "kind": "return",
+          "expr": {
+            "kind": "math-abs",
+            "arg": {
+              "kind": "id",
+              "name": "n"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "kind": "function",
+      "name": "keepBelowSecond",
+      "params": [
+        {
+          "name": "s",
+          "type": "number"
+        }
+      ],
+      "source": "export function keepBelowSecond(s: number): number {\n  return s;\n}",
+      "body": [
+        {
+          "kind": "return",
+          "expr": {
+            "kind": "id",
+            "name": "s"
+          }
+        }
+      ]
+    }
+  ],
+  "obligations": [
+    {
+      "function": "secondsToMilliseconds",
+      "property": "nonNegative",
+      "formula": "forall (s: int ∈ [0, 10)) { secondsToMilliseconds(s) >= 0 }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "s",
+            "kind": "range",
+            "lo": "0",
+            "hi": "10"
+          }
+        ],
+        "conclusion": {
+          "kind": "istrue",
+          "expr": {
+            "kind": "binop",
+            "op": ">=",
+            "left": {
+              "kind": "call",
+              "callee": "secondsToMilliseconds",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "s"
+                }
+              ]
+            },
+            "right": {
+              "kind": "num",
+              "lit": "0"
+            }
+          }
+        }
+      }
+    },
+    {
+      "function": "magnitude",
+      "property": "nonNegative",
+      "formula": "forall (n: int ∈ [-10, 10)) { magnitude(n) >= 0 }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "n",
+            "kind": "range",
+            "lo": "-10",
+            "hi": "10"
+          }
+        ],
+        "conclusion": {
+          "kind": "istrue",
+          "expr": {
+            "kind": "binop",
+            "op": ">=",
+            "left": {
+              "kind": "call",
+              "callee": "magnitude",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "n"
+                }
+              ]
+            },
+            "right": {
+              "kind": "num",
+              "lit": "0"
+            }
+          }
+        }
+      }
+    },
+    {
+      "function": "keepBelowSecond",
+      "property": "bounded",
+      "formula": "forall (s: int ∈ [0, 5)) { keepBelowSecond(s) <= millisecondsInSecond }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "s",
+            "kind": "range",
+            "lo": "0",
+            "hi": "5"
+          }
+        ],
+        "conclusion": {
+          "kind": "istrue",
+          "expr": {
+            "kind": "binop",
+            "op": "<=",
+            "left": {
+              "kind": "call",
+              "callee": "keepBelowSecond",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "s"
+                }
+              ]
+            },
+            "right": {
+              "kind": "const-read",
+              "name": "millisecondsInSecond"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

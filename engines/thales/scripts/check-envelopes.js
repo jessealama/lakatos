@@ -151,6 +151,17 @@ const IMPORT_FIXTURES = [
   `${CONFORMANCE}/inappropriate/import-cycle/main.ts`,
 ];
 
+/** The module-constant slice: literal consts read from bodies and
+ * formulas, builtin aliases, a cross-module constant, and the read of a
+ * module binding the model still refuses. */
+const CONST_FIXTURES = [
+  "engines/thales/tests/fixtures/module-consts.ts",
+  `${CONFORMANCE}/theorem/module-const-scale.ts`,
+  `${CONFORMANCE}/theorem/builtin-alias-magnitude.ts`,
+  `${CONFORMANCE}/theorem/imported-constants/main.ts`,
+  `${CONFORMANCE}/inappropriate/module-let-read.ts`,
+];
+
 const fixtures =
   process.env.LAKATOS_PROVE_E2E === "1"
     ? [
@@ -163,6 +174,7 @@ const fixtures =
         ...PARAM_FIXTURES,
         ...DEGRADATION_FIXTURES,
         ...IMPORT_FIXTURES,
+        ...CONST_FIXTURES,
       ]
     : QUICK_FIXTURES;
 

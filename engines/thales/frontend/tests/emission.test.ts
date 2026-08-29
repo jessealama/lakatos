@@ -115,6 +115,7 @@ describe("emitModule on the tracer fixture", () => {
     ["engines/thales/tests/fixtures/degradations.ts"],
     ["engines/thales/tests/fixtures/classes.ts"],
     ["engines/thales/tests/fixtures/class-params.ts"],
+    ["engines/thales/tests/fixtures/module-consts.ts"],
     [
       "engines/thales/tests/conformance/theorem/class-binder-equality-guards.ts",
     ],
@@ -137,6 +138,10 @@ describe("emitModule on the tracer fixture", () => {
     [
       "engines/thales/tests/fixtures/class-params.ts",
       "class-params.emission.json",
+    ],
+    [
+      "engines/thales/tests/fixtures/module-consts.ts",
+      "module-consts.emission.json",
     ],
     [
       "engines/thales/tests/conformance/theorem/class-binder-equality-guards.ts",
@@ -1866,9 +1871,25 @@ describe("NaN and Infinity resolve as expression atoms", () => {
     });
   });
 
-  test("a module-level binding wins over the global and stays unmodeled", () => {
+  test("a module-level binding wins over the global: the read names it, not the atom", () => {
     const src = [
       "const NaN = 1;",
+      "/** @ensures{p} forall (n: int ∈ [0, 2)) { probe(n) === 1 } */",
+      "export function probe(x: number): number {",
+      "  return NaN;",
+      "}",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, FILE);
+    expect(classified).toEqual([]);
+    expect(fnBody(emission.declarations[1]!)[0]).toEqual({
+      kind: "return",
+      expr: { kind: "const-read", name: "NaN" },
+    });
+  });
+
+  test("a module-level binding of the spelling that stays unmodeled degrades the read", () => {
+    const src = [
+      "const NaN = somewhere();",
       "/** @ensures{p} forall (n: int ∈ [0, 2)) { probe(n) === 1 } */",
       "export function probe(x: number): number {",
       "  return NaN;",
@@ -1877,8 +1898,11 @@ describe("NaN and Infinity resolve as expression atoms", () => {
     const { classified } = emitModule(src, FILE);
     expect(classified).toEqual([
       expect.objectContaining({
-        szs: "Error",
-        reason: expect.stringContaining("unbound identifier 'NaN'"),
+        szs: "Inappropriate",
+        reason: expect.stringContaining(
+          "'NaN' could not be modeled: unmapped TypeScript construct " +
+            "'VariableStatement' at 1:7",
+        ),
       }),
     ]);
   });
@@ -1894,8 +1918,11 @@ describe("NaN and Infinity resolve as expression atoms", () => {
     const { classified } = emitModule(src, FILE);
     expect(classified).toEqual([
       expect.objectContaining({
-        szs: "Error",
-        reason: expect.stringContaining("unbound identifier 'NaN'"),
+        szs: "Inappropriate",
+        reason: expect.stringContaining(
+          "'NaN' could not be modeled: unmapped TypeScript construct " +
+            "'ImportDeclaration' at 1:10",
+        ),
       }),
     ]);
   });
@@ -5558,5 +5585,356 @@ export function f(p: Point): number {
     expect(classified[0]!.reason).toMatch(
       /'Point' has no member 'y' in the model/,
     );
+  });
+});
+
+describe("module-level const bindings", () => {
+  test("a formula atom reads an admitted constant", () => {
+    const src = [
+      "const cap = 100;",
+      "/** @ensures{bounded} forall (n: int ∈ [0, 10)) { keep(n) <= cap } */",
+      "export function keep(n: number): number {",
+      "  return n;",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, "formula-const.ts");
+    expect(classified).toEqual([]);
+    expect(emission.obligations).toHaveLength(1);
+    const payload = emission.obligations[0]!.payload;
+    assert(payload.kind === "structured");
+    expect(payload.conclusion).toEqual({
+      kind: "istrue",
+      expr: {
+        kind: "binop",
+        op: "<=",
+        left: {
+          kind: "call",
+          callee: "keep",
+          args: [{ kind: "id", name: "n" }],
+        },
+        right: { kind: "const-read", name: "cap" },
+      },
+    });
+  });
+
+  test("a call through a builtin alias lowers as the builtin", () => {
+    const src = [
+      "const safeMathAbs = Math.abs;",
+      "/** @ensures{nonNegative} forall (n: int ∈ [-10, 10)) { magnitude(n) >= 0 } */",
+      "export function magnitude(n: number): number {",
+      "  return safeMathAbs(n);",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, "alias-const.ts");
+    expect(classified).toEqual([]);
+    expect(emission.declarations).toEqual([
+      expect.objectContaining({
+        kind: "function",
+        name: "magnitude",
+        body: [
+          {
+            kind: "return",
+            expr: { kind: "math-abs", arg: { kind: "id", name: "n" } },
+          },
+        ],
+      }),
+    ]);
+    expect(emission.obligations).toHaveLength(1);
+  });
+
+  test("a boolean-valued builtin alias works in guard position", () => {
+    const src = [
+      "const finite = Number.isFinite;",
+      "/** @ensures{id} forall (x: number) { finite(x) -> keep(x) ≡ x } */",
+      "export function keep(x: number): number {",
+      "  return x;",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, "alias-guard.ts");
+    expect(classified).toEqual([]);
+    const payload = emission.obligations[0]!.payload;
+    assert(payload.kind === "structured");
+    expect(payload.guards).toEqual([
+      { kind: "number-is-finite", arg: { kind: "id", name: "x" } },
+    ]);
+  });
+
+  test("a module-scope let stays degraded and its read travels the refusal", () => {
+    const src = [
+      "let factor = 2;",
+      "/** @ensures{p} forall (n: int ∈ [0, 4)) { f(n) >= 0 } */",
+      "export function f(n: number): number {",
+      "  return n * factor;",
+      "}",
+      "",
+    ].join("\n");
+    const { classified } = emitModule(src, "let.ts");
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason:
+          "'f' could not be modeled: 'factor' could not be modeled: " +
+          "unmapped TypeScript construct 'VariableStatement' at 1:5",
+      }),
+    ]);
+  });
+
+  test("a non-literal initializer keeps the declarator degraded", () => {
+    const src = [
+      "const label = 'ms';",
+      "/** @ensures{p} forall (n: int ∈ [0, 4)) { f(n) >= 0 } */",
+      "export function f(n: number): number {",
+      "  return n + label;",
+      "}",
+      "",
+    ].join("\n");
+    const { classified } = emitModule(src, "string.ts");
+    expect(classified[0]!.szs).toBe("Inappropriate");
+    expect(classified[0]!.reason).toContain(
+      "'label' could not be modeled: unmapped TypeScript construct " +
+        "'VariableStatement'",
+    );
+  });
+
+  test("a number type annotation admits; any other declines", () => {
+    const src = [
+      "const wide: number = 3;",
+      "const narrow: 3 = 3;",
+      "/** @ensures{p} forall (n: int ∈ [0, 4)) { f(n) >= 0 } */",
+      "export function f(n: number): number {",
+      "  return n + wide + narrow;",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, "annotated.ts");
+    expect(emission.declarations[0]).toEqual(
+      expect.objectContaining({ kind: "constant", name: "wide", lit: "3" }),
+    );
+    expect(classified[0]!.szs).toBe("Inappropriate");
+    expect(classified[0]!.reason).toContain("'narrow' could not be modeled");
+  });
+
+  test("a declarator mixing admitted and degraded siblings contains the damage", () => {
+    const src = [
+      "const s = 1000, m = minutes();",
+      "/** @ensures{p} forall (n: int ∈ [0, 4)) { f(n) >= 0 } */",
+      "export function f(n: number): number {",
+      "  return n * s;",
+      "}",
+      "/** @ensures{q} forall (n: int ∈ [0, 4)) { g(n) >= 0 } */",
+      "export function g(n: number): number {",
+      "  return n * m;",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, "mixed.ts");
+    expect(emission.declarations[0]).toEqual(
+      expect.objectContaining({ kind: "constant", name: "s", lit: "1000" }),
+    );
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining("'m' could not be modeled"),
+      }),
+    ]);
+  });
+
+  test("a parameter or local shadows a module constant", () => {
+    const src = [
+      "const cap = 100;",
+      "/** @ensures{p} forall (n: int ∈ [0, 4)) { f(n, n) >= 0 } */",
+      "export function f(n: number, cap: number): number {",
+      "  return n + cap;",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, "shadow.ts");
+    expect(classified).toEqual([]);
+    expect(fnBody(emission.declarations[1]!)[0]).toEqual({
+      kind: "return",
+      expr: {
+        kind: "binop",
+        op: "+",
+        left: { kind: "id", name: "n" },
+        right: { kind: "id", name: "cap" },
+      },
+    });
+  });
+
+  test("a value-position read of a builtin alias is refused, not the engine's error", () => {
+    const src = [
+      "const safeMathAbs = Math.abs;",
+      "/** @ensures{p} forall (n: int ∈ [0, 4)) { f(n) >= 0 } */",
+      "export function f(n: number): number {",
+      "  return safeMathAbs;",
+      "}",
+      "",
+    ].join("\n");
+    const { classified } = emitModule(src, "alias-value.ts");
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining(
+          "'safeMathAbs' aliases 'Math.abs', which is modeled only as a callee",
+        ),
+      }),
+    ]);
+  });
+
+  test("an alias call with the wrong arity mirrors the direct spelling's refusal", () => {
+    const src = [
+      "const safeMathAbs = Math.abs;",
+      "/** @ensures{p} forall (n: int ∈ [0, 4)) { f(n) >= 0 } */",
+      "export function f(n: number): number {",
+      "  return safeMathAbs(n, n);",
+      "}",
+      "",
+    ].join("\n");
+    const { classified } = emitModule(src, "alias-arity.ts");
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining(
+          "unmapped TypeScript construct 'CallExpression'",
+        ),
+      }),
+    ]);
+  });
+
+  test("a module binding of the namespace spelling declines the alias", () => {
+    const src = [
+      "const Math = null;",
+      "const safeMathAbs = Math.abs;",
+      "/** @ensures{p} forall (n: int ∈ [0, 4)) { f(n) >= 0 } */",
+      "export function f(n: number): number {",
+      "  return safeMathAbs(n);",
+      "}",
+      "",
+    ].join("\n");
+    const { classified } = emitModule(src, "shadowed-ns.ts");
+    expect(classified[0]!.szs).toBe("Inappropriate");
+    expect(classified[0]!.reason).toContain(
+      "'safeMathAbs' could not be modeled: unmapped TypeScript construct " +
+        "'VariableStatement'",
+    );
+  });
+
+  test("an alias of an unlisted builtin member stays degraded", () => {
+    const src = [
+      "const safeMathPow = Math.pow;",
+      "/** @ensures{p} forall (n: int ∈ [0, 4)) { f(n) >= 0 } */",
+      "export function f(n: number): number {",
+      "  return safeMathPow(n, n);",
+      "}",
+      "",
+    ].join("\n");
+    const { classified } = emitModule(src, "unlisted.ts");
+    expect(classified[0]!.szs).toBe("Inappropriate");
+    expect(classified[0]!.reason).toContain(
+      "'safeMathPow' could not be modeled: unmapped TypeScript construct " +
+        "'VariableStatement'",
+    );
+  });
+
+  test("calling a literal constant is refused by name", () => {
+    const src = [
+      "const cap = 100;",
+      "/** @ensures{p} forall (n: int ∈ [0, 4)) { f(n) >= 0 } */",
+      "export function f(n: number): number {",
+      "  return cap(n);",
+      "}",
+      "",
+    ].join("\n");
+    const { classified } = emitModule(src, "call-const.ts");
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Error",
+        reason: expect.stringContaining(
+          "'cap' is a constant; it cannot be called",
+        ),
+      }),
+    ]);
+  });
+
+  test("a declare const stays degraded", () => {
+    const src = [
+      "declare const ambient = 5;",
+      "/** @ensures{p} forall (n: int ∈ [0, 4)) { f(n) >= 0 } */",
+      "export function f(n: number): number {",
+      "  return n + ambient;",
+      "}",
+      "",
+    ].join("\n");
+    const { classified } = emitModule(src, "ambient.ts");
+    expect(classified[0]!.szs).toBe("Inappropriate");
+    expect(classified[0]!.reason).toContain(
+      "'ambient' could not be modeled: unmapped TypeScript construct " +
+        "'VariableStatement'",
+    );
+  });
+
+  test("a formula atom reading a degraded const travels its refusal", () => {
+    const src = [
+      "const cap = limit();",
+      "/** @ensures{bounded} forall (n: int ∈ [0, 10)) { keep(n) <= cap } */",
+      "export function keep(n: number): number {",
+      "  return n;",
+      "}",
+      "",
+    ].join("\n");
+    const { classified } = emitModule(src, "formula-const.ts");
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason:
+          "'cap' could not be modeled: unmapped TypeScript construct " +
+          "'VariableStatement' at 1:7",
+      }),
+    ]);
+  });
+
+  test("a literal const models and a body read references it", () => {
+    const src = [
+      "const millisecondsInSecond = 1000;",
+      "/** @ensures{nonNegative} forall (s: int ∈ [0, 10)) { secondsToMilliseconds(s) >= 0 } */",
+      "export function secondsToMilliseconds(seconds: number): number {",
+      "  return seconds * millisecondsInSecond;",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, "module-const.ts");
+    expect(classified).toEqual([]);
+    expect(emission.declarations).toEqual([
+      {
+        kind: "constant",
+        name: "millisecondsInSecond",
+        lit: "1000",
+        source: "const millisecondsInSecond = 1000;",
+      },
+      {
+        kind: "function",
+        name: "secondsToMilliseconds",
+        params: [{ name: "seconds", type: "number" }],
+        source: expect.stringContaining(
+          "export function secondsToMilliseconds",
+        ),
+        body: [
+          {
+            kind: "return",
+            expr: {
+              kind: "binop",
+              op: "*",
+              left: { kind: "id", name: "seconds" },
+              right: { kind: "const-read", name: "millisecondsInSecond" },
+            },
+          },
+        ],
+      },
+    ]);
+    expect(emission.obligations).toHaveLength(1);
+    expectValidEmission(emission);
   });
 });
