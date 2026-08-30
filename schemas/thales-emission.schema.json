@@ -334,12 +334,12 @@
         },
         {
           "type": "object",
-          "description": "An injection into the JsVal domain at a union position; 'expr' is present exactly for the 'number' tag, absent for 'undefined'/'null'.",
+          "description": "An injection into the JsVal domain; 'expr' is present exactly for the payload-carrying 'number' and 'boolean' tags, absent for 'undefined'/'null'.",
           "additionalProperties": false,
           "required": ["kind", "tag"],
           "properties": {
             "kind": { "const": "inject" },
-            "tag": { "enum": ["number", "undefined", "null"] },
+            "tag": { "enum": ["number", "boolean", "undefined", "null"] },
             "expr": { "$ref": "#/definitions/expr" }
           }
         },

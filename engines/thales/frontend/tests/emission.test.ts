@@ -119,6 +119,7 @@ describe("emitModule on the tracer fixture", () => {
     ["engines/thales/tests/fixtures/nested-class-binder.ts"],
     ["engines/thales/tests/fixtures/unions.ts"],
     ["engines/thales/tests/fixtures/optionals.ts"],
+    ["engines/thales/tests/fixtures/object-is-tagged.ts"],
     [
       "engines/thales/tests/conformance/theorem/class-binder-equality-guards.ts",
     ],
@@ -152,6 +153,10 @@ describe("emitModule on the tracer fixture", () => {
     ],
     ["engines/thales/tests/fixtures/unions.ts", "unions.emission.json"],
     ["engines/thales/tests/fixtures/optionals.ts", "optionals.emission.json"],
+    [
+      "engines/thales/tests/fixtures/object-is-tagged.ts",
+      "object-is-tagged.emission.json",
+    ],
     [
       "engines/thales/tests/conformance/theorem/class-binder-equality-guards.ts",
       "class-binder-equality-guards.emission.json",
@@ -1217,8 +1222,8 @@ describe("formula classification parity with the old pipeline", () => {
     ).toEqual([
       [
         "Inappropriate",
-        "'Object.is' models numbers only; argument 1 is not a number " +
-          "(AwaitExpression at 1:13)",
+        "'Object.is' admits numbers, booleans, union values, 'undefined', " +
+          "and 'null'; argument 1 is not one (AwaitExpression at 1:13)",
       ],
     ]);
   });
@@ -1270,15 +1275,36 @@ describe("formula classification parity with the old pipeline", () => {
     },
   );
 
-  test("a comparison as an equation side is refused as non-numeric", () => {
-    const got = classifications(
+  test("a comparison as an equation side lowers over the tagged domain (#209)", () => {
+    const { emission, classified } = emitModule(
       formulaWith("forall (x: int ∈ [0, 5)) { (x < 1) ≡ x }"),
-    ).classified;
-    expect(got).toHaveLength(1);
-    expect(got[0]![0]).toBe("Inappropriate");
-    expect(got[0]![1]).toContain(
-      "'Object.is' models numbers only; argument 1 is not a number (BinaryExpression",
+      "t.ts",
     );
+    expect(classified).toEqual([]);
+    const payload = emission.obligations[0]!.payload;
+    assert(payload.kind === "structured");
+    expect(payload.conclusion).toEqual({
+      kind: "istrue",
+      expr: {
+        kind: "jsval-eq",
+        semantics: "same-value",
+        left: {
+          kind: "inject",
+          tag: "boolean",
+          expr: {
+            kind: "binop",
+            op: "<",
+            left: { kind: "id", name: "x" },
+            right: { kind: "num", lit: "1" },
+          },
+        },
+        right: {
+          kind: "inject",
+          tag: "number",
+          expr: { kind: "id", name: "x" },
+        },
+      },
+    });
   });
 });
 
@@ -1787,13 +1813,14 @@ describe("Object.is models as SameValue", () => {
       expect.objectContaining({
         szs: "Inappropriate",
         reason: expect.stringContaining(
-          "'Object.is' models numbers only; argument 2 is not a number",
+          "'Object.is' admits numbers, booleans, union values, " +
+            "'undefined', and 'null'; argument 2 is not one",
         ),
       }),
     ]);
   });
 
-  test("a bool-valued argument refuses the same way", () => {
+  test("a bool-valued argument injects at the boolean tag (#209)", () => {
     const src = [
       "/** @ensures{p} forall (x: number) { pick(x) === 1 } */",
       "export function pick(x: number): number {",
@@ -1803,15 +1830,61 @@ describe("Object.is models as SameValue", () => {
       "  return 1;",
       "}",
     ].join("\n");
-    const { classified } = emitModule(src, FILE);
-    expect(classified).toEqual([
+    const { emission, classified } = emitModule(src, FILE);
+    expect(classified).toEqual([]);
+    expectValidEmission(emission);
+    expect(fnBody(emission.declarations[0]!)[0]).toEqual(
       expect.objectContaining({
-        szs: "Inappropriate",
-        reason: expect.stringContaining(
-          "'Object.is' models numbers only; argument 1 is not a number",
-        ),
+        cond: {
+          kind: "jsval-eq",
+          semantics: "same-value",
+          left: {
+            kind: "inject",
+            tag: "boolean",
+            expr: {
+              kind: "binop",
+              op: "<",
+              left: { kind: "id", name: "x" },
+              right: { kind: "num", lit: "1" },
+            },
+          },
+          right: {
+            kind: "inject",
+            tag: "number",
+            expr: { kind: "num", lit: "0" },
+          },
+        },
       }),
-    ]);
+    );
+  });
+
+  test("the undefined atom against a plain number injects without a union (#209)", () => {
+    const src = [
+      "/** @ensures{p} forall (x: number) { pick(x) === 1 } */",
+      "export function pick(x: number): number {",
+      "  if (Object.is(x, undefined)) {",
+      "    return 0;",
+      "  }",
+      "  return 1;",
+      "}",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, FILE);
+    expect(classified).toEqual([]);
+    expectValidEmission(emission);
+    expect(fnBody(emission.declarations[0]!)[0]).toEqual(
+      expect.objectContaining({
+        cond: {
+          kind: "jsval-eq",
+          semantics: "same-value",
+          left: {
+            kind: "inject",
+            tag: "number",
+            expr: { kind: "id", name: "x" },
+          },
+          right: { kind: "inject", tag: "undefined" },
+        },
+      }),
+    );
   });
 
   test("Object.is in a num position is a type mismatch, the engine's Error", () => {
@@ -2432,22 +2505,35 @@ describe("builtin member calls model as Float primitives", () => {
     ]);
   });
 
-  test("a Number.isFinite argument keeps Object.is numbers-only", () => {
+  test("a Number.isFinite argument makes a SameValue conclusion a boolean island (#209)", () => {
     const src = [
       "/** @ensures{p} forall (n: int ∈ [0, 3)) { Object.is(Number.isFinite(n), n) } */",
       "export function probe(x: number): number {",
       "  return x;",
       "}",
     ].join("\n");
-    const { classified } = emitModule(src, FILE);
-    expect(classified).toEqual([
-      expect.objectContaining({
-        szs: "Inappropriate",
-        reason: expect.stringContaining(
-          "'Object.is' models numbers only; argument 1 is not a number (CallExpression",
-        ),
-      }),
-    ]);
+    const { emission, classified } = emitModule(src, FILE);
+    expect(classified).toEqual([]);
+    expectValidEmission(emission);
+    const payload = emission.obligations[0]!.payload;
+    assert(payload.kind === "structured");
+    expect(payload.conclusion).toEqual({
+      kind: "istrue",
+      expr: {
+        kind: "jsval-eq",
+        semantics: "same-value",
+        left: {
+          kind: "inject",
+          tag: "boolean",
+          expr: { kind: "number-is-finite", arg: { kind: "id", name: "n" } },
+        },
+        right: {
+          kind: "inject",
+          tag: "number",
+          expr: { kind: "id", name: "n" },
+        },
+      },
+    });
   });
 
   test("Object.is on a class-typed identifier refuses like the new spelling", () => {
@@ -2470,7 +2556,8 @@ describe("builtin member calls model as Float primitives", () => {
     const { classified } = emitModule(src, "t.ts");
     expect(classified[0]!.szs).toBe("Inappropriate");
     expect(classified[0]!.reason).toContain(
-      "'Object.is' models numbers only; argument 1 is not a number (Identifier",
+      "'Object.is' admits numbers, booleans, union values, 'undefined', " +
+        "and 'null'; argument 1 is not one (Identifier",
     );
   });
 
@@ -3031,8 +3118,8 @@ describe("conditional expressions", () => {
     });
   });
 
-  test("boolean arms do not make a conditional an Object.is argument", () => {
-    const { classified } = emitModule(
+  test("boolean arms make a conditional a boolean Object.is argument (#209)", () => {
+    const { emission, classified } = emitModule(
       [
         "/** @ensures{p} forall (x: number) { Object.is(pick(x), pick(x)) } */",
         "export function pick(x: number): number {",
@@ -3044,14 +3131,26 @@ describe("conditional expressions", () => {
       ].join("\n"),
       FILE,
     );
-    expect(classified).toEqual([
+    expect(classified).toEqual([]);
+    expectValidEmission(emission);
+    expect(fnBody(emission.declarations[0]!)[0]).toEqual(
       expect.objectContaining({
-        szs: "Inappropriate",
-        reason: expect.stringContaining(
-          "argument 1 is not a number (ConditionalExpression at 3:17)",
-        ),
+        cond: {
+          kind: "jsval-eq",
+          semantics: "same-value",
+          left: {
+            kind: "inject",
+            tag: "boolean",
+            expr: expect.objectContaining({ kind: "cond" }),
+          },
+          right: {
+            kind: "inject",
+            tag: "number",
+            expr: { kind: "num", lit: "-0" },
+          },
+        },
       }),
-    ]);
+    );
   });
 
   test("a chain of conditionals nests to the right", () => {
@@ -3632,7 +3731,8 @@ describe("new and member access in atoms (#129)", () => {
     const got = atomClassifiedOf("Object.is(new Box(x), x)");
     expect(got.szs).toBe("Inappropriate");
     expect(got.reason).toContain(
-      "'Object.is' models numbers only; argument 1 is not a number (NewExpression",
+      "'Object.is' admits numbers, booleans, union values, 'undefined', " +
+        "and 'null'; argument 1 is not one (NewExpression",
     );
   });
 
@@ -4095,7 +4195,7 @@ describe("instance atoms outside the happy path (#129)", () => {
     [
       "a private member on an instance",
       "Object.is(new Box(x).#v, x)",
-      /'Object\.is' models numbers only/,
+      /'Object\.is' admits numbers, booleans, union values/,
     ],
     [
       "a type argument on new",
@@ -4115,7 +4215,7 @@ describe("instance atoms outside the happy path (#129)", () => {
     [
       "a qualified constructor name",
       "Object.is(new a.B(x).v, x)",
-      /'Object\.is' models numbers only/,
+      /'Object\.is' admits numbers, booleans, union values/,
     ],
   ])("%s classifies Inappropriate", (_label, atom, pattern) => {
     const got = atomOf(atom);
@@ -6432,6 +6532,28 @@ describe("union-typed parameters", () => {
     });
   });
 
+  test("a boolean-valued side of a union equality injects at its tag (#209)", () => {
+    const { emission, classified } = emit(
+      `export function f(v: number | string, x: number): number {\n` +
+        `  if (v === Number.isFinite(x)) {\n    return 1;\n  }\n  return 0;\n}\n`,
+    );
+    expect(classified).toEqual([]);
+    const fn = emission.declarations[0];
+    assert(fn?.kind === "function");
+    const first = fnBody(fn)[0];
+    assert(first?.kind === "if");
+    expect(first.cond).toEqual({
+      kind: "jsval-eq",
+      semantics: "strict",
+      left: { kind: "id", name: "v" },
+      right: {
+        kind: "inject",
+        tag: "boolean",
+        expr: { kind: "number-is-finite", arg: { kind: "id", name: "x" } },
+      },
+    });
+  });
+
   test("the statically number side of a union equality injects", () => {
     const { emission } = emit(
       `export function f(v: number | string, x: number): number {\n` +
@@ -6474,19 +6596,23 @@ describe("union-typed parameters", () => {
     expect(same.classified.map((c) => [c.szs, c.reason])).toEqual([
       [
         "Inappropriate",
-        "'f' could not be modeled: 'Object.is' over a union admits numbers, " +
-          "'undefined', and 'null' only; argument 2 is not one (StringLiteral at 3:20)",
+        "'f' could not be modeled: 'Object.is' admits numbers, booleans, " +
+          "union values, 'undefined', and 'null'; argument 2 is not one " +
+          "(StringLiteral at 3:20)",
       ],
     ]);
   });
 
-  test("without a union operand, Object.is keeps the numbers-only refusal verbatim", () => {
+  test("without a union operand, a string argument keeps the same refusal", () => {
     const { classified } = emit(
       `/** @ensures{p} forall (x: number) { Object.is(f(x), 0) } */\n` +
         `export function f(x: number): number {\n` +
         `  if (Object.is(x, "a")) {\n    return 1;\n  }\n  return 0;\n}\n`,
     );
-    expect(classified[0]?.reason).toContain("'Object.is' models numbers only");
+    expect(classified[0]?.reason).toContain(
+      "'Object.is' admits numbers, booleans, union values, 'undefined', " +
+        "and 'null'; argument 2 is not one",
+    );
   });
 
   test("bigint and boolean members carry their own tags", () => {

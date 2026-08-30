@@ -1,0 +1,479 @@
+{
+  "file": "engines/thales/tests/fixtures/object-is-tagged.ts",
+  "declarations": [
+    {
+      "kind": "function",
+      "name": "skipMixed",
+      "params": [
+        {
+          "name": "x",
+          "type": "number"
+        }
+      ],
+      "source": "export function skipMixed(x: number): number {\n  if (Object.is(Number.isFinite(x), x)) {\n    return 0;\n  }\n  return 1;\n}",
+      "body": [
+        {
+          "kind": "if",
+          "cond": {
+            "kind": "jsval-eq",
+            "semantics": "same-value",
+            "left": {
+              "kind": "inject",
+              "tag": "boolean",
+              "expr": {
+                "kind": "number-is-finite",
+                "arg": {
+                  "kind": "id",
+                  "name": "x"
+                }
+              }
+            },
+            "right": {
+              "kind": "inject",
+              "tag": "number",
+              "expr": {
+                "kind": "id",
+                "name": "x"
+              }
+            }
+          },
+          "then": [
+            {
+              "kind": "return",
+              "expr": {
+                "kind": "num",
+                "lit": "0"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "return",
+          "expr": {
+            "kind": "num",
+            "lit": "1"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "function",
+      "name": "definedOnly",
+      "params": [
+        {
+          "name": "x",
+          "type": "number"
+        }
+      ],
+      "source": "export function definedOnly(x: number): number {\n  if (Object.is(x, undefined)) {\n    return 0;\n  }\n  return 1;\n}",
+      "body": [
+        {
+          "kind": "if",
+          "cond": {
+            "kind": "jsval-eq",
+            "semantics": "same-value",
+            "left": {
+              "kind": "inject",
+              "tag": "number",
+              "expr": {
+                "kind": "id",
+                "name": "x"
+              }
+            },
+            "right": {
+              "kind": "inject",
+              "tag": "undefined"
+            }
+          },
+          "then": [
+            {
+              "kind": "return",
+              "expr": {
+                "kind": "num",
+                "lit": "0"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "return",
+          "expr": {
+            "kind": "num",
+            "lit": "1"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "function",
+      "name": "probe",
+      "params": [
+        {
+          "name": "n",
+          "type": "number"
+        }
+      ],
+      "source": "export function probe(n: number): number {\n  return n;\n}",
+      "body": [
+        {
+          "kind": "return",
+          "expr": {
+            "kind": "id",
+            "name": "n"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "function",
+      "name": "claimMixed",
+      "params": [
+        {
+          "name": "n",
+          "type": "number"
+        }
+      ],
+      "source": "export function claimMixed(n: number): number {\n  return n;\n}",
+      "body": [
+        {
+          "kind": "return",
+          "expr": {
+            "kind": "id",
+            "name": "n"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "function",
+      "name": "ident",
+      "params": [
+        {
+          "name": "n",
+          "type": "number"
+        }
+      ],
+      "source": "export function ident(n: number): number {\n  return n;\n}",
+      "body": [
+        {
+          "kind": "return",
+          "expr": {
+            "kind": "id",
+            "name": "n"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "function",
+      "name": "classify",
+      "params": [
+        {
+          "name": "v",
+          "type": ["number", "string"]
+        }
+      ],
+      "source": "export function classify(v: number | string): number {\n  if (Object.is(v, Number.isNaN(0))) {\n    return 1;\n  }\n  return 0;\n}",
+      "body": [
+        {
+          "kind": "if",
+          "cond": {
+            "kind": "jsval-eq",
+            "semantics": "same-value",
+            "left": {
+              "kind": "id",
+              "name": "v"
+            },
+            "right": {
+              "kind": "inject",
+              "tag": "boolean",
+              "expr": {
+                "kind": "number-is-nan",
+                "arg": {
+                  "kind": "num",
+                  "lit": "0"
+                }
+              }
+            }
+          },
+          "then": [
+            {
+              "kind": "return",
+              "expr": {
+                "kind": "num",
+                "lit": "1"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "return",
+          "expr": {
+            "kind": "num",
+            "lit": "0"
+          }
+        }
+      ]
+    }
+  ],
+  "obligations": [
+    {
+      "function": "skipMixed",
+      "property": "mixedTagSkipped",
+      "formula": "forall (x: number) { skipMixed(x) === 1 }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "x",
+            "kind": "number"
+          }
+        ],
+        "conclusion": {
+          "kind": "istrue",
+          "expr": {
+            "kind": "binop",
+            "op": "===",
+            "left": {
+              "kind": "call",
+              "callee": "skipMixed",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "x"
+                }
+              ]
+            },
+            "right": {
+              "kind": "num",
+              "lit": "1"
+            }
+          }
+        }
+      }
+    },
+    {
+      "function": "definedOnly",
+      "property": "undefinedNeverHits",
+      "formula": "forall (x: number) { definedOnly(x) === 1 }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "x",
+            "kind": "number"
+          }
+        ],
+        "conclusion": {
+          "kind": "istrue",
+          "expr": {
+            "kind": "binop",
+            "op": "===",
+            "left": {
+              "kind": "call",
+              "callee": "definedOnly",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "x"
+                }
+              ]
+            },
+            "right": {
+              "kind": "num",
+              "lit": "1"
+            }
+          }
+        }
+      }
+    },
+    {
+      "function": "probe",
+      "property": "boolReflexive",
+      "formula": "forall (n: int ∈ [0, 3)) { Object.is(Number.isFinite(n), Number.isFinite(n)) }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "n",
+            "kind": "range",
+            "lo": "0",
+            "hi": "3"
+          }
+        ],
+        "conclusion": {
+          "kind": "istrue",
+          "expr": {
+            "kind": "jsval-eq",
+            "semantics": "same-value",
+            "left": {
+              "kind": "inject",
+              "tag": "boolean",
+              "expr": {
+                "kind": "number-is-finite",
+                "arg": {
+                  "kind": "id",
+                  "name": "n"
+                }
+              }
+            },
+            "right": {
+              "kind": "inject",
+              "tag": "boolean",
+              "expr": {
+                "kind": "number-is-finite",
+                "arg": {
+                  "kind": "id",
+                  "name": "n"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "function": "claimMixed",
+      "property": "mixedTagClaimed",
+      "formula": "forall (n: int ∈ [0, 3)) { Object.is(Number.isFinite(n), n) }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "n",
+            "kind": "range",
+            "lo": "0",
+            "hi": "3"
+          }
+        ],
+        "conclusion": {
+          "kind": "istrue",
+          "expr": {
+            "kind": "jsval-eq",
+            "semantics": "same-value",
+            "left": {
+              "kind": "inject",
+              "tag": "boolean",
+              "expr": {
+                "kind": "number-is-finite",
+                "arg": {
+                  "kind": "id",
+                  "name": "n"
+                }
+              }
+            },
+            "right": {
+              "kind": "inject",
+              "tag": "number",
+              "expr": {
+                "kind": "id",
+                "name": "n"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "function": "ident",
+      "property": "vacuousMixedGuard",
+      "formula": "forall (n: int ∈ [0, 3)) { Number.isFinite(n) ≡ n -> ident(n) === 5 }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "n",
+            "kind": "range",
+            "lo": "0",
+            "hi": "3"
+          }
+        ],
+        "guards": [
+          {
+            "kind": "jsval-eq",
+            "semantics": "same-value",
+            "left": {
+              "kind": "inject",
+              "tag": "boolean",
+              "expr": {
+                "kind": "number-is-finite",
+                "arg": {
+                  "kind": "id",
+                  "name": "n"
+                }
+              }
+            },
+            "right": {
+              "kind": "inject",
+              "tag": "number",
+              "expr": {
+                "kind": "id",
+                "name": "n"
+              }
+            }
+          }
+        ],
+        "conclusion": {
+          "kind": "istrue",
+          "expr": {
+            "kind": "binop",
+            "op": "===",
+            "left": {
+              "kind": "call",
+              "callee": "ident",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "n"
+                }
+              ]
+            },
+            "right": {
+              "kind": "num",
+              "lit": "5"
+            }
+          }
+        }
+      }
+    },
+    {
+      "function": "classify",
+      "property": "unionNeverBool",
+      "formula": "forall (x: number) { classify(x) === 0 }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "x",
+            "kind": "number"
+          }
+        ],
+        "conclusion": {
+          "kind": "istrue",
+          "expr": {
+            "kind": "binop",
+            "op": "===",
+            "left": {
+              "kind": "call",
+              "callee": "classify",
+              "args": [
+                {
+                  "kind": "inject",
+                  "tag": "number",
+                  "expr": {
+                    "kind": "id",
+                    "name": "x"
+                  }
+                }
+              ]
+            },
+            "right": {
+              "kind": "num",
+              "lit": "0"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

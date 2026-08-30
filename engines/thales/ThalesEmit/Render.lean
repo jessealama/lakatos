@@ -242,10 +242,13 @@ partial def valueTerm (coerced : String → Bool) : JsExpr → RenderM Rendered
     | .number, some e =>
       let ⟨t, lifted⟩ ← valueTerm coerced e
       return ⟨← `(JsVal.num $t), lifted⟩
+    | .boolean, some e =>
+      let ⟨t, lifted⟩ ← valueTerm coerced e
+      return ⟨← `(JsVal.bool $t), lifted⟩
     | .undefined, none => return ⟨← `(JsVal.undef), false⟩
     | .null, none => return ⟨← `(JsVal.null), false⟩
     | _, _ =>
-      throw "an injection outside number/undefined/null is not in the emission slice yet"
+      throw "an injection outside number/boolean/undefined/null is not in the emission slice yet"
   -- Projection throws on the wrong tag, so it is a JsM computation: it
   -- renders behind the bind, which is what makes the read lifted.
   | .project tag e => do
