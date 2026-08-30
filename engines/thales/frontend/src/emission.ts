@@ -74,7 +74,13 @@ export type EmitExpr =
       object: EmitExpr;
       args: EmitExpr[];
     }
-  | { kind: "self" };
+  | { kind: "self" }
+  /** Injection into the tagged domain at a union slot; `expr` is present
+   * exactly for the `number` tag. */
+  | { kind: "inject"; tag: UnionTag; expr?: EmitExpr }
+  /** A union-typed read at a number position: the model refuses coercion,
+   * so a wrong-tag value throws rather than converting. */
+  | { kind: "project"; tag: "number"; expr: EmitExpr };
 
 /** A statement in the shapes the plain-Lean emitter renders as Lean
  * do-notation: `const` and mutable `let` locals, reassignment, `if`/`else`
@@ -570,6 +576,10 @@ function findConstruct(
   if (ts.isParenthesizedExpression(e))
     return findConstruct(e.expression, sf, scope);
   if (ts.isIdentifier(e) || ts.isNumericLiteral(e)) return undefined;
+  // `null` is an expression atom for the union positions; whether a
+  // position admits it is the typed walk's question, and elsewhere it
+  // degrades there with this same construct.
+  if (e.kind === ts.SyntaxKind.NullKeyword) return undefined;
   if (negatedLiteral(e) !== undefined) return undefined;
   if (isUnaryArith(e)) return findConstruct(e.operand, sf, scope);
   if (ts.isBinaryExpression(e)) {
@@ -1112,6 +1122,7 @@ function walkTyped(
   if (ts.isParenthesizedExpression(e)) {
     return walkTyped(e.expression, expected, scope, sf);
   }
+  if (isUnionTy(expected)) return walkUnionSlot(e, expected.union, scope, sf);
   const negated = negatedLiteral(e);
   if (ts.isNumericLiteral(e) || negated !== undefined) {
     if (expected !== "num") {
@@ -1163,16 +1174,18 @@ function walkTyped(
     // whatever type it was bound at, and an instance matches only its
     // own class.
     const actual: ValueTy = bound ?? "num";
+    // A union-typed read at a number position lowers as the throwing
+    // projection; the norm layer discharges it on tag-determined paths.
+    if (expected === "num" && typeof actual !== "string" && "union" in actual) {
+      return { kind: "project", tag: "number", expr: { kind: "id", name: e.text } };
+    }
+    // A union `expected` never reaches here: the slot walk intercepted it.
     const ok =
       typeof expected === "string"
         ? expected === actual
-        : "union" in expected
-          ? typeof actual !== "string" &&
-            "union" in actual &&
-            sameUnion(actual.union, expected.union)
-          : typeof actual !== "string" &&
-            "instance" in actual &&
-            sameClass(actual.instance, expected.instance);
+        : typeof actual !== "string" &&
+          "instance" in actual &&
+          sameClass(actual.instance, expected.instance);
     if (!ok) {
       throw new ModelError(
         `identifier '${e.text}' is ${describeTy(actual)}, ` +
@@ -1587,8 +1600,60 @@ function walkTyped(
       args,
     };
   }
+  // `null` is admitted by the construct scan for the union positions; at
+  // any other position it degrades exactly as the scan used to degrade it.
+  if (e.kind === ts.SyntaxKind.NullKeyword) {
+    const failed = constructAt(e, e.kind, sf);
+    throw new ModelError(failed.reason, failed.construct);
+  }
   // Unreachable after the construct scan; degrade like an opaque node.
   throw new ModelError(constructAt(e, e.kind, sf).reason);
+}
+
+/** An expression meeting a union slot. An identical-union identifier
+ * flows as itself; the `undefined`/`null` atoms inject where the union
+ * carries their tag (any binding of those spellings shadows, exactly as
+ * `NaN`/`Infinity` behave); anything that walks at `num` injects at
+ * `number`. Union subtyping is out of scope: a narrower, wider, or
+ * overlapping union refuses. */
+function walkUnionSlot(
+  e: ts.Expression,
+  union: UnionTag[],
+  scope: WalkScope,
+  sf: ts.SourceFile,
+): EmitExpr {
+  const u = unwrapParens(e);
+  if (ts.isIdentifier(u)) {
+    const bound = scope.vars.get(u.text);
+    if (bound !== undefined && typeof bound !== "string" && "union" in bound) {
+      if (sameUnion(bound.union, union)) return { kind: "id", name: u.text };
+      throw new ModelError(
+        `identifier '${u.text}' is ${describeTy(bound)}, not ` +
+          `${describeTy({ union })}; unions flow only between identical spellings`,
+      );
+    }
+    if (
+      bound === undefined &&
+      u.text === "undefined" &&
+      union.includes("undefined") &&
+      !scope.constants.has(modelKey(refOf(scope, u.text))) &&
+      !moduleBinds(scope, u.text)
+    ) {
+      return { kind: "inject", tag: "undefined" };
+    }
+  }
+  if (u.kind === ts.SyntaxKind.NullKeyword) {
+    if (union.includes("null")) return { kind: "inject", tag: "null" };
+    const failed = constructAt(u, u.kind, sf);
+    throw new ModelError(failed.reason, failed.construct);
+  }
+  if (!union.includes("number")) {
+    throw new ModelError(
+      `${describeTy({ union })} slot has no 'number' member, so a ` +
+        `number-valued expression cannot flow to it`,
+    );
+  }
+  return { kind: "inject", tag: "number", expr: walkTyped(u, "num", scope, sf) };
 }
 
 /** One scanned expression with the file it was parsed from: each formula

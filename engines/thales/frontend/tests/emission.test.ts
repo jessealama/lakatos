@@ -6181,4 +6181,134 @@ describe("union-typed parameters", () => {
       "unmapped TypeScript construct 'UnionType'",
     );
   });
+
+  test("a number argument injects at a union slot; a union identifier projects at a number position", () => {
+    const { emission } = emit(
+      `export function toNum(v: number | string): number {\n  return v;\n}\n` +
+        `export function call(x: number): number {\n  return toNum(x + 1);\n}\n`,
+    );
+    const [toNum, call] = emission.declarations;
+    assert(toNum?.kind === "function" && call?.kind === "function");
+    expect(toNum.body).toEqual([
+      {
+        kind: "return",
+        expr: {
+          kind: "project",
+          tag: "number",
+          expr: { kind: "id", name: "v" },
+        },
+      },
+    ]);
+    expect(call.body).toEqual([
+      {
+        kind: "return",
+        expr: {
+          kind: "call",
+          callee: "toNum",
+          args: [
+            {
+              kind: "inject",
+              tag: "number",
+              expr: {
+                kind: "binop",
+                op: "+",
+                left: { kind: "id", name: "x" },
+                right: { kind: "num", lit: "1" },
+              },
+            },
+          ],
+        },
+      },
+    ]);
+  });
+
+  test("undefined and null inject where the union carries their tag", () => {
+    const { emission } = emit(
+      `export function opt(v: number | null | undefined): number {\n  return 0;\n}\n` +
+        `export function call(): number {\n  return opt(null) + opt(undefined);\n}\n`,
+    );
+    const call = emission.declarations[1];
+    assert(call?.kind === "function");
+    expect(fnBody(call)[0]).toEqual({
+      kind: "return",
+      expr: {
+        kind: "binop",
+        op: "+",
+        left: {
+          kind: "call",
+          callee: "opt",
+          args: [{ kind: "inject", tag: "null" }],
+        },
+        right: {
+          kind: "call",
+          callee: "opt",
+          args: [{ kind: "inject", tag: "undefined" }],
+        },
+      },
+    });
+  });
+
+  test("a binding of 'undefined' shadows the atom, like NaN's", () => {
+    const { classified } = emit(
+      `/** @ensures{p} forall (x: number) { Object.is(call(x), 0) } */\n` +
+        `export function opt(v: number | undefined): number {\n  return 0;\n}\n` +
+        `export function call(undefined: number): number {\n  return opt(undefined);\n}\n`,
+    );
+    // Shadowed: the parameter is a number, so it injects at "number".
+    expect(classified).toEqual([]);
+  });
+
+  test("identical unions flow un-wrapped; different unions refuse as the engine's error", () => {
+    const relay = emit(
+      `export function toNum(v: number | string): number {\n  return 0;\n}\n` +
+        `/** @ensures{p} forall (x: number) { Object.is(relay(x), 0) } */\n` +
+        `export function relay(v: number | string): number {\n  return toNum(v);\n}\n`,
+    );
+    const relayFn = relay.emission.declarations[1];
+    assert(relayFn?.kind === "function");
+    expect(fnBody(relayFn)[0]).toEqual({
+      kind: "return",
+      expr: { kind: "call", callee: "toNum", args: [{ kind: "id", name: "v" }] },
+    });
+
+    const widened = emit(
+      `export function wide(v: number | string | boolean): number {\n  return 0;\n}\n` +
+        `/** @ensures{p} forall (x: number) { Object.is(narrow(x), 0) } */\n` +
+        `export function narrow(v: number | string): number {\n  return wide(v);\n}\n`,
+    );
+    expect(widened.classified.map((c) => [c.szs, c.reason])).toEqual([
+      [
+        "Error",
+        "'narrow' could not be modeled: identifier 'v' is a 'number | string' value, " +
+          "not a 'number | string | boolean' value; unions flow only between identical spellings",
+      ],
+    ]);
+  });
+
+  test("a union-typed local and a union return keep their refusals", () => {
+    const local = emit(
+      `/** @ensures{p} forall (x: number) { Object.is(f(x), x) } */\n` +
+        `export function f(v: number | string): number {\n  const w: number | string = v;\n  return 0;\n}\n`,
+    );
+    expect(local.classified[0]?.szs).toBe("Inappropriate");
+    const ret = emit(
+      `/** @ensures{p} forall (x: number) { Object.is(f(x), x) } */\n` +
+        `export function f(v: number | string): number | string {\n  return v;\n}\n`,
+    );
+    expect(ret.classified[0]?.szs).toBe("Inappropriate");
+    expect(ret.classified[0]?.reason).toContain("'UnionType'");
+  });
+
+  test("null outside a union position keeps its construct refusal, reason intact", () => {
+    const { classified } = emit(
+      `/** @ensures{p} forall (x: number) { Object.is(f(x), x) } */\n` +
+        `export function f(x: number): number {\n  return null;\n}\n`,
+    );
+    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
+      [
+        "Inappropriate",
+        "'f' could not be modeled: unmapped TypeScript construct 'NullKeyword' at 3:10",
+      ],
+    ]);
+  });
 });
