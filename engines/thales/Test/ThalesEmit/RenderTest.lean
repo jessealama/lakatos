@@ -366,6 +366,9 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
 #eval goldenCheck "tests/fixtures/unions.emission.json"
   "tests/fixtures/unions.emitted.lean.expected"
 
+#eval goldenCheck "tests/fixtures/optionals.emission.json"
+  "tests/fixtures/optionals.emitted.lean.expected"
+
 -- A module constant renders as a dual-tagged JsNumber def, and a read of
 -- it as a qualified reference, so no binder can capture it.
 #eval show CoreM Unit from do

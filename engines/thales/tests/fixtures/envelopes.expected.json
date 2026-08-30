@@ -1083,5 +1083,70 @@
       "szs": "Error",
       "reason": "'narrow' could not be modeled: identifier 'v' is a 'number | string' value, not a 'number | string | boolean' value; unions flow only between identical spellings"
     }
+  ],
+  "engines/thales/tests/fixtures/optionals.ts": [
+    {
+      "function": "pick",
+      "property": "absentIsZero",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_17811473865095137338",
+      "axioms": []
+    },
+    {
+      "function": "pick",
+      "property": "presentIsArgument",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_16181118332249511670",
+      "axioms": []
+    },
+    {
+      "function": "step",
+      "property": "defaultStep",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_1460890068144257394",
+      "axioms": []
+    },
+    {
+      "function": "Counter#bump",
+      "property": "bumpDefaults",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_10967805339357024970",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/optional-arity.ts": [
+    {
+      "function": "pick",
+      "property": "absentIsZero",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_9383534891052888592",
+      "axioms": []
+    },
+    {
+      "function": "pick",
+      "property": "presentIsArgument",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_6066776754011805935",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/countersatisfiable/optional-misread.ts": [
+    {
+      "function": "pick",
+      "property": "absentIsArgument",
+      "szs": "CounterSatisfiable",
+      "reason": "the property is false on its bounded domain",
+      "counterexample": {
+        "x": 1
+      }
+    }
+  ],
+  "engines/thales/tests/conformance/inappropriate/optional-non-trailing.ts": [
+    {
+      "function": "span",
+      "property": "p",
+      "szs": "Inappropriate",
+      "reason": "'span' could not be modeled: unmapped TypeScript construct 'Parameter' at 2:35"
+    }
   ]
 }
