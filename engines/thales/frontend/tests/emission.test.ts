@@ -6372,4 +6372,99 @@ describe("union-typed parameters", () => {
     expect(plain.classified[0]?.szs).toBe("Inappropriate");
     expect(plain.classified[0]?.reason).toContain("'TypeOfExpression'");
   });
+
+  test("=== with a union operand lowers to strictEq; Object.is to sameValue; !== negates", () => {
+    const { emission } = emit(
+      `export function f(v: number | null, w: number | null): number {\n` +
+        `  if (v === null) {\n    return 1;\n  }\n` +
+        `  if (Object.is(v, w)) {\n    return 2;\n  }\n` +
+        `  if (v !== undefined) {\n    return 3;\n  }\n` +
+        `  return 0;\n}\n`,
+    );
+    const fn = emission.declarations[0];
+    assert(fn?.kind === "function");
+    const [first, second, third] = fnBody(fn);
+    assert(
+      first?.kind === "if" && second?.kind === "if" && third?.kind === "if",
+    );
+    expect(first.cond).toEqual({
+      kind: "jsval-eq",
+      semantics: "strict",
+      left: { kind: "id", name: "v" },
+      right: { kind: "inject", tag: "null" },
+    });
+    expect(second.cond).toEqual({
+      kind: "jsval-eq",
+      semantics: "same-value",
+      left: { kind: "id", name: "v" },
+      right: { kind: "id", name: "w" },
+    });
+    expect(third.cond).toEqual({
+      kind: "unop",
+      op: "!",
+      operand: {
+        kind: "jsval-eq",
+        semantics: "strict",
+        left: { kind: "id", name: "v" },
+        right: { kind: "inject", tag: "undefined" },
+      },
+    });
+  });
+
+  test("the statically number side of a union equality injects", () => {
+    const { emission } = emit(
+      `export function f(v: number | string, x: number): number {\n` +
+        `  if (v === x + 1) {\n    return 1;\n  }\n  return 0;\n}\n`,
+    );
+    const fn = emission.declarations[0];
+    assert(fn?.kind === "function");
+    const first = fnBody(fn)[0];
+    assert(first?.kind === "if");
+    expect(first.cond).toEqual({
+      kind: "jsval-eq",
+      semantics: "strict",
+      left: { kind: "id", name: "v" },
+      right: {
+        kind: "inject",
+        tag: "number",
+        expr: {
+          kind: "binop",
+          op: "+",
+          left: { kind: "id", name: "x" },
+          right: { kind: "num", lit: "1" },
+        },
+      },
+    });
+  });
+
+  test("a string literal against a union operand keeps its refusal", () => {
+    const eq = emit(
+      `/** @ensures{p} forall (x: number) { Object.is(f(x), 0) } */\n` +
+        `export function f(v: number | string): number {\n` +
+        `  if (v === "a") {\n    return 1;\n  }\n  return 0;\n}\n`,
+    );
+    expect(eq.classified[0]?.szs).toBe("Inappropriate");
+    expect(eq.classified[0]?.reason).toContain("'StringLiteral'");
+    const same = emit(
+      `/** @ensures{p} forall (x: number) { Object.is(f(x), 0) } */\n` +
+        `export function f(v: number | string): number {\n` +
+        `  if (Object.is(v, "a")) {\n    return 1;\n  }\n  return 0;\n}\n`,
+    );
+    expect(same.classified.map((c) => [c.szs, c.reason])).toEqual([
+      [
+        "Inappropriate",
+        "'f' could not be modeled: 'Object.is' over a union admits numbers, " +
+          "'undefined', and 'null' only; argument 2 is not one (StringLiteral at 3:20)",
+      ],
+    ]);
+  });
+
+  test("without a union operand, Object.is keeps the numbers-only refusal verbatim", () => {
+    const { classified } = emit(
+      `/** @ensures{p} forall (x: number) { Object.is(f(x), 0) } */\n` +
+        `export function f(x: number): number {\n` +
+        `  if (Object.is(x, "a")) {\n    return 1;\n  }\n  return 0;\n}\n`,
+    );
+    expect(classified[0]?.reason).toContain("'Object.is' models numbers only");
+  });
 });

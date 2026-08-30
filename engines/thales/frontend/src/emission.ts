@@ -83,7 +83,15 @@ export type EmitExpr =
   | { kind: "project"; tag: "number"; expr: EmitExpr }
   /** A `typeof` test on a union-typed operand, against one of the eight
    * results `typeof` can answer. */
-  | { kind: "typeof-test"; expr: EmitExpr; result: string };
+  | { kind: "typeof-test"; expr: EmitExpr; result: string }
+  /** JS equality over the tagged domain: `===` as strict, `Object.is` as
+   * same-value. Neither coerces, so a cross-tag pair is false. */
+  | {
+      kind: "jsval-eq";
+      semantics: "strict" | "same-value";
+      left: EmitExpr;
+      right: EmitExpr;
+    };
 
 /** A statement in the shapes the plain-Lean emitter renders as Lean
  * do-notation: `const` and mutable `let` locals, reassignment, `if`/`else`
@@ -674,17 +682,29 @@ function findConstruct(
   if (sides !== undefined) {
     // `Object.is` compares JS values of one type; only numbers have a
     // model here, so a non-numeric argument is refused on the merits.
-    const offender = sides.findIndex((s) => !numericShaped(s, scope));
+    // With a union operand the comparison lives in the JsVal domain, so
+    // its admission set widens to the atoms that domain can hold.
+    const hasUnion = sides.some((s) => unionIdent(s, scope));
+    const admits = (s: ts.Expression) =>
+      numericShaped(s, scope) ||
+      (hasUnion &&
+        (unionIdent(s, scope) ||
+          undefAtom(s, scope) ||
+          unwrapParens(s).kind === ts.SyntaxKind.NullKeyword));
+    const offender = sides.findIndex((s) => !admits(s));
     if (offender !== -1) {
       const arg = unwrapParens(sides[offender]!);
       const { line, character } = sf.getLineAndCharacterOfPosition(
         arg.getStart(sf),
       );
+      const at = `(${kindName(arg.kind)} at ${line + 1}:${character + 1})`;
       return {
         construct: "Object.is",
-        reason:
-          `'Object.is' models numbers only; argument ${offender + 1} is ` +
-          `not a number (${kindName(arg.kind)} at ${line + 1}:${character + 1})`,
+        reason: hasUnion
+          ? `'Object.is' over a union admits numbers, 'undefined', and 'null' ` +
+            `only; argument ${offender + 1} is not one ${at}`
+          : `'Object.is' models numbers only; argument ${offender + 1} is ` +
+            `not a number ${at}`,
       };
     }
     return (
@@ -1325,6 +1345,17 @@ function walkTyped(
       }
       return { kind: "binop", op, left, right };
     }
+    if (op === "===" || op === "!==") {
+      const eq = unionEquality(e.left, e.right, "strict", scope, sf);
+      if (eq !== undefined) {
+        if (expected !== "bool") {
+          throw new ModelError(
+            `operator '${op}' yields a boolean, not ${describeTy(expected)}`,
+          );
+        }
+        return op === "===" ? eq : { kind: "unop", op: "!", operand: eq };
+      }
+    }
     const left = walkTyped(e.left, "num", scope, sf);
     const right = walkTyped(e.right, "num", scope, sf);
     if (ARITH_OPERATORS.has(op)) {
@@ -1351,6 +1382,15 @@ function walkTyped(
   }
   const sides = equationSides(e);
   if (sides !== undefined) {
+    const sv = unionEquality(sides[0], sides[1], "same-value", scope, sf);
+    if (sv !== undefined) {
+      if (expected !== "bool") {
+        throw new ModelError(
+          `a call to 'Object.is' yields a boolean, not ${describeTy(expected)}`,
+        );
+      }
+      return sv;
+    }
     // Operands are typed before the position is, mirroring the binops.
     const left = walkTyped(sides[0], "num", scope, sf);
     const right = walkTyped(sides[1], "num", scope, sf);
@@ -1692,6 +1732,60 @@ function walkTyped(
   }
   // Unreachable after the construct scan; degrade like an opaque node.
   throw new ModelError(constructAt(e, e.kind, sf).reason);
+}
+
+/** Whether an expression is a union-typed identifier in scope. */
+function unionIdent(e: ts.Expression, scope: WalkScope): boolean {
+  const u = unwrapParens(e);
+  if (!ts.isIdentifier(u)) return false;
+  const ty = scope.vars.get(u.text);
+  return ty !== undefined && typeof ty !== "string" && "union" in ty;
+}
+
+/** `undefined` as JS resolves it here: the global, unshadowed. */
+function undefAtom(e: ts.Expression, scope: WalkScope): boolean {
+  const u = unwrapParens(e);
+  return (
+    ts.isIdentifier(u) &&
+    u.text === "undefined" &&
+    !scope.vars.has(u.text) &&
+    !scope.constants.has(modelKey(refOf(scope, u.text))) &&
+    !moduleBinds(scope, u.text)
+  );
+}
+
+/** One side of a JsVal equality: a union identifier stays itself, the
+ * undefined/null atoms inject at their tags, and everything else is a
+ * number injected at its. */
+function eqOperand(
+  e: ts.Expression,
+  scope: WalkScope,
+  sf: ts.SourceFile,
+): EmitExpr {
+  const u = unwrapParens(e);
+  if (unionIdent(u, scope))
+    return { kind: "id", name: (u as ts.Identifier).text };
+  if (undefAtom(u, scope)) return { kind: "inject", tag: "undefined" };
+  if (u.kind === ts.SyntaxKind.NullKeyword) return { kind: "inject", tag: "null" };
+  return { kind: "inject", tag: "number", expr: walkTyped(u, "num", scope, sf) };
+}
+
+/** An equality with a union-typed operand lowers over JsVal; undefined
+ * when neither side is one, leaving the number path in place. */
+function unionEquality(
+  l: ts.Expression,
+  r: ts.Expression,
+  semantics: "strict" | "same-value",
+  scope: WalkScope,
+  sf: ts.SourceFile,
+): EmitExpr | undefined {
+  if (!unionIdent(l, scope) && !unionIdent(r, scope)) return undefined;
+  return {
+    kind: "jsval-eq",
+    semantics,
+    left: eqOperand(l, scope, sf),
+    right: eqOperand(r, scope, sf),
+  };
 }
 
 /** An expression meeting a union slot. An identical-union identifier
