@@ -570,7 +570,7 @@ const TYPEOF_RESULTS = new Set([
 /** `typeof v === "lit"` / `!==`, either side order, `v` an identifier:
  * the one typeof shape the model reads. Shape only — validity (a
  * union-typed operand, a recognized literal) is the walk's question. */
-function typeofTest(e: ts.Expression):
+function typeofTest(e: ts.BinaryExpression):
   | {
       typeofNode: ts.TypeOfExpression;
       operand: ts.Identifier;
@@ -578,7 +578,6 @@ function typeofTest(e: ts.Expression):
       negated: boolean;
     }
   | undefined {
-  if (!ts.isBinaryExpression(e)) return undefined;
   const op = e.operatorToken.getText();
   if (op !== "===" && op !== "!==") return undefined;
   const pick = (a: ts.Expression, b: ts.Expression) => {
@@ -1653,11 +1652,7 @@ function walkTyped(
     const ref = newRef(scope, built);
     // The class must exist before the instance is admitted or refused.
     const shape = classShapeOf(scope, ref);
-    if (
-      typeof expected !== "string" &&
-      "instance" in expected &&
-      sameClass(ref, expected.instance)
-    ) {
+    if (typeof expected !== "string" && sameClass(ref, expected.instance)) {
       const rawArgs = built.arguments ?? [];
       if (shape.ctorParams.length !== rawArgs.length) {
         throw new ModelError(

@@ -446,6 +446,19 @@ describe("obligation payload degradations", () => {
 });
 
 describe("unary operators", () => {
+  test("'!' refuses where a number is expected", () => {
+    const src =
+      "/** @ensures{p} forall (x: int ∈ [0, 5)) { f(x) ≡ x } */\n" +
+      "export function f(x: number): number { return !(x < 1); }\n";
+    const { classified } = emitModule(src, "t.ts");
+    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
+      [
+        "Error",
+        "'f' could not be modeled: operator '!' yields a boolean, not a number",
+      ],
+    ]);
+  });
+
   test("unary minus over a non-literal is a unop node", () => {
     const src =
       "/** @ensures{p} forall (x: int ∈ [0, 5)) { f(x) ≡ x } */\n" +
@@ -6472,5 +6485,78 @@ describe("union-typed parameters", () => {
         `  if (Object.is(x, "a")) {\n    return 1;\n  }\n  return 0;\n}\n`,
     );
     expect(classified[0]?.reason).toContain("'Object.is' models numbers only");
+  });
+
+  test("bigint and boolean members carry their own tags", () => {
+    const { emission } = emit(
+      `export function f(v: boolean | bigint | number): number {\n  return 0;\n}\n`,
+    );
+    const fn = emission.declarations[0];
+    assert(fn !== undefined && fn.kind === "function");
+    expect(fn.params).toEqual([
+      { name: "v", type: ["number", "bigint", "boolean"] },
+    ]);
+  });
+
+  test("a typeof whose operand is not an identifier, or whose literal side is not a string, is not the shape", () => {
+    const call = emit(
+      `/** @ensures{p} forall (x: number) { Object.is(f(x), 0) } */\n` +
+        `export function id(v: number | string): number {\n  return 0;\n}\n` +
+        `export function f(v: number | string): number {\n` +
+        `  if (typeof id(v) === "number") {\n    return 1;\n  }\n  return 0;\n}\n`,
+    );
+    expect(call.classified[0]?.szs).toBe("Inappropriate");
+    expect(call.classified[0]?.reason).toContain("'TypeOfExpression'");
+
+    const nonLiteral = emit(
+      `/** @ensures{p} forall (x: number) { Object.is(f(x), 0) } */\n` +
+        `export function f(v: number | string, s: number): number {\n` +
+        `  if (typeof v === s) {\n    return 1;\n  }\n  return 0;\n}\n`,
+    );
+    expect(nonLiteral.classified[0]?.szs).toBe("Inappropriate");
+    expect(nonLiteral.classified[0]?.reason).toContain("'TypeOfExpression'");
+  });
+
+  test("a boolean-yielding union test refuses at a number position", () => {
+    for (const [body, needle] of [
+      [`return typeof v === "number";`, "a 'typeof' test yields a boolean"],
+      [`return v === null;`, "operator '===' yields a boolean"],
+      [`return Object.is(v, null);`, "a call to 'Object.is' yields a boolean"],
+    ]) {
+      const { classified } = emit(
+        `/** @ensures{p} forall (x: number) { Object.is(f(x), 0) } */\n` +
+          `export function f(v: number | null): number {\n  ${body}\n}\n`,
+      );
+      expect(classified[0]?.szs).toBe("Error");
+      expect(classified[0]?.reason).toContain(needle!);
+    }
+  });
+
+  test("an atom a union slot cannot hold refuses at the slot", () => {
+    const nullArg = emit(
+      `/** @ensures{p} forall (x: number) { Object.is(call(x), 0) } */\n` +
+        `export function toNum(v: number | string): number {\n  return 0;\n}\n` +
+        `export function call(x: number): number {\n  return toNum(null);\n}\n`,
+    );
+    expect(nullArg.classified.map((c) => [c.szs, c.reason])).toEqual([
+      [
+        "Inappropriate",
+        "'call' could not be modeled: unmapped TypeScript construct 'NullKeyword' at 6:16",
+      ],
+    ]);
+
+    const numberArg = emit(
+      `/** @ensures{p} forall (x: number) { Object.is(call(x), 0) } */\n` +
+        `export function opt(v: string | undefined): number {\n  return 0;\n}\n` +
+        `export function call(x: number): number {\n  return opt(x);\n}\n`,
+    );
+    expect(numberArg.classified.map((c) => [c.szs, c.reason])).toEqual([
+      [
+        "Error",
+        "property elaboration failed: 'call' has no model: a 'string | undefined' " +
+          "value slot has no 'number' member, so a number-valued expression " +
+          "cannot flow to it",
+      ],
+    ]);
   });
 });
