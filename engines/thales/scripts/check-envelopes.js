@@ -177,6 +177,16 @@ const UNION_FIXTURES = [
   `${CONFORMANCE}/error/union-widened-argument.ts`,
 ];
 
+/** The optional-parameter slice: a call filling the undefined tag by
+ * arity, the same shape at full arity, the falsity path, and the
+ * trailing-order refusal optionals must not loosen. */
+const OPTIONAL_FIXTURES = [
+  "engines/thales/tests/fixtures/optionals.ts",
+  `${CONFORMANCE}/theorem/optional-arity.ts`,
+  `${CONFORMANCE}/countersatisfiable/optional-misread.ts`,
+  `${CONFORMANCE}/inappropriate/optional-non-trailing.ts`,
+];
+
 const fixtures =
   process.env.LAKATOS_PROVE_E2E === "1"
     ? [
@@ -191,6 +201,7 @@ const fixtures =
         ...IMPORT_FIXTURES,
         ...CONST_FIXTURES,
         ...UNION_FIXTURES,
+        ...OPTIONAL_FIXTURES,
       ]
     : QUICK_FIXTURES;
 

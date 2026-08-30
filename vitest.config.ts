@@ -40,10 +40,10 @@ export default defineConfig({
         // runs, so the enumeration's own rethrow and the emitter's bare
         // fallthrough joined that unreachable set.
         autoUpdate: true,
-        statements: 99.43,
-        branches: 98.42,
+        statements: 99.46,
+        branches: 98.47,
         functions: 100,
-        lines: 99.64,
+        lines: 99.68,
       },
     },
   },

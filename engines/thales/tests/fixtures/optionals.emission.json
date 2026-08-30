@@ -1,0 +1,393 @@
+{
+  "file": "engines/thales/tests/fixtures/optionals.ts",
+  "declarations": [
+    {
+      "kind": "function",
+      "name": "pick",
+      "params": [
+        {
+          "name": "y",
+          "type": ["number", "undefined"]
+        }
+      ],
+      "source": "export function pick(y?: number): number {\n  if (y === undefined) {\n    return 0;\n  }\n  return y;\n}",
+      "body": [
+        {
+          "kind": "if",
+          "cond": {
+            "kind": "jsval-eq",
+            "semantics": "strict",
+            "left": {
+              "kind": "id",
+              "name": "y"
+            },
+            "right": {
+              "kind": "inject",
+              "tag": "undefined"
+            }
+          },
+          "then": [
+            {
+              "kind": "return",
+              "expr": {
+                "kind": "num",
+                "lit": "0"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "return",
+          "expr": {
+            "kind": "project",
+            "tag": "number",
+            "expr": {
+              "kind": "id",
+              "name": "y"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "kind": "function",
+      "name": "step",
+      "params": [
+        {
+          "name": "x",
+          "type": "number"
+        },
+        {
+          "name": "by",
+          "type": ["number", "undefined"]
+        }
+      ],
+      "source": "export function step(x: number, by?: number): number {\n  if (by === undefined) {\n    return x + 1;\n  }\n  return x + by;\n}",
+      "body": [
+        {
+          "kind": "if",
+          "cond": {
+            "kind": "jsval-eq",
+            "semantics": "strict",
+            "left": {
+              "kind": "id",
+              "name": "by"
+            },
+            "right": {
+              "kind": "inject",
+              "tag": "undefined"
+            }
+          },
+          "then": [
+            {
+              "kind": "return",
+              "expr": {
+                "kind": "binop",
+                "op": "+",
+                "left": {
+                  "kind": "id",
+                  "name": "x"
+                },
+                "right": {
+                  "kind": "num",
+                  "lit": "1"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "kind": "return",
+          "expr": {
+            "kind": "binop",
+            "op": "+",
+            "left": {
+              "kind": "id",
+              "name": "x"
+            },
+            "right": {
+              "kind": "project",
+              "tag": "number",
+              "expr": {
+                "kind": "id",
+                "name": "by"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "kind": "class",
+      "name": "Counter",
+      "source": "export class Counter {\n  readonly n: number;\n\n  constructor(n: number) {\n    this.n = n;\n  }\n\n  /** @ensures{bumpDefaults} forall (x: int ∈ [0, 4)) { Object.is(new Counter(x).bump(), x + 1) } */\n  bump(by?: number): number {\n    if (by === undefined) {\n      return this.n + 1;\n    }\n    return this.n + by;\n  }\n}",
+      "fields": ["n"],
+      "ctor": {
+        "params": [
+          {
+            "name": "n",
+            "type": "number"
+          }
+        ],
+        "body": [
+          {
+            "kind": "field-set",
+            "field": "n",
+            "expr": {
+              "kind": "id",
+              "name": "n"
+            }
+          }
+        ]
+      },
+      "getters": [],
+      "methods": [
+        {
+          "name": "bump",
+          "params": [
+            {
+              "name": "by",
+              "type": ["number", "undefined"]
+            }
+          ],
+          "body": [
+            {
+              "kind": "if",
+              "cond": {
+                "kind": "jsval-eq",
+                "semantics": "strict",
+                "left": {
+                  "kind": "id",
+                  "name": "by"
+                },
+                "right": {
+                  "kind": "inject",
+                  "tag": "undefined"
+                }
+              },
+              "then": [
+                {
+                  "kind": "return",
+                  "expr": {
+                    "kind": "binop",
+                    "op": "+",
+                    "left": {
+                      "kind": "field-read",
+                      "className": "Counter",
+                      "field": "n",
+                      "object": {
+                        "kind": "self"
+                      }
+                    },
+                    "right": {
+                      "kind": "num",
+                      "lit": "1"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "return",
+              "expr": {
+                "kind": "binop",
+                "op": "+",
+                "left": {
+                  "kind": "field-read",
+                  "className": "Counter",
+                  "field": "n",
+                  "object": {
+                    "kind": "self"
+                  }
+                },
+                "right": {
+                  "kind": "project",
+                  "tag": "number",
+                  "expr": {
+                    "kind": "id",
+                    "name": "by"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "obligations": [
+    {
+      "function": "pick",
+      "property": "absentIsZero",
+      "formula": "forall (x: int ∈ [0, 4)) { Object.is(pick() + x, x) }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "x",
+            "kind": "range",
+            "lo": "0",
+            "hi": "4"
+          }
+        ],
+        "conclusion": {
+          "kind": "eq",
+          "left": {
+            "kind": "binop",
+            "op": "+",
+            "left": {
+              "kind": "call",
+              "callee": "pick",
+              "args": [
+                {
+                  "kind": "inject",
+                  "tag": "undefined"
+                }
+              ]
+            },
+            "right": {
+              "kind": "id",
+              "name": "x"
+            }
+          },
+          "right": {
+            "kind": "id",
+            "name": "x"
+          }
+        }
+      }
+    },
+    {
+      "function": "pick",
+      "property": "presentIsArgument",
+      "formula": "forall (x: number) { Object.is(pick(x), x) }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "x",
+            "kind": "number"
+          }
+        ],
+        "conclusion": {
+          "kind": "eq",
+          "left": {
+            "kind": "call",
+            "callee": "pick",
+            "args": [
+              {
+                "kind": "inject",
+                "tag": "number",
+                "expr": {
+                  "kind": "id",
+                  "name": "x"
+                }
+              }
+            ]
+          },
+          "right": {
+            "kind": "id",
+            "name": "x"
+          }
+        }
+      }
+    },
+    {
+      "function": "step",
+      "property": "defaultStep",
+      "formula": "forall (x: int ∈ [0, 4)) { Object.is(step(x), x + 1) }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "x",
+            "kind": "range",
+            "lo": "0",
+            "hi": "4"
+          }
+        ],
+        "conclusion": {
+          "kind": "eq",
+          "left": {
+            "kind": "call",
+            "callee": "step",
+            "args": [
+              {
+                "kind": "id",
+                "name": "x"
+              },
+              {
+                "kind": "inject",
+                "tag": "undefined"
+              }
+            ]
+          },
+          "right": {
+            "kind": "binop",
+            "op": "+",
+            "left": {
+              "kind": "id",
+              "name": "x"
+            },
+            "right": {
+              "kind": "num",
+              "lit": "1"
+            }
+          }
+        }
+      }
+    },
+    {
+      "function": "Counter#bump",
+      "property": "bumpDefaults",
+      "formula": "forall (x: int ∈ [0, 4)) { Object.is(new Counter(x).bump(), x + 1) }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "x",
+            "kind": "range",
+            "lo": "0",
+            "hi": "4"
+          }
+        ],
+        "conclusion": {
+          "kind": "eq",
+          "left": {
+            "kind": "method-call",
+            "className": "Counter",
+            "name": "bump",
+            "object": {
+              "kind": "new",
+              "className": "Counter",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "x"
+                }
+              ]
+            },
+            "args": [
+              {
+                "kind": "inject",
+                "tag": "undefined"
+              }
+            ]
+          },
+          "right": {
+            "kind": "binop",
+            "op": "+",
+            "left": {
+              "kind": "id",
+              "name": "x"
+            },
+            "right": {
+              "kind": "num",
+              "lit": "1"
+            }
+          }
+        }
+      }
+    }
+  ]
+}
