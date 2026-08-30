@@ -800,3 +800,81 @@ end
     throwError "the constructor-image hypothesis did not render:\n{rendered}"
   unless (rendered.splitOn "Float.ofInt").length == 1 do
     throwError "a class binder was coerced from Int:\n{rendered}"
+
+/-- The union signature most union fixtures share. -/
+def unionParam (n : String) : Param :=
+  { name := n, ty := .union #[.number, .string] }
+
+-- A union-typed parameter renders as `(v : JsVal)` — one Lean type for
+-- every union spelling — with the typeof dispatch, the throwing
+-- projection behind `←`, and the injected obligation argument.
+#eval show CoreM Unit from do
+  let e : Emission := {
+    file := "t.ts"
+    declarations := #[.fn
+      { name := "toNum", params := #[unionParam "v"], source := "toNum",
+        body := #[
+          .ite (.typeofTest (.id "v") "number")
+            #[.ret (.project .number (.id "v"))] none,
+          .ret (.num "0")] }]
+    obligations := #[
+      { function := "toNum", property := "numId", formula := "f",
+        payload := .structured #[.number "x" none none] #[]
+          (.eq (.call "toNum" none #[.inject .number (some (.id "x"))])
+               (.id "x")) }] }
+  let rendered ← renderEmission e
+  unless (rendered.splitOn "def TsModel.toNum (v : JsVal) : JsM JsNumber := do").length == 2 do
+    throwError "the union parameter is not a JsVal binder:\n{rendered}"
+  unless (rendered.splitOn "if JsVal.typeof v == TypeofResult.number then").length == 2 do
+    throwError "the typeof test did not render:\n{rendered}"
+  unless (rendered.splitOn "return (← JsVal.toNumber v)").length == 2 do
+    throwError "the projection is not behind ←:\n{rendered}"
+  unless (rendered.splitOn "TsModel.toNum (JsVal.num x)").length == 2 do
+    throwError "the obligation argument is not injected:\n{rendered}"
+
+-- An Int-binder argument injects through its Float coercion, and both
+-- JsVal equalities render as the pure Bool predicates.
+#eval show CoreM Unit from do
+  let e : Emission := {
+    file := "t.ts"
+    declarations := #[.fn
+      { name := "nullFlag",
+        params := #[{ name := "v", ty := .union #[.number, .null] }],
+        source := "nullFlag",
+        body := #[
+          .ite (.jsvalEq true (.id "v") (.inject .null none))
+            #[.ret (.num "1")] none,
+          .ret (.num "0")] }]
+    obligations := #[
+      { function := "nullFlag", property := "p", formula := "f",
+        payload := .structured #[.range "n" 0 4] #[]
+          (.eq (.call "nullFlag" none #[.inject .number (some (.id "n"))])
+               (.num "0")) }] }
+  let rendered ← renderEmission e
+  unless (rendered.splitOn "if JsVal.sameValue v JsVal.null then").length == 2 do
+    throwError "same-value over JsVal did not render:\n{rendered}"
+  unless (rendered.splitOn "JsVal.num (Float.ofInt n)").length == 2 do
+    throwError "the coerced binder argument is not injected:\n{rendered}"
+
+-- strictEq spells `===` over unions; a parameter spelled like the new
+-- vocabulary is primed out of its way.
+#eval show CoreM Unit from do
+  let e : Emission := {
+    file := "t.ts"
+    declarations := #[
+      .fn
+        { name := "eq", params := #[unionParam "v", unionParam "w"],
+          source := "eq",
+          body := #[
+            .ite (.jsvalEq false (.id "v") (.id "w"))
+              #[.ret (.num "1")] none,
+            .ret (.num "0")] },
+      .fn
+        { name := "shadow", params := #[{ name := "JsVal", ty := .number }],
+          source := "shadow", body := #[.ret (.id "JsVal")] }]
+    obligations := #[] }
+  let rendered ← renderEmission e
+  unless (rendered.splitOn "if JsVal.strictEq v w then").length == 2 do
+    throwError "strictEq over JsVal did not render:\n{rendered}"
+  unless (rendered.splitOn "JsVal'").length == 3 do
+    throwError "the JsVal-spelled parameter was not primed:\n{rendered}"
