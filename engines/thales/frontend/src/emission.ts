@@ -91,10 +91,11 @@ export type EmitStmt =
   | { kind: "field-set"; field: string; expr: EmitExpr };
 
 /** A parameter on the wire: its name and its declared type — a TypeScript
- * number, or an instance of a modeled class. */
+ * number, a keyword union's normalized tags, or an instance of a modeled
+ * class. */
 export interface EmitParam {
   name: string;
-  type: "number" | { class: string; module?: string };
+  type: "number" | UnionTag[] | { class: string; module?: string };
 }
 
 export interface EmitFunction {
@@ -155,19 +156,67 @@ export interface EmitConstant {
 
 export type EmitDecl = EmitFunction | EmitClass | EmitConstant;
 
-/** A value's type in the walk: a number, or an instance of a modeled
- * class. Only parameters can carry the instance type; locals, fields, and
- * returns are numbers. */
-export type ValueTy = "num" | { instance: ModelRef };
+/** The union member tags the model admits, in normalization order. */
+export const UNION_TAGS = [
+  "number",
+  "string",
+  "bigint",
+  "boolean",
+  "undefined",
+  "null",
+] as const;
+export type UnionTag = (typeof UNION_TAGS)[number];
+
+/** A value's type in the walk: a number, a keyword union, or an instance
+ * of a modeled class. Only parameters can carry the union and instance
+ * types; locals, fields, and returns are numbers. */
+export type ValueTy = "num" | { instance: ModelRef } | { union: UnionTag[] };
 
 /** Whether two model references name the same class. */
 function sameClass(a: ModelRef, b: ModelRef): boolean {
   return a.module === b.module && a.name === b.name;
 }
 
+/** A constructor parameter's type. Constructors keep the union ban, so a
+ * class shape's parameters are numbers and instances only. */
+export type CtorValueTy = "num" | { instance: ModelRef };
+
+/** Whether two normalized unions are the same spelling — the only
+ * relationship under which a union identifier flows to a union slot. */
+function sameUnion(a: UnionTag[], b: UnionTag[]): boolean {
+  return a.length === b.length && a.every((t, i) => t === b[i]);
+}
+
+function isUnionTy(t: Expected): t is { union: UnionTag[] } {
+  return typeof t !== "string" && "union" in t;
+}
+
+/** The tag a union member denotes, when it is one of the keyword types;
+ * `null` arrives as a literal-type node over the null token. */
+function keywordTag(m: ts.TypeNode): UnionTag | undefined {
+  switch (m.kind) {
+    case ts.SyntaxKind.NumberKeyword:
+      return "number";
+    case ts.SyntaxKind.StringKeyword:
+      return "string";
+    case ts.SyntaxKind.BigIntKeyword:
+      return "bigint";
+    case ts.SyntaxKind.BooleanKeyword:
+      return "boolean";
+    case ts.SyntaxKind.UndefinedKeyword:
+      return "undefined";
+    default:
+      return ts.isLiteralTypeNode(m) &&
+        m.literal.kind === ts.SyntaxKind.NullKeyword
+        ? "null"
+        : undefined;
+  }
+}
+
 /** A walked parameter as the wire carries it. */
 function wireParam(name: string, ty: ValueTy): EmitParam {
   if (ty === "num") return { name, type: "number" };
+  if ("union" in ty) return { name, type: [...ty.union] };
   const { module, name: cls } = ty.instance;
   return {
     name,
@@ -178,6 +227,7 @@ function wireParam(name: string, ty: ValueTy): EmitParam {
 /** The walk's reading of a wire parameter, for the signature registry. */
 function paramTy(p: EmitParam): ValueTy {
   if (p.type === "number") return "num";
+  if (Array.isArray(p.type)) return { union: p.type };
   return { instance: { module: p.type.module ?? "", name: p.type.class } };
 }
 
@@ -186,7 +236,7 @@ function paramTy(p: EmitParam): ValueTy {
 export interface ClassShape {
   fields: string[];
   getters: ReadonlySet<string>;
-  ctorParams: ValueTy[];
+  ctorParams: CtorValueTy[];
   /** The constructor parameters' source spellings, positionally aligned
    * with `ctorParams`. A class binder quantifies over them by name. */
   ctorParamNames: string[];
@@ -371,7 +421,9 @@ function varAccess(
   const obj = unwrapParens(e.expression);
   if (!ts.isIdentifier(obj)) return undefined;
   const ty = scope.vars.get(obj.text);
-  if (ty === undefined || ty === "num") return undefined;
+  // A union-typed identifier has no members: the domain holds values, not
+  // shapes, so a member read of one is not this access.
+  if (ty === undefined || ty === "num" || "union" in ty) return undefined;
   if (!ts.isIdentifier(e.name)) return undefined;
   return { ref: ty.instance, object: obj.text, name: e.name.text };
 }
@@ -997,6 +1049,7 @@ type Expected = ValueTy | "bool";
 function describeTy(t: Expected): string {
   if (t === "num") return "a number";
   if (t === "bool") return "a boolean";
+  if ("union" in t) return `a '${t.union.join(" | ")}' value`;
   return `an instance of '${displayName(t.instance)}'`;
 }
 
@@ -1113,8 +1166,13 @@ function walkTyped(
     const ok =
       typeof expected === "string"
         ? expected === actual
-        : typeof actual !== "string" &&
-          sameClass(actual.instance, expected.instance);
+        : "union" in expected
+          ? typeof actual !== "string" &&
+            "union" in actual &&
+            sameUnion(actual.union, expected.union)
+          : typeof actual !== "string" &&
+            "instance" in actual &&
+            sameClass(actual.instance, expected.instance);
     if (!ok) {
       throw new ModelError(
         `identifier '${e.text}' is ${describeTy(actual)}, ` +
@@ -1454,7 +1512,11 @@ function walkTyped(
     const ref = newRef(scope, built);
     // The class must exist before the instance is admitted or refused.
     const shape = classShapeOf(scope, ref);
-    if (typeof expected !== "string" && sameClass(ref, expected.instance)) {
+    if (
+      typeof expected !== "string" &&
+      "instance" in expected &&
+      sameClass(ref, expected.instance)
+    ) {
       const rawArgs = built.arguments ?? [];
       if (shape.ctorParams.length !== rawArgs.length) {
         throw new ModelError(
@@ -2149,6 +2211,9 @@ interface ParamReg {
   names: ReadonlyMap<string, ModelRef>;
   module: string;
   self?: ModelRef;
+  /** Whether a union type is admitted here: free functions and methods
+   * take them, a constructor keeps its refusal. */
+  unions: boolean;
 }
 
 /** A parameter's declared type: a number, an already-modeled class, or
@@ -2184,6 +2249,21 @@ function paramValueTy(
         reason: `'${displayName(ref)}' could not be modeled: ${failed.reason}`,
       };
     }
+  }
+  // A keyword union normalizes to its deduplicated tags; a member outside
+  // the keywords refuses at that member, not at the union.
+  if (ts.isUnionTypeNode(t) && reg.unions) {
+    const tags: UnionTag[] = [];
+    for (const m of t.types) {
+      const tag = keywordTag(m);
+      if (tag === undefined) return constructAt(m, m.kind, sf);
+      tags.push(tag);
+    }
+    const union = UNION_TAGS.filter((tag) => tags.includes(tag));
+    if (union.length >= 2) return { union: [...union] };
+    // A one-tag union is its base type; only `number` has a model.
+    if (union[0] === "number") return "num";
+    return constructAt(t, t.kind, sf);
   }
   return constructAt(t, t.kind, sf);
 }
@@ -2399,6 +2479,7 @@ function walkClass(
     failed: c.failed,
     names,
     module: qualifier,
+    unions: false,
   };
   const ctorParams = walkParams(ctor.parameters, sf, ctorReg, ctorParamFailure);
   if (!Array.isArray(ctorParams)) return ctorParams;
@@ -2462,11 +2543,21 @@ function walkClass(
     return modelFailure(err);
   }
 
+  // `ctorReg` bans unions, so this restates the ban where the shape is
+  // recorded rather than trusting the flag everywhere downstream.
+  const shapeCtorParams: CtorValueTy[] = [];
+  for (const p of ctorParams) {
+    /* v8 ignore next 2 -- unreachable: ctorReg refused the union first. */
+    if (typeof p.ty !== "string" && "union" in p.ty)
+      return constructAt(ctor, ctor.kind, sf);
+    shapeCtorParams.push(p.ty);
+  }
+
   const methodSigs = new Map<string, ValueTy[]>();
   const shape: ClassShape = {
     fields,
     getters: getterNames,
-    ctorParams: ctorParams.map((p) => p.ty),
+    ctorParams: shapeCtorParams,
     ctorParamNames: ctorParams.map((p) => p.name),
     methods: methodSigs,
   };
@@ -2526,7 +2617,7 @@ function walkClass(
     ref: self.ref,
     shape: { ...shape, getters: new Set(getters.map((g) => g.name)) },
   };
-  const methodReg: ParamReg = { ...ctorReg, self: self.ref };
+  const methodReg: ParamReg = { ...ctorReg, unions: true, self: self.ref };
   const methods: EmitMethod[] = [];
   for (const m of methodDecls) {
     const spelling = (m.name as ts.Identifier | ts.PrivateIdentifier).text;
@@ -2681,6 +2772,7 @@ function walkFunction(
     failed: c.failed,
     names,
     module,
+    unions: true,
   });
   if (!("params" in sig)) return sig;
   const params = sig.params;

@@ -6132,3 +6132,53 @@ describe("module-level const bindings", () => {
     expectValidEmission(emission);
   });
 });
+
+describe("union-typed parameters", () => {
+  const emit = (src: string) => emitModule(src, "t.ts");
+
+  test("a keyword union maps as a normalized tag array", () => {
+    const { emission } = emit(
+      `export function f(v: string | number, w: null | undefined | number): number {\n  return 0;\n}\n`,
+    );
+    const fn = emission.declarations[0];
+    assert(fn !== undefined && fn.kind === "function");
+    expect(fn.params).toEqual([
+      { name: "v", type: ["number", "string"] },
+      { name: "w", type: ["number", "undefined", "null"] },
+    ]);
+  });
+
+  test("duplicate tags deduplicate; a one-tag union of number is num", () => {
+    const { emission } = emit(
+      `export function f(v: number | number): number {\n  return v;\n}\n`,
+    );
+    const fn = emission.declarations[0];
+    assert(fn !== undefined && fn.kind === "function");
+    expect(fn.params).toEqual([{ name: "v", type: "number" }]);
+  });
+
+  test("a non-keyword member refuses the whole parameter", () => {
+    const { classified } = emit(
+      `/** @ensures{p} forall (x: number) { Object.is(f(x), x) } */\n` +
+        `export function f(v: number | "a"): number {\n  return 0;\n}\n`,
+    );
+    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
+      [
+        "Inappropriate",
+        "'f' could not be modeled: unmapped TypeScript construct 'LiteralType' at 2:31",
+      ],
+    ]);
+  });
+
+  test("a constructor keeps the union ban", () => {
+    const { classified } = emit(
+      `export class C {\n  v: number;\n  constructor(v: number | string) {\n    this.v = 0;\n  }\n}\n` +
+        `/** @ensures{p} forall (x: number) { Object.is(get(x), x) } */\n` +
+        `export function get(x: number): number {\n  return new C(x).v;\n}\n`,
+    );
+    expect(classified[0]?.szs).toBe("Inappropriate");
+    expect(classified[0]?.reason).toContain(
+      "unmapped TypeScript construct 'UnionType'",
+    );
+  });
+});
