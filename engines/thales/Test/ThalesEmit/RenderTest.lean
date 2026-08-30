@@ -159,8 +159,16 @@ def numParamJson (name : String) : Json :=
   (decodeExpr (Json.mkObj [("kind", "inject"), ("tag", "null")]))
   matches .ok (.inject .null none)
 #guard
+  (decodeExpr (Json.mkObj
+    [("kind", "inject"), ("tag", "boolean"),
+     ("expr", Json.mkObj [("kind", "id"), ("name", "b")])]))
+  matches .ok (.inject .boolean (some (.id "b")))
+#guard
   (decodeExpr (Json.mkObj [("kind", "inject"), ("tag", "number")]))
   matches .error "an inject at 'number' needs its operand"
+#guard
+  (decodeExpr (Json.mkObj [("kind", "inject"), ("tag", "boolean")]))
+  matches .error "an inject at 'boolean' needs its operand"
 #guard
   (decodeExpr (Json.mkObj [("kind", "inject"), ("tag", "string")]))
   matches .error _
@@ -368,6 +376,9 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
 
 #eval goldenCheck "tests/fixtures/optionals.emission.json"
   "tests/fixtures/optionals.emitted.lean.expected"
+
+#eval goldenCheck "tests/fixtures/object-is-tagged.emission.json"
+  "tests/fixtures/object-is-tagged.emitted.lean.expected"
 
 -- A module constant renders as a dual-tagged JsNumber def, and a read of
 -- it as a qualified reference, so no binder can capture it.

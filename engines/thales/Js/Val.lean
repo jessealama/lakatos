@@ -92,6 +92,18 @@ def JsVal.sameValue : JsVal → JsVal → Bool
 @[js_norm, grind =] theorem JsVal.sameValue_null_null :
     JsVal.sameValue .null .null = true := rfl
 
+@[js_norm, grind =] theorem JsVal.sameValue_num_undef (x : Float) :
+    JsVal.sameValue (.num x) .undef = false := rfl
+
+@[js_norm, grind =] theorem JsVal.sameValue_bool_num (b : Bool) (y : Float) :
+    JsVal.sameValue (.bool b) (.num y) = false := rfl
+
+@[js_norm, grind =] theorem JsVal.sameValue_num_bool (x : Float) (b : Bool) :
+    JsVal.sameValue (.num x) (.bool b) = false := rfl
+
+@[js_norm, grind =] theorem JsVal.sameValue_bool_bool (a b : Bool) :
+    JsVal.sameValue (.bool a) (.bool b) = (a == b) := rfl
+
 -- `deriving DecidableEq` routes `==` through `decide`, which no equation
 -- of the norm set opens: the emitted tag test compares `typeof v` against
 -- a literal, so the hit needs reflexivity and each miss its own ground

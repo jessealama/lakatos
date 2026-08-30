@@ -75,8 +75,8 @@ export type EmitExpr =
       args: EmitExpr[];
     }
   | { kind: "self" }
-  /** Injection into the tagged domain at a union slot; `expr` is present
-   * exactly for the `number` tag. */
+  /** Injection into the tagged domain; `expr` is present exactly for the
+   * payload-carrying `number` and `boolean` tags. */
   | { kind: "inject"; tag: UnionTag; expr?: EmitExpr }
   /** A union-typed read at a number position: the model refuses coercion,
    * so a wrong-tag value throws rather than converting. */
@@ -724,17 +724,13 @@ function findConstruct(
   }
   const sides = equationSides(e);
   if (sides !== undefined) {
-    // `Object.is` compares JS values of one type; only numbers have a
-    // model here, so a non-numeric argument is refused on the merits.
-    // With a union operand the comparison lives in the JsVal domain, so
-    // its admission set widens to the atoms that domain can hold.
-    const hasUnion = sides.some((s) => unionIdent(s, scope));
+    // `Object.is` compares JS values; the model holds numbers plus the
+    // tags JsVal carries — booleans, union values, `undefined`, `null` —
+    // and SameValue is total over any mix of them (cross-tag is false).
+    // An argument outside those — a string, an instance — is refused on
+    // the merits.
     const admits = (s: ts.Expression) =>
-      numericShaped(s, scope) ||
-      (hasUnion &&
-        (unionIdent(s, scope) ||
-          undefAtom(s, scope) ||
-          unwrapParens(s).kind === ts.SyntaxKind.NullKeyword));
+      numericShaped(s, scope) || taggedOperand(s, scope);
     const offender = sides.findIndex((s) => !admits(s));
     if (offender !== -1) {
       const arg = unwrapParens(sides[offender]!);
@@ -744,11 +740,9 @@ function findConstruct(
       const at = `(${kindName(arg.kind)} at ${line + 1}:${character + 1})`;
       return {
         construct: "Object.is",
-        reason: hasUnion
-          ? `'Object.is' over a union admits numbers, 'undefined', and 'null' ` +
-            `only; argument ${offender + 1} is not one ${at}`
-          : `'Object.is' models numbers only; argument ${offender + 1} is ` +
-            `not a number ${at}`,
+        reason:
+          `'Object.is' admits numbers, booleans, union values, ` +
+          `'undefined', and 'null'; argument ${offender + 1} is not one ${at}`,
       };
     }
     return (
@@ -1787,9 +1781,25 @@ function undefAtom(e: ts.Expression, scope: WalkScope): boolean {
   );
 }
 
+/** Whether an equality operand pulls the comparison into the tagged
+ * domain: a union-typed identifier, a boolean-valued shape, or the
+ * `undefined`/`null` atoms — every static tag JsVal carries beyond the
+ * numbers-only slice. String and bigint values have no expression forms
+ * here, so no operand reaches those tags. */
+function taggedOperand(e: ts.Expression, scope: WalkScope): boolean {
+  const u = unwrapParens(e);
+  return (
+    unionIdent(u, scope) ||
+    booleanShaped(u, scope) ||
+    undefAtom(u, scope) ||
+    u.kind === ts.SyntaxKind.NullKeyword
+  );
+}
+
 /** One side of a JsVal equality: a union identifier stays itself, the
- * undefined/null atoms inject at their tags, and everything else is a
- * number injected at its. */
+ * undefined/null atoms inject at their tags, a boolean-valued shape
+ * injects at 'boolean', and everything else is a number injected at
+ * its. */
 function eqOperand(
   e: ts.Expression,
   scope: WalkScope,
@@ -1801,6 +1811,12 @@ function eqOperand(
   if (undefAtom(u, scope)) return { kind: "inject", tag: "undefined" };
   if (u.kind === ts.SyntaxKind.NullKeyword)
     return { kind: "inject", tag: "null" };
+  if (booleanShaped(u, scope))
+    return {
+      kind: "inject",
+      tag: "boolean",
+      expr: walkTyped(u, "bool", scope, sf),
+    };
   return {
     kind: "inject",
     tag: "number",
@@ -1808,8 +1824,11 @@ function eqOperand(
   };
 }
 
-/** An equality with a union-typed operand lowers over JsVal; undefined
- * when neither side is one, leaving the number path in place. */
+/** An equality pulled into the tagged domain, undefined when no operand
+ * pulls it there, leaving the number path in place. `===`/`!==` lower
+ * over JsVal when an operand is union-typed; `Object.is` also when one
+ * is any other tagged shape — SameValue is total over the domain, so a
+ * statically cross-tag pair evaluates false instead of refusing. */
 function unionEquality(
   l: ts.Expression,
   r: ts.Expression,
@@ -1817,7 +1836,8 @@ function unionEquality(
   scope: WalkScope,
   sf: ts.SourceFile,
 ): EmitExpr | undefined {
-  if (!unionIdent(l, scope) && !unionIdent(r, scope)) return undefined;
+  const pulls = semantics === "same-value" ? taggedOperand : unionIdent;
+  if (!pulls(l, scope) && !pulls(r, scope)) return undefined;
   return {
     kind: "jsval-eq",
     semantics,
@@ -3454,6 +3474,12 @@ function obligationPayload(
       names,
       module,
     };
+    // A SameValue conclusion over number operands splits into the JsM
+    // equation; one with an operand the tagged domain carries — boolean,
+    // undefined, null — is instead a boolean island over JsVal, the same
+    // lowering the atom gets in a guard or a branch condition.
+    const asEquation =
+      sides !== undefined && !sides.some((s) => taggedOperand(s, scope));
     // Guards precede the conclusion in the old elaborator's tree order, so
     // the first refusal either pipeline reports is the same one. The
     // conclusion is pre-scanned as written — an equation splits into its
@@ -3461,10 +3487,10 @@ function obligationPayload(
     const prescanRoots: ScanRoot[] = [...guardRoots, { expr, sf: parsed.sf }];
     const walkRoots: (ScanRoot & { expected: Expected })[] = [
       ...guardRoots,
-      ...(sides !== undefined
+      ...(asEquation
         ? [
-            { expr: sides[0]!, sf: parsed.sf, expected: "num" as Expected },
-            { expr: sides[1]!, sf: parsed.sf, expected: "num" as Expected },
+            { expr: sides![0]!, sf: parsed.sf, expected: "num" as Expected },
+            { expr: sides![1]!, sf: parsed.sf, expected: "num" as Expected },
           ]
         : [{ expr, sf: parsed.sf, expected: "bool" as Expected }]),
     ];
@@ -3504,14 +3530,13 @@ function obligationPayload(
         binders: loweredBinders,
         // Absent, not empty, when the formula has no guards.
         ...(walkedGuards.length > 0 ? { guards: walkedGuards } : {}),
-        conclusion:
-          sides !== undefined
-            ? {
-                kind: "eq",
-                left: walkedConclusion[0]!,
-                right: walkedConclusion[1]!,
-              }
-            : { kind: "istrue", expr: walkedConclusion[0]! },
+        conclusion: asEquation
+          ? {
+              kind: "eq",
+              left: walkedConclusion[0]!,
+              right: walkedConclusion[1]!,
+            }
+          : { kind: "istrue", expr: walkedConclusion[0]! },
       },
     };
   } catch (e) {

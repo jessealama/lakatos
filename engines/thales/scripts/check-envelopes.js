@@ -187,6 +187,19 @@ const OPTIONAL_FIXTURES = [
   `${CONFORMANCE}/inappropriate/optional-non-trailing.ts`,
 ];
 
+/** The SameValue-over-JsVal slice (#209): Object.is widened to the tags
+ * the domain carries — boolean operands, the undefined atom — so a
+ * statically cross-tag comparison answers false instead of refusing,
+ * plus the string refusal Object.is must keep. */
+const SAMEVALUE_FIXTURES = [
+  "engines/thales/tests/fixtures/object-is-tagged.ts",
+  `${CONFORMANCE}/theorem/object-is-boolean-reflexive.ts`,
+  `${CONFORMANCE}/theorem/object-is-mixed-branch.ts`,
+  `${CONFORMANCE}/theorem/object-is-undefined-atom.ts`,
+  `${CONFORMANCE}/countersatisfiable/object-is-mixed-tag.ts`,
+  `${CONFORMANCE}/inappropriate/object-is-string.ts`,
+];
+
 const fixtures =
   process.env.LAKATOS_PROVE_E2E === "1"
     ? [
@@ -202,6 +215,7 @@ const fixtures =
         ...CONST_FIXTURES,
         ...UNION_FIXTURES,
         ...OPTIONAL_FIXTURES,
+        ...SAMEVALUE_FIXTURES,
       ]
     : QUICK_FIXTURES;
 

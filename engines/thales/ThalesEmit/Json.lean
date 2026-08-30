@@ -281,6 +281,8 @@ partial def decodeExpr (j : Json) : Except String JsExpr := do
     match ← decodeTag spelling, j.getObjVal? "expr" with
     | .number, .ok v => pure (.inject .number (some (← decodeExpr v)))
     | .number, .error _ => throw "an inject at 'number' needs its operand"
+    | .boolean, .ok v => pure (.inject .boolean (some (← decodeExpr v)))
+    | .boolean, .error _ => throw "an inject at 'boolean' needs its operand"
     | .undefined, .error _ => pure (.inject .undefined none)
     | .null, .error _ => pure (.inject .null none)
     | _, _ => throw s!"an inject at '{spelling}' is not in the emission slice yet"

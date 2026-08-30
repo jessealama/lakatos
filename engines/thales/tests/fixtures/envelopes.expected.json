@@ -1148,5 +1148,97 @@
       "szs": "Inappropriate",
       "reason": "'span' could not be modeled: unmapped TypeScript construct 'Parameter' at 2:35"
     }
+  ],
+  "engines/thales/tests/fixtures/object-is-tagged.ts": [
+    {
+      "function": "skipMixed",
+      "property": "mixedTagSkipped",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_7230424825148625688",
+      "axioms": []
+    },
+    {
+      "function": "definedOnly",
+      "property": "undefinedNeverHits",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_7901896558188647126",
+      "axioms": []
+    },
+    {
+      "function": "probe",
+      "property": "boolReflexive",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_1913682430452785300",
+      "axioms": []
+    },
+    {
+      "function": "claimMixed",
+      "property": "mixedTagClaimed",
+      "szs": "CounterSatisfiable",
+      "reason": "the property is false on its bounded domain",
+      "counterexample": {
+        "n": 0
+      }
+    },
+    {
+      "function": "ident",
+      "property": "vacuousMixedGuard",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_10585643514604141249",
+      "axioms": []
+    },
+    {
+      "function": "classify",
+      "property": "unionNeverBool",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_7174915021429395960",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/object-is-boolean-reflexive.ts": [
+    {
+      "function": "probe",
+      "property": "same",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_10087859598288729532",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/object-is-mixed-branch.ts": [
+    {
+      "function": "pick",
+      "property": "alwaysOne",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_753628160586726364",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/object-is-undefined-atom.ts": [
+    {
+      "function": "definedOnly",
+      "property": "neverUndefined",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_7367674600123321343",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/countersatisfiable/object-is-mixed-tag.ts": [
+    {
+      "function": "probe",
+      "property": "mixed",
+      "szs": "CounterSatisfiable",
+      "reason": "the property is false on its bounded domain",
+      "counterexample": {
+        "n": 0
+      }
+    }
+  ],
+  "engines/thales/tests/conformance/inappropriate/object-is-string.ts": [
+    {
+      "function": "pick",
+      "property": "mixed",
+      "szs": "Inappropriate",
+      "reason": "'pick' could not be modeled: 'Object.is' admits numbers, booleans, union values, 'undefined', and 'null'; argument 2 is not one (StringLiteral at 3:20)"
+    }
   ]
 }

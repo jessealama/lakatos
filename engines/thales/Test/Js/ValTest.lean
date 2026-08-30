@@ -51,6 +51,10 @@ open Js
 #guard !JsVal.sameValue (.num 0.0) .undef
 #guard !JsVal.sameValue .undef .null
 #guard !JsVal.sameValue (.bigint 1) (.num 1.0)
+#guard !JsVal.sameValue (.bool true) (.num 1.0)
+#guard !JsVal.sameValue (.num 0.0) (.bool false)
+#guard JsVal.sameValue (.bool false) (.bool false)
+#guard !JsVal.sameValue (.bool true) (.bool false)
 
 -- The norm set must evaluate the domain on constructor heads: this is
 -- the discharge story union-typed models rely on, pinned symbolically
@@ -70,6 +74,20 @@ example (x : Float) : JsVal.sameValue .undef (.num x) = false := by
 -- grind opens the same doors on its own.
 example (x : Float) : (JsVal.num x).toNumber = pure x := by grind
 example (x : Float) : JsVal.strictEq (.num x) .undef = false := by grind
+
+-- The SameValue shapes the widened `Object.is` emits (#209): a boolean
+-- injection against a number is false from either side, bool-to-bool is
+-- payload equality, and the undefined atom against a number is false.
+example (b : Bool) (x : Float) : JsVal.sameValue (.bool b) (.num x) = false := by
+  simp only [js_norm]
+example (x : Float) (b : Bool) : JsVal.sameValue (.num x) (.bool b) = false := by
+  simp only [js_norm]
+example (x : Float) : JsVal.sameValue (.num x) .undef = false := by
+  simp only [js_norm]
+example (a b : Bool) : JsVal.sameValue (.bool a) (.bool b) = (a == b) := by
+  simp only [js_norm]
+example (b : Bool) (x : Float) : JsVal.sameValue (.bool b) (.num x) = false := by
+  grind
 
 -- The emitted dispatch shape at unit level: test the tag, project on the
 -- hit, default on the miss. Every JsVal reaching a goal is
