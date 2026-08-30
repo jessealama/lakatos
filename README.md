@@ -130,10 +130,10 @@ interrupted run.
 Everything is one repository, one product, one version number:
 
 - `src/` — the lakatos CLI frontend (the npm package at the repo root).
-- [`engines/thales/`](engines/thales/) — the proof engine: a
-  TypeScript-to-Lean 4 compiler with a graded automatic discharge ladder
-  (exhaustive checking on bounded domains, then a fixed tactic stack, then
-  an honest "unable to prove").
+- [`engines/thales/`](engines/thales/) — the proof engine: an emitter
+  that renders annotated TypeScript as plain Lean 4, with a graded
+  automatic discharge ladder (exhaustive checking on bounded domains,
+  then symbolic tactics, then an honest "unable to prove").
 - [`engines/pabst/`](engines/pabst/) — the refutation engine: compiles
   properties to [fast-check](https://fast-check.dev/) runs.
 - [`spec/`](spec/) — the Lemma annotation language: grammar, prose
@@ -149,16 +149,18 @@ Lakatos is a thin frontend over two engines, one per side of the dialectic:
         refute /          \ prove
               v            v
         engines/pabst   engines/thales
-        (TypeScript;    (Lean 4; prebuilt per-platform
-         fast-check)     bundle, auto-downloaded on
-                         first use)
+        (TypeScript;    (Lean 4; today: elan/lake
+         fast-check)     on PATH — see Status)
 ```
 
-The engines never depend on each other. Neither requires you to install
-Lean: the Lean engine ships as a prebuilt per-platform bundle that lakatos
-fetches once, Playwright-style. The bundle is built from this repository's
-own releases — frontend and engine are cut from the same commit, so there
-is no engine version to pin and no skew to manage.
+The engines never depend on each other. The committed design is that
+neither requires you to install Lean: the Lean engine will ship as a
+prebuilt per-platform bundle that lakatos fetches once, Playwright-style,
+built from this repository's own releases — frontend and engine cut from
+the same commit, so there is no engine version to pin and no skew to
+manage. Today that bundle does not exist yet: `lakatos prove` needs the
+Lean toolchain (elan/lake) on PATH and a lakatos checkout, per Status
+above.
 
 Properties are written in [Lemma](spec/), a little specification language
 embedded in JSDoc — annotated files remain ordinary TypeScript accepted by

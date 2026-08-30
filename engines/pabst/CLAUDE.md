@@ -30,6 +30,6 @@ Generated tests import `bool` and `report` from **`lakatos/runtime`** (`runtime.
 - **Generated code is disposable.** Every run writes a fresh directory and never hand-edits one; determinism comes from the seed.
 - **Engine-neutral logic goes to `lemma/`, fast-check-specific logic stays here.** `domains.ts` renders arbitraries from lemma's bounds; it should not re-derive bounds arithmetic.
 - **Errors that are the input's fault throw `LemmaError`** (the CLI maps it to exit 2 with a one-line diagnostic); anything else escaping is an internal bug. A domain that is merely unrepresentable is not the input's fault: it is contained per annotation as `untried`, never a run-level abort.
-- **Never depend on thales** (and vice versa); the only sharing is via `lemma/` and the root contract. See the root `CLAUDE.md` for the layering rules.
+- **Never depend on thales** (and vice versa); the only sharing is via `lemma/` and the root contract. See the root `README.md` (Layout and Architecture) for the layering.
 
 CI: the root `lakatos.yml` workflow covers pabst (its tests are part of the root vitest suite), and Stryker mutation testing covers its sources.

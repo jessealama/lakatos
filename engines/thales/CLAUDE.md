@@ -110,12 +110,12 @@ CI: `.github/workflows/thales.yml` runs lake build, the Lean tests, both check s
 
 ### Issue tracker
 
-Issues are tracked as GitHub Issues on `jessealama/lakatos` (the monorepo), via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+Issues are tracked as GitHub Issues on `jessealama/lakatos` (the monorepo).
 
 ### Triage labels
 
-The five default triage labels, used as-is (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+The five default triage labels, used as-is (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`).
 
 ### Domain docs
 
-Single-context: `CONTEXT.md` in this directory and `docs/adr/`. See `docs/agents/domain.md`.
+Single-context: `CONTEXT.md` in this directory (the engine's vocabulary and its flagged ambiguities). Dated design records live in `docs/design/` at the repo root; they record decisions as of their date and are not updated to track the code.
