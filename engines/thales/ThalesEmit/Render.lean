@@ -227,6 +227,10 @@ partial def valueTerm (coerced : String → Bool) : JsExpr → RenderM Rendered
   | .selfRef => return ⟨mkIdent (Name.mkSimple "self"), false⟩
   -- A module constant's def is a pure JsNumber; the read is a reference.
   | .constRead name module => return ⟨← modelIdent module name, false⟩
+  | .inject .. => throw "an injection is not in the emission slice yet"
+  | .project .. => throw "a projection is not in the emission slice yet"
+  | .typeofTest .. => throw "a typeof test is not in the emission slice yet"
+  | .jsvalEq .. => throw "a JsVal equality is not in the emission slice yet"
 
 /-- A call as the `JsM` value it denotes, its arguments still
 value-level. -/
@@ -359,6 +363,7 @@ def paramBinders (params : Array Param) :
   groups.mapM fun (ty, xs) => do
     let t : TSyntax `term ← match ty with
       | .number => `(JsNumber)
+      | .union _ => throw "a union parameter is not in the emission slice yet"
       | .cls n m => do let c ← classIdent m n; `($c)
     let b ← `(Lean.Parser.Term.bracketedBinderF| ($xs* : $t))
     return (b : TSyntax ``Lean.Parser.Term.bracketedBinder)

@@ -133,6 +133,71 @@ def numParamJson (name : String) : Json :=
   (decodeParams (Json.mkObj [("params", Json.arr #[Json.mkObj [("name", "x")]])])
     "params")
   matches .error "field 'params': property not found: type"
+-- Union parameter types: an array of ≥2 known tags, order carried as-is.
+#guard
+  (decodeParam (Json.mkObj
+    [("name", "v"), ("type", Json.arr #["number", "string"])]))
+  matches .ok { name := "v", ty := .union #[.number, .string] }
+#guard
+  (decodeParam (Json.mkObj [("name", "v"), ("type", Json.arr #["number"])]))
+  matches .error "a union parameter type needs at least two tags"
+#guard
+  (decodeParam (Json.mkObj
+    [("name", "v"), ("type", Json.arr #["number", "object"])]))
+  matches .error "unknown union tag 'object'"
+
+-- The four union expression kinds decode strictly.
+#guard
+  (decodeExpr (Json.mkObj
+    [("kind", "inject"), ("tag", "number"),
+     ("expr", Json.mkObj [("kind", "id"), ("name", "x")])]))
+  matches .ok (.inject .number (some (.id "x")))
+#guard
+  (decodeExpr (Json.mkObj [("kind", "inject"), ("tag", "undefined")]))
+  matches .ok (.inject .undefined none)
+#guard
+  (decodeExpr (Json.mkObj [("kind", "inject"), ("tag", "null")]))
+  matches .ok (.inject .null none)
+#guard
+  (decodeExpr (Json.mkObj [("kind", "inject"), ("tag", "number")]))
+  matches .error "an inject at 'number' needs its operand"
+#guard
+  (decodeExpr (Json.mkObj [("kind", "inject"), ("tag", "string")]))
+  matches .error _
+#guard
+  (decodeExpr (Json.mkObj
+    [("kind", "project"), ("tag", "number"),
+     ("expr", Json.mkObj [("kind", "id"), ("name", "v")])]))
+  matches .ok (.project .number (.id "v"))
+#guard
+  (decodeExpr (Json.mkObj
+    [("kind", "typeof-test"), ("result", "number"),
+     ("expr", Json.mkObj [("kind", "id"), ("name", "v")])]))
+  matches .ok (.typeofTest (.id "v") "number")
+#guard
+  (decodeExpr (Json.mkObj
+    [("kind", "typeof-test"), ("result", "numbr"),
+     ("expr", Json.mkObj [("kind", "id"), ("name", "v")])]))
+  matches .error "unknown typeof result 'numbr'"
+#guard
+  (decodeExpr (Json.mkObj
+    [("kind", "jsval-eq"), ("semantics", "strict"),
+     ("left", Json.mkObj [("kind", "id"), ("name", "v")]),
+     ("right", Json.mkObj [("kind", "inject"), ("tag", "null")])]))
+  matches .ok (.jsvalEq false (.id "v") (.inject .null none))
+#guard
+  (decodeExpr (Json.mkObj
+    [("kind", "jsval-eq"), ("semantics", "same-value"),
+     ("left", Json.mkObj [("kind", "id"), ("name", "v")]),
+     ("right", Json.mkObj [("kind", "id"), ("name", "w")])]))
+  matches .ok (.jsvalEq true (.id "v") (.id "w"))
+#guard
+  (decodeExpr (Json.mkObj
+    [("kind", "jsval-eq"), ("semantics", "loose"),
+     ("left", Json.mkObj [("kind", "id"), ("name", "v")]),
+     ("right", Json.mkObj [("kind", "id"), ("name", "w")])]))
+  matches .error "unknown equality semantics 'loose'"
+
 -- A method missing its params is a field error, not a default.
 #guard
   (decodeClass (Json.mkObj
