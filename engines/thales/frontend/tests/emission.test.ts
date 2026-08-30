@@ -6311,4 +6311,65 @@ describe("union-typed parameters", () => {
       ],
     ]);
   });
+
+  test("typeof dispatch lowers to a typeof test; !== negates it", () => {
+    const { emission } = emit(
+      `export function toNum(v: number | string): number {\n` +
+        `  if (typeof v === "number") {\n    return v;\n  }\n  return 0;\n}\n` +
+        `export function other(v: number | string): number {\n` +
+        `  if ("number" !== typeof v) {\n    return 0;\n  }\n  return v;\n}\n`,
+    );
+    const [toNum, other] = emission.declarations;
+    assert(toNum?.kind === "function" && other?.kind === "function");
+    expect(fnBody(toNum)[0]).toEqual({
+      kind: "if",
+      cond: {
+        kind: "typeof-test",
+        expr: { kind: "id", name: "v" },
+        result: "number",
+      },
+      then: [
+        {
+          kind: "return",
+          expr: {
+            kind: "project",
+            tag: "number",
+            expr: { kind: "id", name: "v" },
+          },
+        },
+      ],
+    });
+    const first = fnBody(other)[0];
+    assert(first?.kind === "if");
+    expect(first.cond).toEqual({
+      kind: "unop",
+      op: "!",
+      operand: {
+        kind: "typeof-test",
+        expr: { kind: "id", name: "v" },
+        result: "number",
+      },
+    });
+  });
+
+  test("an unrecognized literal, a non-union operand, and typeof outside a comparison all degrade as the construct", () => {
+    for (const body of [
+      `if (typeof v === "numbr") {\n    return 0;\n  }\n  return 0;`,
+      `const t = typeof v;\n  return 0;`,
+    ]) {
+      const { classified } = emit(
+        `/** @ensures{p} forall (x: number) { Object.is(f(x), 0) } */\n` +
+          `export function f(v: number | string): number {\n  ${body}\n}\n`,
+      );
+      expect(classified[0]?.szs).toBe("Inappropriate");
+      expect(classified[0]?.reason).toContain("'TypeOfExpression'");
+    }
+    const plain = emit(
+      `/** @ensures{p} forall (x: number) { Object.is(f(x), 0) } */\n` +
+        `export function f(v: number): number {\n` +
+        `  if (typeof v === "number") {\n    return v;\n  }\n  return 0;\n}\n`,
+    );
+    expect(plain.classified[0]?.szs).toBe("Inappropriate");
+    expect(plain.classified[0]?.reason).toContain("'TypeOfExpression'");
+  });
 });

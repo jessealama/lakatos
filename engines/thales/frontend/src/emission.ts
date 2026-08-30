@@ -80,7 +80,10 @@ export type EmitExpr =
   | { kind: "inject"; tag: UnionTag; expr?: EmitExpr }
   /** A union-typed read at a number position: the model refuses coercion,
    * so a wrong-tag value throws rather than converting. */
-  | { kind: "project"; tag: "number"; expr: EmitExpr };
+  | { kind: "project"; tag: "number"; expr: EmitExpr }
+  /** A `typeof` test on a union-typed operand, against one of the eight
+   * results `typeof` can answer. */
+  | { kind: "typeof-test"; expr: EmitExpr; result: string };
 
 /** A statement in the shapes the plain-Lean emitter renders as Lean
  * do-notation: `const` and mutable `let` locals, reassignment, `if`/`else`
@@ -544,6 +547,60 @@ function booleanShaped(e: ts.Expression, scope: WalkScope): boolean {
   return equationSides(u) !== undefined;
 }
 
+/** What `typeof` can answer. */
+const TYPEOF_RESULTS = new Set([
+  "number",
+  "string",
+  "bigint",
+  "boolean",
+  "undefined",
+  "object",
+  "function",
+  "symbol",
+]);
+
+/** `typeof v === "lit"` / `!==`, either side order, `v` an identifier:
+ * the one typeof shape the model reads. Shape only — validity (a
+ * union-typed operand, a recognized literal) is the walk's question. */
+function typeofTest(e: ts.Expression):
+  | {
+      typeofNode: ts.TypeOfExpression;
+      operand: ts.Identifier;
+      result: string;
+      negated: boolean;
+    }
+  | undefined {
+  if (!ts.isBinaryExpression(e)) return undefined;
+  const op = e.operatorToken.getText();
+  if (op !== "===" && op !== "!==") return undefined;
+  const pick = (a: ts.Expression, b: ts.Expression) => {
+    const t = unwrapParens(a);
+    if (!ts.isTypeOfExpression(t)) return undefined;
+    const operand = unwrapParens(t.expression);
+    if (!ts.isIdentifier(operand)) return undefined;
+    const lit = unwrapParens(b);
+    if (!ts.isStringLiteral(lit)) return undefined;
+    return { typeofNode: t, operand, result: lit.text };
+  };
+  const found = pick(e.left, e.right) ?? pick(e.right, e.left);
+  return found === undefined ? undefined : { ...found, negated: op === "!==" };
+}
+
+/** Whether a recognized typeof-test shape is inside the model: the
+ * operand is union-typed and the literal is a typeof result. */
+function validTypeofTest(
+  tt: { operand: ts.Identifier; result: string },
+  scope: WalkScope,
+): boolean {
+  const bound = scope.vars.get(tt.operand.text);
+  return (
+    bound !== undefined &&
+    typeof bound !== "string" &&
+    "union" in bound &&
+    TYPEOF_RESULTS.has(tt.result)
+  );
+}
+
 /** Truthiness has no model: a logical operator is admitted only over
  * operands that are themselves modeled booleans. */
 function nonBooleanOperand(
@@ -583,6 +640,11 @@ function findConstruct(
   if (negatedLiteral(e) !== undefined) return undefined;
   if (isUnaryArith(e)) return findConstruct(e.operand, sf, scope);
   if (ts.isBinaryExpression(e)) {
+    const tt = typeofTest(e);
+    if (tt !== undefined) {
+      if (validTypeofTest(tt, scope)) return undefined;
+      return constructAt(tt.typeofNode, tt.typeofNode.kind, sf);
+    }
     const op = e.operatorToken.getText();
     if (LOGICAL_OPERATORS.has(op)) {
       if (!booleanShaped(e.left, scope))
@@ -1230,6 +1292,28 @@ function walkTyped(
     return { kind: "cond", cond, then: whenTrue, else: whenFalse };
   }
   if (ts.isBinaryExpression(e)) {
+    const tt = typeofTest(e);
+    if (tt !== undefined) {
+      /* v8 ignore start -- the construct scan admits only valid tests, so
+         an invalid one degraded the declaration before the walk; the
+         throw mirrors the scan for the same defense. */
+      if (!validTypeofTest(tt, scope)) {
+        const failed = constructAt(tt.typeofNode, tt.typeofNode.kind, sf);
+        throw new ModelError(failed.reason, failed.construct);
+      }
+      /* v8 ignore stop */
+      if (expected !== "bool") {
+        throw new ModelError(
+          `a 'typeof' test yields a boolean, not ${describeTy(expected)}`,
+        );
+      }
+      const test: EmitExpr = {
+        kind: "typeof-test",
+        expr: { kind: "id", name: tt.operand.text },
+        result: tt.result,
+      };
+      return tt.negated ? { kind: "unop", op: "!", operand: test } : test;
+    }
     const op = e.operatorToken.getText(sf);
     if (LOGICAL_OPERATORS.has(op)) {
       const left = walkTyped(e.left, "bool", scope, sf);
