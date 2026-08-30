@@ -51,7 +51,8 @@ re-parsed plain text, so a binder or parameter spelled like one would
 capture the reference. -/
 def reservedNames : List String :=
   ["pure", "ballIco", "floatInf", "floatNaN", "Float", "Number", "Int",
-   "JsM", "JsNumber", "Bool", "TsModel", "JsError", "mut", "self"]
+   "JsM", "JsNumber", "Bool", "TsModel", "JsError", "mut", "self",
+   "JsVal", "TypeofResult"]
 
 /-- A binder or parameter: the source name, primed out of the reserved
 vocabulary — a spelling no TS identifier has. -/
@@ -112,6 +113,13 @@ right in JS evaluation order, which is the old model's bind order. -/
 structure Rendered where
   term : TSyntax `term
   lifted : Bool
+
+/-- One of the eight typeof spellings as its `TypeofResult` constructor;
+the decoder validated the spelling, so an unknown one is a decode bug. -/
+def typeofResultTerm (r : String) : RenderM (TSyntax `term) := do
+  unless typeofResults.contains r do
+    throw s!"unknown typeof result '{r}'"
+  return mkIdent (`TypeofResult ++ Name.mkSimple r)
 
 mutual
 
@@ -227,6 +235,33 @@ partial def valueTerm (coerced : String → Bool) : JsExpr → RenderM Rendered
   | .selfRef => return ⟨mkIdent (Name.mkSimple "self"), false⟩
   -- A module constant's def is a pure JsNumber; the read is a reference.
   | .constRead name module => return ⟨← modelIdent module name, false⟩
+  -- Injection is by constructor, so purity rides the operand; the tags
+  -- with no payload carry none.
+  | .inject tag operand => do
+    match tag, operand with
+    | .number, some e =>
+      let ⟨t, lifted⟩ ← valueTerm coerced e
+      return ⟨← `(JsVal.num $t), lifted⟩
+    | .undefined, none => return ⟨← `(JsVal.undef), false⟩
+    | .null, none => return ⟨← `(JsVal.null), false⟩
+    | _, _ =>
+      throw "an injection outside number/undefined/null is not in the emission slice yet"
+  -- Projection throws on the wrong tag, so it is a JsM computation: it
+  -- renders behind the bind, which is what makes the read lifted.
+  | .project tag e => do
+    match tag with
+    | .number =>
+      let ⟨t, _⟩ ← valueTerm coerced e
+      return ⟨← `((← JsVal.toNumber $t)), true⟩
+    | _ => throw "a projection outside 'number' is not in the emission slice yet"
+  | .typeofTest e r => do
+    let ⟨t, lifted⟩ ← valueTerm coerced e
+    return ⟨← `(JsVal.typeof $t == $(← typeofResultTerm r)), lifted⟩
+  | .jsvalEq same l r => do
+    let ⟨lt, ll⟩ ← valueTerm coerced l
+    let ⟨rt, rl⟩ ← valueTerm coerced r
+    if same then return ⟨← `(JsVal.sameValue $lt $rt), ll || rl⟩
+    return ⟨← `(JsVal.strictEq $lt $rt), ll || rl⟩
 
 /-- A call as the `JsM` value it denotes, its arguments still
 value-level. -/
@@ -359,6 +394,9 @@ def paramBinders (params : Array Param) :
   groups.mapM fun (ty, xs) => do
     let t : TSyntax `term ← match ty with
       | .number => `(JsNumber)
+      -- Every union spelling is the one tagged domain: the tags say what
+      -- may be injected, never what the binder's type is.
+      | .union _ => `(JsVal)
       | .cls n m => do let c ← classIdent m n; `($c)
     let b ← `(Lean.Parser.Term.bracketedBinderF| ($xs* : $t))
     return (b : TSyntax ``Lean.Parser.Term.bracketedBinder)

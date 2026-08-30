@@ -42,9 +42,24 @@
       "pattern": "^(?!/)[^\\u0000-\\u001f\\u00ab\\u00bb]+$"
     },
     "paramType": {
-      "description": "A parameter's declared type: a TypeScript number, or an instance of a modeled class.",
+      "description": "A parameter's declared type: a TypeScript number, a keyword union, or an instance of a modeled class.",
       "oneOf": [
         { "const": "number" },
+        {
+          "type": "array",
+          "description": "A union-typed parameter: its keyword-member tags, deduplicated and sorted number, string, bigint, boolean, undefined, null; at least two.",
+          "minItems": 2,
+          "items": {
+            "enum": [
+              "number",
+              "string",
+              "bigint",
+              "boolean",
+              "undefined",
+              "null"
+            ]
+          }
+        },
         {
           "type": "object",
           "additionalProperties": false,
@@ -315,6 +330,62 @@
             "kind": { "const": "const-read" },
             "name": { "$ref": "#/definitions/identifier" },
             "module": { "$ref": "#/definitions/modulePath" }
+          }
+        },
+        {
+          "type": "object",
+          "description": "An injection into the JsVal domain at a union position; 'expr' is present exactly for the 'number' tag, absent for 'undefined'/'null'.",
+          "additionalProperties": false,
+          "required": ["kind", "tag"],
+          "properties": {
+            "kind": { "const": "inject" },
+            "tag": { "enum": ["number", "undefined", "null"] },
+            "expr": { "$ref": "#/definitions/expr" }
+          }
+        },
+        {
+          "type": "object",
+          "description": "A throwing projection out of the JsVal domain: the model refuses coercion, so a wrong-tag operand throws rather than converts.",
+          "additionalProperties": false,
+          "required": ["kind", "tag", "expr"],
+          "properties": {
+            "kind": { "const": "project" },
+            "tag": { "const": "number" },
+            "expr": { "$ref": "#/definitions/expr" }
+          }
+        },
+        {
+          "type": "object",
+          "description": "A typeof test on a union-typed operand against one of the eight typeof results.",
+          "additionalProperties": false,
+          "required": ["kind", "expr", "result"],
+          "properties": {
+            "kind": { "const": "typeof-test" },
+            "expr": { "$ref": "#/definitions/expr" },
+            "result": {
+              "enum": [
+                "number",
+                "string",
+                "bigint",
+                "boolean",
+                "undefined",
+                "object",
+                "function",
+                "symbol"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "JS equality over JsVal operands: '===' as strict, Object.is as same-value; neither coerces, so cross-tag is false.",
+          "additionalProperties": false,
+          "required": ["kind", "semantics", "left", "right"],
+          "properties": {
+            "kind": { "const": "jsval-eq" },
+            "semantics": { "enum": ["strict", "same-value"] },
+            "left": { "$ref": "#/definitions/expr" },
+            "right": { "$ref": "#/definitions/expr" }
           }
         }
       ]

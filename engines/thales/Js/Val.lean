@@ -83,4 +83,23 @@ def JsVal.sameValue : JsVal → JsVal → Bool
 @[js_norm, grind =] theorem JsVal.strictEq_num_undef (x : Float) :
     JsVal.strictEq (.num x) .undef = false := rfl
 
+@[js_norm, grind =] theorem JsVal.strictEq_num_null (x : Float) :
+    JsVal.strictEq (.num x) .null = false := rfl
+
+@[js_norm, grind =] theorem JsVal.sameValue_num_null (x : Float) :
+    JsVal.sameValue (.num x) .null = false := rfl
+
+@[js_norm, grind =] theorem JsVal.sameValue_null_null :
+    JsVal.sameValue .null .null = true := rfl
+
+-- `deriving DecidableEq` routes `==` through `decide`, which no equation
+-- of the norm set opens: the emitted tag test compares `typeof v` against
+-- a literal, so the hit needs reflexivity and each miss its own ground
+-- rewrite.
+@[js_norm] theorem TypeofResult.beq_self (r : TypeofResult) :
+    (r == r) = true := beq_self_eq_true r
+
+@[js_norm, grind =] theorem TypeofResult.string_beq_number :
+    (TypeofResult.string == TypeofResult.number) = false := rfl
+
 end Js

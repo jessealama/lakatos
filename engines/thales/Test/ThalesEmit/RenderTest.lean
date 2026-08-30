@@ -133,6 +133,71 @@ def numParamJson (name : String) : Json :=
   (decodeParams (Json.mkObj [("params", Json.arr #[Json.mkObj [("name", "x")]])])
     "params")
   matches .error "field 'params': property not found: type"
+-- Union parameter types: an array of ≥2 known tags, order carried as-is.
+#guard
+  (decodeParam (Json.mkObj
+    [("name", "v"), ("type", Json.arr #["number", "string"])]))
+  matches .ok { name := "v", ty := .union #[.number, .string] }
+#guard
+  (decodeParam (Json.mkObj [("name", "v"), ("type", Json.arr #["number"])]))
+  matches .error "a union parameter type needs at least two tags"
+#guard
+  (decodeParam (Json.mkObj
+    [("name", "v"), ("type", Json.arr #["number", "object"])]))
+  matches .error "unknown union tag 'object'"
+
+-- The four union expression kinds decode strictly.
+#guard
+  (decodeExpr (Json.mkObj
+    [("kind", "inject"), ("tag", "number"),
+     ("expr", Json.mkObj [("kind", "id"), ("name", "x")])]))
+  matches .ok (.inject .number (some (.id "x")))
+#guard
+  (decodeExpr (Json.mkObj [("kind", "inject"), ("tag", "undefined")]))
+  matches .ok (.inject .undefined none)
+#guard
+  (decodeExpr (Json.mkObj [("kind", "inject"), ("tag", "null")]))
+  matches .ok (.inject .null none)
+#guard
+  (decodeExpr (Json.mkObj [("kind", "inject"), ("tag", "number")]))
+  matches .error "an inject at 'number' needs its operand"
+#guard
+  (decodeExpr (Json.mkObj [("kind", "inject"), ("tag", "string")]))
+  matches .error _
+#guard
+  (decodeExpr (Json.mkObj
+    [("kind", "project"), ("tag", "number"),
+     ("expr", Json.mkObj [("kind", "id"), ("name", "v")])]))
+  matches .ok (.project .number (.id "v"))
+#guard
+  (decodeExpr (Json.mkObj
+    [("kind", "typeof-test"), ("result", "number"),
+     ("expr", Json.mkObj [("kind", "id"), ("name", "v")])]))
+  matches .ok (.typeofTest (.id "v") "number")
+#guard
+  (decodeExpr (Json.mkObj
+    [("kind", "typeof-test"), ("result", "numbr"),
+     ("expr", Json.mkObj [("kind", "id"), ("name", "v")])]))
+  matches .error "unknown typeof result 'numbr'"
+#guard
+  (decodeExpr (Json.mkObj
+    [("kind", "jsval-eq"), ("semantics", "strict"),
+     ("left", Json.mkObj [("kind", "id"), ("name", "v")]),
+     ("right", Json.mkObj [("kind", "inject"), ("tag", "null")])]))
+  matches .ok (.jsvalEq false (.id "v") (.inject .null none))
+#guard
+  (decodeExpr (Json.mkObj
+    [("kind", "jsval-eq"), ("semantics", "same-value"),
+     ("left", Json.mkObj [("kind", "id"), ("name", "v")]),
+     ("right", Json.mkObj [("kind", "id"), ("name", "w")])]))
+  matches .ok (.jsvalEq true (.id "v") (.id "w"))
+#guard
+  (decodeExpr (Json.mkObj
+    [("kind", "jsval-eq"), ("semantics", "loose"),
+     ("left", Json.mkObj [("kind", "id"), ("name", "v")]),
+     ("right", Json.mkObj [("kind", "id"), ("name", "w")])]))
+  matches .error "unknown equality semantics 'loose'"
+
 -- A method missing its params is a field error, not a default.
 #guard
   (decodeClass (Json.mkObj
@@ -297,6 +362,9 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
 
 #eval goldenCheck "tests/fixtures/module-consts.emission.json"
   "tests/fixtures/module-consts.emitted.lean.expected"
+
+#eval goldenCheck "tests/fixtures/unions.emission.json"
+  "tests/fixtures/unions.emitted.lean.expected"
 
 -- A module constant renders as a dual-tagged JsNumber def, and a read of
 -- it as a qualified reference, so no binder can capture it.
@@ -735,3 +803,81 @@ end
     throwError "the constructor-image hypothesis did not render:\n{rendered}"
   unless (rendered.splitOn "Float.ofInt").length == 1 do
     throwError "a class binder was coerced from Int:\n{rendered}"
+
+/-- The union signature most union fixtures share. -/
+def unionParam (n : String) : Param :=
+  { name := n, ty := .union #[.number, .string] }
+
+-- A union-typed parameter renders as `(v : JsVal)` — one Lean type for
+-- every union spelling — with the typeof dispatch, the throwing
+-- projection behind `←`, and the injected obligation argument.
+#eval show CoreM Unit from do
+  let e : Emission := {
+    file := "t.ts"
+    declarations := #[.fn
+      { name := "toNum", params := #[unionParam "v"], source := "toNum",
+        body := #[
+          .ite (.typeofTest (.id "v") "number")
+            #[.ret (.project .number (.id "v"))] none,
+          .ret (.num "0")] }]
+    obligations := #[
+      { function := "toNum", property := "numId", formula := "f",
+        payload := .structured #[.number "x" none none] #[]
+          (.eq (.call "toNum" none #[.inject .number (some (.id "x"))])
+               (.id "x")) }] }
+  let rendered ← renderEmission e
+  unless (rendered.splitOn "def TsModel.toNum (v : JsVal) : JsM JsNumber := do").length == 2 do
+    throwError "the union parameter is not a JsVal binder:\n{rendered}"
+  unless (rendered.splitOn "if JsVal.typeof v == TypeofResult.number then").length == 2 do
+    throwError "the typeof test did not render:\n{rendered}"
+  unless (rendered.splitOn "return (← JsVal.toNumber v)").length == 2 do
+    throwError "the projection is not behind ←:\n{rendered}"
+  unless (rendered.splitOn "TsModel.toNum (JsVal.num x)").length == 2 do
+    throwError "the obligation argument is not injected:\n{rendered}"
+
+-- An Int-binder argument injects through its Float coercion, and both
+-- JsVal equalities render as the pure Bool predicates.
+#eval show CoreM Unit from do
+  let e : Emission := {
+    file := "t.ts"
+    declarations := #[.fn
+      { name := "nullFlag",
+        params := #[{ name := "v", ty := .union #[.number, .null] }],
+        source := "nullFlag",
+        body := #[
+          .ite (.jsvalEq true (.id "v") (.inject .null none))
+            #[.ret (.num "1")] none,
+          .ret (.num "0")] }]
+    obligations := #[
+      { function := "nullFlag", property := "p", formula := "f",
+        payload := .structured #[.range "n" 0 4] #[]
+          (.eq (.call "nullFlag" none #[.inject .number (some (.id "n"))])
+               (.num "0")) }] }
+  let rendered ← renderEmission e
+  unless (rendered.splitOn "if JsVal.sameValue v JsVal.null then").length == 2 do
+    throwError "same-value over JsVal did not render:\n{rendered}"
+  unless (rendered.splitOn "JsVal.num (Float.ofInt n)").length == 2 do
+    throwError "the coerced binder argument is not injected:\n{rendered}"
+
+-- strictEq spells `===` over unions; a parameter spelled like the new
+-- vocabulary is primed out of its way.
+#eval show CoreM Unit from do
+  let e : Emission := {
+    file := "t.ts"
+    declarations := #[
+      .fn
+        { name := "eq", params := #[unionParam "v", unionParam "w"],
+          source := "eq",
+          body := #[
+            .ite (.jsvalEq false (.id "v") (.id "w"))
+              #[.ret (.num "1")] none,
+            .ret (.num "0")] },
+      .fn
+        { name := "shadow", params := #[{ name := "JsVal", ty := .number }],
+          source := "shadow", body := #[.ret (.id "JsVal")] }]
+    obligations := #[] }
+  let rendered ← renderEmission e
+  unless (rendered.splitOn "if JsVal.strictEq v w then").length == 2 do
+    throwError "strictEq over JsVal did not render:\n{rendered}"
+  unless (rendered.splitOn "JsVal'").length == 3 do
+    throwError "the JsVal-spelled parameter was not primed:\n{rendered}"

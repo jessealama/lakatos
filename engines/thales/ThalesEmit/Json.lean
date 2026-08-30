@@ -8,6 +8,12 @@ namespace ThalesEmit
 
 open Lean
 
+/-- A union member's keyword tag — the six the model admits, carried in
+the normalization order the frontend sorts them into. -/
+inductive JsTag where
+  | number | string | bigint | boolean | undefined | null
+deriving Repr, Inhabited, BEq
+
 inductive JsExpr where
   | num (lit : String)
   | id (name : String)
@@ -29,6 +35,16 @@ inductive JsExpr where
       (object : JsExpr) (args : Array JsExpr)
   | selfRef
   | constRead (name : String) (module : Option String)
+  /-- Injection into the `JsVal` domain at a union position; the operand is
+  present exactly for the `number` tag. -/
+  | inject (tag : JsTag) (operand : Option JsExpr)
+  /-- Throwing projection out of it: the model refuses coercion, so a
+  wrong-tag operand throws rather than converting. -/
+  | project (tag : JsTag) (operand : JsExpr)
+  | typeofTest (operand : JsExpr) (result : String)
+  /-- JS equality over `JsVal`: `===` as strict, `Object.is` as
+  same-value. Neither coerces, so cross-tag is false. -/
+  | jsvalEq (sameValue : Bool) (left right : JsExpr)
 deriving Repr, Inhabited
 
 inductive JsStmt where
@@ -41,10 +57,13 @@ inductive JsStmt where
   | fieldSet (field : String) (expr : JsExpr)
 deriving Repr, Inhabited
 
-/-- A parameter's declared type: a TypeScript number, or an instance of a
-modeled class, whose module is none for the entry file's own. -/
+/-- A parameter's declared type: a TypeScript number, a keyword union, or
+an instance of a modeled class, whose module is none for the entry file's
+own. Every union spelling is one Lean type, so the tags never reach the
+binder — they are the frontend's record of what may be injected. -/
 inductive ParamTy where
   | number
+  | union (tags : Array JsTag)
   | cls (name : String) (module : Option String)
 deriving Repr, Inhabited, BEq
 
@@ -197,6 +216,21 @@ def decodeIntString (s : String) : Except String Int :=
   | some i => pure i
   | none => throw s!"'{s}' is not a decimal integer"
 
+def decodeTag (s : String) : Except String JsTag :=
+  match s with
+  | "number" => pure .number
+  | "string" => pure .string
+  | "bigint" => pure .bigint
+  | "boolean" => pure .boolean
+  | "undefined" => pure .undefined
+  | "null" => pure .null
+  | t => throw s!"unknown union tag '{t}'"
+
+/-- What `typeof` can answer. -/
+def typeofResults : List String :=
+  ["number", "string", "bigint", "boolean", "undefined",
+   "object", "function", "symbol"]
+
 partial def decodeExpr (j : Json) : Except String JsExpr := do
   match ← getStr j "kind" with
   | "num" => pure (.num (← getStr j "lit"))
@@ -242,6 +276,28 @@ partial def decodeExpr (j : Json) : Except String JsExpr := do
   | "self" => pure .selfRef
   | "const-read" =>
     pure (.constRead (← getStr j "name") (← getStrOpt j "module"))
+  | "inject" =>
+    let spelling ← getStr j "tag"
+    match ← decodeTag spelling, j.getObjVal? "expr" with
+    | .number, .ok v => pure (.inject .number (some (← decodeExpr v)))
+    | .number, .error _ => throw "an inject at 'number' needs its operand"
+    | .undefined, .error _ => pure (.inject .undefined none)
+    | .null, .error _ => pure (.inject .null none)
+    | _, _ => throw s!"an inject at '{spelling}' is not in the emission slice yet"
+  | "project" =>
+    pure (.project (← decodeTag (← getStr j "tag"))
+      (← decodeExpr (← j.getObjVal? "expr")))
+  | "typeof-test" =>
+    let r ← getStr j "result"
+    unless typeofResults.contains r do throw s!"unknown typeof result '{r}'"
+    pure (.typeofTest (← decodeExpr (← j.getObjVal? "expr")) r)
+  | "jsval-eq" =>
+    let same ← match ← getStr j "semantics" with
+      | "strict" => pure false
+      | "same-value" => pure true
+      | s => throw s!"unknown equality semantics '{s}'"
+    pure (.jsvalEq same (← decodeExpr (← j.getObjVal? "left"))
+      (← decodeExpr (← j.getObjVal? "right")))
   | k => throw s!"unknown expression kind '{k}'"
 
 partial def decodeStmt (j : Json) : Except String JsStmt := do
@@ -280,12 +336,23 @@ def decodeNames (j : Json) (field what : String) :
   (← getArr j field).mapM fun n =>
     n.getStr?.mapError fun _ => s!"a {what} is not a string"
 
-/-- A parameter's type: the string "number", or a class object. -/
+/-- A parameter's type: the string "number", an array of union tags, or a
+class object. -/
 def decodeParamTy (j : Json) : Except String ParamTy :=
   match j.getStr? with
   | .ok "number" => pure .number
   | .ok s => throw s!"unknown parameter type '{s}'"
-  | .error _ => do pure (.cls (← getStr j "class") (← getStrOpt j "module"))
+  | .error _ =>
+    match j.getArr? with
+    | .ok tags => do
+      let ts ← tags.mapM fun t =>
+        match t.getStr? with
+        | .ok s => decodeTag s
+        | .error _ => throw "a union tag is not a string"
+      unless ts.size ≥ 2 do
+        throw "a union parameter type needs at least two tags"
+      pure (.union ts)
+    | .error _ => do pure (.cls (← getStr j "class") (← getStrOpt j "module"))
 
 def decodeParam (j : Json) : Except String Param := do
   pure { name := ← getStr j "name"

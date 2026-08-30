@@ -74,7 +74,24 @@ export type EmitExpr =
       object: EmitExpr;
       args: EmitExpr[];
     }
-  | { kind: "self" };
+  | { kind: "self" }
+  /** Injection into the tagged domain at a union slot; `expr` is present
+   * exactly for the `number` tag. */
+  | { kind: "inject"; tag: UnionTag; expr?: EmitExpr }
+  /** A union-typed read at a number position: the model refuses coercion,
+   * so a wrong-tag value throws rather than converting. */
+  | { kind: "project"; tag: "number"; expr: EmitExpr }
+  /** A `typeof` test on a union-typed operand, against one of the eight
+   * results `typeof` can answer. */
+  | { kind: "typeof-test"; expr: EmitExpr; result: string }
+  /** JS equality over the tagged domain: `===` as strict, `Object.is` as
+   * same-value. Neither coerces, so a cross-tag pair is false. */
+  | {
+      kind: "jsval-eq";
+      semantics: "strict" | "same-value";
+      left: EmitExpr;
+      right: EmitExpr;
+    };
 
 /** A statement in the shapes the plain-Lean emitter renders as Lean
  * do-notation: `const` and mutable `let` locals, reassignment, `if`/`else`
@@ -91,10 +108,11 @@ export type EmitStmt =
   | { kind: "field-set"; field: string; expr: EmitExpr };
 
 /** A parameter on the wire: its name and its declared type — a TypeScript
- * number, or an instance of a modeled class. */
+ * number, a keyword union's normalized tags, or an instance of a modeled
+ * class. */
 export interface EmitParam {
   name: string;
-  type: "number" | { class: string; module?: string };
+  type: "number" | UnionTag[] | { class: string; module?: string };
 }
 
 export interface EmitFunction {
@@ -155,19 +173,67 @@ export interface EmitConstant {
 
 export type EmitDecl = EmitFunction | EmitClass | EmitConstant;
 
-/** A value's type in the walk: a number, or an instance of a modeled
- * class. Only parameters can carry the instance type; locals, fields, and
- * returns are numbers. */
-export type ValueTy = "num" | { instance: ModelRef };
+/** The union member tags the model admits, in normalization order. */
+export const UNION_TAGS = [
+  "number",
+  "string",
+  "bigint",
+  "boolean",
+  "undefined",
+  "null",
+] as const;
+export type UnionTag = (typeof UNION_TAGS)[number];
+
+/** A value's type in the walk: a number, a keyword union, or an instance
+ * of a modeled class. Only parameters can carry the union and instance
+ * types; locals, fields, and returns are numbers. */
+export type ValueTy = "num" | { instance: ModelRef } | { union: UnionTag[] };
 
 /** Whether two model references name the same class. */
 function sameClass(a: ModelRef, b: ModelRef): boolean {
   return a.module === b.module && a.name === b.name;
 }
 
+/** A constructor parameter's type. Constructors keep the union ban, so a
+ * class shape's parameters are numbers and instances only. */
+export type CtorValueTy = "num" | { instance: ModelRef };
+
+/** Whether two normalized unions are the same spelling — the only
+ * relationship under which a union identifier flows to a union slot. */
+function sameUnion(a: UnionTag[], b: UnionTag[]): boolean {
+  return a.length === b.length && a.every((t, i) => t === b[i]);
+}
+
+function isUnionTy(t: Expected): t is { union: UnionTag[] } {
+  return typeof t !== "string" && "union" in t;
+}
+
+/** The tag a union member denotes, when it is one of the keyword types;
+ * `null` arrives as a literal-type node over the null token. */
+function keywordTag(m: ts.TypeNode): UnionTag | undefined {
+  switch (m.kind) {
+    case ts.SyntaxKind.NumberKeyword:
+      return "number";
+    case ts.SyntaxKind.StringKeyword:
+      return "string";
+    case ts.SyntaxKind.BigIntKeyword:
+      return "bigint";
+    case ts.SyntaxKind.BooleanKeyword:
+      return "boolean";
+    case ts.SyntaxKind.UndefinedKeyword:
+      return "undefined";
+    default:
+      return ts.isLiteralTypeNode(m) &&
+        m.literal.kind === ts.SyntaxKind.NullKeyword
+        ? "null"
+        : undefined;
+  }
+}
+
 /** A walked parameter as the wire carries it. */
 function wireParam(name: string, ty: ValueTy): EmitParam {
   if (ty === "num") return { name, type: "number" };
+  if ("union" in ty) return { name, type: [...ty.union] };
   const { module, name: cls } = ty.instance;
   return {
     name,
@@ -178,6 +244,7 @@ function wireParam(name: string, ty: ValueTy): EmitParam {
 /** The walk's reading of a wire parameter, for the signature registry. */
 function paramTy(p: EmitParam): ValueTy {
   if (p.type === "number") return "num";
+  if (Array.isArray(p.type)) return { union: p.type };
   return { instance: { module: p.type.module ?? "", name: p.type.class } };
 }
 
@@ -186,7 +253,7 @@ function paramTy(p: EmitParam): ValueTy {
 export interface ClassShape {
   fields: string[];
   getters: ReadonlySet<string>;
-  ctorParams: ValueTy[];
+  ctorParams: CtorValueTy[];
   /** The constructor parameters' source spellings, positionally aligned
    * with `ctorParams`. A class binder quantifies over them by name. */
   ctorParamNames: string[];
@@ -371,7 +438,9 @@ function varAccess(
   const obj = unwrapParens(e.expression);
   if (!ts.isIdentifier(obj)) return undefined;
   const ty = scope.vars.get(obj.text);
-  if (ty === undefined || ty === "num") return undefined;
+  // A union-typed identifier has no members: the domain holds values, not
+  // shapes, so a member read of one is not this access.
+  if (ty === undefined || ty === "num" || "union" in ty) return undefined;
   if (!ts.isIdentifier(e.name)) return undefined;
   return { ref: ty.instance, object: obj.text, name: e.name.text };
 }
@@ -486,6 +555,59 @@ function booleanShaped(e: ts.Expression, scope: WalkScope): boolean {
   return equationSides(u) !== undefined;
 }
 
+/** What `typeof` can answer. */
+const TYPEOF_RESULTS = new Set([
+  "number",
+  "string",
+  "bigint",
+  "boolean",
+  "undefined",
+  "object",
+  "function",
+  "symbol",
+]);
+
+/** `typeof v === "lit"` / `!==`, either side order, `v` an identifier:
+ * the one typeof shape the model reads. Shape only — validity (a
+ * union-typed operand, a recognized literal) is the walk's question. */
+function typeofTest(e: ts.BinaryExpression):
+  | {
+      typeofNode: ts.TypeOfExpression;
+      operand: ts.Identifier;
+      result: string;
+      negated: boolean;
+    }
+  | undefined {
+  const op = e.operatorToken.getText();
+  if (op !== "===" && op !== "!==") return undefined;
+  const pick = (a: ts.Expression, b: ts.Expression) => {
+    const t = unwrapParens(a);
+    if (!ts.isTypeOfExpression(t)) return undefined;
+    const operand = unwrapParens(t.expression);
+    if (!ts.isIdentifier(operand)) return undefined;
+    const lit = unwrapParens(b);
+    if (!ts.isStringLiteral(lit)) return undefined;
+    return { typeofNode: t, operand, result: lit.text };
+  };
+  const found = pick(e.left, e.right) ?? pick(e.right, e.left);
+  return found === undefined ? undefined : { ...found, negated: op === "!==" };
+}
+
+/** Whether a recognized typeof-test shape is inside the model: the
+ * operand is union-typed and the literal is a typeof result. */
+function validTypeofTest(
+  tt: { operand: ts.Identifier; result: string },
+  scope: WalkScope,
+): boolean {
+  const bound = scope.vars.get(tt.operand.text);
+  return (
+    bound !== undefined &&
+    typeof bound !== "string" &&
+    "union" in bound &&
+    TYPEOF_RESULTS.has(tt.result)
+  );
+}
+
 /** Truthiness has no model: a logical operator is admitted only over
  * operands that are themselves modeled booleans. */
 function nonBooleanOperand(
@@ -518,9 +640,18 @@ function findConstruct(
   if (ts.isParenthesizedExpression(e))
     return findConstruct(e.expression, sf, scope);
   if (ts.isIdentifier(e) || ts.isNumericLiteral(e)) return undefined;
+  // `null` is an expression atom for the union positions; whether a
+  // position admits it is the typed walk's question, and elsewhere it
+  // degrades there with this same construct.
+  if (e.kind === ts.SyntaxKind.NullKeyword) return undefined;
   if (negatedLiteral(e) !== undefined) return undefined;
   if (isUnaryArith(e)) return findConstruct(e.operand, sf, scope);
   if (ts.isBinaryExpression(e)) {
+    const tt = typeofTest(e);
+    if (tt !== undefined) {
+      if (validTypeofTest(tt, scope)) return undefined;
+      return constructAt(tt.typeofNode, tt.typeofNode.kind, sf);
+    }
     const op = e.operatorToken.getText();
     if (LOGICAL_OPERATORS.has(op)) {
       if (!booleanShaped(e.left, scope))
@@ -550,17 +681,29 @@ function findConstruct(
   if (sides !== undefined) {
     // `Object.is` compares JS values of one type; only numbers have a
     // model here, so a non-numeric argument is refused on the merits.
-    const offender = sides.findIndex((s) => !numericShaped(s, scope));
+    // With a union operand the comparison lives in the JsVal domain, so
+    // its admission set widens to the atoms that domain can hold.
+    const hasUnion = sides.some((s) => unionIdent(s, scope));
+    const admits = (s: ts.Expression) =>
+      numericShaped(s, scope) ||
+      (hasUnion &&
+        (unionIdent(s, scope) ||
+          undefAtom(s, scope) ||
+          unwrapParens(s).kind === ts.SyntaxKind.NullKeyword));
+    const offender = sides.findIndex((s) => !admits(s));
     if (offender !== -1) {
       const arg = unwrapParens(sides[offender]!);
       const { line, character } = sf.getLineAndCharacterOfPosition(
         arg.getStart(sf),
       );
+      const at = `(${kindName(arg.kind)} at ${line + 1}:${character + 1})`;
       return {
         construct: "Object.is",
-        reason:
-          `'Object.is' models numbers only; argument ${offender + 1} is ` +
-          `not a number (${kindName(arg.kind)} at ${line + 1}:${character + 1})`,
+        reason: hasUnion
+          ? `'Object.is' over a union admits numbers, 'undefined', and 'null' ` +
+            `only; argument ${offender + 1} is not one ${at}`
+          : `'Object.is' models numbers only; argument ${offender + 1} is ` +
+            `not a number ${at}`,
       };
     }
     return (
@@ -997,6 +1140,7 @@ type Expected = ValueTy | "bool";
 function describeTy(t: Expected): string {
   if (t === "num") return "a number";
   if (t === "bool") return "a boolean";
+  if ("union" in t) return `a '${t.union.join(" | ")}' value`;
   return `an instance of '${displayName(t.instance)}'`;
 }
 
@@ -1059,6 +1203,7 @@ function walkTyped(
   if (ts.isParenthesizedExpression(e)) {
     return walkTyped(e.expression, expected, scope, sf);
   }
+  if (isUnionTy(expected)) return walkUnionSlot(e, expected.union, scope, sf);
   const negated = negatedLiteral(e);
   if (ts.isNumericLiteral(e) || negated !== undefined) {
     if (expected !== "num") {
@@ -1110,10 +1255,21 @@ function walkTyped(
     // whatever type it was bound at, and an instance matches only its
     // own class.
     const actual: ValueTy = bound ?? "num";
+    // A union-typed read at a number position lowers as the throwing
+    // projection; the norm layer discharges it on tag-determined paths.
+    if (expected === "num" && typeof actual !== "string" && "union" in actual) {
+      return {
+        kind: "project",
+        tag: "number",
+        expr: { kind: "id", name: e.text },
+      };
+    }
+    // A union `expected` never reaches here: the slot walk intercepted it.
     const ok =
       typeof expected === "string"
         ? expected === actual
         : typeof actual !== "string" &&
+          "instance" in actual &&
           sameClass(actual.instance, expected.instance);
     if (!ok) {
       throw new ModelError(
@@ -1159,6 +1315,28 @@ function walkTyped(
     return { kind: "cond", cond, then: whenTrue, else: whenFalse };
   }
   if (ts.isBinaryExpression(e)) {
+    const tt = typeofTest(e);
+    if (tt !== undefined) {
+      /* v8 ignore start -- the construct scan admits only valid tests, so
+         an invalid one degraded the declaration before the walk; the
+         throw mirrors the scan for the same defense. */
+      if (!validTypeofTest(tt, scope)) {
+        const failed = constructAt(tt.typeofNode, tt.typeofNode.kind, sf);
+        throw new ModelError(failed.reason, failed.construct);
+      }
+      /* v8 ignore stop */
+      if (expected !== "bool") {
+        throw new ModelError(
+          `a 'typeof' test yields a boolean, not ${describeTy(expected)}`,
+        );
+      }
+      const test: EmitExpr = {
+        kind: "typeof-test",
+        expr: { kind: "id", name: tt.operand.text },
+        result: tt.result,
+      };
+      return tt.negated ? { kind: "unop", op: "!", operand: test } : test;
+    }
     const op = e.operatorToken.getText(sf);
     if (LOGICAL_OPERATORS.has(op)) {
       const left = walkTyped(e.left, "bool", scope, sf);
@@ -1169,6 +1347,17 @@ function walkTyped(
         );
       }
       return { kind: "binop", op, left, right };
+    }
+    if (op === "===" || op === "!==") {
+      const eq = unionEquality(e.left, e.right, "strict", scope, sf);
+      if (eq !== undefined) {
+        if (expected !== "bool") {
+          throw new ModelError(
+            `operator '${op}' yields a boolean, not ${describeTy(expected)}`,
+          );
+        }
+        return op === "===" ? eq : { kind: "unop", op: "!", operand: eq };
+      }
     }
     const left = walkTyped(e.left, "num", scope, sf);
     const right = walkTyped(e.right, "num", scope, sf);
@@ -1196,6 +1385,15 @@ function walkTyped(
   }
   const sides = equationSides(e);
   if (sides !== undefined) {
+    const sv = unionEquality(sides[0], sides[1], "same-value", scope, sf);
+    if (sv !== undefined) {
+      if (expected !== "bool") {
+        throw new ModelError(
+          `a call to 'Object.is' yields a boolean, not ${describeTy(expected)}`,
+        );
+      }
+      return sv;
+    }
     // Operands are typed before the position is, mirroring the binops.
     const left = walkTyped(sides[0], "num", scope, sf);
     const right = walkTyped(sides[1], "num", scope, sf);
@@ -1525,8 +1723,123 @@ function walkTyped(
       args,
     };
   }
+  // `null` is admitted by the construct scan for the union positions; at
+  // any other position it degrades exactly as the scan used to degrade it.
+  if (e.kind === ts.SyntaxKind.NullKeyword) {
+    const failed = constructAt(e, e.kind, sf);
+    throw new ModelError(failed.reason, failed.construct);
+  }
   // Unreachable after the construct scan; degrade like an opaque node.
   throw new ModelError(constructAt(e, e.kind, sf).reason);
+}
+
+/** Whether an expression is a union-typed identifier in scope. */
+function unionIdent(e: ts.Expression, scope: WalkScope): boolean {
+  const u = unwrapParens(e);
+  if (!ts.isIdentifier(u)) return false;
+  const ty = scope.vars.get(u.text);
+  return ty !== undefined && typeof ty !== "string" && "union" in ty;
+}
+
+/** `undefined` as JS resolves it here: the global, unshadowed. */
+function undefAtom(e: ts.Expression, scope: WalkScope): boolean {
+  const u = unwrapParens(e);
+  return (
+    ts.isIdentifier(u) &&
+    u.text === "undefined" &&
+    !scope.vars.has(u.text) &&
+    !scope.constants.has(modelKey(refOf(scope, u.text))) &&
+    !moduleBinds(scope, u.text)
+  );
+}
+
+/** One side of a JsVal equality: a union identifier stays itself, the
+ * undefined/null atoms inject at their tags, and everything else is a
+ * number injected at its. */
+function eqOperand(
+  e: ts.Expression,
+  scope: WalkScope,
+  sf: ts.SourceFile,
+): EmitExpr {
+  const u = unwrapParens(e);
+  if (unionIdent(u, scope))
+    return { kind: "id", name: (u as ts.Identifier).text };
+  if (undefAtom(u, scope)) return { kind: "inject", tag: "undefined" };
+  if (u.kind === ts.SyntaxKind.NullKeyword)
+    return { kind: "inject", tag: "null" };
+  return {
+    kind: "inject",
+    tag: "number",
+    expr: walkTyped(u, "num", scope, sf),
+  };
+}
+
+/** An equality with a union-typed operand lowers over JsVal; undefined
+ * when neither side is one, leaving the number path in place. */
+function unionEquality(
+  l: ts.Expression,
+  r: ts.Expression,
+  semantics: "strict" | "same-value",
+  scope: WalkScope,
+  sf: ts.SourceFile,
+): EmitExpr | undefined {
+  if (!unionIdent(l, scope) && !unionIdent(r, scope)) return undefined;
+  return {
+    kind: "jsval-eq",
+    semantics,
+    left: eqOperand(l, scope, sf),
+    right: eqOperand(r, scope, sf),
+  };
+}
+
+/** An expression meeting a union slot. An identical-union identifier
+ * flows as itself; the `undefined`/`null` atoms inject where the union
+ * carries their tag (any binding of those spellings shadows, exactly as
+ * `NaN`/`Infinity` behave); anything that walks at `num` injects at
+ * `number`. Union subtyping is out of scope: a narrower, wider, or
+ * overlapping union refuses. */
+function walkUnionSlot(
+  e: ts.Expression,
+  union: UnionTag[],
+  scope: WalkScope,
+  sf: ts.SourceFile,
+): EmitExpr {
+  const u = unwrapParens(e);
+  if (ts.isIdentifier(u)) {
+    const bound = scope.vars.get(u.text);
+    if (bound !== undefined && typeof bound !== "string" && "union" in bound) {
+      if (sameUnion(bound.union, union)) return { kind: "id", name: u.text };
+      throw new ModelError(
+        `identifier '${u.text}' is ${describeTy(bound)}, not ` +
+          `${describeTy({ union })}; unions flow only between identical spellings`,
+      );
+    }
+    if (
+      bound === undefined &&
+      u.text === "undefined" &&
+      union.includes("undefined") &&
+      !scope.constants.has(modelKey(refOf(scope, u.text))) &&
+      !moduleBinds(scope, u.text)
+    ) {
+      return { kind: "inject", tag: "undefined" };
+    }
+  }
+  if (u.kind === ts.SyntaxKind.NullKeyword) {
+    if (union.includes("null")) return { kind: "inject", tag: "null" };
+    const failed = constructAt(u, u.kind, sf);
+    throw new ModelError(failed.reason, failed.construct);
+  }
+  if (!union.includes("number")) {
+    throw new ModelError(
+      `${describeTy({ union })} slot has no 'number' member, so a ` +
+        `number-valued expression cannot flow to it`,
+    );
+  }
+  return {
+    kind: "inject",
+    tag: "number",
+    expr: walkTyped(u, "num", scope, sf),
+  };
 }
 
 /** One scanned expression with the file it was parsed from: each formula
@@ -2149,6 +2462,9 @@ interface ParamReg {
   names: ReadonlyMap<string, ModelRef>;
   module: string;
   self?: ModelRef;
+  /** Whether a union type is admitted here: free functions and methods
+   * take them, a constructor keeps its refusal. */
+  unions: boolean;
 }
 
 /** A parameter's declared type: a number, an already-modeled class, or
@@ -2184,6 +2500,21 @@ function paramValueTy(
         reason: `'${displayName(ref)}' could not be modeled: ${failed.reason}`,
       };
     }
+  }
+  // A keyword union normalizes to its deduplicated tags; a member outside
+  // the keywords refuses at that member, not at the union.
+  if (ts.isUnionTypeNode(t) && reg.unions) {
+    const tags: UnionTag[] = [];
+    for (const m of t.types) {
+      const tag = keywordTag(m);
+      if (tag === undefined) return constructAt(m, m.kind, sf);
+      tags.push(tag);
+    }
+    const union = UNION_TAGS.filter((tag) => tags.includes(tag));
+    if (union.length >= 2) return { union: [...union] };
+    // A one-tag union is its base type; only `number` has a model.
+    if (union[0] === "number") return "num";
+    return constructAt(t, t.kind, sf);
   }
   return constructAt(t, t.kind, sf);
 }
@@ -2399,6 +2730,7 @@ function walkClass(
     failed: c.failed,
     names,
     module: qualifier,
+    unions: false,
   };
   const ctorParams = walkParams(ctor.parameters, sf, ctorReg, ctorParamFailure);
   if (!Array.isArray(ctorParams)) return ctorParams;
@@ -2462,11 +2794,21 @@ function walkClass(
     return modelFailure(err);
   }
 
+  // `ctorReg` bans unions, so this restates the ban where the shape is
+  // recorded rather than trusting the flag everywhere downstream.
+  const shapeCtorParams: CtorValueTy[] = [];
+  for (const p of ctorParams) {
+    /* v8 ignore next 2 -- unreachable: ctorReg refused the union first. */
+    if (typeof p.ty !== "string" && "union" in p.ty)
+      return constructAt(ctor, ctor.kind, sf);
+    shapeCtorParams.push(p.ty);
+  }
+
   const methodSigs = new Map<string, ValueTy[]>();
   const shape: ClassShape = {
     fields,
     getters: getterNames,
-    ctorParams: ctorParams.map((p) => p.ty),
+    ctorParams: shapeCtorParams,
     ctorParamNames: ctorParams.map((p) => p.name),
     methods: methodSigs,
   };
@@ -2526,7 +2868,7 @@ function walkClass(
     ref: self.ref,
     shape: { ...shape, getters: new Set(getters.map((g) => g.name)) },
   };
-  const methodReg: ParamReg = { ...ctorReg, self: self.ref };
+  const methodReg: ParamReg = { ...ctorReg, unions: true, self: self.ref };
   const methods: EmitMethod[] = [];
   for (const m of methodDecls) {
     const spelling = (m.name as ts.Identifier | ts.PrivateIdentifier).text;
@@ -2681,6 +3023,7 @@ function walkFunction(
     failed: c.failed,
     names,
     module,
+    unions: true,
   });
   if (!("params" in sig)) return sig;
   const params = sig.params;

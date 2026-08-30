@@ -1,5 +1,8 @@
 import Js.Val
 import Js.Number.Basic
+-- The emitted-shape examples below run against the whole norm set, the way
+-- an artifact does; the domain lemmas alone are not what discharges them.
+import Js.Norm
 
 open Js
 
@@ -67,3 +70,33 @@ example (x : Float) : JsVal.sameValue .undef (.num x) = false := by
 -- grind opens the same doors on its own.
 example (x : Float) : (JsVal.num x).toNumber = pure x := by grind
 example (x : Float) : JsVal.strictEq (.num x) .undef = false := by grind
+
+-- The emitted dispatch shape at unit level: test the tag, project on the
+-- hit, default on the miss. Every JsVal reaching a goal is
+-- constructor-headed, so evaluation is the whole discharge story.
+@[js_norm, grind] private def toNumShape (v : JsVal) : JsM Float := do
+  if JsVal.typeof v == TypeofResult.number then
+    return (← JsVal.toNumber v)
+  return 0
+
+@[js_norm, grind] private def nullFlagShape (v : JsVal) : JsM Float := do
+  if JsVal.sameValue v JsVal.null then
+    return 1
+  return 0
+
+example (x : Float) : toNumShape (JsVal.num x) = pure x := by
+  simp only [js_norm]
+example (s : String) : toNumShape (JsVal.str s) = pure 0 := by
+  simp only [js_norm]
+example (x : Float) : toNumShape (JsVal.num x) = pure x := by grind
+example (x : Float) : nullFlagShape (JsVal.num x) = pure 0 := by
+  simp only [js_norm]
+example : nullFlagShape JsVal.null = pure 1 := by
+  simp only [js_norm]
+example (x : Float) : nullFlagShape (JsVal.num x) = pure 0 := by grind
+
+-- strictEq over an injected pair, the `===`-with-union rendering.
+example (x : Float) : JsVal.strictEq (.num x) .null = false := by
+  simp only [js_norm]
+example (x : Float) : JsVal.sameValue (.num x) .null = false := by
+  simp only [js_norm]
