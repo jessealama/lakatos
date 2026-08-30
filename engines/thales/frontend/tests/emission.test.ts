@@ -118,6 +118,7 @@ describe("emitModule on the tracer fixture", () => {
     ["engines/thales/tests/fixtures/module-consts.ts"],
     ["engines/thales/tests/fixtures/nested-class-binder.ts"],
     ["engines/thales/tests/fixtures/unions.ts"],
+    ["engines/thales/tests/fixtures/optionals.ts"],
     [
       "engines/thales/tests/conformance/theorem/class-binder-equality-guards.ts",
     ],
@@ -150,6 +151,7 @@ describe("emitModule on the tracer fixture", () => {
       "nested-class-binder.emission.json",
     ],
     ["engines/thales/tests/fixtures/unions.ts", "unions.emission.json"],
+    ["engines/thales/tests/fixtures/optionals.ts", "optionals.emission.json"],
     [
       "engines/thales/tests/conformance/theorem/class-binder-equality-guards.ts",
       "class-binder-equality-guards.emission.json",
@@ -216,8 +218,8 @@ describe("signature and body blockers", () => {
       "DotDotDotToken",
     ],
     [
-      "an optional parameter",
-      "function f(x?: number): number { return 1; }",
+      "a required parameter after an optional one",
+      "function f(x?: number, y: number): number { return 1; }",
       undefined,
     ],
     ["an untyped parameter", "function f(x): number { return 1; }", undefined],
@@ -4302,7 +4304,7 @@ describe("instance methods (#130)", () => {
     ["*m(): number {\n    return 1;\n  }", "MethodDeclaration"],
     ["m<T>(): number {\n    return 1;\n  }", "TypeParameter"],
     ["m(x: string): number {\n    return 1;\n  }", "StringKeyword"],
-    ["m(x?: number): number {\n    return 1;\n  }", "Parameter"],
+    ["m(x?: number, y: number): number {\n    return 1;\n  }", "Parameter"],
     ["m(...xs: number[]): number {\n    return 1;\n  }", "DotDotDotToken"],
     ["m(x: number): string {\n    return 'a';\n  }", "StringKeyword"],
     ["m(x: number) {\n    return 1;\n  }", "MethodDeclaration"],
@@ -6558,5 +6560,196 @@ describe("union-typed parameters", () => {
           "cannot flow to it",
       ],
     ]);
+  });
+});
+
+describe("optional parameters", () => {
+  const emit = (src: string) => emitModule(src, "t.ts");
+
+  /** A module's first declaration's parameters, narrowed. */
+  const paramsOf = (src: string) => {
+    const fn = emit(src).emission.declarations[0];
+    assert(fn !== undefined && fn.kind === "function");
+    return fn.params;
+  };
+
+  test("an optional parameter unions undefined into its declared type", () => {
+    expect(
+      paramsOf(
+        `export function f(a: number, b?: number, c?: string, d?: number | string): number {\n  return a;\n}\n`,
+      ),
+    ).toEqual([
+      { name: "a", type: "number" },
+      { name: "b", type: ["number", "undefined"] },
+      { name: "c", type: ["string", "undefined"] },
+      { name: "d", type: ["number", "string", "undefined"] },
+    ]);
+  });
+
+  test("an optional carries the wire shape of the equivalent explicit union", () => {
+    expect(
+      paramsOf(`export function f(b?: number): number {\n  return 0;\n}\n`),
+    ).toEqual(
+      paramsOf(
+        `export function f(b: number | undefined): number {\n  return 0;\n}\n`,
+      ),
+    );
+  });
+
+  test("an optional whose type joins no keyword union keeps its refusal", () => {
+    const { classified } = emit(
+      `export class C {\n  v: number;\n  constructor(v: number) {\n    this.v = v;\n  }\n}\n` +
+        `/** @ensures{p} forall (x: number) { Object.is(f(x), x) } */\n` +
+        `export function f(c?: C): number {\n  return 0;\n}\n`,
+    );
+    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
+      [
+        "Inappropriate",
+        "'f' could not be modeled: unmapped TypeScript construct 'Parameter' at 8:19",
+      ],
+    ]);
+  });
+
+  test("an optional whose widened union is still one tag refuses at the type", () => {
+    const { classified } = emit(
+      `/** @ensures{p} forall (x: number) { Object.is(f(x), x) } */\n` +
+        `export function f(v?: undefined): number {\n  return 0;\n}\n`,
+    );
+    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
+      [
+        "Inappropriate",
+        "'f' could not be modeled: unmapped TypeScript construct 'UndefinedKeyword' at 2:23",
+      ],
+    ]);
+  });
+
+  test("a required parameter following an optional one refuses at that parameter", () => {
+    const { classified } = emit(
+      `/** @ensures{p} forall (x: number) { Object.is(f(x), x) } */\n` +
+        `export function f(a?: number, b: number): number {\n  return 0;\n}\n`,
+    );
+    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
+      [
+        "Inappropriate",
+        "'f' could not be modeled: unmapped TypeScript construct 'Parameter' at 2:31",
+      ],
+    ]);
+  });
+
+  test("a call omitting a trailing optional injects undefined", () => {
+    const { emission } = emit(
+      `export function pick(y?: number): number {\n  if (y === undefined) {\n    return 0;\n  }\n  return y;\n}\n` +
+        `export function call(): number {\n  return pick();\n}\n`,
+    );
+    expect(fnBody(emission.declarations[1]!)[0]).toEqual({
+      kind: "return",
+      expr: {
+        kind: "call",
+        callee: "pick",
+        args: [{ kind: "inject", tag: "undefined" }],
+      },
+    });
+  });
+
+  test("a call supplying the optional injects at the argument's own tag", () => {
+    const { emission } = emit(
+      `export function pick(y?: number): number {\n  return 0;\n}\n` +
+        `export function call(x: number): number {\n  return pick(x);\n}\n`,
+    );
+    expect(fnBody(emission.declarations[1]!)[0]).toEqual({
+      kind: "return",
+      expr: {
+        kind: "call",
+        callee: "pick",
+        args: [
+          { kind: "inject", tag: "number", expr: { kind: "id", name: "x" } },
+        ],
+      },
+    });
+  });
+
+  test("under-arity against a required parameter and over-arity stay the engine's error", () => {
+    const call = (args: string) =>
+      emit(
+        `/** @ensures{p} forall (x: number) { Object.is(call(x), x) } */\n` +
+          `export function f(a: number, b?: number): number {\n  return a;\n}\n` +
+          `export function call(x: number): number {\n  return f(${args});\n}\n`,
+      ).classified;
+
+    expect(call("").map((c) => [c.szs, c.reason])).toEqual([
+      [
+        "Error",
+        "property elaboration failed: 'call' has no model: " +
+          "'f' expects 1 to 2 argument(s), got 0",
+      ],
+    ]);
+    expect(call("x, 1, 2").map((c) => [c.szs, c.reason])).toEqual([
+      [
+        "Error",
+        "property elaboration failed: 'call' has no model: " +
+          "'f' expects 1 to 2 argument(s), got 3",
+      ],
+    ]);
+  });
+
+  test("a function with no optionals keeps the unchanged arity message", () => {
+    const { classified } = emit(
+      `/** @ensures{p} forall (x: number) { Object.is(call(x), x) } */\n` +
+        `export function f(a: number): number {\n  return a;\n}\n` +
+        `export function call(x: number): number {\n  return f(x, 1);\n}\n`,
+    );
+    expect(classified[0]?.reason).toContain("'f' expects 1 argument(s), got 2");
+  });
+
+  test("a constructor keeps the optional ban", () => {
+    const { classified } = emit(
+      `export class C {\n  v: number;\n  constructor(v: number, w?: number) {\n    this.v = v;\n  }\n}\n` +
+        `/** @ensures{p} forall (x: number) { Object.is(get(x), x) } */\n` +
+        `export function get(x: number): number {\n  return new C(x, 1).v;\n}\n`,
+    );
+    expect(classified[0]?.szs).toBe("Inappropriate");
+    expect(classified[0]?.reason).toContain(
+      "unmapped TypeScript construct 'Parameter' at 3:26",
+    );
+  });
+
+  test("a method admits an optional, and its call may omit it", () => {
+    const { emission } = emit(
+      `export class C {\n  v: number;\n  constructor(v: number) {\n    this.v = v;\n  }\n` +
+        `  m(k?: number): number {\n    return this.v;\n  }\n}\n` +
+        `export function call(x: number): number {\n  return new C(x).m();\n}\n`,
+    );
+    const cls = emission.declarations[0];
+    assert(cls !== undefined && cls.kind === "class");
+    expect(cls.methods[0]?.params).toEqual([
+      { name: "k", type: ["number", "undefined"] },
+    ]);
+    expect(fnBody(emission.declarations[1]!)[0]).toEqual({
+      kind: "return",
+      expr: {
+        kind: "method-call",
+        className: "C",
+        name: "m",
+        object: {
+          kind: "new",
+          className: "C",
+          args: [{ kind: "id", name: "x" }],
+        },
+        args: [{ kind: "inject", tag: "undefined" }],
+      },
+    });
+  });
+
+  test("a method's under-arity against a required parameter stays an error", () => {
+    const { classified } = emit(
+      `export class C {\n  v: number;\n  constructor(v: number) {\n    this.v = v;\n  }\n` +
+        `  m(j: number, k?: number): number {\n    return this.v;\n  }\n}\n` +
+        `/** @ensures{p} forall (x: number) { Object.is(call(x), x) } */\n` +
+        `export function call(x: number): number {\n  return new C(x).m();\n}\n`,
+    );
+    expect(classified[0]?.szs).toBe("Error");
+    expect(classified[0]?.reason).toContain(
+      "'C#m' expects 1 to 2 argument(s), got 0",
+    );
   });
 });

@@ -241,11 +241,56 @@ function wireParam(name: string, ty: ValueTy): EmitParam {
   };
 }
 
-/** The walk's reading of a wire parameter, for the signature registry. */
-function paramTy(p: EmitParam): ValueTy {
-  if (p.type === "number") return "num";
-  if (Array.isArray(p.type)) return { union: p.type };
-  return { instance: { module: p.type.module ?? "", name: p.type.class } };
+/** A callable's signature: its parameter types in declaration order, and
+ * how many of them a call must actually supply. Only trailing optionals
+ * make the two differ — an optional's own type already carries the
+ * `undefined` an omitted argument denotes, so arity is all that is left
+ * to record, and it never reaches the wire. */
+export interface FnSig {
+  params: ValueTy[];
+  required: number;
+}
+
+/** The signature a walked parameter list denotes. Optionals are trailing
+ * by `walkParams`'s own check, so counting the required ones is enough. */
+function sigOf(params: WalkedParams): FnSig {
+  return {
+    params: params.map((p) => p.ty),
+    required: params.filter((p) => !p.optional).length,
+  };
+}
+
+/** A fixed-arity signature: what a constructor or a getter has, neither
+ * admitting an optional. */
+function exactSig(params: ValueTy[]): FnSig {
+  return { params, required: params.length };
+}
+
+/** The arity check every call shares. A call may omit trailing optionals
+ * and nothing else; a signature without them keeps the single-count
+ * message it has always reported. */
+function checkArity(name: string, sig: FnSig, got: number): void {
+  const total = sig.params.length;
+  if (got >= sig.required && got <= total) return;
+  const expected =
+    sig.required === total ? `${total}` : `${sig.required} to ${total}`;
+  throw new ModelError(`'${name}' expects ${expected} argument(s), got ${got}`);
+}
+
+/** A call's arguments against a signature, each omitted trailing optional
+ * filled with the `undefined` that parameter's own union carries. */
+function walkArgs(
+  args: readonly ts.Expression[],
+  sig: FnSig,
+  scope: WalkScope,
+  sf: ts.SourceFile,
+): EmitExpr[] {
+  return sig.params.map((ty, i): EmitExpr => {
+    const a = args[i];
+    return a === undefined
+      ? { kind: "inject", tag: "undefined" }
+      : walkTyped(a, ty, scope, sf);
+  });
 }
 
 /** What a use of a class needs to know: its fields in declaration order,
@@ -257,8 +302,8 @@ export interface ClassShape {
   /** The constructor parameters' source spellings, positionally aligned
    * with `ctorParams`. A class binder quantifies over them by name. */
   ctorParamNames: string[];
-  /** Modeled methods by name, with their parameter types. */
-  methods: ReadonlyMap<string, ValueTy[]>;
+  /** Modeled methods by name, with their signatures. */
+  methods: ReadonlyMap<string, FnSig>;
 }
 
 /** A binder's denoted domain: a finite half-open integer range, the whole
@@ -885,7 +930,7 @@ function callNames(
  * `names` — which module a source spelling belongs to — before lookup. */
 interface WalkScope {
   vars: ReadonlyMap<string, ValueTy>;
-  mapped: ReadonlyMap<string, ValueTy[]>;
+  mapped: ReadonlyMap<string, FnSig>;
   failed: ReadonlyMap<string, FailedDecl>;
   classes: ReadonlyMap<string, ClassShape>;
   /** Module-level constants the model admits, by model key. */
@@ -1454,12 +1499,11 @@ function walkTyped(
             `'${scope.self.ref.name}'`,
         );
       }
-      if (sig.length !== selfCall.args.length) {
-        throw new ModelError(
-          `'${qualifiedName(selfCall.name, scope.self.ref.name)}' expects ` +
-            `${sig.length} argument(s), got ${selfCall.args.length}`,
-        );
-      }
+      checkArity(
+        qualifiedName(selfCall.name, scope.self.ref.name),
+        sig,
+        selfCall.args.length,
+      );
       /* v8 ignore start -- no boolean position admits a method call:
          every one of them is gated on `booleanShaped`, which a call on
          `this` is not. The throw mirrors the field read's. */
@@ -1477,7 +1521,7 @@ function walkTyped(
           : {}),
         name: selfCall.name,
         object: { kind: "self" },
-        args: selfCall.args.map((a, i) => walkTyped(a, sig[i]!, scope, sf)),
+        args: walkArgs(selfCall.args, sig, scope, sf),
       };
     }
   }
@@ -1498,12 +1542,7 @@ function walkTyped(
         `'${displayName(ref)}' has no method '${icall.name}' in the model`,
       );
     }
-    if (sig.length !== icall.args.length) {
-      throw new ModelError(
-        `'${qualifiedName(icall.name, ref.name)}' expects ${sig.length} ` +
-          `argument(s), got ${icall.args.length}`,
-      );
-    }
+    checkArity(qualifiedName(icall.name, ref.name), sig, icall.args.length);
     /* v8 ignore start -- as above: `booleanShaped` admits no call on a
        fresh instance, so no boolean position reaches this. */
     if (expected !== "num") {
@@ -1527,7 +1566,7 @@ function walkTyped(
       ...module,
       name: icall.name,
       object,
-      args: icall.args.map((a, i) => walkTyped(a, sig[i]!, scope, sf)),
+      args: walkArgs(icall.args, sig, scope, sf),
     };
   }
   const access = instanceAccess(e);
@@ -1586,12 +1625,11 @@ function walkTyped(
         `'${displayName(vcall.ref)}' has no method '${vcall.name}' in the model`,
       );
     }
-    if (sig.length !== vcall.args.length) {
-      throw new ModelError(
-        `'${qualifiedName(vcall.name, vcall.ref.name)}' expects ` +
-          `${sig.length} argument(s), got ${vcall.args.length}`,
-      );
-    }
+    checkArity(
+      qualifiedName(vcall.name, vcall.ref.name),
+      sig,
+      vcall.args.length,
+    );
     /* v8 ignore start -- as for the calls on a fresh instance:
        `booleanShaped` admits no method call, so no boolean position
        reaches this. The throw is kept for the same defense. */
@@ -1607,7 +1645,7 @@ function walkTyped(
       ...(vcall.ref.module !== "" ? { module: vcall.ref.module } : {}),
       name: vcall.name,
       object: { kind: "id", name: vcall.object },
-      args: vcall.args.map((a, i) => walkTyped(a, sig[i]!, scope, sf)),
+      args: walkArgs(vcall.args, sig, scope, sf),
     };
   }
   const vaccess = varAccess(e, scope);
@@ -1705,17 +1743,13 @@ function walkTyped(
       }
       throw new ModelError(`no model registered for '${name}'`);
     }
-    if (sig.length !== e.arguments.length) {
-      throw new ModelError(
-        `'${name}' expects ${sig.length} argument(s), got ${e.arguments.length}`,
-      );
-    }
+    checkArity(name, sig, e.arguments.length);
     if (expected !== "num") {
       throw new ModelError(
         `a call to '${name}' yields a number, not ${describeTy(expected)}`,
       );
     }
-    const args = e.arguments.map((a, i) => walkTyped(a, sig[i]!, scope, sf));
+    const args = walkArgs(e.arguments, sig, scope, sf);
     return {
       kind: "call",
       callee: ref.name,
@@ -2416,16 +2450,20 @@ function memberNameFailure(
 }
 
 /** The shape checks a parameter passes before its type is read: a
- * binding pattern, a rest, an optional parameter, and a missing type
- * annotation are all outside the slice. */
+ * binding pattern, a rest, and a missing type annotation are all outside
+ * the slice. An optional is admitted only where `optionals` says so —
+ * call-site arity can fill one for a free function or a method, while a
+ * constructor keeps the ban. */
 function paramShapeFailure(
   p: ts.ParameterDeclaration,
   sf: ts.SourceFile,
+  optionals: boolean,
 ): FailedDecl | undefined {
   if (!ts.isIdentifier(p.name)) return constructAt(p.name, p.name.kind, sf);
   if (p.dotDotDotToken !== undefined)
     return constructAt(p.dotDotDotToken, p.dotDotDotToken.kind, sf);
-  if (p.questionToken !== undefined) return constructAt(p, p.kind, sf);
+  if (p.questionToken !== undefined && !optionals)
+    return constructAt(p, p.kind, sf);
   if (p.type === undefined) return constructAt(p, p.kind, sf);
   return undefined;
 }
@@ -2437,20 +2475,36 @@ function fnParamFailure(
   sf: ts.SourceFile,
 ): FailedDecl | undefined {
   if (p.initializer !== undefined) return constructAt(p, p.kind, sf);
-  return paramShapeFailure(p, sf);
+  return paramShapeFailure(p, sf, true);
 }
 
-/** A constructor or method parameter passes the shape check with
- * defaults admitted — every modeled call supplies full arity, so the
- * initializer is dead code. A modifier on it is a parameter property,
- * which declares a field the body never assigns. */
-function ctorParamFailure(
+/** A modifier on a member's parameter is a parameter property, which
+ * declares a field the body never assigns. */
+function memberParamModifier(
   p: ts.ParameterDeclaration,
   sf: ts.SourceFile,
 ): FailedDecl | undefined {
   const mods = ts.getModifiers(p) ?? [];
-  if (mods.length > 0) return constructAt(mods[0]!, mods[0]!.kind, sf);
-  return paramShapeFailure(p, sf);
+  return mods.length > 0 ? constructAt(mods[0]!, mods[0]!.kind, sf) : undefined;
+}
+
+/** A constructor parameter passes the shape check with defaults admitted
+ * — every modeled `new` supplies full arity, so the initializer is dead
+ * code — and optionals refused, there being no arity to fill them. */
+function ctorParamFailure(
+  p: ts.ParameterDeclaration,
+  sf: ts.SourceFile,
+): FailedDecl | undefined {
+  return memberParamModifier(p, sf) ?? paramShapeFailure(p, sf, false);
+}
+
+/** A method's parameter takes optionals, its calls carrying the same
+ * arity loosening a free function's do. */
+function methodParamFailure(
+  p: ts.ParameterDeclaration,
+  sf: ts.SourceFile,
+): FailedDecl | undefined {
+  return memberParamModifier(p, sf) ?? paramShapeFailure(p, sf, true);
 }
 
 /** The registries a parameter's type resolves against — a `WalkScope`
@@ -2477,6 +2531,15 @@ function paramValueTy(
   reg: ParamReg,
 ): ValueTy | FailedDecl {
   const t = p.type!;
+  // An optional's declared type is widened by `undefined`: the question
+  // mark is arity, the union is the type. Only the keyword domain carries
+  // that tag, so an optional at any other type refuses at the parameter,
+  // exactly where the blanket optional ban used to refuse.
+  if (p.questionToken !== undefined) {
+    const tags = keywordTags(t);
+    if (!Array.isArray(tags)) return constructAt(p, p.kind, sf);
+    return normalizedUnion([...tags, "undefined"], t, sf);
+  }
   if (t.kind === ts.SyntaxKind.NumberKeyword) return "num";
   if (
     ts.isTypeReferenceNode(t) &&
@@ -2504,24 +2567,46 @@ function paramValueTy(
   // A keyword union normalizes to its deduplicated tags; a member outside
   // the keywords refuses at that member, not at the union.
   if (ts.isUnionTypeNode(t) && reg.unions) {
-    const tags: UnionTag[] = [];
-    for (const m of t.types) {
-      const tag = keywordTag(m);
-      if (tag === undefined) return constructAt(m, m.kind, sf);
-      tags.push(tag);
-    }
-    const union = UNION_TAGS.filter((tag) => tags.includes(tag));
-    if (union.length >= 2) return { union: [...union] };
-    // A one-tag union is its base type; only `number` has a model.
-    if (union[0] === "number") return "num";
-    return constructAt(t, t.kind, sf);
+    const tags = keywordTags(t);
+    if (!Array.isArray(tags)) return constructAt(tags, tags.kind, sf);
+    return normalizedUnion(tags, t, sf);
   }
   return constructAt(t, t.kind, sf);
 }
 
-/** A walked parameter list: names with their types, in declaration
- * order. */
-type WalkedParams = { name: string; ty: ValueTy }[];
+/** The tags a type node denotes — one for a bare keyword, several for a
+ * union of them — or the member that falls outside the keyword domain,
+ * which is where a union refuses rather than at the union itself. */
+function keywordTags(t: ts.TypeNode): UnionTag[] | ts.TypeNode {
+  if (!ts.isUnionTypeNode(t)) {
+    const tag = keywordTag(t);
+    return tag === undefined ? t : [tag];
+  }
+  const tags: UnionTag[] = [];
+  for (const m of t.types) {
+    const tag = keywordTag(m);
+    if (tag === undefined) return m;
+    tags.push(tag);
+  }
+  return tags;
+}
+
+/** Tags deduplicated into normalization order. A one-tag union is its
+ * base type, and only `number` has a model as one. */
+function normalizedUnion(
+  tags: UnionTag[],
+  t: ts.TypeNode,
+  sf: ts.SourceFile,
+): ValueTy | FailedDecl {
+  const union = UNION_TAGS.filter((tag) => tags.includes(tag));
+  if (union.length >= 2) return { union: [...union] };
+  if (union[0] === "number") return "num";
+  return constructAt(t, t.kind, sf);
+}
+
+/** A walked parameter list: names with their types and whether a call
+ * may omit them, in declaration order. */
+type WalkedParams = { name: string; ty: ValueTy; optional: boolean }[];
 
 /** Names and types for a parameter list, or the first failure — the
  * shape check ahead of the type, as the old order has it. */
@@ -2535,12 +2620,20 @@ function walkParams(
   ) => FailedDecl | undefined,
 ): WalkedParams | FailedDecl {
   const out: WalkedParams = [];
+  let seenOptional = false;
   for (const p of params) {
     const failure = shapeFailure(p, sf);
     if (failure !== undefined) return failure;
+    const optional = p.questionToken !== undefined;
+    // Optionals must be trailing, or an omitted argument would have no
+    // one position to land in. TypeScript says so too, but a run without
+    // a tsconfig never type-checks, so the walk re-checks rather than
+    // trusting tsc to have refused the file.
+    if (seenOptional && !optional) return constructAt(p, p.kind, sf);
+    seenOptional ||= optional;
     const ty = paramValueTy(p, sf, reg);
     if (typeof ty !== "string" && "reason" in ty) return ty;
-    out.push({ name: (p.name as ts.Identifier).text, ty });
+    out.push({ name: (p.name as ts.Identifier).text, ty, optional });
   }
   return out;
 }
@@ -2804,7 +2897,7 @@ function walkClass(
     shapeCtorParams.push(p.ty);
   }
 
-  const methodSigs = new Map<string, ValueTy[]>();
+  const methodSigs = new Map<string, FnSig>();
   const shape: ClassShape = {
     fields,
     getters: getterNames,
@@ -2920,10 +3013,7 @@ function walkClass(
           sf,
         ),
       });
-      methodSigs.set(
-        spelling,
-        params.map((p) => p.ty),
-      );
+      methodSigs.set(spelling, sigOf(params));
     } catch (err) {
       /* v8 ignore next -- the walk throws nothing else */
       if (!(err instanceof ModelError)) throw err;
@@ -2977,7 +3067,7 @@ function methodFailure(
   if (m.questionToken !== undefined) return constructAt(m, m.kind, sf);
   if (RESERVED_MEMBERS.has(spelling))
     return memberNameFailure(className, spelling, "reserves the name");
-  const params = walkParams(m.parameters, sf, reg, ctorParamFailure);
+  const params = walkParams(m.parameters, sf, reg, methodParamFailure);
   if (!Array.isArray(params)) return params;
   if (m.type === undefined) return constructAt(m, m.kind, sf);
   if (m.type.kind !== ts.SyntaxKind.NumberKeyword)
@@ -3017,7 +3107,7 @@ function walkFunction(
   c: EmitClosure,
   names: ReadonlyMap<string, ModelRef>,
   module: string,
-): EmitFunction | FailedDecl {
+): { emit: EmitFunction; sig: FnSig } | FailedDecl {
   const sig = signatureFailure(fn, sf, {
     classes: c.classes,
     failed: c.failed,
@@ -3059,12 +3149,15 @@ function walkFunction(
       sf,
     );
     return {
-      kind: "function",
-      name: fn.name!.text,
-      ...(module !== "" ? { module } : {}),
-      params: params.map((p) => wireParam(p.name, p.ty)),
-      source: fn.getText(sf),
-      body,
+      emit: {
+        kind: "function",
+        name: fn.name!.text,
+        ...(module !== "" ? { module } : {}),
+        params: params.map((p) => wireParam(p.name, p.ty)),
+        source: fn.getText(sf),
+        body,
+      },
+      sig: sigOf(params),
     };
   } catch (err) {
     if (err instanceof ModelError) return modelFailure(err);
@@ -3277,7 +3370,7 @@ type PayloadResult =
  * failed property elaboration does. */
 function obligationPayload(
   formula: string,
-  mapped: ReadonlyMap<string, ValueTy[]>,
+  mapped: ReadonlyMap<string, FnSig>,
   failed: ReadonlyMap<string, FailedDecl>,
   classes: ReadonlyMap<string, ClassShape>,
   constants: ReadonlySet<string>,
@@ -3453,7 +3546,7 @@ interface EmitClosure {
    * one closes a cycle. */
   active: Set<string>;
   declarations: EmitDecl[];
-  mapped: Map<string, ValueTy[]>;
+  mapped: Map<string, FnSig>;
   failed: Map<string, FailedDecl>;
   classes: Map<string, ClassShape>;
   constants: Set<string>;
@@ -3610,11 +3703,11 @@ function walkEmitModule(
     if (ts.isFunctionDeclaration(stmt)) {
       if (stmt.name === undefined) continue;
       const walked = walkFunction(stmt, sf, c, names, qualifier);
-      if ("kind" in walked && walked.kind === "function") {
-        c.declarations.push(walked);
-        c.mapped.set(key(stmt.name.text), walked.params.map(paramTy));
+      if ("emit" in walked) {
+        c.declarations.push(walked.emit);
+        c.mapped.set(key(stmt.name.text), walked.sig);
       } else {
-        c.failed.set(key(stmt.name.text), walked as FailedDecl);
+        c.failed.set(key(stmt.name.text), walked);
       }
       continue;
     }
@@ -3627,10 +3720,10 @@ function walkEmitModule(
         c.classes.set(key(className), walked.shape);
         c.mapped.set(
           key(qualifiedName("constructor", className)),
-          walked.shape.ctorParams,
+          exactSig(walked.shape.ctorParams),
         );
         for (const g of walked.shape.getters) {
-          c.mapped.set(key(qualifiedName(g, className)), []);
+          c.mapped.set(key(qualifiedName(g, className)), exactSig([]));
         }
         for (const [m, sig] of walked.shape.methods) {
           c.mapped.set(key(qualifiedName(m, className)), sig);
