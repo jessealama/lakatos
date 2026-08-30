@@ -1,8 +1,10 @@
 # Thales
 
 The proof engine of [lakatos](../../README.md). Thales maps TypeScript
-programs and their Lemma annotations (`@ensures`, `@throws`, `@total`) to
-Lean 4 and attempts proofs, reporting one SZS verdict per annotation.
+programs and their Lemma `@ensures` annotations to Lean 4 and attempts
+proofs, reporting one SZS verdict per annotation. (The other blessed
+annotations, `@throws` and `@total`, are specified as TODO in
+[`spec/semantics.md`](../../spec/semantics.md) and are not handled yet.)
 
 Thales accepts essentially all TypeScript. That does not mean all of
 TypeScript maps cleanly to Lean: constructs outside the mappable subset
@@ -27,8 +29,10 @@ tradition:
 3. **CLI (`lakatos prove`).** Collects the verdict lines and assembles the
    standard per-annotation envelope.
 
-The engine is mid-rewrite; the previous whole-file subset-checking compiler
-has been removed and the layers above are landing slice by slice.
+The engine is a ground-up rewrite of the previous whole-file
+subset-checking compiler, which has been removed; the pipeline above works
+end to end, and the model grows slice by slice (docs or comments that
+mention the old compiler's vocabulary predate the rewrite).
 
 ## Building
 

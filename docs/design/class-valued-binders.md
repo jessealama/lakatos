@@ -1,6 +1,31 @@
 # Class-valued binders — design
 
 Date: 2026-08-25. Grilled with Jesse to completion (all branches resolved).
+
+> **Status (2026-08-30).** This is a dated design record; it is not updated
+> to track the code. For current behavior, `spec/semantics.md` and the
+> engines' own docs are authoritative. Since this was written, most of its
+> future tense has been realized:
+>
+> - **D1 tier 3 / D5 / D7 are done.** The post-parity prover work landed:
+>   classes model as structures (getters and methods included), class-valued
+>   binders quantify over the constructor's image, and `Point#distance`-style
+>   annotations prove — see the `class-binder-*` fixtures in thales's
+>   `theorem/` corpus bucket. The D7 freeze-window `Inappropriate`
+>   containment is history.
+> - **D6 is done and exceeded.** `Math.sqrt`, `Math.abs`,
+>   `Number.isFinite`, and `Number.isNaN` are modeled builtins, and
+>   `Object.is` is modeled — since widened past numbers to the tagged
+>   value domain (booleans, keyword unions, `undefined`/`null`; #209).
+> - **D9 has partially landed.** Defaulted constructor parameters are
+>   admitted (#221, PR #258), and acyclic class-typed constructor
+>   parameters validate and prove (nested class binders are in the
+>   `theorem/` bucket). Optionals, unions, and rest stay banned (#222),
+>   though the JsVal chain that blocked the first two (#127, #263) has
+>   since landed; rest still wants an array value domain.
+> - **D4 (refuter) landed with the original work**; `#131` was retired
+>   with the Amount epic, per #222.
+
 Driver: the TC39 TG5 talk's `Point.mts` example, whose annotation is the
 target surface:
 

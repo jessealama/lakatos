@@ -40,9 +40,10 @@ Every construct is specified in three parts:
   the bound variables drawn from their (guarded) domains.
 - **Engine obligations**: the refuter samples assignments and evaluates;
   the prover quantifies universally over the (guarded) domain's
-  translation. The prover's coverage is bounded `int`/`nat` binders: it
-  establishes a property by evaluating it over the whole domain, so a
-  domain it cannot enumerate is reported unproven rather than assumed.
+  translation. The prover establishes a property only where its methods
+  genuinely reach — exhaustive evaluation over a domain it can enumerate,
+  or symbolic proof over one it cannot — and a claim it cannot settle is
+  reported unproven, never assumed.
 
 ### Attachment points
 
