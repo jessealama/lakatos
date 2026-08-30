@@ -1259,7 +1259,11 @@ function walkTyped(
     // A union-typed read at a number position lowers as the throwing
     // projection; the norm layer discharges it on tag-determined paths.
     if (expected === "num" && typeof actual !== "string" && "union" in actual) {
-      return { kind: "project", tag: "number", expr: { kind: "id", name: e.text } };
+      return {
+        kind: "project",
+        tag: "number",
+        expr: { kind: "id", name: e.text },
+      };
     }
     // A union `expected` never reaches here: the slot walk intercepted it.
     const ok =
@@ -1766,8 +1770,13 @@ function eqOperand(
   if (unionIdent(u, scope))
     return { kind: "id", name: (u as ts.Identifier).text };
   if (undefAtom(u, scope)) return { kind: "inject", tag: "undefined" };
-  if (u.kind === ts.SyntaxKind.NullKeyword) return { kind: "inject", tag: "null" };
-  return { kind: "inject", tag: "number", expr: walkTyped(u, "num", scope, sf) };
+  if (u.kind === ts.SyntaxKind.NullKeyword)
+    return { kind: "inject", tag: "null" };
+  return {
+    kind: "inject",
+    tag: "number",
+    expr: walkTyped(u, "num", scope, sf),
+  };
 }
 
 /** An equality with a union-typed operand lowers over JsVal; undefined
@@ -1831,7 +1840,11 @@ function walkUnionSlot(
         `number-valued expression cannot flow to it`,
     );
   }
-  return { kind: "inject", tag: "number", expr: walkTyped(u, "num", scope, sf) };
+  return {
+    kind: "inject",
+    tag: "number",
+    expr: walkTyped(u, "num", scope, sf),
+  };
 }
 
 /** One scanned expression with the file it was parsed from: each formula

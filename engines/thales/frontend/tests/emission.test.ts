@@ -117,6 +117,7 @@ describe("emitModule on the tracer fixture", () => {
     ["engines/thales/tests/fixtures/class-params.ts"],
     ["engines/thales/tests/fixtures/module-consts.ts"],
     ["engines/thales/tests/fixtures/nested-class-binder.ts"],
+    ["engines/thales/tests/fixtures/unions.ts"],
     [
       "engines/thales/tests/conformance/theorem/class-binder-equality-guards.ts",
     ],
@@ -148,6 +149,7 @@ describe("emitModule on the tracer fixture", () => {
       "engines/thales/tests/fixtures/nested-class-binder.ts",
       "nested-class-binder.emission.json",
     ],
+    ["engines/thales/tests/fixtures/unions.ts", "unions.emission.json"],
     [
       "engines/thales/tests/conformance/theorem/class-binder-equality-guards.ts",
       "class-binder-equality-guards.emission.json",
@@ -6268,7 +6270,11 @@ describe("union-typed parameters", () => {
     assert(relayFn?.kind === "function");
     expect(fnBody(relayFn)[0]).toEqual({
       kind: "return",
-      expr: { kind: "call", callee: "toNum", args: [{ kind: "id", name: "v" }] },
+      expr: {
+        kind: "call",
+        callee: "toNum",
+        args: [{ kind: "id", name: "v" }],
+      },
     });
 
     const widened = emit(

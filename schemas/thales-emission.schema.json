@@ -50,7 +50,14 @@
           "description": "A union-typed parameter: its keyword-member tags, deduplicated and sorted number, string, bigint, boolean, undefined, null; at least two.",
           "minItems": 2,
           "items": {
-            "enum": ["number", "string", "bigint", "boolean", "undefined", "null"]
+            "enum": [
+              "number",
+              "string",
+              "bigint",
+              "boolean",
+              "undefined",
+              "null"
+            ]
           }
         },
         {
@@ -356,7 +363,16 @@
             "kind": { "const": "typeof-test" },
             "expr": { "$ref": "#/definitions/expr" },
             "result": {
-              "enum": ["number", "string", "bigint", "boolean", "undefined", "object", "function", "symbol"]
+              "enum": [
+                "number",
+                "string",
+                "bigint",
+                "boolean",
+                "undefined",
+                "object",
+                "function",
+                "symbol"
+              ]
             }
           }
         },

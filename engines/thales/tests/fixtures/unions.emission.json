@@ -1,0 +1,228 @@
+{
+  "file": "engines/thales/tests/fixtures/unions.ts",
+  "declarations": [
+    {
+      "kind": "function",
+      "name": "toNum",
+      "params": [
+        {
+          "name": "v",
+          "type": ["number", "string"]
+        }
+      ],
+      "source": "export function toNum(v: number | string): number {\n  if (typeof v === \"number\") {\n    return v;\n  }\n  return 0;\n}",
+      "body": [
+        {
+          "kind": "if",
+          "cond": {
+            "kind": "typeof-test",
+            "expr": {
+              "kind": "id",
+              "name": "v"
+            },
+            "result": "number"
+          },
+          "then": [
+            {
+              "kind": "return",
+              "expr": {
+                "kind": "project",
+                "tag": "number",
+                "expr": {
+                  "kind": "id",
+                  "name": "v"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "kind": "return",
+          "expr": {
+            "kind": "num",
+            "lit": "0"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "function",
+      "name": "nullFlag",
+      "params": [
+        {
+          "name": "v",
+          "type": ["number", "null"]
+        }
+      ],
+      "source": "export function nullFlag(v: number | null): number {\n  if (Object.is(v, null)) {\n    return 1;\n  }\n  return 0;\n}",
+      "body": [
+        {
+          "kind": "if",
+          "cond": {
+            "kind": "jsval-eq",
+            "semantics": "same-value",
+            "left": {
+              "kind": "id",
+              "name": "v"
+            },
+            "right": {
+              "kind": "inject",
+              "tag": "null"
+            }
+          },
+          "then": [
+            {
+              "kind": "return",
+              "expr": {
+                "kind": "num",
+                "lit": "1"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "return",
+          "expr": {
+            "kind": "num",
+            "lit": "0"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "function",
+      "name": "relay",
+      "params": [
+        {
+          "name": "v",
+          "type": ["number", "string"]
+        }
+      ],
+      "source": "export function relay(v: number | string): number {\n  return toNum(v);\n}",
+      "body": [
+        {
+          "kind": "return",
+          "expr": {
+            "kind": "call",
+            "callee": "toNum",
+            "args": [
+              {
+                "kind": "id",
+                "name": "v"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "obligations": [
+    {
+      "function": "toNum",
+      "property": "numId",
+      "formula": "forall (x: number) { Object.is(toNum(x), x) }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "x",
+            "kind": "number"
+          }
+        ],
+        "conclusion": {
+          "kind": "eq",
+          "left": {
+            "kind": "call",
+            "callee": "toNum",
+            "args": [
+              {
+                "kind": "inject",
+                "tag": "number",
+                "expr": {
+                  "kind": "id",
+                  "name": "x"
+                }
+              }
+            ]
+          },
+          "right": {
+            "kind": "id",
+            "name": "x"
+          }
+        }
+      }
+    },
+    {
+      "function": "nullFlag",
+      "property": "nullNeverHits",
+      "formula": "forall (x: number) { Object.is(nullFlag(x), 0) }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "x",
+            "kind": "number"
+          }
+        ],
+        "conclusion": {
+          "kind": "eq",
+          "left": {
+            "kind": "call",
+            "callee": "nullFlag",
+            "args": [
+              {
+                "kind": "inject",
+                "tag": "number",
+                "expr": {
+                  "kind": "id",
+                  "name": "x"
+                }
+              }
+            ]
+          },
+          "right": {
+            "kind": "num",
+            "lit": "0"
+          }
+        }
+      }
+    },
+    {
+      "function": "relay",
+      "property": "passthrough",
+      "formula": "forall (x: int ∈ [0, 4)) { Object.is(relay(x), x) }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "x",
+            "kind": "range",
+            "lo": "0",
+            "hi": "4"
+          }
+        ],
+        "conclusion": {
+          "kind": "eq",
+          "left": {
+            "kind": "call",
+            "callee": "relay",
+            "args": [
+              {
+                "kind": "inject",
+                "tag": "number",
+                "expr": {
+                  "kind": "id",
+                  "name": "x"
+                }
+              }
+            ]
+          },
+          "right": {
+            "kind": "id",
+            "name": "x"
+          }
+        }
+      }
+    }
+  ]
+}
