@@ -99,7 +99,7 @@ reach. -/
 -- ground evaluator settled: neither carries information, and each collapse
 -- halves the tree the closers walk.
 attribute [js_norm] Bool.cond_self ite_self Bool.cond_true Bool.cond_false
-  Bool.false_eq_true
+  Bool.false_eq_true ite_true ite_false
 
 -- Binary64 theory from FloatFacts. Rewriting subtraction away leaves the
 -- closers one operator fewer to reason about.
