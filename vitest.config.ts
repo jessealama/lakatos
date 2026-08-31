@@ -38,12 +38,16 @@ export default defineConfig({
         // branches no input can reach. Reseeded 2026-08-29: the shared
         // parse gate refuses every unreadable formula before any spine
         // runs, so the enumeration's own rethrow and the emitter's bare
-        // fallthrough joined that unreachable set.
+        // fallthrough joined that unreachable set. Reseeded 2026-08-31:
+        // the pre-scan now threads each declarator's binding through the
+        // rest of its list, so a local shadowing a builtin refuses at the
+        // scan; nothing survives it to the typed walk's terminal throw,
+        // which stays as the engine-bug signal it is.
         autoUpdate: true,
-        statements: 99.46,
-        branches: 98.47,
+        statements: 99.44,
+        branches: 98.44,
         functions: 100,
-        lines: 99.68,
+        lines: 99.64,
       },
     },
   },
