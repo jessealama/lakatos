@@ -6841,6 +6841,20 @@ describe("union-typed locals (#117)", () => {
     });
   });
 
+  test("a one-tag union of a non-number keyword keeps the statement refusal", () => {
+    const { classified } = emit(
+      `/** @ensures{p} forall (x: number) { Object.is(f(x), 0) } */\n` +
+        `export function f(x: number): number {\n` +
+        `  const w: string | string = "a";\n  return 0;\n}\n`,
+    );
+    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
+      [
+        "Inappropriate",
+        "'f' could not be modeled: unmapped TypeScript construct 'VariableStatement' at 3:3",
+      ],
+    ]);
+  });
+
   test("a union with a non-keyword member keeps the statement refusal", () => {
     const { classified } = emit(
       `/** @ensures{p} forall (x: number) { Object.is(f(x), 0) } */\n` +
