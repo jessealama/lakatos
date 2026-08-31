@@ -308,6 +308,12 @@ body, where every name is already a `JsNumber`. -/
 def bodyTerm (e : JsExpr) : RenderM (TSyntax `term) :=
   return (← valueTerm (fun _ => false) e).term
 
+/-- The type a local is ascribed: every union spelling is the one tagged
+domain, exactly as `paramBinders` renders a union parameter's. -/
+def localTyTerm : LocalTy → RenderM (TSyntax `term)
+  | .number => `(JsNumber)
+  | .union _ => `(JsVal)
+
 mutual
 
 /-- An arm's statement sequence. An arm the source left empty still needs
@@ -328,12 +334,12 @@ partial def stmtDoElem (straight : Option (List String)) :
   | .throwErr kind =>
     -- The error carries its constructor name alone, like the old model.
     `(doElem| throw (JsError.error $(Syntax.mkStrLit kind)))
-  | .constDecl x e => do
-    -- Locals are ascribed: TypeScript typed them `number`, and a bare
-    -- literal initializer would otherwise elaborate at `Nat`.
-    `(doElem| let $(← scopedIdent x) : JsNumber := $(← bodyTerm e))
-  | .letDecl x e => do
-    `(doElem| let mut $(← scopedIdent x) : JsNumber := $(← bodyTerm e))
+  | .constDecl x ty e => do
+    -- Locals are ascribed: a bare literal initializer would otherwise
+    -- elaborate at `Nat`, and a union local is where its `JsVal` shows.
+    `(doElem| let $(← scopedIdent x) : $(← localTyTerm ty) := $(← bodyTerm e))
+  | .letDecl x ty e => do
+    `(doElem| let mut $(← scopedIdent x) : $(← localTyTerm ty) := $(← bodyTerm e))
   | .assign x e => do
     `(doElem| $(← scopedIdent x):ident := $(← bodyTerm e))
   | .ite c thn els => iteElem straight c thn els

@@ -41,25 +41,19 @@
       "description": "A dependency's path relative to the entry file, posix-spelled. Absent on a declaration or call means the entry file itself. Guillemets and control characters are excluded: the path is rendered as one Lean name component between guillemets, and either would break it.",
       "pattern": "^(?!/)[^\\u0000-\\u001f\\u00ab\\u00bb]+$"
     },
+    "unionTags": {
+      "type": "array",
+      "description": "A keyword union's normalized spelling: its keyword-member tags, deduplicated and sorted number, string, bigint, boolean, undefined, null; at least two.",
+      "minItems": 2,
+      "items": {
+        "enum": ["number", "string", "bigint", "boolean", "undefined", "null"]
+      }
+    },
     "paramType": {
       "description": "A parameter's declared type: a TypeScript number, a keyword union, or an instance of a modeled class.",
       "oneOf": [
         { "const": "number" },
-        {
-          "type": "array",
-          "description": "A union-typed parameter: its keyword-member tags, deduplicated and sorted number, string, bigint, boolean, undefined, null; at least two.",
-          "minItems": 2,
-          "items": {
-            "enum": [
-              "number",
-              "string",
-              "bigint",
-              "boolean",
-              "undefined",
-              "null"
-            ]
-          }
-        },
+        { "$ref": "#/definitions/unionTags" },
         {
           "type": "object",
           "additionalProperties": false,
@@ -543,7 +537,11 @@
               "description": "A local binding: 'const' is immutable, 'let' is a mutable local rendered as Lean's `let mut`."
             },
             "name": { "$ref": "#/definitions/identifier" },
-            "init": { "$ref": "#/definitions/expr" }
+            "init": { "$ref": "#/definitions/expr" },
+            "type": {
+              "$ref": "#/definitions/unionTags",
+              "description": "Present exactly for a union-typed local; absent means the numeric slice the statement always had."
+            }
           }
         },
         {

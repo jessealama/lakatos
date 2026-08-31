@@ -164,14 +164,14 @@ const CONST_FIXTURES = [
   `${CONFORMANCE}/inappropriate/module-let-read.ts`,
 ];
 
-/** The union-parameter slice: typeof dispatch, JsVal equality, the
- * falsity path, and the refusals unions must not loosen. */
+/** The union slice: typeof dispatch, JsVal equality, the falsity path,
+ * union-typed locals (#117), and the refusals unions must not loosen. */
 const UNION_FIXTURES = [
   "engines/thales/tests/fixtures/unions.ts",
   `${CONFORMANCE}/theorem/union-typeof-dispatch.ts`,
   `${CONFORMANCE}/theorem/union-null-flag.ts`,
+  `${CONFORMANCE}/theorem/union-local.ts`,
   `${CONFORMANCE}/countersatisfiable/union-misread.ts`,
-  `${CONFORMANCE}/inappropriate/union-local.ts`,
   `${CONFORMANCE}/inappropriate/union-return.ts`,
   `${CONFORMANCE}/inappropriate/union-string-argument.ts`,
   `${CONFORMANCE}/error/union-widened-argument.ts`,

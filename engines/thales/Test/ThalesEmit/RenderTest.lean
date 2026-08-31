@@ -464,7 +464,19 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
   (decodeStmt (Json.mkObj
     [("kind", "let"), ("name", "y"),
      ("init", Json.mkObj [("kind", "id"), ("name", "x")])]))
-  matches .ok (.letDecl "y" (.id "x"))
+  matches .ok (.letDecl "y" .number (.id "x"))
+#guard
+  (decodeStmt (Json.mkObj
+    [("kind", "const"), ("name", "w"),
+     ("type", Json.arr #[Json.str "number", Json.str "string"]),
+     ("init", Json.mkObj [("kind", "id"), ("name", "v")])]))
+  matches .ok (.constDecl "w" (.union #[.number, .string]) (.id "v"))
+#guard
+  (decodeStmt (Json.mkObj
+    [("kind", "const"), ("name", "w"),
+     ("type", Json.arr #[Json.str "number"]),
+     ("init", Json.mkObj [("kind", "id"), ("name", "v")])]))
+  matches .error _
 #guard
   (decodeStmt (Json.mkObj
     [("kind", "if"),

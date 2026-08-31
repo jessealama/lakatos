@@ -114,6 +114,124 @@
           }
         }
       ]
+    },
+    {
+      "kind": "function",
+      "name": "viaLocal",
+      "params": [
+        {
+          "name": "v",
+          "type": ["number", "string"]
+        }
+      ],
+      "source": "export function viaLocal(v: number | string): number {\n  const w: number | string = v;\n  if (typeof w === \"number\") {\n    return w;\n  }\n  return 0;\n}",
+      "body": [
+        {
+          "kind": "const",
+          "name": "w",
+          "init": {
+            "kind": "id",
+            "name": "v"
+          },
+          "type": ["number", "string"]
+        },
+        {
+          "kind": "if",
+          "cond": {
+            "kind": "typeof-test",
+            "expr": {
+              "kind": "id",
+              "name": "w"
+            },
+            "result": "number"
+          },
+          "then": [
+            {
+              "kind": "return",
+              "expr": {
+                "kind": "project",
+                "tag": "number",
+                "expr": {
+                  "kind": "id",
+                  "name": "w"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "kind": "return",
+          "expr": {
+            "kind": "num",
+            "lit": "0"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "function",
+      "name": "settle",
+      "params": [
+        {
+          "name": "x",
+          "type": "number"
+        }
+      ],
+      "source": "export function settle(x: number): number {\n  let pending: number | undefined = undefined;\n  pending = x;\n  if (typeof pending === \"number\") {\n    return pending;\n  }\n  return 1;\n}",
+      "body": [
+        {
+          "kind": "let",
+          "name": "pending",
+          "init": {
+            "kind": "inject",
+            "tag": "undefined"
+          },
+          "type": ["number", "undefined"]
+        },
+        {
+          "kind": "assign",
+          "name": "pending",
+          "expr": {
+            "kind": "inject",
+            "tag": "number",
+            "expr": {
+              "kind": "id",
+              "name": "x"
+            }
+          }
+        },
+        {
+          "kind": "if",
+          "cond": {
+            "kind": "typeof-test",
+            "expr": {
+              "kind": "id",
+              "name": "pending"
+            },
+            "result": "number"
+          },
+          "then": [
+            {
+              "kind": "return",
+              "expr": {
+                "kind": "project",
+                "tag": "number",
+                "expr": {
+                  "kind": "id",
+                  "name": "pending"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "kind": "return",
+          "expr": {
+            "kind": "num",
+            "lit": "1"
+          }
+        }
+      ]
     }
   ],
   "obligations": [
@@ -220,6 +338,78 @@
           "right": {
             "kind": "id",
             "name": "x"
+          }
+        }
+      }
+    },
+    {
+      "function": "viaLocal",
+      "property": "localCarries",
+      "formula": "forall (x: number) { Object.is(viaLocal(x), x) }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "x",
+            "kind": "number"
+          }
+        ],
+        "conclusion": {
+          "kind": "eq",
+          "left": {
+            "kind": "call",
+            "callee": "viaLocal",
+            "args": [
+              {
+                "kind": "inject",
+                "tag": "number",
+                "expr": {
+                  "kind": "id",
+                  "name": "x"
+                }
+              }
+            ]
+          },
+          "right": {
+            "kind": "id",
+            "name": "x"
+          }
+        }
+      }
+    },
+    {
+      "function": "settle",
+      "property": "settles",
+      "formula": "forall (x: int ∈ [0, 4)) { settle(x) >= 0 }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "x",
+            "kind": "range",
+            "lo": "0",
+            "hi": "4"
+          }
+        ],
+        "conclusion": {
+          "kind": "istrue",
+          "expr": {
+            "kind": "binop",
+            "op": ">=",
+            "left": {
+              "kind": "call",
+              "callee": "settle",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "x"
+                }
+              ]
+            },
+            "right": {
+              "kind": "num",
+              "lit": "0"
+            }
           }
         }
       }
