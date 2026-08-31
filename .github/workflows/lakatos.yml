@@ -18,22 +18,11 @@ on:
       - "tsconfig.tests.json"
       - "vitest.config.ts"
       - ".github/workflows/lakatos.yml"
+  # No path filter: these jobs are branch protection's required checks, and
+  # a required check that never reports reads as pending forever, not as
+  # skipped. A docs-only pull request would be unmergeable. The push
+  # trigger above stays filtered — nothing gates on it.
   pull_request:
-    paths:
-      - "src/**"
-      - "tests/**"
-      - "schemas/**"
-      - "lemma/**"
-      - "engines/pabst/**"
-      - "engines/thales/frontend/**"
-      - "engines/thales/tests/fixtures/**"
-      - "spec/**"
-      - "package.json"
-      - "package-lock.json"
-      - "tsconfig.json"
-      - "tsconfig.tests.json"
-      - "vitest.config.ts"
-      - ".github/workflows/lakatos.yml"
 
 jobs:
   format:
