@@ -101,8 +101,11 @@ export type EmitExpr =
 export type EmitStmt =
   | { kind: "return"; expr: EmitExpr }
   | { kind: "throw"; error: string }
-  | { kind: "const"; name: string; init: EmitExpr }
-  | { kind: "let"; name: string; init: EmitExpr }
+  /** A local's `type` is present exactly for a union binding — the same
+   * normalized tag array a parameter's type carries; absent means the
+   * numeric slice the statement always had. */
+  | { kind: "const"; name: string; init: EmitExpr; type?: UnionTag[] }
+  | { kind: "let"; name: string; init: EmitExpr; type?: UnionTag[] }
   | { kind: "assign"; name: string; expr: EmitExpr }
   | { kind: "if"; cond: EmitExpr; then: EmitStmt[]; else?: EmitStmt[] }
   | { kind: "field-set"; field: string; expr: EmitExpr };
@@ -1972,13 +1975,24 @@ function signatureFailure(
  * refused rather than shadowed. */
 type Locals = Map<string, "const" | "mutable">;
 
+/** The types a local binding may carry: the numeric slice, or a keyword
+ * union riding the same tagged domain a parameter's does. Instances stay
+ * out: a class-valued local keeps its refusal. */
+type LocalTy = "num" | { union: UnionTag[] };
+
 /** The statement tree as the old transcriber would have rendered it: each
  * node is either a mapped statement (its expressions still tsc nodes) or
  * the opaque failure the transcriber would have emitted in its place. */
 type TStmt =
   | { t: "return"; expr: ts.Expression }
   | { t: "throw"; error: string }
-  | { t: "decl"; mutable: boolean; name: string; init: ts.Expression }
+  | {
+      t: "decl";
+      mutable: boolean;
+      name: string;
+      init: ts.Expression;
+      ty: LocalTy;
+    }
   | { t: "assign"; name: string; expr: ts.Expression }
   | { t: "field-set"; field: string; expr: ts.Expression }
   | {
@@ -1998,14 +2012,34 @@ function errorKind(e: ts.Expression): string | undefined {
   return inner.expression.text;
 }
 
+/** A local declarator's admitted type: the numeric slice for `number` or
+ * no annotation, or a keyword union normalized exactly as a parameter's
+ * is (`localValueTy` and `paramValueTy` share `keywordTags` and
+ * `normalizedUnion`, so the two spellings can never drift). Anything
+ * else — a class, a lone non-number keyword, a union with a member
+ * outside the keywords — keeps the declarator's degradation. */
+function localValueTy(
+  t: ts.TypeNode | undefined,
+  sf: ts.SourceFile,
+): LocalTy | undefined {
+  if (t === undefined || t.kind === ts.SyntaxKind.NumberKeyword) return "num";
+  if (!ts.isUnionTypeNode(t)) return undefined;
+  const tags = keywordTags(t);
+  if (!Array.isArray(tags)) return undefined;
+  const ty = normalizedUnion(tags, t, sf);
+  return typeof ty === "string" || "union" in ty ? ty : undefined;
+}
+
 /** A declaration's `TStmt`s, or undefined when any declarator falls
  * outside the slice — `var`, `using`, destructuring, an uninitialized
- * `let`, a non-number type annotation, or a redeclaration of a name
- * already bound here. Locals set for earlier declarators persist even
- * when a later one fails, exactly as the old transcriber leaves them. */
+ * `let`, a type annotation that is neither `number` nor a keyword union,
+ * or a redeclaration of a name already bound here. Locals set for
+ * earlier declarators persist even when a later one fails, exactly as
+ * the old transcriber leaves them. */
 function declStmts(
   s: ts.VariableStatement,
   locals: Locals,
+  sf: ts.SourceFile,
 ): TStmt[] | undefined {
   const flags = s.declarationList.flags;
   const isConst = (flags & ts.NodeFlags.Const) !== 0;
@@ -2017,8 +2051,8 @@ function declStmts(
   for (const d of s.declarationList.declarations) {
     if (!ts.isIdentifier(d.name)) return undefined;
     if (d.initializer === undefined) return undefined;
-    if (d.type !== undefined && d.type.kind !== ts.SyntaxKind.NumberKeyword)
-      return undefined;
+    const ty = localValueTy(d.type, sf);
+    if (ty === undefined) return undefined;
     // Shadowing a name already bound here would make a join ambiguous: an
     // arm's own binding is what the tail would read back.
     if (locals.has(d.name.text)) return undefined;
@@ -2027,6 +2061,7 @@ function declStmts(
       mutable: !isConst,
       name: d.name.text,
       init: d.initializer,
+      ty,
     });
     locals.set(d.name.text, isConst ? "const" : "mutable");
   }
@@ -2078,7 +2113,7 @@ function structureStmt(
     if (kind !== undefined) return [{ t: "throw", error: kind }];
   }
   if (ts.isVariableStatement(s)) {
-    const stmts = declStmts(s, locals);
+    const stmts = declStmts(s, locals, sf);
     if (stmts !== undefined) return stmts;
   }
   if (ts.isExpressionStatement(s)) {
@@ -2151,38 +2186,47 @@ function treeExprs(
 
 /** The first opaque node in the statement tree, in tree order: an opaque
  * statement, an opaque condition, or an unmapped construct inside a mapped
- * expression — whichever the old pipeline's scan reaches first. */
+ * expression — whichever the old pipeline's scan reaches first. Each decl
+ * binds the rest of its list — an arm its own copy — mirroring the
+ * lowering's scoping, so the scan types an identifier (a typeof test over
+ * a union local, say) off the same binding the walk will. */
 function treeConstruct(
   stmts: readonly TStmt[],
   sf: ts.SourceFile,
   scope: WalkScope,
 ): FailedDecl | undefined {
+  let current = scope;
   for (const s of stmts) {
     switch (s.t) {
       case "opaque":
         return s.failure;
       case "return": {
-        const found = findConstruct(s.expr, sf, scope);
+        const found = findConstruct(s.expr, sf, current);
         if (found !== undefined) return found;
         break;
       }
       case "decl": {
-        const found = findConstruct(s.init, sf, scope);
+        const found = findConstruct(s.init, sf, current);
         if (found !== undefined) return found;
+        const vars = new Map(current.vars);
+        vars.set(s.name, s.ty);
+        current = { ...current, vars };
         break;
       }
       case "assign":
       case "field-set": {
-        const found = findConstruct(s.expr, sf, scope);
+        const found = findConstruct(s.expr, sf, current);
         if (found !== undefined) return found;
         break;
       }
       case "if": {
         if ("opaque" in s.cond) return s.cond.opaque;
         const found =
-          findConstruct(s.cond.expr, sf, scope) ??
-          treeConstruct(s.then, sf, scope) ??
-          (s.else !== undefined ? treeConstruct(s.else, sf, scope) : undefined);
+          findConstruct(s.cond.expr, sf, current) ??
+          treeConstruct(s.then, sf, current) ??
+          (s.else !== undefined
+            ? treeConstruct(s.else, sf, current)
+            : undefined);
         if (found !== undefined) return found;
         break;
       }
@@ -2248,23 +2292,30 @@ function lowerTree(
       return [{ kind: "throw", error: s.error }];
     case "decl": {
       // A binding whose scope is the rest of the list; a bind rather than
-      // a substitution, so an unused initializer still evaluates.
-      const init = walk(s.init, "num", vars);
+      // a substitution, so an unused initializer still evaluates. A union
+      // local's initializer meets its declared type as a slot, exactly as
+      // an argument meets a union parameter's.
+      const init = walk(s.init, s.ty, vars);
       const tail = lowerTree(
         rest,
-        [...vars, [s.name, "num"] as const],
+        [...vars, [s.name, s.ty] as const],
         k,
         scope,
         sf,
       );
       return [
-        { kind: s.mutable ? "let" : "const", name: s.name, init },
+        {
+          kind: s.mutable ? "let" : "const",
+          name: s.name,
+          init,
+          ...(s.ty !== "num" ? { type: [...s.ty.union] } : {}),
+        },
         ...tail,
       ];
     }
     case "assign": {
-      // A reassignment is typed at what the target was bound at; only a
-      // parameter can be anything but a number.
+      // A reassignment is typed at what the target was bound at — a
+      // parameter's or a union local's type included.
       const target = vars.find(([n]) => n === s.name)?.[1] ?? "num";
       const expr = walk(s.expr, target, vars);
       const tail = lowerTree(rest, vars, k, scope, sf);

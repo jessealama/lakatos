@@ -36,6 +36,36 @@ def TsModel.nullFlag (v : JsVal) : JsM JsNumber := do
 def TsModel.relay (v : JsVal) : JsM JsNumber := do
   return (← TsModel.toNum v)
 
+-- export function viaLocal(v: number | string): number {
+--   const w: number | string = v;
+--   if (typeof w === "number") {
+--     return w;
+--   }
+--   return 0;
+-- }
+@[js_norm, grind]
+def TsModel.viaLocal (v : JsVal) : JsM JsNumber := do
+  let w : JsVal := v
+  if JsVal.typeof w == TypeofResult.number then
+    return (← JsVal.toNumber w)
+  return 0
+
+-- export function settle(x: number): number {
+--   let pending: number | undefined = undefined;
+--   pending = x;
+--   if (typeof pending === "number") {
+--     return pending;
+--   }
+--   return 1;
+-- }
+@[js_norm, grind]
+def TsModel.settle (x : JsNumber) : JsM JsNumber := do
+  let mut pending : JsVal := JsVal.undef
+  pending := JsVal.num x
+  if JsVal.typeof pending == TypeofResult.number then
+    return (← JsVal.toNumber pending)
+  return 1
+
 -- @ensures{numId} forall (x: number) { Object.is(toNum(x), x) }
 #thales_prove "engines/thales/tests/fixtures/unions.ts" "toNum" "numId" :=
   ∀ (x : JsNumber), TsModel.toNum (JsVal.num x) = pure x
@@ -47,3 +77,15 @@ def TsModel.relay (v : JsVal) : JsM JsNumber := do
 -- @ensures{passthrough} forall (x: int ∈ [0, 4)) { Object.is(relay(x), x) }
 #thales_prove "engines/thales/tests/fixtures/unions.ts" "relay" "passthrough" :=
   ballIco 0 4 fun x => TsModel.relay (JsVal.num (Float.ofInt x)) = pure (Float.ofInt x)
+
+-- @ensures{localCarries} forall (x: number) { Object.is(viaLocal(x), x) }
+#thales_prove "engines/thales/tests/fixtures/unions.ts" "viaLocal" "localCarries" :=
+  ∀ (x : JsNumber), TsModel.viaLocal (JsVal.num x) = pure x
+
+-- @ensures{settles} forall (x: int ∈ [0, 4)) { settle(x) >= 0 }
+#thales_prove "engines/thales/tests/fixtures/unions.ts" "settle" "settles" :=
+  ballIco 0 4 fun x =>
+    ((do
+          return Float.le 0 (← TsModel.settle (Float.ofInt x))) :
+        JsM Bool) =
+      pure true

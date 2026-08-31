@@ -2683,9 +2683,9 @@ describe("builtin member calls model as Float primitives", () => {
     ]);
   });
 
-  // The pre-scan's scope carries parameters, not yet-undeclared locals, so
-  // a local shadow is caught by the typed walk instead: `Error`, not
-  // `Inappropriate`. Either way the builtin never lowers.
+  // The pre-scan threads each decl's binding through the rest of its
+  // list, so a local shadow is the scan's find, same as a parameter's:
+  // `Inappropriate` at the construct. The builtin never lowers.
   test("a local named Number shadows the builtin from its declaration on", () => {
     const src = [
       "/** @ensures{p} forall (n: int ∈ [0, 4)) { flag(n) === 1 } */",
@@ -2700,7 +2700,7 @@ describe("builtin member calls model as Float primitives", () => {
     const { classified } = emitModule(src, FILE);
     expect(classified).toEqual([
       expect.objectContaining({
-        szs: "Error",
+        szs: "Inappropriate",
         reason: expect.stringContaining(
           "unmapped TypeScript construct 'CallExpression'",
         ),
@@ -6406,12 +6406,7 @@ describe("union-typed parameters", () => {
     ]);
   });
 
-  test("a union-typed local and a union return keep their refusals", () => {
-    const local = emit(
-      `/** @ensures{p} forall (x: number) { Object.is(f(x), x) } */\n` +
-        `export function f(v: number | string): number {\n  const w: number | string = v;\n  return 0;\n}\n`,
-    );
-    expect(local.classified[0]?.szs).toBe("Inappropriate");
+  test("a union-valued return keeps its refusal", () => {
     const ret = emit(
       `/** @ensures{p} forall (x: number) { Object.is(f(x), x) } */\n` +
         `export function f(v: number | string): number | string {\n  return v;\n}\n`,
@@ -6684,6 +6679,192 @@ describe("union-typed parameters", () => {
         "property elaboration failed: 'call' has no model: a 'string | undefined' " +
           "value slot has no 'number' member, so a number-valued expression " +
           "cannot flow to it",
+      ],
+    ]);
+  });
+});
+
+describe("union-typed locals (#117)", () => {
+  const emit = (src: string) => emitModule(src, "t.ts");
+
+  test("a union-annotated const rides the wire with its normalized tags", () => {
+    const { emission, classified } = emit(
+      `export function carry(v: number | string): number {\n` +
+        `  const w: string | number = v;\n  return 0;\n}\n`,
+    );
+    expect(classified).toEqual([]);
+    expectValidEmission(emission);
+    const fn = emission.declarations[0];
+    assert(fn?.kind === "function");
+    expect(fnBody(fn)[0]).toEqual({
+      kind: "const",
+      name: "w",
+      init: { kind: "id", name: "v" },
+      type: ["number", "string"],
+    });
+  });
+
+  test("a number-valued initializer injects at the local's slot", () => {
+    const { emission } = emit(
+      `export function f(x: number): number {\n` +
+        `  const w: number | undefined = x + 1;\n  return x;\n}\n`,
+    );
+    const fn = emission.declarations[0];
+    assert(fn?.kind === "function");
+    expect(fnBody(fn)[0]).toEqual({
+      kind: "const",
+      name: "w",
+      init: {
+        kind: "inject",
+        tag: "number",
+        expr: {
+          kind: "binop",
+          op: "+",
+          left: { kind: "id", name: "x" },
+          right: { kind: "num", lit: "1" },
+        },
+      },
+      type: ["number", "undefined"],
+    });
+  });
+
+  test("undefined and null inject where the local's union carries their tag", () => {
+    const { emission, classified } = emit(
+      `export function f(x: number): number {\n` +
+        `  const u: number | undefined = undefined;\n` +
+        `  const n: number | null = null;\n  return x;\n}\n`,
+    );
+    expect(classified).toEqual([]);
+    const fn = emission.declarations[0];
+    assert(fn?.kind === "function");
+    expect(fnBody(fn).slice(0, 2)).toEqual([
+      {
+        kind: "const",
+        name: "u",
+        init: { kind: "inject", tag: "undefined" },
+        type: ["number", "undefined"],
+      },
+      {
+        kind: "const",
+        name: "n",
+        init: { kind: "inject", tag: "null" },
+        type: ["number", "null"],
+      },
+    ]);
+  });
+
+  test("a union local reads back under a parameter's rules: typeof, tagged equality, projection", () => {
+    const { emission, classified } = emit(
+      `export function f(v: number | string): number {\n` +
+        `  const w: number | string = v;\n` +
+        `  if (typeof w === "string") {\n    return 0;\n  }\n` +
+        `  if (w === 1) {\n    return 1;\n  }\n` +
+        `  return w;\n}\n`,
+    );
+    expect(classified).toEqual([]);
+    expectValidEmission(emission);
+    const fn = emission.declarations[0];
+    assert(fn?.kind === "function");
+    const [, dispatch, eq, last] = fnBody(fn);
+    assert(dispatch?.kind === "if" && eq?.kind === "if");
+    expect(dispatch.cond).toEqual({
+      kind: "typeof-test",
+      expr: { kind: "id", name: "w" },
+      result: "string",
+    });
+    expect(eq.cond).toEqual({
+      kind: "jsval-eq",
+      semantics: "strict",
+      left: { kind: "id", name: "w" },
+      right: { kind: "inject", tag: "number", expr: { kind: "num", lit: "1" } },
+    });
+    expect(last).toEqual({
+      kind: "return",
+      expr: { kind: "project", tag: "number", expr: { kind: "id", name: "w" } },
+    });
+  });
+
+  test("a mutable union let reassigns at its declared type", () => {
+    const { emission, classified } = emit(
+      `export function f(x: number): number {\n` +
+        `  let w: number | undefined = undefined;\n` +
+        `  w = x;\n  return x;\n}\n`,
+    );
+    expect(classified).toEqual([]);
+    const fn = emission.declarations[0];
+    assert(fn?.kind === "function");
+    expect(fnBody(fn).slice(0, 2)).toEqual([
+      {
+        kind: "let",
+        name: "w",
+        init: { kind: "inject", tag: "undefined" },
+        type: ["number", "undefined"],
+      },
+      {
+        kind: "assign",
+        name: "w",
+        expr: {
+          kind: "inject",
+          tag: "number",
+          expr: { kind: "id", name: "x" },
+        },
+      },
+    ]);
+  });
+
+  test("mismatched union spellings refuse as the engine's error", () => {
+    const { classified } = emit(
+      `/** @ensures{p} forall (x: number) { Object.is(f(x), 0) } */\n` +
+        `export function f(v: number | boolean): number {\n` +
+        `  const w: number | string = v;\n  return 0;\n}\n`,
+    );
+    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
+      [
+        "Error",
+        "'f' could not be modeled: identifier 'v' is a 'number | boolean' value, " +
+          "not a 'number | string' value; unions flow only between identical spellings",
+      ],
+    ]);
+  });
+
+  test("a one-tag union annotation is its base type, exactly as a parameter's", () => {
+    const { emission } = emit(
+      `export function f(x: number): number {\n` +
+        `  const w: number | number = x;\n  return w;\n}\n`,
+    );
+    const fn = emission.declarations[0];
+    assert(fn?.kind === "function");
+    expect(fnBody(fn)[0]).toEqual({
+      kind: "const",
+      name: "w",
+      init: { kind: "id", name: "x" },
+    });
+  });
+
+  test("a union with a non-keyword member keeps the statement refusal", () => {
+    const { classified } = emit(
+      `/** @ensures{p} forall (x: number) { Object.is(f(x), 0) } */\n` +
+        `export function f(x: number): number {\n` +
+        `  const w: number | "a" = x;\n  return 0;\n}\n`,
+    );
+    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
+      [
+        "Inappropriate",
+        "'f' could not be modeled: unmapped TypeScript construct 'VariableStatement' at 3:3",
+      ],
+    ]);
+  });
+
+  test("a lone non-number keyword keeps the statement refusal", () => {
+    const { classified } = emit(
+      `/** @ensures{p} forall (n: int ∈ [0, 10)) { f(n) >= 0 } */\n` +
+        `export function f(n: number): number {\n` +
+        `  const label: string = "m";\n  return n;\n}\n`,
+    );
+    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
+      [
+        "Inappropriate",
+        "'f' could not be modeled: unmapped TypeScript construct 'VariableStatement' at 3:3",
       ],
     ]);
   });

@@ -1021,6 +1021,20 @@
       "szs": "Theorem",
       "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_14641753059399067773",
       "axioms": []
+    },
+    {
+      "function": "viaLocal",
+      "property": "localCarries",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_1419325549305580799",
+      "axioms": []
+    },
+    {
+      "function": "settle",
+      "property": "settles",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_3181482489062476490",
+      "axioms": []
     }
   ],
   "engines/thales/tests/conformance/theorem/union-typeof-dispatch.ts": [
@@ -1041,6 +1055,15 @@
       "axioms": []
     }
   ],
+  "engines/thales/tests/conformance/theorem/union-local.ts": [
+    {
+      "function": "carry",
+      "property": "numId",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_5738715104768008803",
+      "axioms": []
+    }
+  ],
   "engines/thales/tests/conformance/countersatisfiable/union-misread.ts": [
     {
       "function": "toNum",
@@ -1050,14 +1073,6 @@
       "counterexample": {
         "x": 0
       }
-    }
-  ],
-  "engines/thales/tests/conformance/inappropriate/union-local.ts": [
-    {
-      "function": "carry",
-      "property": "p",
-      "szs": "Inappropriate",
-      "reason": "'carry' could not be modeled: unmapped TypeScript construct 'VariableStatement' at 3:3"
     }
   ],
   "engines/thales/tests/conformance/inappropriate/union-return.ts": [

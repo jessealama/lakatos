@@ -47,11 +47,20 @@ inductive JsExpr where
   | jsvalEq (sameValue : Bool) (left right : JsExpr)
 deriving Repr, Inhabited
 
+/-- A local's declared type: the numeric slice, or a keyword union riding
+the one tagged domain. As with a parameter's union, the tags are the
+frontend's record of what may be injected — the local's Lean type is
+`JsVal` regardless of them. -/
+inductive LocalTy where
+  | number
+  | union (tags : Array JsTag)
+deriving Repr, Inhabited, BEq
+
 inductive JsStmt where
   | ret (expr : JsExpr)
   | throwErr (error : String)
-  | constDecl (name : String) (init : JsExpr)
-  | letDecl (name : String) (init : JsExpr)
+  | constDecl (name : String) (ty : LocalTy) (init : JsExpr)
+  | letDecl (name : String) (ty : LocalTy) (init : JsExpr)
   | assign (name : String) (expr : JsExpr)
   | ite (cond : JsExpr) (thn : Array JsStmt) (els : Option (Array JsStmt))
   | fieldSet (field : String) (expr : JsExpr)
@@ -226,6 +235,18 @@ def decodeTag (s : String) : Except String JsTag :=
   | "null" => pure .null
   | t => throw s!"unknown union tag '{t}'"
 
+/-- A union type's tag array — a keyword tag per element, at least two —
+the encoding a parameter's type and a union local's share. -/
+def decodeUnionTags (tags : Array Json) (what : String) :
+    Except String (Array JsTag) := do
+  let ts ← tags.mapM fun t =>
+    match t.getStr? with
+    | .ok s => decodeTag s
+    | .error _ => throw "a union tag is not a string"
+  unless ts.size ≥ 2 do
+    throw s!"a union {what} type needs at least two tags"
+  pure ts
+
 /-- What `typeof` can answer. -/
 def typeofResults : List String :=
   ["number", "string", "bigint", "boolean", "undefined",
@@ -302,15 +323,26 @@ partial def decodeExpr (j : Json) : Except String JsExpr := do
       (← decodeExpr (← j.getObjVal? "right")))
   | k => throw s!"unknown expression kind '{k}'"
 
+/-- A local's optional `type` field: absent is the numeric slice the
+statement always had; present it is the union-tag array a parameter's
+type carries. -/
+def decodeLocalTy (j : Json) : Except String LocalTy :=
+  match j.getObjVal? "type" with
+  | .error _ => pure .number
+  | .ok v =>
+    match v.getArr? with
+    | .ok tags => LocalTy.union <$> decodeUnionTags tags "local"
+    | .error _ => throw "a local's type is a union-tag array"
+
 partial def decodeStmt (j : Json) : Except String JsStmt := do
   match ← getStr j "kind" with
   | "return" => pure (.ret (← decodeExpr (← j.getObjVal? "expr")))
   | "throw" => pure (.throwErr (← getStr j "error"))
   | "const" =>
-    pure (.constDecl (← getStr j "name")
+    pure (.constDecl (← getStr j "name") (← decodeLocalTy j)
       (← decodeExpr (← j.getObjVal? "init")))
   | "let" =>
-    pure (.letDecl (← getStr j "name")
+    pure (.letDecl (← getStr j "name") (← decodeLocalTy j)
       (← decodeExpr (← j.getObjVal? "init")))
   | "assign" =>
     pure (.assign (← getStr j "name")
@@ -346,14 +378,7 @@ def decodeParamTy (j : Json) : Except String ParamTy :=
   | .ok s => throw s!"unknown parameter type '{s}'"
   | .error _ =>
     match j.getArr? with
-    | .ok tags => do
-      let ts ← tags.mapM fun t =>
-        match t.getStr? with
-        | .ok s => decodeTag s
-        | .error _ => throw "a union tag is not a string"
-      unless ts.size ≥ 2 do
-        throw "a union parameter type needs at least two tags"
-      pure (.union ts)
+    | .ok tags => ParamTy.union <$> decodeUnionTags tags "parameter"
     | .error _ => do pure (.cls (← getStr j "class") (← getStrOpt j "module"))
 
 def decodeParam (j : Json) : Except String Param := do

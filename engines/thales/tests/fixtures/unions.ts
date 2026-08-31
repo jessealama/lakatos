@@ -18,3 +18,22 @@ export function nullFlag(v: number | null): number {
 export function relay(v: number | string): number {
   return toNum(v);
 }
+
+/** @ensures{localCarries} forall (x: number) { Object.is(viaLocal(x), x) } */
+export function viaLocal(v: number | string): number {
+  const w: number | string = v;
+  if (typeof w === "number") {
+    return w;
+  }
+  return 0;
+}
+
+/** @ensures{settles} forall (x: int ∈ [0, 4)) { settle(x) >= 0 } */
+export function settle(x: number): number {
+  let pending: number | undefined = undefined;
+  pending = x;
+  if (typeof pending === "number") {
+    return pending;
+  }
+  return 1;
+}
