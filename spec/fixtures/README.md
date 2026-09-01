@@ -49,15 +49,17 @@ assert acceptance only.
 
 ## Attachment fixtures (`attach/accept/`, `attach/reject/`)
 
-Each fixture is one TypeScript module carrying exactly one `@ensures`. The
+Each fixture is one TypeScript module carrying one or more `@ensures`. The
 module is what a property-body fixture cannot be: whole enough to say
 whether the annotated declaration is exported, public, and of a kind that
 can bear a property.
 
-An `attach/accept/` module must yield exactly one extracted annotation and
-no diagnostic. An `attach/reject/` module must yield exactly one diagnostic
-and no annotation — a rejected attachment is reported, never dropped in
-silence.
+An `attach/accept/` module must yield exactly one extracted annotation per
+`@ensures` it carries and no diagnostic. An `attach/reject/` module must
+yield exactly one diagnostic per `@ensures` and no annotation — a rejected
+attachment is reported, never dropped in silence. Most fixtures carry a
+single `@ensures`; the exceptions pin how several are attached, such as one
+per stacked JSDoc block.
 
 The formulas are deliberately dull. What a fixture pins is the attachment
 point, so a formula that failed to parse would move the failure to the

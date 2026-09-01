@@ -85,6 +85,13 @@ A rejected attachment is a diagnostic, not silence: the annotation is
 reported with the best identity available, which may use the placeholder
 labels `<computed>` and `<anonymous>`.
 
+An `@ensures` lives in a JSDoc block (`/** ... */`) directly above its
+declaration. Every block stacked there contributes its `@ensures` tags, in
+source order: one property per block and several properties per block are
+the same annotations. TypeScript's own JSDoc accessors read only the last
+block; Lemma reads them all, because an annotation dropped in silence is the
+one outcome a checker must not have.
+
 ### Binder domains
 
 `int`, `nat`, `number`, `boolean`, `string`, `bigint`, or a class name
