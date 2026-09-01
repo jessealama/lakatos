@@ -42,12 +42,16 @@ export default defineConfig({
         // the pre-scan now threads each declarator's binding through the
         // rest of its list, so a local shadowing a builtin refuses at the
         // scan; nothing survives it to the typed walk's terminal throw,
-        // which stays as the engine-bug signal it is.
+        // which stays as the engine-bug signal it is. Reseeded
+        // 2026-09-01: the stub now refuses a clamp-emptied domain per
+        // annotation, so the last input that reached the enumeration's
+        // positioned rethrow no longer does, and the arm is unreachable
+        // behind the gate.
         autoUpdate: true,
-        statements: 99.44,
-        branches: 98.44,
+        statements: 99.38,
+        branches: 98.36,
         functions: 100,
-        lines: 99.64,
+        lines: 99.57,
       },
     },
   },
