@@ -565,3 +565,81 @@ describe("extract — constructors", () => {
     ]);
   });
 });
+
+describe("extract — stacked JSDoc blocks", () => {
+  it("reads an @ensures from every block stacked above a function, in source order", () => {
+    const src = `/** @ensures{tooBig} forall (n: int ∈ [0, 10)) { keep(n) >= 5 } */
+/** @ensures{atLeastOne} forall (n: int ∈ [0, 10)) { keep(n) >= 1 } */
+export function keep(n: number): number {
+  return n + 1;
+}
+`;
+    const r = extractFromSource(src, "stacked.ts");
+    expect(r.invalid).toEqual([]);
+    expect(r.annotations.map((a) => [a.propertyName, a.line])).toEqual([
+      ["tooBig", 1],
+      ["atLeastOne", 2],
+    ]);
+    expect(r.annotations[0]!.formula).toBe(
+      "forall (n: int ∈ [0, 10)) { keep(n) >= 5 }",
+    );
+  });
+
+  it("reads stacked blocks above a class member", () => {
+    const src = `export class Box {
+  /** @ensures{lo} forall (x: int) { new Box().id(x) >= x } */
+  /** @ensures{hi} forall (x: int) { new Box().id(x) <= x } */
+  id(x: number): number { return x; }
+}
+`;
+    const r = extractFromSource(src, "stacked-class.ts");
+    expect(r.invalid).toEqual([]);
+    expect(
+      r.annotations.map((a) => [a.propertyName, a.functionName, a.className]),
+    ).toEqual([
+      ["lo", "id", "Box"],
+      ["hi", "id", "Box"],
+    ]);
+  });
+
+  it("reports a nameless @ensures in an earlier block instead of dropping it", () => {
+    const src = `/** @ensures forall (x: int) { f(x) === x } */
+/** @ensures{named} forall (x: int) { f(x) === x } */
+export function f(x: number): number { return x; }
+`;
+    const r = extractFromSource(src, "stacked-unnamed.ts");
+    expect(r.annotations.map((a) => a.propertyName)).toEqual(["named"]);
+    expect(r.invalid).toHaveLength(1);
+    expect(r.invalid[0]).toMatchObject({
+      propertyName: "<unnamed>",
+      functionName: "f",
+      line: 1,
+    });
+  });
+
+  it("collapses a property name repeated across blocks into one duplicate diagnostic", () => {
+    const src = `/** @ensures{p} forall (x: int) { f(x) === x } */
+/** @ensures{p} forall (x: int) { f(x) === x } */
+export function f(x: number): number { return x; }
+`;
+    const r = extractFromSource(src, "stacked-dup.ts");
+    expect(r.annotations).toEqual([]);
+    expect(r.invalid).toHaveLength(1);
+    expect(r.invalid[0]!.message).toContain("duplicate property name 'p'");
+    expect(r.invalid[0]!.message).toContain("declared 2 times");
+  });
+
+  it("does not attach a block that belongs to the preceding declaration", () => {
+    const src = `/** @ensures{first} forall (x: int) { a(x) === x } */
+export function a(x: number): number { return x; }
+/** @ensures{second} forall (x: int) { b(x) === x } */
+export function b(x: number): number { return x; }
+`;
+    const r = extractFromSource(src, "neighbors.ts");
+    expect(r.invalid).toEqual([]);
+    expect(r.annotations.map((a) => [a.propertyName, a.functionName])).toEqual([
+      ["first", "a"],
+      ["second", "b"],
+    ]);
+  });
+});

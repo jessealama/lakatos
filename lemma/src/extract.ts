@@ -263,19 +263,29 @@ function unnamedMessage(subject: string, file: string): string {
   return `@ensures on ${subject} in ${file} has a missing or malformed {name} prefix (expected '@ensures{name} <formula>')`;
 }
 
+/** Every JSDoc block directly above `node`, in source order. TypeScript's
+ * own accessors (`getJSDocTags`, `getJSDocCommentsAndTags`) keep only the
+ * last block's tags; Lemma reads them all, since one block per property is
+ * a legal spelling and an annotation must never be dropped in silence. */
+function jsDocBlocks(node: ts.Node, sf: ts.SourceFile): ts.JSDoc[] {
+  return node.getChildren(sf).filter(ts.isJSDoc);
+}
+
 function ensuresComments(node: ts.Node, sf: ts.SourceFile): EnsuresScan {
   const matches: EnsuresMatch[] = [];
   const unnamed: number[] = [];
-  for (const tag of ts.getJSDocTags(node)) {
-    if (tag.tagName.escapedText !== "ensures") continue;
-    const comment = ts.getTextOfJSDocComment(tag.comment)?.trim() ?? "";
-    const m = ENSURES_NAME.exec(comment);
-    const line = sf.getLineAndCharacterOfPosition(tag.pos).line + 1;
-    if (!m) {
-      unnamed.push(line);
-      continue;
+  for (const block of jsDocBlocks(node, sf)) {
+    for (const tag of block.tags ?? []) {
+      if (tag.tagName.escapedText !== "ensures") continue;
+      const comment = ts.getTextOfJSDocComment(tag.comment)?.trim() ?? "";
+      const m = ENSURES_NAME.exec(comment);
+      const line = sf.getLineAndCharacterOfPosition(tag.pos).line + 1;
+      if (!m) {
+        unnamed.push(line);
+        continue;
+      }
+      matches.push({ propertyName: m[1]!, formula: m[2]!.trim(), line });
     }
-    matches.push({ propertyName: m[1]!, formula: m[2]!.trim(), line });
   }
   return { matches, unnamed };
 }
