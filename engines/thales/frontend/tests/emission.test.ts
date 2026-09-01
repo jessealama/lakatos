@@ -173,6 +173,16 @@ describe("emitModule on the tracer fixture", () => {
     },
   );
 
+  test("every stacked JSDoc block's @ensures becomes its own obligation", () => {
+    const fixture =
+      "engines/thales/tests/conformance/theorem/stacked-blocks.ts";
+    const { emission } = emitModule(fs.readFileSync(fixture, "utf8"), fixture);
+    expect(emission.obligations.map((o) => o.property)).toEqual([
+      "nonNegative",
+      "atLeastOne",
+    ]);
+  });
+
   test("extraction results ride along", () => {
     const { annotations, invalid } = emitModule(read(), FIXTURE);
     expect(annotations.map((a) => a.propertyName)).toEqual([
