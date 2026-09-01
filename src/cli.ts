@@ -23,6 +23,7 @@ import {
   resolveFiles,
   type TypecheckDiagnostic,
   typecheckProject,
+  unsupportedRangeReason,
 } from "../lemma/src/index.js";
 import {
   interruptedResults,
@@ -135,8 +136,8 @@ function stoppedExit(
   return 2;
 }
 
-/** Both engines refuse a domain they cannot represent as written; the stub
- * commands untry everything, with no kind, and say so their own way. */
+/** Every command refuses a domain it cannot represent as written, engine
+ * or stub alike; the count on stderr is the one place that says so. */
 function noteUnsupportedRanges(untried: AnnotationResult[]): void {
   const n = untried.filter((u) => u.kind === "unsupported-range").length;
   if (n > 0)
@@ -409,21 +410,39 @@ function rejectUnreadableFormulas(files: string[]): void {
 }
 
 /** The engine-independent enumeration: every annotation lemma can extract
- * and parse, plus the extraction-level input errors beside it. A formula
- * lemma itself cannot read is a compile error whichever command asked. */
+ * and parse, as the NotTried entries a command with no engine reports,
+ * plus the extraction-level input errors beside them. A formula lemma
+ * itself cannot read is a compile error whichever command asked; a domain
+ * the safe-integer clamp empties is refused per annotation, as both
+ * engines refuse it. */
 function enumerate(files: string[]): {
-  identities: PropertyIdentity[];
+  untried: AnnotationResult[];
   invalid: { file: string; invalid: InvalidAnnotation[] }[];
 } {
-  const identities: PropertyIdentity[] = [];
+  const untried: AnnotationResult[] = [];
   const invalid: { file: string; invalid: InvalidAnnotation[] }[] = [];
   for (const file of files) {
     const extracted = extract(file);
     invalid.push({ file, invalid: extracted.invalid });
     for (const a of extracted.annotations) {
+      const identity = {
+        file,
+        function: qualifiedName(a.functionName, a.className, a.isStatic),
+        property: a.propertyName,
+      };
       try {
         parseBody(parsePrefix(a.formula).body);
       } catch (e) {
+        // Before the LemmaError arm: EmptyAfterClampError extends it.
+        if (e instanceof EmptyAfterClampError) {
+          untried.push({
+            ...identity,
+            szs: "NotTried",
+            kind: "unsupported-range",
+            reason: unsupportedRangeReason(e.endpoints),
+          });
+          continue;
+        }
         if (e instanceof LemmaError)
           throw new LemmaError(
             `${file}:${a.line}: @ensures{${a.propertyName}}: ${e.message}`,
@@ -431,14 +450,10 @@ function enumerate(files: string[]): {
           );
         throw e;
       }
-      identities.push({
-        file,
-        function: qualifiedName(a.functionName, a.className, a.isStatic),
-        property: a.propertyName,
-      });
+      untried.push({ ...identity, szs: "NotTried" });
     }
   }
-  return { identities, invalid };
+  return { untried, invalid };
 }
 
 function refuteSpine(seed: number): Spine {
@@ -657,12 +672,12 @@ function plainProveSpine(): Spine {
 function stubSpine(command: Command): Spine {
   return {
     plan(files) {
-      const { identities, invalid } = enumerate(files);
+      const { untried, invalid } = enumerate(files);
       const inputErrors = inputErrorResults(invalid);
       console.error(`lakatos: ${command} is not implemented yet`);
       return {
         identities: [],
-        untried: identities.map((i) => ({ ...i, szs: "NotTried" as const })),
+        untried,
         inputErrors,
         outFiles: [],
         meta: {},

@@ -102,6 +102,8 @@ describe("check stub", () => {
     "unexported.ts": `/** @ensures{agrees} forall (n: nat) { unexported(n) === helper(n) } */\nexport function unexported(n: number): number { return n; }\nfunction helper(n: number): number { return n; }\n`,
     "malformed.ts": `/** @ensures{shapely} for every (n: nat), malformed(n) >= 0 */\nexport function malformed(n: number): number { return n; }\n`,
     "clampempty.ts": `/** @ensures{narrow} forall (x: int ∈ [1000000000000000000000000000000, 10000000000000000000000000000000]) { clampempty(x) >= 0 } */\nexport function clampempty(x: number): number { return x; }\n`,
+    "inverted.ts": `/** @ensures{backwards} forall (x: int ∈ [5, 3]) { inverted(x) >= 0 } */\nexport function inverted(x: number): number { return x; }\n`,
+    "clampmixed.ts": `/** @ensures{fine} forall (x: int ∈ [0, 5)) { fine(x) >= 0 } */\nexport function fine(x: number): number { return x; }\n\n/** @ensures{narrow} forall (x: int ∈ [1000000000000000000000000000000, 10000000000000000000000000000000]) { gone(x) >= 0 } */\nexport function gone(x: number): number { return x; }\n`,
   });
 
   it("lists every annotation as NotTried and exits 1", () => {
@@ -150,15 +152,64 @@ describe("check stub", () => {
     expect(diagnostics[0]).toContain("expected 'forall'");
   });
 
-  // A clamp-emptied interval parses, so it passes the shared gate that
-  // refuses unreadable formulas; only this stub's own enumeration refuses
-  // it, where prove and refute both contain it per annotation.
-  it("exits 2 on an interval the safe-integer clamp empties", () => {
-    const { code, stderr } = runMain(["check", "clampempty.ts"]);
+  // A clamp-emptied interval parses, so it passes the shared gate; the
+  // stub contains it per annotation exactly as both engines do.
+  it("reports an interval the safe-integer clamp empties as unsupported-range", () => {
+    const { code, stdout, stderr } = runMain(["check", "clampempty.ts"]);
+    expect(code).toBe(1);
+    const env = JSON.parse(stdout[0]!);
+    expectValidEnvelope(env);
+    expect(env.annotations).toEqual([
+      {
+        file: "clampempty.ts",
+        function: "clampempty",
+        property: "narrow",
+        szs: "NotTried",
+        kind: "unsupported-range",
+        reason:
+          "endpoints 1000000000000000000000000000000 and 10000000000000000000000000000000 " +
+          "exceed the safe integer range (±9007199254740991)",
+      },
+    ]);
+    expect(stderr.join("\n")).toContain(
+      "1 annotation not tried (unsupported range)",
+    );
+    expect(stderr.join("\n")).not.toContain("empty interval");
+  });
+
+  it("keeps the refused annotation beside the rest, in source order", () => {
+    const { code, stdout } = runMain(["check", "clampmixed.ts"]);
+    expect(code).toBe(1);
+    const env = JSON.parse(stdout[0]!);
+    expectValidEnvelope(env);
+    expect(env.annotations).toEqual([
+      {
+        file: "clampmixed.ts",
+        function: "fine",
+        property: "fine",
+        szs: "NotTried",
+      },
+      {
+        file: "clampmixed.ts",
+        function: "gone",
+        property: "narrow",
+        szs: "NotTried",
+        kind: "unsupported-range",
+        reason:
+          "endpoints 1000000000000000000000000000000 and 10000000000000000000000000000000 " +
+          "exceed the safe integer range (±9007199254740991)",
+      },
+    ]);
+  });
+
+  // Empty as written is bad input, not an unrepresentable domain.
+  it("still exits 2 on an interval that is empty as written", () => {
+    const { code, stdout, stderr } = runMain(["check", "inverted.ts"]);
     expect(code).toBe(2);
+    expect(stdout).toHaveLength(0);
     const diagnostics = withoutSkipWarning(stderr);
     expect(diagnostics).toHaveLength(1);
-    expect(diagnostics[0]).toContain("clampempty.ts:1: @ensures{narrow}:");
+    expect(diagnostics[0]).toContain("inverted.ts:1: @ensures{backwards}:");
     expect(diagnostics[0]).toContain("empty interval");
   });
 });
