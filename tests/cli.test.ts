@@ -104,6 +104,7 @@ describe("check stub", () => {
     "clampempty.ts": `/** @ensures{narrow} forall (x: int ∈ [1000000000000000000000000000000, 10000000000000000000000000000000]) { clampempty(x) >= 0 } */\nexport function clampempty(x: number): number { return x; }\n`,
     "inverted.ts": `/** @ensures{backwards} forall (x: int ∈ [5, 3]) { inverted(x) >= 0 } */\nexport function inverted(x: number): number { return x; }\n`,
     "clampmixed.ts": `/** @ensures{fine} forall (x: int ∈ [0, 5)) { fine(x) >= 0 } */\nexport function fine(x: number): number { return x; }\n\n/** @ensures{narrow} forall (x: int ∈ [1000000000000000000000000000000, 10000000000000000000000000000000]) { gone(x) >= 0 } */\nexport function gone(x: number): number { return x; }\n`,
+    "clampwide.ts": `/** @ensures{big} forall (x: int ∈ [0, 1000000000000000000000000000000]) { wide(x) >= 0 } */\nexport function wide(x: number): number { return x; }\n`,
   });
 
   it("lists every annotation as NotTried and exits 1", () => {
@@ -198,6 +199,26 @@ describe("check stub", () => {
         reason:
           "endpoints 1000000000000000000000000000000 and 10000000000000000000000000000000 " +
           "exceed the safe integer range (±9007199254740991)",
+      },
+    ]);
+  });
+
+  // Nonempty after the clamp, but the clamped domain denotes a narrower
+  // statement than the one written; both engines refuse it, so check does.
+  it("reports a merely clamped interval as unsupported-range too", () => {
+    const { code, stdout } = runMain(["check", "clampwide.ts"]);
+    expect(code).toBe(1);
+    const env = JSON.parse(stdout[0]!);
+    expectValidEnvelope(env);
+    expect(env.annotations).toEqual([
+      {
+        file: "clampwide.ts",
+        function: "wide",
+        property: "big",
+        szs: "NotTried",
+        kind: "unsupported-range",
+        reason:
+          "endpoint 1000000000000000000000000000000 exceeds the safe integer range (±9007199254740991)",
       },
     ]);
   });

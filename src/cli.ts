@@ -13,6 +13,7 @@ import { generate } from "../engines/pabst/src/codegen.js";
 import { runTests } from "../engines/pabst/src/run.js";
 import { parseSeed, randomSeed } from "../engines/pabst/src/seed.js";
 import {
+  clampedEndpoints,
   EmptyAfterClampError,
   extract,
   type InvalidAnnotation,
@@ -431,7 +432,20 @@ function enumerate(files: string[]): {
         property: a.propertyName,
       };
       try {
-        parseBody(parsePrefix(a.formula).body);
+        const { binders, body } = parsePrefix(a.formula);
+        parseBody(body);
+        // Asked after the body parses, so the clamp is reported only when
+        // it is the sole blocker.
+        const clamped = binders.flatMap(clampedEndpoints);
+        if (clamped.length > 0) {
+          untried.push({
+            ...identity,
+            szs: "NotTried",
+            kind: "unsupported-range",
+            reason: unsupportedRangeReason(clamped),
+          });
+          continue;
+        }
       } catch (e) {
         // Before the LemmaError arm: EmptyAfterClampError extends it.
         if (e instanceof EmptyAfterClampError) {
