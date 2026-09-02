@@ -11,7 +11,7 @@
       "function": "fetchTotal",
       "property": "nonNegative",
       "szs": "Inappropriate",
-      "reason": "'fetchTotal' could not be modeled: unmapped TypeScript construct 'AwaitExpression' at 8:10"
+      "reason": "'fetchTotal' could not be modeled: unmapped TypeScript construct 'AsyncKeyword' at 9:8"
     },
     {
       "function": "Counter#bump",
