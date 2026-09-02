@@ -53,6 +53,19 @@ describe("lakatos refute interrupted by a real SIGINT", () => {
     fs.rmSync(workDir, { recursive: true, force: true });
     fs.mkdirSync(workDir, { recursive: true });
     fs.writeFileSync(path.join(workDir, "slow.ts"), SLOW, "utf8");
+    fs.writeFileSync(
+      path.join(workDir, "tsconfig.json"),
+      JSON.stringify({
+        // The fixture imports node:fs, so it needs node's types.
+        compilerOptions: {
+          target: "es2022",
+          module: "nodenext",
+          types: ["node"],
+        },
+        files: ["slow.ts"],
+      }),
+      "utf8",
+    );
     // The spawned vitest inherits the nearest config walking up from its
     // cwd; pin an empty one so this run is not shaped by the repo's.
     fs.writeFileSync(

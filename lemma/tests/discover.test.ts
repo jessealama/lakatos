@@ -21,12 +21,16 @@ describe("isTsSource", () => {
 });
 
 describe("zero-arg discovery: src/ convention", () => {
-  useTempProject("lemma-disc-src-", {
-    "src/a.ts": "export const a = 1;\n",
-    "src/nested/b.mts": "export const b = 2;\n",
-    "src/types.d.ts": "export declare const a: number;\n",
-    "scripts/ignored.ts": "export const c = 3;\n",
-  });
+  useTempProject(
+    "lemma-disc-src-",
+    {
+      "src/a.ts": "export const a = 1;\n",
+      "src/nested/b.mts": "export const b = 2;\n",
+      "src/types.d.ts": "export declare const a: number;\n",
+      "scripts/ignored.ts": "export const c = 3;\n",
+    },
+    { tsconfig: false },
+  );
 
   it("finds sources under src/, skipping declarations and other dirs", () => {
     expect(resolveFiles([])).toEqual({
@@ -37,9 +41,13 @@ describe("zero-arg discovery: src/ convention", () => {
 });
 
 describe("zero-arg discovery: src/ holding only declaration files", () => {
-  useTempProject("lemma-disc-decl-", {
-    "src/types.d.ts": "export declare const a: number;\n",
-  });
+  useTempProject(
+    "lemma-disc-decl-",
+    {
+      "src/types.d.ts": "export declare const a: number;\n",
+    },
+    { tsconfig: false },
+  );
 
   it("throws LemmaError rather than reporting zero files", () => {
     expect(() => resolveFiles([])).toThrow(LemmaError);
@@ -47,10 +55,14 @@ describe("zero-arg discovery: src/ holding only declaration files", () => {
 });
 
 describe("zero-arg discovery: nothing to go on", () => {
-  useTempProject("lemma-disc-none-", {
-    "readme.md": "hi\n",
-    "loose.ts": "export const x = 1;\n",
-  });
+  useTempProject(
+    "lemma-disc-none-",
+    {
+      "readme.md": "hi\n",
+      "loose.ts": "export const x = 1;\n",
+    },
+    { tsconfig: false },
+  );
 
   it("throws LemmaError suggesting a glob (root-level .ts does not count)", () => {
     expect(() => resolveFiles([])).toThrow(LemmaError);

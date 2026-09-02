@@ -4,8 +4,8 @@ import * as path from "node:path";
 import {
   announcedRunDir,
   runMain,
+  DEFAULT_TSCONFIG,
   useTempProject,
-  withoutSkipWarning,
 } from "./helpers/cli.js";
 import { expectValidEnvelope } from "./helpers/envelope-schema.js";
 import { RUN_ROOT } from "../src/run-dir.js";
@@ -46,15 +46,6 @@ describe("cli main", () => {
     expect(stderr[0]).toContain("usage: lakatos");
   });
 
-  it("returns 2 when no patterns are given and nothing is discoverable", () => {
-    const { code, stderr } = runMain(["check"]);
-    expect(code).toBe(2);
-    expect(stderr).toHaveLength(1);
-    expect(stderr[0]).toBe(
-      'error: cannot determine where your source code is; pass files or globs (e.g. lakatos refute "src/**/*.ts")',
-    );
-  });
-
   it("returns 2 with usage on an unknown option", () => {
     const { code, stderr } = runMain(["--halp"]);
     expect(code).toBe(2);
@@ -93,6 +84,25 @@ describe("cli main", () => {
 
   it("returns 2 when no .ts files match the patterns", () => {
     expect(runMain(["check", "*.nope"]).code).toBe(2);
+  });
+});
+
+describe("cli main without a tsconfig or a src/ directory", () => {
+  useTempProject(
+    "lakatos-cli-nodiscover-",
+    {
+      "baz.ts": `/** @ensures{pos} forall (n: nat) { baz(n) >= 0 } */\nexport function baz(n: number): number { return n; }\n`,
+    },
+    { tsconfig: false },
+  );
+
+  it("returns 2 when no patterns are given and nothing is discoverable", () => {
+    const { code, stderr } = runMain(["check"]);
+    expect(code).toBe(2);
+    expect(stderr).toHaveLength(1);
+    expect(stderr[0]).toBe(
+      'error: cannot determine where your source code is; pass files or globs (e.g. lakatos refute "src/**/*.ts")',
+    );
   });
 });
 
@@ -147,7 +157,7 @@ describe("check stub", () => {
   it("still exits 2 on a formula lemma itself cannot parse", () => {
     const { code, stderr } = runMain(["check", "malformed.ts"]);
     expect(code).toBe(2);
-    const diagnostics = withoutSkipWarning(stderr);
+    const diagnostics = stderr;
     expect(diagnostics).toHaveLength(1);
     expect(diagnostics[0]).toContain("malformed.ts:1: @ensures{shapely}:");
     expect(diagnostics[0]).toContain("expected 'forall'");
@@ -228,7 +238,7 @@ describe("check stub", () => {
     const { code, stdout, stderr } = runMain(["check", "inverted.ts"]);
     expect(code).toBe(2);
     expect(stdout).toHaveLength(0);
-    const diagnostics = withoutSkipWarning(stderr);
+    const diagnostics = stderr;
     expect(diagnostics).toHaveLength(1);
     expect(diagnostics[0]).toContain("inverted.ts:1: @ensures{backwards}:");
     expect(diagnostics[0]).toContain("empty interval");
@@ -295,19 +305,25 @@ export function f(x: number): number { return x; }
 });
 
 describe("cli zero-argument discovery", () => {
-  describe("with a src/ directory", () => {
-    useTempProject("lakatos-cli-zerosrc-", {
-      "src/qux.ts": `/** @ensures{pos} forall (n: nat) { qux(n) >= 0 } */\nexport function qux(n: number): number { return n; }\n`,
-      "src/types.d.ts": `export declare function qux(n: number): number;\n`,
-    });
+  describe("with a src/ directory and no tsconfig", () => {
+    useTempProject(
+      "lakatos-cli-zerosrc-",
+      {
+        "src/qux.ts": `/** @ensures{pos} forall (n: nat) { qux(n) >= 0 } */\nexport function qux(n: number): number { return n; }\n`,
+        "src/types.d.ts": `export declare function qux(n: number): number;\n`,
+      },
+      { tsconfig: false },
+    );
 
-    it("discovers src/ sources and announces the discovery", () => {
+    it("discovers src/ sources, then the gate refuses the run", () => {
       const { code, stdout, stderr } = runMain(["check"]);
-      expect(code).toBe(1);
+      expect(code).toBe(2);
       expect(stderr[0]).toBe(
         "lakatos: no files given; discovered 1 file(s) via src/",
       );
-      expect(JSON.parse(stdout[0]!).annotations).toHaveLength(1);
+      const annotations = JSON.parse(stdout[0]!).annotations;
+      expect(annotations).toHaveLength(1);
+      expect(annotations[0]).toMatchObject({ szs: "InputError" });
     });
   });
 
@@ -457,7 +473,7 @@ describe("cli compile errors (exit-code contract)", () => {
     (c) => {
       const { code, stderr } = runMain(["refute", c.file]);
       expect(code).toBe(2);
-      const diagnostics = withoutSkipWarning(stderr);
+      const diagnostics = stderr;
       expect(diagnostics).toHaveLength(1);
       expect(diagnostics[0]).not.toContain("\n");
       if (c.wrapped) {
@@ -480,9 +496,7 @@ describe("cli compile errors (exit-code contract)", () => {
       const prove = runMain(["prove", c.file]);
       expect(prove.code).toBe(2);
       expect(prove.stdout).toEqual(refute.stdout);
-      expect(withoutSkipWarning(prove.stderr)).toEqual(
-        withoutSkipWarning(refute.stderr),
-      );
+      expect(prove.stderr).toEqual(refute.stderr);
     },
   );
 });
@@ -509,6 +523,7 @@ describe("cli refute command (README usage claims)", () => {
       `/** @ensures{negative} forall (n: nat) { bad(n) < 0 } */\nexport function bad(n: number): number { return n; }\n`,
       "utf8",
     );
+    fs.writeFileSync(path.join(workDir, "tsconfig.json"), DEFAULT_TSCONFIG);
     fs.writeFileSync(
       path.join(workDir, "plain.ts"),
       `export function plain(n: number): number { return n; }\n`,
