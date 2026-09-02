@@ -1186,11 +1186,12 @@ function describeTy(t: Expected): string {
   return `an instance of '${displayName(t.instance)}'`;
 }
 
-/** An engine-route failure: the walk found something with no model, or a
- * type mismatch — the failures the old pipeline reports as `Error`. A
- * construct rides along when the failure travels from a declaration the
- * input itself degraded, keeping the classification `Inappropriate`
- * through every catch that wraps the walk. */
+/** The typed walk's refusal. Without a construct it is an invariant: the
+ * gate guarantees a strict-clean program, so an arity, binding, or type
+ * mismatch here means the walk's typing disagrees with tsc — an engine
+ * fault, reported `Error`. A construct rides along when the failure is the
+ * input's (a degraded declaration, an unmodeled operator), keeping the
+ * classification `Inappropriate` through every catch that wraps the walk. */
 class ModelError extends Error {
   constructor(
     reason: string,
@@ -2697,9 +2698,8 @@ function walkParams(
     if (failure !== undefined) return failure;
     const optional = p.questionToken !== undefined;
     // Optionals must be trailing, or an omitted argument would have no
-    // one position to land in. TypeScript says so too, but a run without
-    // a tsconfig never type-checks, so the walk re-checks rather than
-    // trusting tsc to have refused the file.
+    // one position to land in. tsc refuses this first; the walk re-checks
+    // so the lowering never leans on an unverified invariant.
     if (seenOptional && !optional) return constructAt(p, p.kind, sf);
     seenOptional ||= optional;
     const ty = paramValueTy(p, sf, reg);
