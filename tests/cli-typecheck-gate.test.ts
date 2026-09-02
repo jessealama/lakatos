@@ -24,7 +24,7 @@ describe("refute refuses an ill-typed program", () => {
       "error: src/abs.ts:3: TS2322: Type 'string' is not assignable to type 'number'.",
     );
     expect(joined).toContain(
-      "lakatos: the program does not type check; reporting 1 annotation as InputError",
+      "lakatos: the program does not type check under lakatos's required options; reporting 1 annotation as InputError",
     );
     // The gate runs before codegen: nothing was generated, no run dir named.
     expect(joined).not.toContain("generated");
@@ -101,7 +101,7 @@ describe("several diagnostics over several annotations", () => {
     expect(run.code).toBe(2);
     const joined = run.stderr.join("\n");
     expect(joined).toContain(
-      "lakatos: the program does not type check; reporting 2 annotations as InputError",
+      "lakatos: the program does not type check under lakatos's required options; reporting 2 annotations as InputError",
     );
     const env = JSON.parse(run.stdout[0]!);
     expect(env.annotations).toHaveLength(2);
@@ -147,32 +147,110 @@ describe("a tsconfig that names no files", () => {
       "export function id(n: number): number {\n  return n;\n}\n",
   });
 
-  it("warns and proceeds: an empty program vouches for nothing", () => {
+  it("refuses the discovered files as outside the program", () => {
     const run = runMain(["check"]);
-    expect(run.code).toBe(1);
+    expect(run.code).toBe(2);
     expect(run.stderr.join("\n")).toContain(
-      "lakatos: tsconfig.json names no files; skipping type check",
+      "error: src/a.ts is not part of the program tsconfig.json describes",
     );
     const env = JSON.parse(run.stdout[0]!);
-    expect(env.annotations[0]).toMatchObject({ szs: "NotTried" });
+    expect(env.annotations).toEqual([
+      expect.objectContaining({
+        function: "id",
+        szs: "InputError",
+        error:
+          "src/a.ts is not part of the program tsconfig.json describes, so it was not type checked",
+      }),
+    ]);
   });
 });
 
-describe("no tsconfig: the run proceeds unchecked, with a warning", () => {
-  useTempProject("lakatos-gate-warn-", {
+describe("no tsconfig: the run is refused", () => {
+  useTempProject(
+    "lakatos-gate-missing-",
+    {
+      "src/a.ts":
+        "/** @ensures{pos} forall (n: nat) { id(n) >= 0 } */\n" +
+        "export function id(n: number): number {\n  return n;\n}\n",
+    },
+    { tsconfig: false },
+  );
+
+  it("reports every annotation InputError and exits 2", () => {
+    const run = runMain(["check"]);
+    expect(run.code).toBe(2);
+    expect(run.stderr.join("\n")).toContain(
+      "lakatos: no tsconfig.json; reporting 1 annotation as InputError",
+    );
+    const env = JSON.parse(run.stdout[0]!);
+    expectValidEnvelope(env);
+    expect(env.annotations).toEqual([
+      {
+        file: "src/a.ts",
+        function: "id",
+        property: "pos",
+        szs: "InputError",
+        error:
+          "no tsconfig.json: lakatos type checks the program before analyzing it and needs the project's compiler options to do so",
+      },
+    ]);
+    expect(fs.existsSync(".lakatos")).toBe(false);
+  });
+});
+
+describe("a named file outside the program", () => {
+  useTempProject("lakatos-gate-outside-", {
+    "tsconfig.json": JSON.stringify({ include: ["src"] }),
     "src/a.ts":
       "/** @ensures{pos} forall (n: nat) { id(n) >= 0 } */\n" +
       "export function id(n: number): number {\n  return n;\n}\n",
+    "extra/b.ts":
+      "/** @ensures{pos} forall (n: nat) { other(n) >= 0 } */\n" +
+      "export function other(n: number): number {\n  return n;\n}\n",
   });
 
-  it("warns once and still runs (check stub: NotTried, exit 1)", () => {
-    const run = runMain(["check"]);
-    expect(run.code).toBe(1);
-    expect(run.stderr.join("\n")).toContain(
-      "lakatos: no tsconfig.json; skipping type check",
-    );
+  it("refuses only that file's annotations and still runs the rest", () => {
+    const run = runMain(["check", "src/a.ts", "extra/b.ts"]);
+    expect(run.code).toBe(2);
     const env = JSON.parse(run.stdout[0]!);
-    expect(env.annotations[0]).toMatchObject({ szs: "NotTried" });
+    const byFile = Object.fromEntries(
+      env.annotations.map((a: { file: string; szs: string }) => [
+        a.file,
+        a.szs,
+      ]),
+    );
+    expect(byFile).toEqual({
+      "src/a.ts": "NotTried",
+      "extra/b.ts": "InputError",
+    });
+  });
+});
+
+describe("the project switches strict off", () => {
+  useTempProject("lakatos-gate-loose-", {
+    "tsconfig.json": JSON.stringify({
+      compilerOptions: { strict: false },
+      include: ["src"],
+    }),
+    "src/a.ts":
+      "/** @ensures{nonNeg} forall (x: int ∈ [0, 5)) { f(x) >= 0 } */\n" +
+      "export function f(x: number): number {\n" +
+      "  const y: number = undefined;\n" +
+      "  return x + y;\n}\n",
+  });
+
+  it("is checked under lakatos's required options regardless", () => {
+    const run = runMain(["prove"]);
+    expect(run.code).toBe(2);
+    expect(run.stderr.join("\n")).toContain(
+      "error: src/a.ts:3: TS2322: Type 'undefined' is not assignable to type 'number'.",
+    );
+    expect(run.stderr.join("\n")).toContain(
+      "lakatos: the program does not type check under lakatos's required options; reporting 1 annotation as InputError",
+    );
+    expect(JSON.parse(run.stdout[0]!).annotations[0]).toMatchObject({
+      szs: "InputError",
+    });
   });
 });
 

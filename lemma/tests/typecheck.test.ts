@@ -6,15 +6,14 @@ import { LemmaError } from "../src/errors.js";
 import { useTempProject } from "../../tests/helpers/cli.js";
 
 describe("typecheckProject: no tsconfig.json", () => {
-  useTempProject("lemma-tc-none-", {
-    "src/a.ts": "export const a: number = 1;\n",
-  });
+  useTempProject(
+    "lemma-tc-none-",
+    { "src/a.ts": "export const a: number = 1;\n" },
+    { tsconfig: false },
+  );
 
-  it("is skipped, not clean: there are no options to check under", () => {
-    expect(typecheckProject(process.cwd())).toEqual({
-      kind: "skipped",
-      reason: "no-tsconfig",
-    });
+  it("is missing: lakatos will not run without the project's options", () => {
+    expect(typecheckProject(process.cwd())).toEqual({ kind: "missing" });
   });
 });
 
@@ -28,10 +27,10 @@ describe("typecheckProject: solution-style tsconfig naming no files", () => {
     "packages/a/a.ts": "export const a = 1;\n",
   });
 
-  it("is skipped: an empty program can vouch for nothing", () => {
+  it("is clean over an empty program, which names no files", () => {
     expect(typecheckProject(process.cwd())).toEqual({
-      kind: "skipped",
-      reason: "no-inputs",
+      kind: "clean",
+      programFiles: [],
     });
   });
 });
@@ -45,8 +44,35 @@ describe("typecheckProject: clean project", () => {
     "src/a.ts": "export function id(x: number): number {\n  return x;\n}\n",
   });
 
-  it("reports clean", () => {
-    expect(typecheckProject(process.cwd())).toEqual({ kind: "clean" });
+  it("reports clean and names the program's files", () => {
+    expect(typecheckProject(process.cwd())).toEqual({
+      kind: "clean",
+      programFiles: ["src/a.ts"],
+    });
+  });
+});
+
+describe("typecheckProject: the project switches strict off", () => {
+  useTempProject("lemma-tc-loose-", {
+    "tsconfig.json": JSON.stringify({
+      compilerOptions: { strict: false },
+      include: ["src"],
+    }),
+    "src/a.ts":
+      "export function f(x: number): number {\n" +
+      "  const y: number = undefined;\n" +
+      "  return x + y;\n}\n",
+  });
+
+  it("checks under lakatos's required options anyway", () => {
+    const result = typecheckProject(process.cwd());
+    expect(result.kind).toBe("failed");
+    if (result.kind !== "failed") return;
+    expect(result.diagnostics[0]).toMatchObject({
+      file: "src/a.ts",
+      line: 2,
+      code: 2322,
+    });
   });
 });
 
@@ -98,7 +124,7 @@ describe("typecheckProject: version-skew compiler option", () => {
   });
 
   it("ignores option diagnostics, same as discovery does", () => {
-    expect(typecheckProject(process.cwd())).toEqual({ kind: "clean" });
+    expect(typecheckProject(process.cwd())).toMatchObject({ kind: "clean" });
   });
 });
 
@@ -149,7 +175,9 @@ describe("typecheckProject: incremental build info", () => {
     { timeout: 60_000 },
     () => {
       const info = path.resolve(".lakatos", "typecheck.tsbuildinfo");
-      expect(typecheckProject(process.cwd(), info)).toEqual({ kind: "clean" });
+      expect(typecheckProject(process.cwd(), info)).toMatchObject({
+        kind: "clean",
+      });
       expect(fs.existsSync(info)).toBe(true);
       // A cached verdict must not survive the edit that invalidates it.
       fs.writeFileSync("src/a.ts", 'export const a: number = "no";\n');
@@ -159,7 +187,9 @@ describe("typecheckProject: incremental build info", () => {
         "src/a.ts",
         "export function id(x: number): number {\n  return x;\n}\n",
       );
-      expect(typecheckProject(process.cwd(), info)).toEqual({ kind: "clean" });
+      expect(typecheckProject(process.cwd(), info)).toMatchObject({
+        kind: "clean",
+      });
     },
   );
 });
