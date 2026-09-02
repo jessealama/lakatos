@@ -751,11 +751,11 @@ describe("body classification parity with the old pipeline", () => {
     });
   });
 
-  test("an operator with no model is the engine's Error", () => {
+  test("an operator with no model is outside the model", () => {
     expect(classifications(fnWith("x & 7"))).toEqual({
       classified: [
         [
-          "Error",
+          "Inappropriate",
           "'f' could not be modeled: operator '&' has no model in this slice",
         ],
       ],
@@ -822,15 +822,17 @@ describe("body classification parity with the old pipeline", () => {
     ]);
   });
 
+  // A type mismatch carries no construct, so it is the vehicle for a
+  // callee that failed on the engine's side rather than the input's.
   test("an engine-failed callee stays the engine's Error", () => {
     const src =
-      "export function g(x: number): number { return x & 7; }\n" +
+      "export function g(x: number): number { return x < 7; }\n" +
       fnWith("g(x)");
     expect(classifications(src).classified).toEqual([
       [
         "Error",
-        "'f' could not be modeled: 'g' has no model: operator '&' has no " +
-          "model in this slice",
+        "'f' could not be modeled: 'g' has no model: operator '<' yields a " +
+          "boolean, not a number",
       ],
     ]);
   });
@@ -839,12 +841,12 @@ describe("body classification parity with the old pipeline", () => {
   // read reports the reason itself rather than the alias or travel wording.
   test("a value read of an engine-failed declaration reports its reason", () => {
     const src =
-      "export function g(x: number): number { return x & 7; }\n" + fnWith("g");
+      "export function g(x: number): number { return x < 7; }\n" + fnWith("g");
     expect(classifications(src).classified).toEqual([
       [
         "Error",
-        "'f' could not be modeled: 'g' has no model: operator '&' has no " +
-          "model in this slice",
+        "'f' could not be modeled: 'g' has no model: operator '<' yields a " +
+          "boolean, not a number",
       ],
     ]);
   });
@@ -1200,16 +1202,11 @@ describe("formula classification parity with the old pipeline", () => {
     ]);
   });
 
-  test("an operator with no model fails property elaboration", () => {
+  test("an operator with no model refuses the property as outside the model", () => {
     expect(
       classifications(formulaWith("forall (x: int ∈ [0, 5)) { (x & 7) >= 0 }"))
         .classified,
-    ).toEqual([
-      [
-        "Error",
-        "property elaboration failed: operator '&' has no model in this slice",
-      ],
-    ]);
+    ).toEqual([["Inappropriate", "operator '&' has no model in this slice"]]);
   });
 
   test("an unmapped construct is Inappropriate at its atom coordinates", () => {
