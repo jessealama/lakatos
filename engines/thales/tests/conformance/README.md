@@ -19,6 +19,16 @@ minutes-slow). It copies the corpus into a scratch project, runs
 against its bucket. Only the SZS status is bucket-checked; reason text is
 the business of the e2e and unit suites.
 
+Every fixture must type check: the corpus carries its own `tsconfig.json`,
+lakatos forces its required strict options on top, and the harness copies
+the config into the scratch project so the gate runs there exactly as it
+does for a user. Check the corpus standalone with
+
+    npx tsc -p engines/thales/tests/conformance --noEmit --strict
+
+A program tsc refuses is not a fixture: the gate answers for it, so it has
+no bucket here.
+
 ## Buckets
 
 - `theorem/` — every annotation proves (`Theorem`).

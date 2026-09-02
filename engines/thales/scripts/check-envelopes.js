@@ -122,7 +122,6 @@ const METHOD_FIXTURES = [
   `${CONFORMANCE}/theorem/method-on-shadowing-class.ts`,
   `${CONFORMANCE}/theorem/method-sibling-degrades.ts`,
   `${CONFORMANCE}/inappropriate/method-power.ts`,
-  `${CONFORMANCE}/error/method-arity.ts`,
 ];
 
 /** The class-typed-parameter slice: a parameter at its own class, one at
@@ -131,7 +130,6 @@ const METHOD_FIXTURES = [
 const PARAM_FIXTURES = [
   "engines/thales/tests/fixtures/class-params.ts",
   `${CONFORMANCE}/theorem/class-param-gap.ts`,
-  `${CONFORMANCE}/error/class-param-number-arg.ts`,
   `${CONFORMANCE}/inappropriate/class-param-interface.ts`,
 ];
 
@@ -149,7 +147,7 @@ const DEGRADATION_FIXTURES = [
  * followed closure, and the two edges that stay opaque. */
 const IMPORT_FIXTURES = [
   `${CONFORMANCE}/theorem/imported-scale/main.ts`,
-  `${CONFORMANCE}/inappropriate/bare-import.ts`,
+  `${CONFORMANCE}/inappropriate/bare-import/main.ts`,
   `${CONFORMANCE}/inappropriate/import-cycle/main.ts`,
 ];
 
@@ -184,7 +182,6 @@ const OPTIONAL_FIXTURES = [
   "engines/thales/tests/fixtures/optionals.ts",
   `${CONFORMANCE}/theorem/optional-arity.ts`,
   `${CONFORMANCE}/countersatisfiable/optional-misread.ts`,
-  `${CONFORMANCE}/inappropriate/optional-non-trailing.ts`,
 ];
 
 /** The SameValue-over-JsVal slice (#209): Object.is widened to the tags
