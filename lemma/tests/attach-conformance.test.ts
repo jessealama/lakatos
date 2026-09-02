@@ -21,6 +21,14 @@ function fixtures(dir: string): Array<[string, string]> {
     .map((f) => [f, readFileSync(path.join(root, f), "utf8")]);
 }
 
+/** How many `@ensures` a fixture carries. Each one must be accounted for,
+ * as an annotation or as a diagnostic: a harness that asked only for "at
+ * least one" would pass an extractor that silently read fewer blocks than
+ * were written. */
+function ensuresCount(src: string): number {
+  return (src.match(/@ensures\b/g) ?? []).length;
+}
+
 describe("spec/fixtures/attach conformance corpus", () => {
   const accept = fixtures("accept");
   const reject = fixtures("reject");
@@ -32,15 +40,17 @@ describe("spec/fixtures/attach conformance corpus", () => {
     expect(reject.length).toBeGreaterThan(0);
   });
 
-  // Membership is the expectation (spec/fixtures/README.md). Each fixture
-  // carries exactly one @ensures, so the two outcomes partition cleanly:
-  // an accepted attachment point yields an annotation and no diagnostic.
+  // Membership is the expectation (spec/fixtures/README.md). Every @ensures a
+  // fixture carries is accounted for, so the two outcomes partition cleanly:
+  // an accepted attachment point yields one annotation per @ensures and no
+  // diagnostic.
   describe("accepts every accept/ fixture", () => {
     for (const [name, src] of accept) {
       test(name, () => {
         const r = extractFromSource(src, name);
         expect(r.invalid).toEqual([]);
-        expect(r.annotations).toHaveLength(1);
+        expect(ensuresCount(src)).toBeGreaterThan(0);
+        expect(r.annotations).toHaveLength(ensuresCount(src));
       });
     }
   });
@@ -50,7 +60,8 @@ describe("spec/fixtures/attach conformance corpus", () => {
       test(name, () => {
         const r = extractFromSource(src, name);
         expect(r.annotations).toEqual([]);
-        expect(r.invalid).toHaveLength(1);
+        expect(ensuresCount(src)).toBeGreaterThan(0);
+        expect(r.invalid).toHaveLength(ensuresCount(src));
       });
     }
   });

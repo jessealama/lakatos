@@ -545,6 +545,19 @@ export function ok(x: number): number { return x; }
 `,
       "utf8",
     );
+    // One JSDoc block per property. The first property is false, so a run
+    // that dropped it would exit 0 with a clean envelope.
+    fs.mkdirSync(path.join(workDir, "stacked"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workDir, "stacked", "keep.ts"),
+      `/** @ensures{tooBig} forall (n: int ∈ [0, 10)) { keep(n) >= 5 } */
+/** @ensures{atLeastOne} forall (n: int ∈ [0, 10)) { keep(n) >= 1 } */
+export function keep(n: number): number {
+  return n + 1;
+}
+`,
+      "utf8",
+    );
     process.chdir(workDir);
   });
   afterAll(() => {
@@ -573,6 +586,28 @@ export function ok(x: number): number { return x; }
       );
       expect(byProperty).toEqual({ p: "InputError", q: "GaveUp" });
       expect(env.generated).toBe(1);
+    },
+  );
+
+  it(
+    "refute runs an @ensures from every stacked JSDoc block",
+    { timeout: 60000 },
+    () => {
+      const { code, stdout } = runMain(["refute", "stacked/keep.ts"]);
+      expect(code).toBe(1);
+      const env = JSON.parse(stdout[0]!);
+      expectValidEnvelope(env);
+      expect(env).toMatchObject({ generated: 2, passed: 1, failed: 1 });
+      const byProperty = Object.fromEntries(
+        env.annotations.map((a: { property: string; szs: string }) => [
+          a.property,
+          a.szs,
+        ]),
+      );
+      expect(byProperty).toEqual({
+        tooBig: "CounterSatisfiable",
+        atLeastOne: "GaveUp",
+      });
     },
   );
 

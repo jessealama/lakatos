@@ -77,6 +77,14 @@ function bucketOf(fixture: string): string | undefined {
   return BUCKET_STATUS[fixture.split("/")[0]!];
 }
 
+/** How many `@ensures` a fixture's entry file carries. Every one of them
+ * must be graded: the per-file coverage check alone would pass an extractor
+ * that silently read fewer blocks than were written. */
+function ensuresCount(fixture: string): number {
+  const src = fs.readFileSync(path.join(corpusRoot, fixture), "utf8");
+  return (src.match(/@ensures\b/g) ?? []).length;
+}
+
 // Collected at module scope so the bucket and stray-entry checks fail every
 // suite run, Lean or not, and the fixture count can size the test timeout.
 const fixtures = corpusFixtures();
@@ -121,6 +129,21 @@ describe.runIf(enabled)("verdict corpus", () => {
       // Completeness: every fixture contributes at least one annotation.
       const covered = new Set(env.annotations.map((a) => a.file));
       expect(mainFixtures.filter((f) => !covered.has(f))).toEqual([]);
+
+      // Completeness, per annotation: a fixture that carries two @ensures
+      // contributes two graded entries, however its blocks are divided.
+      const graded = new Map<string, number>();
+      for (const a of env.annotations) {
+        graded.set(a.file, (graded.get(a.file) ?? 0) + 1);
+      }
+      const undercounted = mainFixtures.flatMap((f) => {
+        const want = ensuresCount(f);
+        const got = graded.get(f) ?? 0;
+        return got === want
+          ? []
+          : [`${f}: ${want} @ensures written, ${got} graded`];
+      });
+      expect(undercounted).toEqual([]);
 
       // One readable diff over ALL mismatches, not just the first.
       const mismatches = env.annotations.flatMap((a) => {
