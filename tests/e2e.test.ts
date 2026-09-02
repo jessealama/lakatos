@@ -31,8 +31,8 @@ describe.runIf(enabled)("lakatos prove end-to-end (tracer)", () => {
       path.join(dir, "tracer.ts"),
     );
     // The identity-parity check needs a file BOTH engines can process end
-    // to end (refute's compile front-end rejects the tracer's deliberately
-    // broken constructs), so it reuses the corpus's add-commutes fixture.
+    // to end (the tracer carries constructs the model refuses), so it
+    // reuses the corpus's add-commutes fixture.
     fs.copyFileSync(
       path.join(
         repoRoot,
@@ -124,7 +124,7 @@ describe.runIf(enabled)("lakatos prove end-to-end (tracer)", () => {
       expect(by.get("add/commutes")).toMatchObject({ szs: "Theorem" });
       expect(by.get("fetchTotal/nonNegative")).toMatchObject({
         szs: "Inappropriate",
-        reason: expect.stringContaining("AwaitExpression"),
+        reason: expect.stringContaining("AsyncKeyword"),
       });
       expect(by.get("Counter#bump/bumps")).toMatchObject({
         szs: "Inappropriate",

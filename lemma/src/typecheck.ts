@@ -12,12 +12,25 @@ export interface TypecheckDiagnostic {
   message: string;
 }
 
-/** Skipped means there was nothing to check under the user's own options:
- * no tsconfig at all, or one that names no input files. */
+/** Missing means there is no tsconfig.json, so no options to check under;
+ * lakatos refuses to run rather than invent them. Clean carries the
+ * program's cwd-relative files so the caller can tell which named files
+ * the check never saw. */
 export type TypecheckResult =
-  | { kind: "skipped"; reason: "no-tsconfig" | "no-inputs" }
-  | { kind: "clean" }
+  | { kind: "missing" }
+  | { kind: "clean"; programFiles: string[] }
   | { kind: "failed"; diagnostics: TypecheckDiagnostic[] };
+
+/** Options lakatos requires whatever the project sets. Each protects a
+ * model assumption: without strictNullChecks a `number` may hold undefined
+ * and the model proves away a NaN; without noImplicitAny an untyped callee
+ * flows into a modeled body. The individual flags are forced because tsc
+ * lets `strictNullChecks: false` override `strict: true`. */
+export const REQUIRED_OPTIONS: ts.CompilerOptions = {
+  strict: true,
+  strictNullChecks: true,
+  noImplicitAny: true,
+};
 
 // The version-skew codes discovery already ignores: an option newer than
 // the bundled TypeScript cannot make the user's program ill-typed.
@@ -25,21 +38,23 @@ const OPTION_SKEW_ERRORS = new Set([5023, 5024, 5025, 6046]);
 
 /**
  * Type check the program ./tsconfig.json describes, under the user's own
- * compilerOptions. skipLibCheck keeps dependency declarations out of the
- * verdict without weakening checking of the user's code. Given
- * tsBuildInfoFile, the check reads and writes that build-info file so an
- * unchanged project re-checks cheaply.
+ * compilerOptions with lakatos's required options forced on top.
+ * skipLibCheck keeps dependency declarations out of the verdict without
+ * weakening checking of the user's code. Given tsBuildInfoFile, the check
+ * reads and writes that build-info file so an unchanged project re-checks
+ * cheaply.
  */
 export function typecheckProject(
   cwd: string,
   tsBuildInfoFile?: string,
 ): TypecheckResult {
   const parsed = parsedTsconfig(cwd);
-  if (parsed === undefined) return { kind: "skipped", reason: "no-tsconfig" };
-  if (parsed.fileNames.length === 0)
-    return { kind: "skipped", reason: "no-inputs" };
+  if (parsed === undefined) return { kind: "missing" };
+  const programFiles = parsed.fileNames.map((f) => path.relative(cwd, f));
+  if (parsed.fileNames.length === 0) return { kind: "clean", programFiles };
   const options: ts.CompilerOptions = {
     ...parsed.options,
+    ...REQUIRED_OPTIONS,
     noEmit: true,
     skipLibCheck: true,
     ...(tsBuildInfoFile !== undefined
@@ -63,7 +78,7 @@ export function typecheckProject(
   const errors = diagnostics
     .filter((d) => d.category === ts.DiagnosticCategory.Error)
     .filter((d) => !OPTION_SKEW_ERRORS.has(d.code));
-  if (errors.length === 0) return { kind: "clean" };
+  if (errors.length === 0) return { kind: "clean", programFiles };
   return { kind: "failed", diagnostics: errors.map((d) => structured(d, cwd)) };
 }
 

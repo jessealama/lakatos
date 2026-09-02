@@ -37,12 +37,18 @@ export function runMain(argv: string[]): MainRun {
   }
 }
 
-/**
- * Captured stderr without the type-check gate's skip warning, which every
- * tsconfig-less fixture provokes and which no test about diagnostics means.
- */
-export function withoutSkipWarning(stderr: string[]): string[] {
-  return stderr.filter((l) => !l.startsWith("lakatos: no tsconfig.json;"));
+/** The tsconfig a scratch project gets when a suite supplies none: enough
+ * for tsc to describe the program (lakatos forces strict itself). Excludes
+ * the run root so generated artifacts never join the program. */
+export const DEFAULT_TSCONFIG = JSON.stringify({
+  compilerOptions: { target: "es2022", module: "nodenext", types: [] },
+  include: ["**/*.ts"],
+  exclude: [".lakatos"],
+});
+
+function ensureTsconfig(dir: string): void {
+  const dest = path.join(dir, "tsconfig.json");
+  if (!fs.existsSync(dest)) fs.writeFileSync(dest, DEFAULT_TSCONFIG, "utf8");
 }
 
 /**
@@ -90,12 +96,14 @@ export function proveTimeoutMs(fileCount: number): number {
 export function useRepoScratchDir(
   workDir: string,
   populate: (dir: string) => void,
+  opts: { tsconfig?: boolean } = {},
 ): void {
   const prevCwd = process.cwd();
   beforeAll(() => {
     fs.rmSync(workDir, { recursive: true, force: true });
     fs.mkdirSync(workDir, { recursive: true });
     populate(workDir);
+    if (opts.tsconfig !== false) ensureTsconfig(workDir);
     process.chdir(workDir);
   });
   afterAll(() => {
@@ -112,6 +120,7 @@ export function useRepoScratchDir(
 export function useTempProject(
   prefix: string,
   files: Record<string, string>,
+  opts: { tsconfig?: boolean } = {},
 ): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   const prevCwd = process.cwd();
@@ -121,6 +130,7 @@ export function useTempProject(
       fs.mkdirSync(path.dirname(dest), { recursive: true });
       fs.writeFileSync(dest, text, "utf8");
     }
+    if (opts.tsconfig !== false) ensureTsconfig(dir);
     process.chdir(dir);
   });
   afterAll(() => {

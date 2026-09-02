@@ -98,7 +98,7 @@ describe("emitModule on the tracer fixture", () => {
       [
         "nonNegative",
         "Inappropriate",
-        "'fetchTotal' could not be modeled: unmapped TypeScript construct 'AwaitExpression' at 8:10",
+        "'fetchTotal' could not be modeled: unmapped TypeScript construct 'AsyncKeyword' at 9:8",
       ],
       [
         "bumps",

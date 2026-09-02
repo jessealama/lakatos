@@ -114,15 +114,17 @@ name still get entries under best-effort labels (`<anonymous>#m`,
 
 Commands: `lakatos refute` and `lakatos prove` (work today),
 `lakatos check` (stub). All take `[files-or-globs...]`; with no files,
-sources are discovered via `tsconfig.json` or `src/**`. When a
-`tsconfig.json` is present, the whole project is type checked first; a
-program that does not compile is refused (every annotation reports
-`InputError`, exit 2). `--seed <n>`
-applies to refute only: passing a report's `seed` back reproduces its
-run.
+sources are the files `tsconfig.json` would compile. Every run type checks
+the whole project first, under the project's own `tsconfig.json` with
+lakatos's required strict options forced on top; a program that does not
+compile is refused (every annotation reports `InputError`, exit 2). A run
+without a `tsconfig.json` is refused the same way, as is any named file the
+tsconfig's program leaves out: lakatos never analyzes code tsc has not
+accepted. `--seed <n>` applies to refute only: passing a report's `seed`
+back reproduces its run.
 
 Exit codes: `0` — clean run; `1` — counterexamples found, or a stubbed
-command; `2` — usage or user error, including an unhealthy or
+command; `2` — usage or user error, or an engine failure, including an unhealthy or
 interrupted run.
 
 ## Layout

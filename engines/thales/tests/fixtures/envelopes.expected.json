@@ -11,7 +11,7 @@
       "function": "fetchTotal",
       "property": "nonNegative",
       "szs": "Inappropriate",
-      "reason": "'fetchTotal' could not be modeled: unmapped TypeScript construct 'AwaitExpression' at 8:10"
+      "reason": "'fetchTotal' could not be modeled: unmapped TypeScript construct 'AsyncKeyword' at 9:8"
     },
     {
       "function": "Counter#bump",
@@ -314,7 +314,7 @@
       "function": "fetchTotal",
       "property": "nonNegative",
       "szs": "Inappropriate",
-      "reason": "'fetchTotal' could not be modeled: unmapped TypeScript construct 'AwaitExpression' at 3:10"
+      "reason": "'fetchTotal' could not be modeled: unmapped TypeScript construct 'AsyncKeyword' at 4:8"
     }
   ],
   "engines/thales/tests/conformance/inappropriate/class-method.ts": [
@@ -793,14 +793,6 @@
       "reason": "'Pow#square' could not be modeled: '**' is implementation-approximated in JavaScript, so any model would certify results a conforming engine may disagree with"
     }
   ],
-  "engines/thales/tests/conformance/error/method-arity.ts": [
-    {
-      "function": "Box#double",
-      "property": "p",
-      "szs": "Error",
-      "reason": "property elaboration failed: 'Box#double' expects 0 argument(s), got 1"
-    }
-  ],
   "engines/thales/tests/fixtures/class-params.ts": [
     {
       "function": "Point#gap",
@@ -838,14 +830,6 @@
       "szs": "Theorem",
       "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_1839765476958811351",
       "axioms": []
-    }
-  ],
-  "engines/thales/tests/conformance/error/class-param-number-arg.ts": [
-    {
-      "function": "Point#gap",
-      "property": "p",
-      "szs": "Error",
-      "reason": "property elaboration failed: identifier 'a' is a number, not an instance of 'Point'"
     }
   ],
   "engines/thales/tests/conformance/inappropriate/class-param-interface.ts": [
@@ -919,7 +903,7 @@
       "axioms": []
     }
   ],
-  "engines/thales/tests/conformance/inappropriate/bare-import.ts": [
+  "engines/thales/tests/conformance/inappropriate/bare-import/main.ts": [
     {
       "function": "grow",
       "property": "nonNegative",
@@ -1154,14 +1138,6 @@
       "counterexample": {
         "x": 1
       }
-    }
-  ],
-  "engines/thales/tests/conformance/inappropriate/optional-non-trailing.ts": [
-    {
-      "function": "span",
-      "property": "p",
-      "szs": "Inappropriate",
-      "reason": "'span' could not be modeled: unmapped TypeScript construct 'Parameter' at 2:35"
     }
   ],
   "engines/thales/tests/fixtures/object-is-tagged.ts": [

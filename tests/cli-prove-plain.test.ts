@@ -54,11 +54,6 @@ describe("cli prove, plain pipeline", () => {
     ].join("\n"),
     "plain.ts": "export const x = 1;\n",
     "invalid.ts": `class Hidden {\n  /** @ensures{p} forall (x: int) { id(x) === x } */\n  static id(x: number): number { return x; }\n}\n`,
-    "unregistered.ts": [
-      "/** @ensures{pos} forall (n: int ∈ [0, 4)) { caller(n) >= 0 } */",
-      "export function caller(n: number): number { return mystery(n); }",
-      "",
-    ].join("\n"),
   });
 
   afterEach(() => {
@@ -142,26 +137,6 @@ describe("cli prove, plain pipeline", () => {
       ]),
     );
     expect(env.annotations).toHaveLength(2);
-  });
-
-  it("a frontend-classified engine failure reports Error in the envelope's error field", () => {
-    const { code, stdout } = runMain(["prove", "unregistered.ts"]);
-    expect(runEmissionMock).not.toHaveBeenCalled();
-    // A per-annotation Error verdict is a healthy run, exactly as it is
-    // when the old pipeline's elaborator reports it.
-    expect(code).toBe(0);
-    const env = JSON.parse(stdout[0]!);
-    expectValidEnvelope(env);
-    expect(env.annotations).toEqual([
-      {
-        file: "unregistered.ts",
-        function: "caller",
-        property: "pos",
-        szs: "Error",
-        error:
-          "'caller' could not be modeled: no model registered for 'mystery'",
-      },
-    ]);
   });
 
   it("a contained file failure: Error entries for that file, siblings verdict, exit 2", () => {

@@ -4,7 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { claimRunDir, MAX_CLAIM_ATTEMPTS, runDirFor } from "../src/run-dir.js";
 import { LemmaError } from "../lemma/src/index.js";
-import { runMain } from "./helpers/cli.js";
+import { DEFAULT_TSCONFIG, runMain } from "./helpers/cli.js";
 
 describe("runDirFor", () => {
   it("roots the run at .lakatos, named by the run's start instant", () => {
@@ -44,6 +44,7 @@ describe("run directory naming is UTC", () => {
 
   it("stamps the instant in UTC under a machine that is not", () => {
     fs.writeFileSync(path.join(dir, "plain.ts"), "export const x = 1;\n");
+    fs.writeFileSync(path.join(dir, "tsconfig.json"), DEFAULT_TSCONFIG);
     process.env.TZ = "Asia/Kolkata";
     process.chdir(dir);
     const { stdout } = runMain(["check", "plain.ts"]);
@@ -72,6 +73,7 @@ describe("a run directory whose name is taken", () => {
 
   it("takes the next free name, leaving the occupant untouched", () => {
     fs.writeFileSync(path.join(dir, "plain.ts"), "export const x = 1;\n");
+    fs.writeFileSync(path.join(dir, "tsconfig.json"), DEFAULT_TSCONFIG);
     process.chdir(dir);
     // A frozen clock makes the collision reachable: every run computes the
     // same name, exactly as same-millisecond invocations do.
@@ -110,6 +112,7 @@ describe("claiming a run directory reserves the name", () => {
 
   it("creates the directory before the engine writes anything", () => {
     fs.writeFileSync(path.join(dir, "plain.ts"), "export const x = 1;\n");
+    fs.writeFileSync(path.join(dir, "tsconfig.json"), DEFAULT_TSCONFIG);
     process.chdir(dir);
     const { stdout } = runMain(["check", "plain.ts"]);
     const startedAt = JSON.parse(stdout[0]!).startedAt as string;

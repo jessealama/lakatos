@@ -61,17 +61,10 @@ function formatTsDiagnostic(d: TypecheckDiagnostic): string {
   return `${site}TS${d.code}: ${d.message}`;
 }
 
-/** Envelope entries for a program the type-check gate refused: every
- * extractable annotation is InputError — the program it describes never
- * compiled — beside the extraction-level input errors found on the way. */
-function typecheckRefusedResults(
-  files: string[],
-  diagnostics: TypecheckDiagnostic[],
-): AnnotationResult[] {
-  const rest = diagnostics.length - 1;
-  const error =
-    `the program does not type check: ${formatTsDiagnostic(diagnostics[0]!)}` +
-    (rest > 0 ? ` (and ${rest} more)` : "");
+/** Envelope entries for files the gate refused: every extractable
+ * annotation is InputError with the given diagnostic, beside the
+ * extraction-level input errors found on the way. */
+function refusedResults(files: string[], error: string): AnnotationResult[] {
   const results: AnnotationResult[] = [];
   const invalid: { file: string; invalid: InvalidAnnotation[] }[] = [];
   for (const file of files) {
@@ -88,6 +81,22 @@ function typecheckRefusedResults(
     }
   }
   return [...results, ...inputErrorResults(invalid)];
+}
+
+const NO_TSCONFIG =
+  "no tsconfig.json: lakatos type checks the program before analyzing it " +
+  "and needs the project's compiler options to do so";
+
+function outsideProgram(file: string): string {
+  return `${file} is not part of the program tsconfig.json describes, so it was not type checked`;
+}
+
+function typecheckFailure(diagnostics: TypecheckDiagnostic[]): string {
+  const rest = diagnostics.length - 1;
+  return (
+    `the program does not type check: ${formatTsDiagnostic(diagnostics[0]!)}` +
+    (rest > 0 ? ` (and ${rest} more)` : "")
+  );
 }
 
 // The module runs from src/ under vitest and dist/src/ as a bin, so
@@ -155,6 +164,10 @@ interface Plan {
   untried: AnnotationResult[];
   /** Extraction-level input errors, already echoed to stderr. */
   inputErrors: AnnotationResult[];
+  /** The codegen itself failed on part of the run: an engine fault the
+   * envelope carries as Error, and the documented exit 2 beside whatever
+   * else ships. */
+  degraded: boolean;
   /** Artifacts this invocation generated — the only ones the run may touch. */
   outFiles: string[];
   /** Envelope fields only this command carries (refute's seed and count). */
@@ -208,31 +221,50 @@ function runCommand(spine: Spine, patterns: string[]): number {
   const files = resolve(patterns);
   const base = captureMeta();
   // The gate sits before claimRunDir so a refused run leaves no empty run
-  // directory, and before any codegen so no engine sees uncompilable input.
+  // directory, and before any codegen so no engine sees unchecked input.
   const check = typecheckProject(
     process.cwd(),
     path.resolve(RUN_ROOT, "typecheck.tsbuildinfo"),
   );
-  if (check.kind === "skipped") {
-    console.error(
-      check.reason === "no-tsconfig"
-        ? "lakatos: no tsconfig.json; skipping type check"
-        : "lakatos: tsconfig.json names no files; skipping type check",
-    );
-  } else if (check.kind === "failed") {
-    for (const d of check.diagnostics)
-      console.error(`error: ${formatTsDiagnostic(d)}`);
-    const annotations = typecheckRefusedResults(files, check.diagnostics);
+  if (check.kind === "missing") {
+    const annotations = refusedResults(files, NO_TSCONFIG);
     const n = annotations.length;
     console.error(
-      `lakatos: the program does not type check; reporting ${n} annotation${n === 1 ? "" : "s"} as InputError`,
+      `lakatos: no tsconfig.json; reporting ${n} annotation${n === 1 ? "" : "s"} as InputError`,
     );
     emitEnvelope({ ...base, annotations });
     return 2;
   }
-  rejectUnreadableFormulas(files);
+  if (check.kind === "failed") {
+    for (const d of check.diagnostics)
+      console.error(`error: ${formatTsDiagnostic(d)}`);
+    const annotations = refusedResults(
+      files,
+      typecheckFailure(check.diagnostics),
+    );
+    const n = annotations.length;
+    console.error(
+      `lakatos: the program does not type check under lakatos's required options; reporting ${n} annotation${n === 1 ? "" : "s"} as InputError`,
+    );
+    emitEnvelope({ ...base, annotations });
+    return 2;
+  }
+  // A named file the program does not include was never checked: refuse
+  // it alone, and run the rest.
+  const program = new Set(check.programFiles);
+  const outside = files.filter((f) => !program.has(f));
+  for (const f of outside) console.error(`error: ${outsideProgram(f)}`);
+  const gateErrors = outside.flatMap((f) =>
+    refusedResults([f], outsideProgram(f)),
+  );
+  const checked = files.filter((f) => program.has(f));
+  rejectUnreadableFormulas(checked);
   const runDir = claimRunDir(base.startedAt);
-  const plan = spine.plan(files, runDir);
+  const planned = spine.plan(checked, runDir);
+  const plan: Plan = {
+    ...planned,
+    inputErrors: [...gateErrors, ...planned.inputErrors],
+  };
   noteUnsupportedRanges(plan.untried);
   const meta = { ...base, ...plan.meta };
 
@@ -242,7 +274,7 @@ function runCommand(spine: Spine, patterns: string[]): number {
       ...plan.emptyMeta,
       annotations: [...plan.untried, ...plan.inputErrors],
     });
-    return plan.inputErrors.length > 0 ? 2 : plan.emptyExit;
+    return plan.inputErrors.length > 0 || plan.degraded ? 2 : plan.emptyExit;
   }
 
   // The guard spans the engine's run and the report that follows. The run
@@ -282,9 +314,11 @@ function runCommand(spine: Spine, patterns: string[]): number {
         ...plan.inputErrors,
       ],
     });
-    // Bad input and engine failures outrank a refutation: the documented
-    // exit-2 error mode, even alongside healthy verdicts.
-    if (plan.inputErrors.length > 0 || outcome.degraded) return 2;
+    // Bad input and engine failures — the codegen's or the run's — outrank
+    // a refutation: the documented exit-2 error mode, even alongside
+    // healthy verdicts.
+    if (plan.inputErrors.length > 0 || plan.degraded || outcome.degraded)
+      return 2;
     return outcome.refuted ? 1 : 0;
   });
 }
@@ -303,12 +337,14 @@ commands:
   check   prove and refute combined (not implemented yet)
 
 when no files are given, lakatos discovers your sources: the files that
-tsconfig.json would compile or, failing that, src/**. declaration files
-(.d.ts) are skipped unless a pattern names them.
+tsconfig.json would compile. declaration files (.d.ts) are skipped unless a
+pattern names them.
 
-when tsconfig.json is present, lakatos type checks the whole project first
-and refuses to analyze a program that does not compile (annotations report
-InputError; without a tsconfig the run proceeds unchecked, with a warning).
+every run type checks the whole project first, under the project's own
+tsconfig.json with lakatos's required options (strict) forced on top. a
+program that does not compile is refused (annotations report InputError,
+exit 2); a run without a tsconfig.json is refused the same way, and so is
+any named file the tsconfig's program leaves out.
 
 options:
   --seed <n>  reproduce a prior refute run's generation (echoed in the report)
@@ -501,6 +537,7 @@ function refuteSpine(seed: number): Spine {
           })),
         ),
         inputErrors,
+        degraded: false,
         outFiles: results.flatMap((r) =>
           r.outFile !== undefined ? [r.outFile] : [],
         ),
@@ -660,6 +697,7 @@ function plainProveSpine(): Spine {
         identities: tried,
         untried: classifiedResults,
         inputErrors,
+        degraded: classifiedResults.some((r) => r.szs === "Error"),
         outFiles: proveFiles,
         meta: {},
         emptyMeta: {},
@@ -693,6 +731,7 @@ function stubSpine(command: Command): Spine {
         identities: [],
         untried,
         inputErrors,
+        degraded: false,
         outFiles: [],
         meta: {},
         emptyMeta: {},
