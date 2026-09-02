@@ -34,10 +34,10 @@ the business of the e2e and unit suites.
   for, a connective other than a top-level implication chain of atoms), or
   a range endpoint exceeds the safe integer range.
 - `inappropriate/` — the annotation is outside the model: the function uses
-  a construct the pipeline cannot map, or an operator the model refuses
-  on the merits (`Inappropriate`).
-- `error/` — the attempt fails on the engine's own gaps (`Error`): an
-  operator with no model in the slice, an unbound identifier — the input
+  a construct the pipeline cannot map, an operator the model does not cover
+  (`&`, `??`, ...), or an operator the model refuses on the merits (`**`)
+  (`Inappropriate`).
+- `error/` — the attempt fails on the engine's own gaps (`Error`): the input
   is fine, the engine is what falls short.
 - `timeout/` — every annotation must report `Timeout` under the reduced
   heartbeat budget the harness sets via `LAKATOS_PROVE_HEARTBEATS`; the

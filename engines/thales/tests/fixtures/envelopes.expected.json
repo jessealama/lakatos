@@ -333,11 +333,11 @@
       "reason": "'square' could not be modeled: '**' is implementation-approximated in JavaScript, so any model would certify results a conforming engine may disagree with"
     }
   ],
-  "engines/thales/tests/conformance/error/unmodeled-operator.ts": [
+  "engines/thales/tests/conformance/inappropriate/unmodeled-operator.ts": [
     {
       "function": "masked",
       "property": "stuck",
-      "szs": "Error",
+      "szs": "Inappropriate",
       "reason": "'masked' could not be modeled: operator '&' has no model in this slice"
     }
   ],

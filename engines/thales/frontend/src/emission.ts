@@ -1420,10 +1420,10 @@ function walkTyped(
       return { kind: "binop", op, left, right };
     }
     // A refused operator the pre-scans missed still refuses; anything
-    // else has no model, which is the engine's problem.
+    // else is outside the model, and the operator is the construct.
     const refused = REFUSED_OPERATORS.get(op);
     if (refused !== undefined) throw new ModelError(refused);
-    throw new ModelError(`operator '${op}' has no model in this slice`);
+    throw new ModelError(`operator '${op}' has no model in this slice`, op);
   }
   const sides = equationSides(e);
   if (sides !== undefined) {

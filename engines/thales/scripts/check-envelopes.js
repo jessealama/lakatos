@@ -55,7 +55,7 @@ const EXPRESSION_FIXTURES = [
   `${CONFORMANCE}/inappropriate/await-remote.ts`,
   `${CONFORMANCE}/inappropriate/class-method.ts`,
   `${CONFORMANCE}/inappropriate/exponentiation.ts`,
-  `${CONFORMANCE}/error/unmodeled-operator.ts`,
+  `${CONFORMANCE}/inappropriate/unmodeled-operator.ts`,
   `${CONFORMANCE}/timeout/big-domain.ts`,
   `${CONFORMANCE}/theorem/finite-guard.ts`,
   `${CONFORMANCE}/countersatisfiable/abs-shrinks.ts`,
