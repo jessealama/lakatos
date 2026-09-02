@@ -124,7 +124,7 @@ accepted. `--seed <n>` applies to refute only: passing a report's `seed`
 back reproduces its run.
 
 Exit codes: `0` — clean run; `1` — counterexamples found, or a stubbed
-command; `2` — usage or user error, including an unhealthy or
+command; `2` — usage or user error, or an engine failure, including an unhealthy or
 interrupted run.
 
 ## Layout

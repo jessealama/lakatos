@@ -49,9 +49,9 @@ export default defineConfig({
         // behind the gate.
         autoUpdate: true,
         statements: 99.38,
-        branches: 98.36,
+        branches: 98.37,
         functions: 100,
-        lines: 99.57,
+        lines: 99.58,
       },
     },
   },

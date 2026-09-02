@@ -164,6 +164,10 @@ interface Plan {
   untried: AnnotationResult[];
   /** Extraction-level input errors, already echoed to stderr. */
   inputErrors: AnnotationResult[];
+  /** The codegen itself failed on part of the run: an engine fault the
+   * envelope carries as Error, and the documented exit 2 beside whatever
+   * else ships. */
+  degraded: boolean;
   /** Artifacts this invocation generated — the only ones the run may touch. */
   outFiles: string[];
   /** Envelope fields only this command carries (refute's seed and count). */
@@ -270,7 +274,7 @@ function runCommand(spine: Spine, patterns: string[]): number {
       ...plan.emptyMeta,
       annotations: [...plan.untried, ...plan.inputErrors],
     });
-    return plan.inputErrors.length > 0 ? 2 : plan.emptyExit;
+    return plan.inputErrors.length > 0 || plan.degraded ? 2 : plan.emptyExit;
   }
 
   // The guard spans the engine's run and the report that follows. The run
@@ -310,9 +314,11 @@ function runCommand(spine: Spine, patterns: string[]): number {
         ...plan.inputErrors,
       ],
     });
-    // Bad input and engine failures outrank a refutation: the documented
-    // exit-2 error mode, even alongside healthy verdicts.
-    if (plan.inputErrors.length > 0 || outcome.degraded) return 2;
+    // Bad input and engine failures — the codegen's or the run's — outrank
+    // a refutation: the documented exit-2 error mode, even alongside
+    // healthy verdicts.
+    if (plan.inputErrors.length > 0 || plan.degraded || outcome.degraded)
+      return 2;
     return outcome.refuted ? 1 : 0;
   });
 }
@@ -531,6 +537,7 @@ function refuteSpine(seed: number): Spine {
           })),
         ),
         inputErrors,
+        degraded: false,
         outFiles: results.flatMap((r) =>
           r.outFile !== undefined ? [r.outFile] : [],
         ),
@@ -690,6 +697,7 @@ function plainProveSpine(): Spine {
         identities: tried,
         untried: classifiedResults,
         inputErrors,
+        degraded: classifiedResults.some((r) => r.szs === "Error"),
         outFiles: proveFiles,
         meta: {},
         emptyMeta: {},
@@ -723,6 +731,7 @@ function stubSpine(command: Command): Spine {
         identities: [],
         untried,
         inputErrors,
+        degraded: false,
         outFiles: [],
         meta: {},
         emptyMeta: {},

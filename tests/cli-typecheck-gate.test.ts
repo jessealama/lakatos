@@ -172,6 +172,9 @@ describe("no tsconfig: the run is refused", () => {
       "src/a.ts":
         "/** @ensures{pos} forall (n: nat) { id(n) >= 0 } */\n" +
         "export function id(n: number): number {\n  return n;\n}\n",
+      "src/b.ts":
+        "/** @ensures{pos} forall (n: nat) { other(n) >= 0 } */\n" +
+        "export function other(n: number): number {\n  return n;\n}\n",
     },
     { tsconfig: false },
   );
@@ -180,18 +183,26 @@ describe("no tsconfig: the run is refused", () => {
     const run = runMain(["check"]);
     expect(run.code).toBe(2);
     expect(run.stderr.join("\n")).toContain(
-      "lakatos: no tsconfig.json; reporting 1 annotation as InputError",
+      "lakatos: no tsconfig.json; reporting 2 annotations as InputError",
     );
     const env = JSON.parse(run.stdout[0]!);
     expectValidEnvelope(env);
+    const error =
+      "no tsconfig.json: lakatos type checks the program before analyzing it and needs the project's compiler options to do so";
     expect(env.annotations).toEqual([
       {
         file: "src/a.ts",
         function: "id",
         property: "pos",
         szs: "InputError",
-        error:
-          "no tsconfig.json: lakatos type checks the program before analyzing it and needs the project's compiler options to do so",
+        error,
+      },
+      {
+        file: "src/b.ts",
+        function: "other",
+        property: "pos",
+        szs: "InputError",
+        error,
       },
     ]);
     expect(fs.existsSync(".lakatos")).toBe(false);
