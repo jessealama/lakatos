@@ -733,6 +733,14 @@
       "reason": "'Tagged#v' could not be modeled: unmapped TypeScript construct 'HeritageClause' at 3:21"
     }
   ],
+  "engines/thales/tests/conformance/inappropriate/ctor-default-omitted.ts": [
+    {
+      "function": "P#span",
+      "property": "p",
+      "szs": "Inappropriate",
+      "reason": "'P' was constructed with 1 argument(s); parameter 'y' would take its default, which the model does not evaluate"
+    }
+  ],
   "engines/thales/tests/conformance/theorem/method-double.ts": [
     {
       "function": "Box#double",

@@ -111,6 +111,7 @@ const CLASS_FIXTURES = [
   `${CONFORMANCE}/inappropriate/ctor-assigns-twice.ts`,
   `${CONFORMANCE}/inappropriate/ctor-partial-assign.ts`,
   `${CONFORMANCE}/inappropriate/class-extends.ts`,
+  `${CONFORMANCE}/inappropriate/ctor-default-omitted.ts`,
 ];
 
 /** The method slice (#130): instance methods, this-chains, method atoms,

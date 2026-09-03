@@ -5240,6 +5240,68 @@ export class Use {
   });
 });
 
+describe("a constructor with a defaulted parameter", () => {
+  const src = (call: string) => `export class P {
+  readonly x: number;
+  readonly y: number;
+  constructor(x: number, y: number = 0) {
+    this.x = x;
+    this.y = y;
+  }
+  /** @ensures{p} forall (a: int ∈ [0, 5)) { ${call}.span() >= 0 } */
+  span(): number {
+    return this.x * this.x + this.y * this.y;
+  }
+}
+`;
+  const OMITTED =
+    "'P' was constructed with 1 argument(s); parameter 'y' would take its " +
+    "default, which the model does not evaluate";
+
+  test("full arity models", () => {
+    const { classified, emission } = emitModule(src("new P(a, a)"), "t.ts");
+    expect(classified).toEqual([]);
+    expect(emission.obligations).toHaveLength(1);
+  });
+
+  test("an omitted defaulted argument in a property is outside the model", () => {
+    const { classified } = emitModule(src("new P(a)"), "t.ts");
+    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
+      ["Inappropriate", OMITTED],
+    ]);
+  });
+
+  test("an omitted defaulted argument in a body travels as the input's refusal", () => {
+    const body = `export class P {
+  readonly x: number;
+  readonly y: number;
+  constructor(x: number, y: number = 0) {
+    this.x = x;
+    this.y = y;
+  }
+}
+/** @ensures{p} forall (a: int ∈ [0, 5)) { origin(a) >= 0 } */
+export function origin(a: number): number {
+  return new P(a).x;
+}
+`;
+    const { classified } = emitModule(body, "t.ts");
+    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
+      ["Inappropriate", `'origin' could not be modeled: ${OMITTED}`],
+    ]);
+  });
+
+  test("below the required count is an invariant, not a refusal", () => {
+    const { classified } = emitModule(src("new P()"), "t.ts");
+    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
+      [
+        "Error",
+        "property elaboration failed: 'P' expects 2 argument(s), got 0",
+      ],
+    ]);
+  });
+});
+
 describe("class-typed parameters", () => {
   const gapSrc = `
 export class Point {
