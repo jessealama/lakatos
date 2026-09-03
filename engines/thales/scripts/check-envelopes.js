@@ -173,7 +173,7 @@ const UNION_FIXTURES = [
   `${CONFORMANCE}/countersatisfiable/union-misread.ts`,
   `${CONFORMANCE}/inappropriate/union-return.ts`,
   `${CONFORMANCE}/inappropriate/union-string-argument.ts`,
-  `${CONFORMANCE}/error/union-widened-argument.ts`,
+  `${CONFORMANCE}/inappropriate/union-widened-argument.ts`,
 ];
 
 /** The optional-parameter slice: a call filling the undefined tag by

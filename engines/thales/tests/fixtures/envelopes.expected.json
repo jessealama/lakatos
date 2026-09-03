@@ -1083,11 +1083,11 @@
       "reason": "unmapped TypeScript construct 'StringLiteral' at 1:18"
     }
   ],
-  "engines/thales/tests/conformance/error/union-widened-argument.ts": [
+  "engines/thales/tests/conformance/inappropriate/union-widened-argument.ts": [
     {
       "function": "narrow",
       "property": "p",
-      "szs": "Error",
+      "szs": "Inappropriate",
       "reason": "'narrow' could not be modeled: identifier 'v' is a 'number | string' value, not a 'number | string | boolean' value; unions flow only between identical spellings"
     }
   ],

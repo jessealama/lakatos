@@ -47,12 +47,14 @@ no bucket here.
   a construct the pipeline cannot map, an operator the model does not cover
   (`&`, `??`, ...), or an operator the model refuses on the merits (`**`)
   (`Inappropriate`).
-- `error/` — the attempt fails on the engine's own gaps (`Error`): the input
-  is fine, the engine is what falls short.
 - `timeout/` — every annotation must report `Timeout` under the reduced
   heartbeat budget the harness sets via `LAKATOS_PROVE_HEARTBEATS`; the
   bucket runs as its own prove invocation so the rest of the corpus keeps
   the default budget.
+
+There is no `error/` bucket. `Error` is reserved for the engine failing —
+a Lean run that dies before reporting, or the emitter's own invariants
+breaking — and neither is a fixture.
 
 Buckets are named after SZS statuses, lowercase. Buckets for statuses the
 prover cannot yet reach arrive with the issues that add those capabilities,

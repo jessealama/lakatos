@@ -6468,7 +6468,7 @@ describe("union-typed parameters", () => {
     );
     expect(widened.classified.map((c) => [c.szs, c.reason])).toEqual([
       [
-        "Error",
+        "Inappropriate",
         "'narrow' could not be modeled: identifier 'v' is a 'number | string' value, " +
           "not a 'number | string | boolean' value; unions flow only between identical spellings",
       ],

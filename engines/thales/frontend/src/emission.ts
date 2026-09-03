@@ -1875,9 +1875,13 @@ function walkUnionSlot(
     const bound = scope.vars.get(u.text);
     if (bound !== undefined && typeof bound !== "string" && "union" in bound) {
       if (sameUnion(bound.union, union)) return { kind: "id", name: u.text };
+      // Widening to a superset is legal TypeScript the model does not
+      // follow; any other spelling mismatch is tsc's to refuse first.
+      const widening = bound.union.every((m) => union.includes(m));
       throw new ModelError(
         `identifier '${u.text}' is ${describeTy(bound)}, not ` +
           `${describeTy({ union })}; unions flow only between identical spellings`,
+        widening ? "UnionType" : undefined,
       );
     }
     if (
