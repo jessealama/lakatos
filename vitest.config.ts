@@ -46,10 +46,12 @@ export default defineConfig({
         // 2026-09-01: the stub now refuses a clamp-emptied domain per
         // annotation, so the last input that reached the enumeration's
         // positioned rethrow no longer does, and the arm is unreachable
-        // behind the gate.
+        // behind the gate. Reseeded 2026-09-03: zero-argument discovery
+        // lost its src/ fallback, whose branches were all covered, so the
+        // denominator shrank while the unreachable set did not.
         autoUpdate: true,
         statements: 99.38,
-        branches: 98.37,
+        branches: 98.33,
         functions: 100,
         lines: 99.58,
       },

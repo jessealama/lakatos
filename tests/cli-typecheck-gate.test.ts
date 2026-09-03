@@ -147,8 +147,17 @@ describe("a tsconfig that names no files", () => {
       "export function id(n: number): number {\n  return n;\n}\n",
   });
 
-  it("refuses the discovered files as outside the program", () => {
+  it("stops at discovery without scanning src/", () => {
     const run = runMain(["check"]);
+    expect(run.code).toBe(2);
+    expect(run.stderr).toEqual([
+      'error: tsconfig.json names no files; pass files or globs (e.g. lakatos refute "src/**/*.ts")',
+    ]);
+    expect(run.stdout).toHaveLength(0);
+  });
+
+  it("still refuses a named file the program leaves out", () => {
+    const run = runMain(["check", "src/a.ts"]);
     expect(run.code).toBe(2);
     expect(run.stderr.join("\n")).toContain(
       "error: src/a.ts is not part of the program tsconfig.json describes",
@@ -180,7 +189,7 @@ describe("no tsconfig: the run is refused", () => {
   );
 
   it("reports every annotation InputError and exits 2", () => {
-    const run = runMain(["check"]);
+    const run = runMain(["check", "src/a.ts", "src/b.ts"]);
     expect(run.code).toBe(2);
     expect(run.stderr.join("\n")).toContain(
       "lakatos: no tsconfig.json; reporting 2 annotations as InputError",

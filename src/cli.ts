@@ -416,9 +416,9 @@ export function main(argv: string[] = process.argv.slice(2)): number {
 
 function resolve(patterns: string[]): string[] {
   const { files, source } = resolveFiles(patterns);
-  if (source !== "arguments") {
+  if (source === "tsconfig.json") {
     console.error(
-      `lakatos: no files given; discovered ${files.length} file(s) via ${source}`,
+      `lakatos: no files given; discovered ${files.length} file(s) via tsconfig.json`,
     );
   }
   return files;

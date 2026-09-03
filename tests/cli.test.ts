@@ -87,7 +87,7 @@ describe("cli main", () => {
   });
 });
 
-describe("cli main without a tsconfig or a src/ directory", () => {
+describe("cli main without a tsconfig", () => {
   useTempProject(
     "lakatos-cli-nodiscover-",
     {
@@ -101,7 +101,7 @@ describe("cli main without a tsconfig or a src/ directory", () => {
     expect(code).toBe(2);
     expect(stderr).toHaveLength(1);
     expect(stderr[0]).toBe(
-      'error: cannot determine where your source code is; pass files or globs (e.g. lakatos refute "src/**/*.ts")',
+      'error: no tsconfig.json to discover sources from; pass files or globs (e.g. lakatos refute "src/**/*.ts")',
     );
   });
 });
@@ -315,15 +315,13 @@ describe("cli zero-argument discovery", () => {
       { tsconfig: false },
     );
 
-    it("discovers src/ sources, then the gate refuses the run", () => {
+    it("does not scan src/: discovery stops before any envelope", () => {
       const { code, stdout, stderr } = runMain(["check"]);
       expect(code).toBe(2);
-      expect(stderr[0]).toBe(
-        "lakatos: no files given; discovered 1 file(s) via src/",
-      );
-      const annotations = JSON.parse(stdout[0]!).annotations;
-      expect(annotations).toHaveLength(1);
-      expect(annotations[0]).toMatchObject({ szs: "InputError" });
+      expect(stderr).toEqual([
+        'error: no tsconfig.json to discover sources from; pass files or globs (e.g. lakatos refute "src/**/*.ts")',
+      ]);
+      expect(stdout).toHaveLength(0);
     });
   });
 
@@ -334,7 +332,7 @@ describe("cli zero-argument discovery", () => {
       "src/decoy.ts": `export function decoy(): number { return 1; }\n`,
     });
 
-    it("discovers via tsconfig.json, not src/", () => {
+    it("discovers via tsconfig.json, ignoring src/", () => {
       const { code, stdout, stderr } = runMain(["check"]);
       expect(code).toBe(1);
       expect(stderr[0]).toBe(
