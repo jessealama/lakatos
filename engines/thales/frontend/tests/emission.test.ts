@@ -5257,11 +5257,41 @@ describe("a constructor with a defaulted parameter", () => {
   const OMITTED =
     "'P' was constructed with 1 argument(s); parameter 'y' would take its " +
     "default, which the model does not evaluate";
+  const EXPLICIT =
+    "an explicit 'undefined' where a number is expected would take the " +
+    "parameter's default, which the model does not evaluate";
 
   test("full arity models", () => {
     const { classified, emission } = emitModule(src("new P(a, a)"), "t.ts");
     expect(classified).toEqual([]);
     expect(emission.obligations).toHaveLength(1);
+  });
+
+  test("an explicit undefined for the defaulted argument in a property is outside the model", () => {
+    const { classified } = emitModule(src("new P(a, undefined)"), "t.ts");
+    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
+      ["Inappropriate", EXPLICIT],
+    ]);
+  });
+
+  test("an explicit undefined for the defaulted argument in a body travels as the input's refusal", () => {
+    const body = `export class P {
+  readonly x: number;
+  readonly y: number;
+  constructor(x: number, y: number = 0) {
+    this.x = x;
+    this.y = y;
+  }
+}
+/** @ensures{p} forall (a: int ∈ [0, 5)) { g(a) >= 0 } */
+export function g(a: number): number {
+  return new P(a, undefined).x;
+}
+`;
+    const { classified } = emitModule(body, "t.ts");
+    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
+      ["Inappropriate", `'g' could not be modeled: ${EXPLICIT}`],
+    ]);
   });
 
   test("an omitted defaulted argument in a property is outside the model", () => {
@@ -5325,6 +5355,20 @@ describe("a method with a defaulted parameter", () => {
     );
     expect(classified.map((c) => [c.szs, c.reason])).toEqual([
       ["Inappropriate", OMITTED],
+    ]);
+  });
+
+  test("an explicit undefined for the defaulted argument is outside the model", () => {
+    const { classified } = emitModule(
+      src.replace("%CALL%", "new C(a).plus(undefined)"),
+      "t.ts",
+    );
+    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
+      [
+        "Inappropriate",
+        "an explicit 'undefined' where a number is expected would take the " +
+          "parameter's default, which the model does not evaluate",
+      ],
     ]);
   });
 

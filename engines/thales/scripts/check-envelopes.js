@@ -112,6 +112,7 @@ const CLASS_FIXTURES = [
   `${CONFORMANCE}/inappropriate/ctor-partial-assign.ts`,
   `${CONFORMANCE}/inappropriate/class-extends.ts`,
   `${CONFORMANCE}/inappropriate/ctor-default-omitted.ts`,
+  `${CONFORMANCE}/inappropriate/ctor-default-undefined.ts`,
   `${CONFORMANCE}/inappropriate/method-default-omitted.ts`,
 ];
 

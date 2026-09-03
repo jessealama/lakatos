@@ -1338,6 +1338,16 @@ function walkTyped(
           `'${displayName(ref)}' has no model: ${failed.reason}`,
         );
       }
+      // The gate lets a bare `undefined` reach a non-union slot only
+      // through a defaulted parameter, so it is the input's, not unbound.
+      if (e.text === "undefined") {
+        throw new ModelError(
+          `an explicit 'undefined' where ${describeTy(expected)} is ` +
+            `expected would take the parameter's default, which the model ` +
+            `does not evaluate`,
+          "UndefinedKeyword",
+        );
+      }
       throw new ModelError(`unbound identifier '${e.text}'`);
     }
     // The atoms and module constants are numbers; a bound name carries
