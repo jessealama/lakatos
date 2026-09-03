@@ -47,7 +47,8 @@ no bucket here.
   a construct the pipeline cannot map, an operator the model does not cover
   (`&`, `??`, ...), an operator the model refuses on the merits (`**`), or a
   well-typed call shape the model does not follow (an omitted defaulted
-  argument, a widened union) (`Inappropriate`).
+  argument, an explicit `undefined` for one, a widened union)
+  (`Inappropriate`).
 - `timeout/` — every annotation must report `Timeout` under the reduced
   heartbeat budget the harness sets via `LAKATOS_PROVE_HEARTBEATS`; the
   bucket runs as its own prove invocation so the rest of the corpus keeps

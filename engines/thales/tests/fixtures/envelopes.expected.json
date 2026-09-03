@@ -741,6 +741,14 @@
       "reason": "'P' was constructed with 1 argument(s); parameter 'y' would take its default, which the model does not evaluate"
     }
   ],
+  "engines/thales/tests/conformance/inappropriate/ctor-default-undefined.ts": [
+    {
+      "function": "g",
+      "property": "p",
+      "szs": "Inappropriate",
+      "reason": "'g' could not be modeled: an explicit 'undefined' where a number is expected would take the parameter's default, which the model does not evaluate"
+    }
+  ],
   "engines/thales/tests/conformance/inappropriate/method-default-omitted.ts": [
     {
       "function": "C#plus",
