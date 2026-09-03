@@ -111,6 +111,8 @@ const CLASS_FIXTURES = [
   `${CONFORMANCE}/inappropriate/ctor-assigns-twice.ts`,
   `${CONFORMANCE}/inappropriate/ctor-partial-assign.ts`,
   `${CONFORMANCE}/inappropriate/class-extends.ts`,
+  `${CONFORMANCE}/inappropriate/ctor-default-omitted.ts`,
+  `${CONFORMANCE}/inappropriate/method-default-omitted.ts`,
 ];
 
 /** The method slice (#130): instance methods, this-chains, method atoms,
@@ -172,7 +174,7 @@ const UNION_FIXTURES = [
   `${CONFORMANCE}/countersatisfiable/union-misread.ts`,
   `${CONFORMANCE}/inappropriate/union-return.ts`,
   `${CONFORMANCE}/inappropriate/union-string-argument.ts`,
-  `${CONFORMANCE}/error/union-widened-argument.ts`,
+  `${CONFORMANCE}/inappropriate/union-widened-argument.ts`,
 ];
 
 /** The optional-parameter slice: a call filling the undefined tag by

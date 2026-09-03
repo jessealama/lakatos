@@ -5240,6 +5240,160 @@ export class Use {
   });
 });
 
+describe("a constructor with a defaulted parameter", () => {
+  const src = (call: string) => `export class P {
+  readonly x: number;
+  readonly y: number;
+  constructor(x: number, y: number = 0) {
+    this.x = x;
+    this.y = y;
+  }
+  /** @ensures{p} forall (a: int ∈ [0, 5)) { ${call}.span() >= 0 } */
+  span(): number {
+    return this.x * this.x + this.y * this.y;
+  }
+}
+`;
+  const OMITTED =
+    "'P' was constructed with 1 argument(s); parameter 'y' would take its " +
+    "default, which the model does not evaluate";
+
+  test("full arity models", () => {
+    const { classified, emission } = emitModule(src("new P(a, a)"), "t.ts");
+    expect(classified).toEqual([]);
+    expect(emission.obligations).toHaveLength(1);
+  });
+
+  test("an omitted defaulted argument in a property is outside the model", () => {
+    const { classified } = emitModule(src("new P(a)"), "t.ts");
+    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
+      ["Inappropriate", OMITTED],
+    ]);
+  });
+
+  test("an omitted defaulted argument in a body travels as the input's refusal", () => {
+    const body = `export class P {
+  readonly x: number;
+  readonly y: number;
+  constructor(x: number, y: number = 0) {
+    this.x = x;
+    this.y = y;
+  }
+}
+/** @ensures{p} forall (a: int ∈ [0, 5)) { origin(a) >= 0 } */
+export function origin(a: number): number {
+  return new P(a).x;
+}
+`;
+    const { classified } = emitModule(body, "t.ts");
+    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
+      ["Inappropriate", `'origin' could not be modeled: ${OMITTED}`],
+    ]);
+  });
+
+  test("below the required count is an invariant, not a refusal", () => {
+    const { classified } = emitModule(src("new P()"), "t.ts");
+    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
+      [
+        "Error",
+        "property elaboration failed: 'P' expects 2 argument(s), got 0",
+      ],
+    ]);
+  });
+});
+
+describe("a method with a defaulted parameter", () => {
+  const src = `export class C {
+  readonly x: number;
+  constructor(x: number) {
+    this.x = x;
+  }
+  /** @ensures{p} forall (a: int ∈ [0, 5)) { ${"%CALL%"} >= 0 } */
+  plus(k: number = 1): number {
+    return this.x + k;
+  }
+}
+`;
+  const OMITTED =
+    "'C#plus' was called with 0 argument(s); parameter 'k' would take its " +
+    "default, which the model does not evaluate";
+
+  test("an omitted defaulted argument in a property is outside the model", () => {
+    const { classified } = emitModule(
+      src.replace("%CALL%", "new C(a).plus()"),
+      "t.ts",
+    );
+    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
+      ["Inappropriate", OMITTED],
+    ]);
+  });
+
+  test("an omitted defaulted argument in a body travels as the input's refusal", () => {
+    const body = `export class C {
+  readonly x: number;
+  constructor(x: number) {
+    this.x = x;
+  }
+  plus(k: number = 1): number {
+    return this.x + k;
+  }
+}
+/** @ensures{p} forall (a: int ∈ [0, 5)) { f(a) >= 0 } */
+export function f(a: number): number {
+  return new C(a).plus();
+}
+`;
+    const { classified } = emitModule(body, "t.ts");
+    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
+      ["Inappropriate", `'f' could not be modeled: ${OMITTED}`],
+    ]);
+  });
+
+  test("full arity still models", () => {
+    const { classified, emission } = emitModule(
+      src.replace("%CALL%", "new C(a).plus(a)"),
+      "t.ts",
+    );
+    expect(classified).toEqual([]);
+    expect(emission.obligations).toHaveLength(1);
+  });
+
+  test("over the total count is an invariant, not a refusal", () => {
+    const { classified } = emitModule(
+      src.replace("%CALL%", "new C(a).plus(a, a)"),
+      "t.ts",
+    );
+    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
+      [
+        "Error",
+        "property elaboration failed: 'C#plus' expects 1 argument(s), got 2",
+      ],
+    ]);
+  });
+
+  test("a defaulted parameter followed by an optional refuses at zero, models at one", () => {
+    const twoParamSrc = `export class D {
+  readonly x: number;
+  constructor(x: number) {
+    this.x = x;
+  }
+  /** @ensures{p} forall (a: int ∈ [0, 5)) { new D(a).plus() >= 0 } */
+  plus(k: number = 1, b?: number): number {
+    return this.x + k;
+  }
+}
+`;
+    const { classified } = emitModule(twoParamSrc, "t.ts");
+    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
+      [
+        "Inappropriate",
+        "'D#plus' was called with 0 argument(s); parameter 'k' would " +
+          "take its default, which the model does not evaluate",
+      ],
+    ]);
+  });
+});
+
 describe("class-typed parameters", () => {
   const gapSrc = `
 export class Point {
@@ -6406,7 +6560,7 @@ describe("union-typed parameters", () => {
     );
     expect(widened.classified.map((c) => [c.szs, c.reason])).toEqual([
       [
-        "Error",
+        "Inappropriate",
         "'narrow' could not be modeled: identifier 'v' is a 'number | string' value, " +
           "not a 'number | string | boolean' value; unions flow only between identical spellings",
       ],

@@ -733,6 +733,22 @@
       "reason": "'Tagged#v' could not be modeled: unmapped TypeScript construct 'HeritageClause' at 3:21"
     }
   ],
+  "engines/thales/tests/conformance/inappropriate/ctor-default-omitted.ts": [
+    {
+      "function": "P#span",
+      "property": "p",
+      "szs": "Inappropriate",
+      "reason": "'P' was constructed with 1 argument(s); parameter 'y' would take its default, which the model does not evaluate"
+    }
+  ],
+  "engines/thales/tests/conformance/inappropriate/method-default-omitted.ts": [
+    {
+      "function": "C#plus",
+      "property": "p",
+      "szs": "Inappropriate",
+      "reason": "'C#plus' was called with 0 argument(s); parameter 'k' would take its default, which the model does not evaluate"
+    }
+  ],
   "engines/thales/tests/conformance/theorem/method-double.ts": [
     {
       "function": "Box#double",
@@ -1075,11 +1091,11 @@
       "reason": "unmapped TypeScript construct 'StringLiteral' at 1:18"
     }
   ],
-  "engines/thales/tests/conformance/error/union-widened-argument.ts": [
+  "engines/thales/tests/conformance/inappropriate/union-widened-argument.ts": [
     {
       "function": "narrow",
       "property": "p",
-      "szs": "Error",
+      "szs": "Inappropriate",
       "reason": "'narrow' could not be modeled: identifier 'v' is a 'number | string' value, not a 'number | string | boolean' value; unions flow only between identical spellings"
     }
   ],

@@ -244,40 +244,83 @@ function wireParam(name: string, ty: ValueTy): EmitParam {
   };
 }
 
-/** A callable's signature: its parameter types in declaration order, and
- * how many of them a call must actually supply. Only trailing optionals
- * make the two differ — an optional's own type already carries the
- * `undefined` an omitted argument denotes, so arity is all that is left
- * to record, and it never reaches the wire. */
+/** A callable's signature: its parameter types in declaration order, how
+ * many of them a call must actually supply (TypeScript's own arity, where
+ * a defaulted parameter still counts as required), and the fewest the
+ * model tolerates before a defaulted one goes unfilled. `paramNames` names
+ * the parameter an under-`required` call is missing; a fixed-arity
+ * signature leaves it empty since that branch is unreachable there. */
 export interface FnSig {
   params: ValueTy[];
   required: number;
+  minArgs: number;
+  paramNames: string[];
 }
 
 /** The signature a walked parameter list denotes. Optionals are trailing
- * by `walkParams`'s own check, so counting the required ones is enough. */
+ * by `walkParams`'s own check, so counting the required ones is enough;
+ * `minArgs` stops at the last parameter that is neither optional nor
+ * defaulted, the same fold `ctorRequired` uses. */
 function sigOf(params: WalkedParams): FnSig {
   return {
     params: params.map((p) => p.ty),
     required: params.filter((p) => !p.optional).length,
+    minArgs:
+      params.map((p) => p.optional || p.defaulted).lastIndexOf(false) + 1,
+    paramNames: params.map((p) => p.name),
   };
 }
 
 /** A fixed-arity signature: what a constructor or a getter has, neither
- * admitting an optional. */
+ * admitting an optional or a default. */
 function exactSig(params: ValueTy[]): FnSig {
-  return { params, required: params.length };
+  return {
+    params,
+    required: params.length,
+    minArgs: params.length,
+    paramNames: [],
+  };
 }
 
 /** The arity check every call shares. A call may omit trailing optionals
  * and nothing else; a signature without them keeps the single-count
- * message it has always reported. */
+ * message it has always reported. A call short of `required` but at or
+ * past `minArgs` is short only a defaulted parameter, outside the model
+ * rather than invariant-broken. */
 function checkArity(name: string, sig: FnSig, got: number): void {
   const total = sig.params.length;
   if (got >= sig.required && got <= total) return;
+  if (got >= sig.minArgs && got < sig.required) {
+    throw new ModelError(
+      `'${name}' was called with ${got} argument(s); parameter ` +
+        `'${sig.paramNames[got]!}' would take its default, which the ` +
+        `model does not evaluate`,
+      "Parameter",
+    );
+  }
   const expected =
     sig.required === total ? `${total}` : `${sig.required} to ${total}`;
   throw new ModelError(`'${name}' expects ${expected} argument(s), got ${got}`);
+}
+
+/** A construction's arity. Omitting a defaulted trailing parameter is legal
+ * TypeScript the model does not follow — the initializer never rides the
+ * wire — so the call is refused as outside the model rather than filled.
+ * Any other mismatch is tsc's to refuse, and an invariant here. */
+function checkCtorArity(ref: ModelRef, shape: ClassShape, got: number): void {
+  const total = shape.ctorParams.length;
+  if (got === total) return;
+  if (got >= shape.ctorRequired && got < total) {
+    throw new ModelError(
+      `'${displayName(ref)}' was constructed with ${got} argument(s); ` +
+        `parameter '${shape.ctorParamNames[got]!}' would take its default, ` +
+        `which the model does not evaluate`,
+      "Parameter",
+    );
+  }
+  throw new ModelError(
+    `'${displayName(ref)}' expects ${total} argument(s), got ${got}`,
+  );
 }
 
 /** A call's arguments against a signature, each omitted trailing optional
@@ -305,6 +348,9 @@ export interface ClassShape {
   /** The constructor parameters' source spellings, positionally aligned
    * with `ctorParams`. A class binder quantifies over them by name. */
   ctorParamNames: string[];
+  /** Leading parameters a construction must supply: one past the last
+   * without a default. Fewer than every parameter is refused, not filled. */
+  ctorRequired: number;
   /** Modeled methods by name, with their signatures. */
   methods: ReadonlyMap<string, FnSig>;
 }
@@ -1528,12 +1574,7 @@ function walkTyped(
     const ref = newRef(scope, icall.object);
     const shape = classShapeOf(scope, ref);
     const rawCtorArgs = icall.object.arguments ?? [];
-    if (shape.ctorParams.length !== rawCtorArgs.length) {
-      throw new ModelError(
-        `'${displayName(ref)}' expects ${shape.ctorParams.length} ` +
-          `argument(s), got ${rawCtorArgs.length}`,
-      );
-    }
+    checkCtorArity(ref, shape, rawCtorArgs.length);
     const sig = shape.methods.get(icall.name);
     if (sig === undefined) {
       throw new ModelError(
@@ -1572,12 +1613,7 @@ function walkTyped(
     const ref = newRef(scope, access.object);
     const shape = classShapeOf(scope, ref);
     const rawArgs = access.object.arguments ?? [];
-    if (shape.ctorParams.length !== rawArgs.length) {
-      throw new ModelError(
-        `'${displayName(ref)}' expects ${shape.ctorParams.length} ` +
-          `argument(s), got ${rawArgs.length}`,
-      );
-    }
+    checkCtorArity(ref, shape, rawArgs.length);
     if (expected !== "num") {
       throw new ModelError(
         `a member read yields a number, not ${describeTy(expected)}`,
@@ -1690,12 +1726,7 @@ function walkTyped(
     const shape = classShapeOf(scope, ref);
     if (typeof expected !== "string" && sameClass(ref, expected.instance)) {
       const rawArgs = built.arguments ?? [];
-      if (shape.ctorParams.length !== rawArgs.length) {
-        throw new ModelError(
-          `'${displayName(ref)}' expects ${shape.ctorParams.length} ` +
-            `argument(s), got ${rawArgs.length}`,
-        );
-      }
+      checkCtorArity(ref, shape, rawArgs.length);
       return {
         kind: "new",
         className: ref.name,
@@ -1867,9 +1898,13 @@ function walkUnionSlot(
     const bound = scope.vars.get(u.text);
     if (bound !== undefined && typeof bound !== "string" && "union" in bound) {
       if (sameUnion(bound.union, union)) return { kind: "id", name: u.text };
+      // Widening to a superset is legal TypeScript the model does not
+      // follow; any other spelling mismatch is tsc's to refuse first.
+      const widening = bound.union.every((m) => union.includes(m));
       throw new ModelError(
         `identifier '${u.text}' is ${describeTy(bound)}, not ` +
           `${describeTy({ union })}; unions flow only between identical spellings`,
+        widening ? "UnionType" : undefined,
       );
     }
     if (
@@ -2676,9 +2711,14 @@ function normalizedUnion(
   return constructAt(t, t.kind, sf);
 }
 
-/** A walked parameter list: names with their types and whether a call
- * may omit them, in declaration order. */
-type WalkedParams = { name: string; ty: ValueTy; optional: boolean }[];
+/** A walked parameter list: names with their types, whether a call may
+ * omit them, and whether they carry a default, in declaration order. */
+type WalkedParams = {
+  name: string;
+  ty: ValueTy;
+  optional: boolean;
+  defaulted: boolean;
+}[];
 
 /** Names and types for a parameter list, or the first failure — the
  * shape check ahead of the type, as the old order has it. */
@@ -2704,7 +2744,12 @@ function walkParams(
     seenOptional ||= optional;
     const ty = paramValueTy(p, sf, reg);
     if (typeof ty !== "string" && "reason" in ty) return ty;
-    out.push({ name: (p.name as ts.Identifier).text, ty, optional });
+    out.push({
+      name: (p.name as ts.Identifier).text,
+      ty,
+      optional,
+      defaulted: p.initializer !== undefined,
+    });
   }
   return out;
 }
@@ -2974,6 +3019,7 @@ function walkClass(
     getters: getterNames,
     ctorParams: shapeCtorParams,
     ctorParamNames: ctorParams.map((p) => p.name),
+    ctorRequired: ctorParams.map((p) => p.defaulted).lastIndexOf(false) + 1,
     methods: methodSigs,
   };
   const self = { ref: { module: qualifier, name: className }, shape };
