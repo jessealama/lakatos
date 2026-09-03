@@ -741,6 +741,14 @@
       "reason": "'P' was constructed with 1 argument(s); parameter 'y' would take its default, which the model does not evaluate"
     }
   ],
+  "engines/thales/tests/conformance/inappropriate/method-default-omitted.ts": [
+    {
+      "function": "C#plus",
+      "property": "p",
+      "szs": "Inappropriate",
+      "reason": "'C#plus' was called with 0 argument(s); parameter 'k' would take its default, which the model does not evaluate"
+    }
+  ],
   "engines/thales/tests/conformance/theorem/method-double.ts": [
     {
       "function": "Box#double",

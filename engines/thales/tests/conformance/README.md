@@ -45,8 +45,9 @@ no bucket here.
   a range endpoint exceeds the safe integer range.
 - `inappropriate/` — the annotation is outside the model: the function uses
   a construct the pipeline cannot map, an operator the model does not cover
-  (`&`, `??`, ...), or an operator the model refuses on the merits (`**`)
-  (`Inappropriate`).
+  (`&`, `??`, ...), an operator the model refuses on the merits (`**`), or a
+  well-typed call shape the model does not follow (an omitted defaulted
+  argument, a widened union) (`Inappropriate`).
 - `timeout/` — every annotation must report `Timeout` under the reduced
   heartbeat budget the harness sets via `LAKATOS_PROVE_HEARTBEATS`; the
   bucket runs as its own prove invocation so the rest of the corpus keeps

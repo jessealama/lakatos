@@ -244,37 +244,60 @@ function wireParam(name: string, ty: ValueTy): EmitParam {
   };
 }
 
-/** A callable's signature: its parameter types in declaration order, and
- * how many of them a call must actually supply. Only trailing optionals
- * make the two differ — an optional's own type already carries the
- * `undefined` an omitted argument denotes, so arity is all that is left
- * to record, and it never reaches the wire. */
+/** A callable's signature: its parameter types in declaration order, how
+ * many of them a call must actually supply (TypeScript's own arity, where
+ * a defaulted parameter still counts as required), and the fewest the
+ * model tolerates before a defaulted one goes unfilled. `paramNames` names
+ * the parameter an under-`required` call is missing; a fixed-arity
+ * signature leaves it empty since that branch is unreachable there. */
 export interface FnSig {
   params: ValueTy[];
   required: number;
+  minArgs: number;
+  paramNames: string[];
 }
 
 /** The signature a walked parameter list denotes. Optionals are trailing
- * by `walkParams`'s own check, so counting the required ones is enough. */
+ * by `walkParams`'s own check, so counting the required ones is enough;
+ * `minArgs` stops at the last parameter that is neither optional nor
+ * defaulted, the same fold `ctorRequired` uses. */
 function sigOf(params: WalkedParams): FnSig {
   return {
     params: params.map((p) => p.ty),
     required: params.filter((p) => !p.optional).length,
+    minArgs:
+      params.map((p) => p.optional || p.defaulted).lastIndexOf(false) + 1,
+    paramNames: params.map((p) => p.name),
   };
 }
 
 /** A fixed-arity signature: what a constructor or a getter has, neither
- * admitting an optional. */
+ * admitting an optional or a default. */
 function exactSig(params: ValueTy[]): FnSig {
-  return { params, required: params.length };
+  return {
+    params,
+    required: params.length,
+    minArgs: params.length,
+    paramNames: [],
+  };
 }
 
 /** The arity check every call shares. A call may omit trailing optionals
  * and nothing else; a signature without them keeps the single-count
- * message it has always reported. */
+ * message it has always reported. A call short of `required` but at or
+ * past `minArgs` is short only a defaulted parameter, outside the model
+ * rather than invariant-broken. */
 function checkArity(name: string, sig: FnSig, got: number): void {
   const total = sig.params.length;
   if (got >= sig.required && got <= total) return;
+  if (got >= sig.minArgs && got < sig.required) {
+    throw new ModelError(
+      `'${name}' was called with ${got} argument(s); parameter ` +
+        `'${sig.paramNames[got]!}' would take its default, which the ` +
+        `model does not evaluate`,
+      "Parameter",
+    );
+  }
   const expected =
     sig.required === total ? `${total}` : `${sig.required} to ${total}`;
   throw new ModelError(`'${name}' expects ${expected} argument(s), got ${got}`);
@@ -290,7 +313,7 @@ function checkCtorArity(ref: ModelRef, shape: ClassShape, got: number): void {
   if (got >= shape.ctorRequired && got < total) {
     throw new ModelError(
       `'${displayName(ref)}' was constructed with ${got} argument(s); ` +
-        `parameter '${shape.ctorParamNames[got]}' would take its default, ` +
+        `parameter '${shape.ctorParamNames[got]!}' would take its default, ` +
         `which the model does not evaluate`,
       "Parameter",
     );
