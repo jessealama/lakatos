@@ -20,54 +20,20 @@ describe("isTsSource", () => {
   );
 });
 
-describe("zero-arg discovery: src/ convention", () => {
+describe("zero-arg discovery: no tsconfig.json", () => {
   useTempProject(
-    "lemma-disc-src-",
+    "lemma-disc-notsc-",
     {
       "src/a.ts": "export const a = 1;\n",
       "src/nested/b.mts": "export const b = 2;\n",
-      "src/types.d.ts": "export declare const a: number;\n",
-      "scripts/ignored.ts": "export const c = 3;\n",
     },
     { tsconfig: false },
   );
 
-  it("finds sources under src/, skipping declarations and other dirs", () => {
-    expect(resolveFiles([])).toEqual({
-      files: ["src/a.ts", "src/nested/b.mts"],
-      source: "src/",
-    });
-  });
-});
-
-describe("zero-arg discovery: src/ holding only declaration files", () => {
-  useTempProject(
-    "lemma-disc-decl-",
-    {
-      "src/types.d.ts": "export declare const a: number;\n",
-    },
-    { tsconfig: false },
-  );
-
-  it("throws LemmaError rather than reporting zero files", () => {
-    expect(() => resolveFiles([])).toThrow(LemmaError);
-  });
-});
-
-describe("zero-arg discovery: nothing to go on", () => {
-  useTempProject(
-    "lemma-disc-none-",
-    {
-      "readme.md": "hi\n",
-      "loose.ts": "export const x = 1;\n",
-    },
-    { tsconfig: false },
-  );
-
-  it("throws LemmaError suggesting a glob (root-level .ts does not count)", () => {
+  it("throws LemmaError asking for files or globs rather than scanning src/", () => {
     expect(() => resolveFiles([])).toThrow(LemmaError);
     expect(() => resolveFiles([])).toThrow(
-      /cannot determine where your source code is/,
+      /no tsconfig\.json to discover sources from/,
     );
   });
 });
@@ -114,11 +80,8 @@ describe("zero-arg discovery: solution-style tsconfig", () => {
     "src/a.ts": "export const a = 1;\n",
   });
 
-  it("resolves to zero files and falls through to src/", () => {
-    expect(resolveFiles([])).toEqual({
-      files: ["src/a.ts"],
-      source: "src/",
-    });
+  it("resolves to zero files and stops rather than scanning src/", () => {
+    expect(() => resolveFiles([])).toThrow(/tsconfig\.json names no files/);
   });
 });
 
@@ -128,11 +91,9 @@ describe("zero-arg discovery: editor-only tsconfig (files: [])", () => {
     "src/a.ts": "export const a = 1;\n",
   });
 
-  it("treats TS18002 as 'no inputs here' and falls through to src/", () => {
-    expect(resolveFiles([])).toEqual({
-      files: ["src/a.ts"],
-      source: "src/",
-    });
+  it("treats TS18002 as 'names no files', not a broken config", () => {
+    expect(() => resolveFiles([])).not.toThrow(/^tsconfig\.json:/);
+    expect(() => resolveFiles([])).toThrow(/tsconfig\.json names no files/);
   });
 });
 
@@ -219,15 +180,13 @@ describe("zero-arg discovery: misspelled root option (excludes)", () => {
   });
 });
 
-describe("zero-arg discovery: tsconfig matching nothing, no src/", () => {
+describe("zero-arg discovery: tsconfig matching nothing", () => {
   useTempProject("lemma-disc-empty-", {
     "tsconfig.json": JSON.stringify({ include: ["nope"] }),
   });
 
-  it("throws the no-sources LemmaError (18003 is not an error)", () => {
-    expect(() => resolveFiles([])).toThrow(
-      /cannot determine where your source code is/,
-    );
+  it("throws the names-no-files LemmaError (18003 is not an error)", () => {
+    expect(() => resolveFiles([])).toThrow(/tsconfig\.json names no files/);
   });
 });
 

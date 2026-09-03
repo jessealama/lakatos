@@ -68,10 +68,11 @@ lakatos refute <files-or-globs>            # same, on an explicit file list
 lakatos refute --seed <n> <files-or-globs> # reproduce a prior run's generation
 ```
 
-With no file arguments, lakatos discovers your sources: if `tsconfig.json`
-exists, it scans exactly the files `tsc` would compile; otherwise it falls
-back to `src/**`. If neither yields anything, it exits with an error asking
-for an explicit glob. Discovery stays inside the current directory — a
+With no file arguments, lakatos discovers your sources: exactly the files
+`tsc` would compile for `tsconfig.json`. Without a tsconfig, or with one that
+names no files, it exits with an error asking for an explicit glob (the type
+gate refuses anything outside the tsconfig's program, so there is nowhere
+else to look). Discovery stays inside the current directory — a
 tsconfig reaching outside it (say, a monorepo `include` of `../shared`) has
 those files skipped; run lakatos in the package that owns them.
 

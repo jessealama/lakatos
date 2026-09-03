@@ -17,13 +17,13 @@ export function isTsSource(file: string): boolean {
 
 export interface Discovery {
   files: string[];
-  source: "arguments" | "tsconfig.json" | "src/";
+  source: "arguments" | "tsconfig.json";
 }
 
 /**
  * The files pabst should scan: matches of the given patterns or, with no
- * patterns, zero-argument discovery (the tsconfig.json file list, then the
- * src/ convention). Throws LemmaError when nothing usable is found.
+ * patterns, zero-argument discovery (the tsconfig.json file list). Throws
+ * LemmaError when nothing usable is found.
  */
 export function resolveFiles(patterns: string[]): Discovery {
   if (patterns.length > 0) {
@@ -48,13 +48,14 @@ function globbedFiles(patterns: string[]): string[] {
   return files;
 }
 
-const NO_SOURCES =
-  'cannot determine where your source code is; pass files or globs (e.g. lakatos refute "src/**/*.ts")';
+const PASS_FILES = 'pass files or globs (e.g. lakatos refute "src/**/*.ts")';
+const NO_TSCONFIG = `no tsconfig.json to discover sources from; ${PASS_FILES}`;
+const NO_INPUTS = `tsconfig.json names no files; ${PASS_FILES}`;
 
 // TS18003 ("No inputs were found in config file") and TS18002 ("The 'files'
 // list in config file is empty") are the config saying it names no files —
-// that is "no answer here", not a broken config, so discovery falls through
-// to the src/ convention.
+// that is "no answer here", not a broken config, so discovery reports it
+// as such rather than as a tsconfig error.
 const NO_INPUTS_ERRORS = new Set([18002, 18003]);
 
 // Diagnostics about compilerOptions — unknown option (5023), unknown option
@@ -137,16 +138,13 @@ function tsconfigFiles(cwd: string): string[] | undefined {
 }
 
 /**
- * Zero-argument mode: find the project's TypeScript sources. Uses the file
- * list of ./tsconfig.json when it names any, then the src/ convention;
- * throws LemmaError when nothing is found.
+ * Zero-argument mode: the file list of ./tsconfig.json. The type gate
+ * refuses anything the tsconfig does not describe, so there is no other
+ * place to look; a missing tsconfig or one naming no files throws LemmaError.
  */
 function discoverFiles(): Discovery {
-  const fromConfig = tsconfigFiles(process.cwd());
-  if (fromConfig !== undefined && fromConfig.length > 0) {
-    return { files: fromConfig, source: "tsconfig.json" };
-  }
-  const files = globSync("src/**/*").filter(isTsSource).sort();
-  if (files.length > 0) return { files, source: "src/" };
-  throw new LemmaError(NO_SOURCES);
+  const files = tsconfigFiles(process.cwd());
+  if (files === undefined) throw new LemmaError(NO_TSCONFIG);
+  if (files.length === 0) throw new LemmaError(NO_INPUTS);
+  return { files, source: "tsconfig.json" };
 }
