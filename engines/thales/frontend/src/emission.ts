@@ -3468,8 +3468,8 @@ function walkFunction(
   }
 }
 
-/** Parse one formula atom the way the transcriber does: wrapped in
- * parentheses, rejected on any parser diagnostic. */
+/** Parse one formula atom: wrapped in parentheses so it parses as an
+ * expression, rejected on any parser diagnostic. */
 function parseAtomExpr(
   js: string,
 ): { sf: ts.SourceFile; expr: ts.Expression } | undefined {
