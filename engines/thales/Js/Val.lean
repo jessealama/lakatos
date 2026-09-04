@@ -105,8 +105,8 @@ def JsVal.sameValue : JsVal → JsVal → Bool
     JsVal.sameValue (.bool a) (.bool b) = (a == b) := rfl
 
 -- `deriving DecidableEq` routes `==` through `decide`, which no equation
--- of the norm set opens: the emitted tag test compares `typeof v` against
--- a literal, so the hit needs reflexivity and each miss its own ground
+-- of the norm set opens: a tag test compares `typeof v` against a
+-- literal, so the hit needs reflexivity and each miss its own ground
 -- rewrite.
 @[js_norm] theorem TypeofResult.beq_self (r : TypeofResult) :
     (r == r) = true := beq_self_eq_true r
