@@ -114,7 +114,7 @@
       "property": "doubling",
       "szs": "Theorem",
       "reason": "proved by a decision procedure over the bounded domain, admitted as TsProof.thm_2612393272425420034_2; the result is trusted from evaluation rather than checked by the kernel",
-      "axioms": ["_private._stdin.0._native.native_decide.ax_N"]
+      "axioms": ["Lean.ofReduceBool"]
     }
   ],
   "engines/thales/tests/conformance/theorem/endpoints.ts": [
@@ -139,7 +139,7 @@
       "property": "halving",
       "szs": "Theorem",
       "reason": "proved by a decision procedure over the bounded domain, admitted as TsProof.thm_7654245159813493106_2; the result is trusted from evaluation rather than checked by the kernel",
-      "axioms": ["_private._stdin.0._native.native_decide.ax_N"]
+      "axioms": ["Lean.ofReduceBool"]
     }
   ],
   "engines/thales/tests/conformance/theorem/mul-associates.ts": [

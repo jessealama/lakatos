@@ -258,8 +258,8 @@ for (const { file, expected } of FIXTURES) {
 
   // Every Theorem names what it rests on, and the list must agree with the
   // trust wording: a kernel-checked proof uses no extra axioms, an
-  // evaluation-trusted one admits exactly its native-evaluation axiom.
-  // Nothing but a Theorem carries the field.
+  // evaluation-trusted one exactly the native-evaluation axiom under its
+  // canonical spelling. Nothing but a Theorem carries the field.
   for (const [i, v] of verdicts.entries()) {
     if (v.szs !== "Theorem") {
       check(
@@ -279,8 +279,8 @@ for (const { file, expected } of FIXTURES) {
       );
     } else {
       check(
-        v.axioms.length > 0 && v.axioms.every((a) => /native_decide/.test(a)),
-        `${file}: evaluation-trusted verdict ${i} axioms ${JSON.stringify(v.axioms)} do not name the native-evaluation axiom`,
+        JSON.stringify(v.axioms) === JSON.stringify(["Lean.ofReduceBool"]),
+        `${file}: evaluation-trusted verdict ${i} axioms ${JSON.stringify(v.axioms)} are not exactly the native-evaluation axiom`,
       );
     }
   }

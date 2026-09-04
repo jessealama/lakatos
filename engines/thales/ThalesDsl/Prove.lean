@@ -130,6 +130,16 @@ def addTheoremSync (identity : Identity) (p proof : Expr) : Term.TermElabM Name 
 /-- The axioms every Lean proof may use without extending the trusted base. -/
 def standardAxioms : Array Name := #[``propext, ``Classical.choice, ``Quot.sound]
 
+/-- `native_decide` admits a private per-proof axiom named after the artifact's
+module and an elaboration counter, so the literal name changes whenever the
+file around it does; the wire carries the stable axiom that mechanism stands
+in for instead. -/
+def canonicalAxiom (n : Name) : Name :=
+  match n with
+  | .str (.str (.str _ "_native") "native_decide") s =>
+    if s.startsWith "ax" then ``Lean.ofReduceBool else n
+  | _ => n
+
 /-- A proved annotation's verdict. `method` names the rung's class — never a
 tactic, since dischargers change — but the trust level and the reported
 axiom list are read off the theorem's actual axioms rather than asserted by
@@ -140,8 +150,8 @@ point unit. -/
 def provedVerdict (identity : Identity) (method : String) (thmName : Name) :
     CoreM Verdict := do
   let axioms ← collectAxioms thmName
-  let extra := (axioms.filter (!standardAxioms.contains ·)).qsort
-    (fun a b => a.toString < b.toString)
+  let extra := (axioms.filter (!standardAxioms.contains ·)).map canonicalAxiom
+    |>.toList.eraseDups.toArray.qsort (fun a b => a.toString < b.toString)
   let reason :=
     if extra.isEmpty then
       s!"proved by {method}, kernel-checked as {thmName}"
