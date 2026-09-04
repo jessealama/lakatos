@@ -751,8 +751,8 @@ function nonBooleanOperand(
   };
 }
 
-/** The first construct in tree order the old transcriber would have made
- * opaque: anything outside identifiers, numeric literals, unary ±,
+/** The first construct in tree order this slice cannot map: anything
+ * outside identifiers, numeric literals, unary ±,
  * parentheses, binary operators (any operator — meaning is checked
  * later), and calls of a plain identifier. */
 function findConstruct(
@@ -886,7 +886,8 @@ function findConstruct(
 }
 
 /** The first refused operator in tree order, as a failure that names it.
- * Runs after the construct scan, like the old elaborator's pre-scans. */
+ * Runs after the construct scan: an unmappable construct outranks a
+ * refused operator, so the two never race. */
 function findRefusedOp(e: ts.Expression): FailedDecl | undefined {
   if (ts.isParenthesizedExpression(e)) return findRefusedOp(e.expression);
   if (isUnaryArith(e) && negatedLiteral(e) === undefined) {
@@ -1038,8 +1039,7 @@ function refOf(scope: WalkScope, name: string): ModelRef {
 
 /** The first callee among `names` whose own declaration failed on a named
  * construct: the refusal travels with the call. A callee that failed for
- * any other reason is left to the typed walk, as the old elaborator leaves
- * it to `evalExpr`. */
+ * any other reason is left to the typed walk, which reports it by name. */
 function failedCalleeIn(
   names: readonly string[],
   scope: WalkScope,
@@ -1314,9 +1314,9 @@ function shapeOfRef(scope: WalkScope, ref: ModelRef): ClassShape {
   return classShapeOf(scope, ref);
 }
 
-/** The typed walk, mirroring `evalExpr`: operand types are checked in the
- * old elaboration order so the first failure — and its message — is the
- * same one the old pipeline reports. */
+/** The typed walk: operand types are checked in tree order, so which
+ * failure a declaration reports — and with what message — is fixed by the
+ * source rather than by walk order. */
 function walkTyped(
   e: ts.Expression,
   expected: Expected,
@@ -1984,9 +1984,9 @@ interface ScanRoot {
   sf: ts.SourceFile;
 }
 
-/** The old elaborator's pre-scans — opaque constructs, then refused
- * operators, then construct-failed callees — each across every root
- * before the next begins. */
+/** The pre-scans, in the order that fixes which failure wins — opaque
+ * constructs, then refused operators, then construct-failed callees —
+ * each across every root before the next begins. */
 function prescanFailure(
   roots: readonly ScanRoot[],
   scope: WalkScope,
@@ -2462,9 +2462,9 @@ function lowerTree(
   }
 }
 
-/** The pre-scans over a whole statement tree, in the old elaborator's
- * order — opaque constructs, then refused operators, then
- * construct-failed callees — dead code included. */
+/** The pre-scans over a whole statement tree, in that same fixed order —
+ * opaque constructs, then refused operators, then construct-failed
+ * callees — dead code included. */
 function bodyPrescan(
   tree: readonly TStmt[],
   sf: ts.SourceFile,
@@ -2886,8 +2886,9 @@ function boundaryTy(ty: ValueTy): ValueTy {
   return { option: ty.instance };
 }
 
-/** Names and types for a parameter list, or the first failure — the
- * shape check ahead of the type, as the old order has it. */
+/** Names and types for a parameter list, or the first failure. The shape
+ * check leads: a parameter the caller's `shapeFailure` rejects has no
+ * type worth asking about. */
 function walkParams(
   params: readonly ts.ParameterDeclaration[],
   sf: ts.SourceFile,
@@ -3766,10 +3767,10 @@ function obligationPayload(
     // lowering the atom gets in a guard or a branch condition.
     const asEquation =
       sides !== undefined && !sides.some((s) => taggedOperand(s, scope));
-    // Guards precede the conclusion in the old elaborator's tree order, so
-    // the first refusal either pipeline reports is the same one. The
-    // conclusion is pre-scanned as written — an equation splits into its
-    // sides only for the typed walk, which lifts them separately.
+    // Guards precede the conclusion in the pre-scan roots, so a refusal in
+    // a guard is reported before one in the conclusion. The conclusion is
+    // pre-scanned as written — an equation splits into its sides only for
+    // the typed walk, which lifts them separately.
     const prescanRoots: ScanRoot[] = [...guardRoots, { expr, sf: parsed.sf }];
     const walkRoots: (ScanRoot & { expected: Expected })[] = [
       ...guardRoots,
@@ -4062,9 +4063,9 @@ function walkEmitModule(
       }
       continue;
     }
-    // Every other name a declaration binds degrades to the old pipeline's
-    // opaque failure, position on the binding identifier — except a
-    // declarator the constant scan positively admits.
+    // Every other name a declaration binds degrades to an opaque failure,
+    // positioned on the binding identifier — except a declarator the
+    // constant scan positively admits.
     if (ts.isVariableStatement(stmt)) {
       const admissible =
         (stmt.declarationList.flags & ts.NodeFlags.Const) !== 0 &&
