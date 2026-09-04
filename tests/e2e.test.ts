@@ -110,6 +110,20 @@ describe.runIf(enabled)("lakatos prove end-to-end (tracer)", () => {
       ),
       path.join(dir, "point.ts"),
     );
+    // Engine parity on a finite domain: the prover decides it, the
+    // refuter walks it, and both say Theorem.
+    fs.copyFileSync(
+      path.join(
+        repoRoot,
+        "engines",
+        "thales",
+        "tests",
+        "conformance",
+        "theorem",
+        "endpoints.ts",
+      ),
+      path.join(dir, "small.ts"),
+    );
   });
 
   it(
@@ -243,6 +257,37 @@ describe.runIf(enabled)("lakatos prove end-to-end (tracer)", () => {
         e.annotations.map((a) => [a.file, a.function, a.property]).sort();
       expect(ids(proveEnv)).toEqual([["parity.ts", "add", "commutes"]]);
       expect(ids(proveEnv)).toEqual(ids(refuteEnv));
+    },
+  );
+
+  it(
+    "prove and refute both report Theorem on a small finite domain",
+    { timeout: proveTimeoutMs(1) },
+    () => {
+      const proveEnv = runForEnvelope(["prove", "small.ts"]);
+      const refuteEnv = runForEnvelope(["refute", "small.ts"]);
+      const by = (e: Envelope) =>
+        new Map(e.annotations.map((a) => [`${a.function}/${a.property}`, a]));
+      const proved = by(proveEnv);
+      const walked = by(refuteEnv);
+      expect([...proved.keys()].sort()).toEqual([
+        "keep/positive",
+        "shift/bounded",
+      ]);
+      expect([...walked.keys()].sort()).toEqual([...proved.keys()].sort());
+      for (const key of proved.keys()) {
+        expect(proved.get(key)).toMatchObject({ szs: "Theorem", axioms: [] });
+      }
+      expect(walked.get("keep/positive")).toMatchObject({
+        szs: "Theorem",
+        kind: "enumerated",
+        cases: 8,
+      });
+      expect(walked.get("shift/bounded")).toMatchObject({
+        szs: "Theorem",
+        kind: "enumerated",
+        cases: 9,
+      });
     },
   );
 });
