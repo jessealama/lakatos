@@ -119,6 +119,7 @@ describe("emitModule on the tracer fixture", () => {
     ["engines/thales/tests/fixtures/nested-class-binder.ts"],
     ["engines/thales/tests/fixtures/unions.ts"],
     ["engines/thales/tests/fixtures/optionals.ts"],
+    ["engines/thales/tests/fixtures/defaults.ts"],
     ["engines/thales/tests/fixtures/object-is-tagged.ts"],
     [
       "engines/thales/tests/conformance/theorem/class-binder-equality-guards.ts",
@@ -153,6 +154,7 @@ describe("emitModule on the tracer fixture", () => {
     ],
     ["engines/thales/tests/fixtures/unions.ts", "unions.emission.json"],
     ["engines/thales/tests/fixtures/optionals.ts", "optionals.emission.json"],
+    ["engines/thales/tests/fixtures/defaults.ts", "defaults.emission.json"],
     [
       "engines/thales/tests/fixtures/object-is-tagged.ts",
       "object-is-tagged.emission.json",

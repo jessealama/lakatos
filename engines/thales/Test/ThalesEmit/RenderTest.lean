@@ -398,6 +398,9 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
 #eval goldenCheck "tests/fixtures/optionals.emission.json"
   "tests/fixtures/optionals.emitted.lean.expected"
 
+#eval goldenCheck "tests/fixtures/defaults.emission.json"
+  "tests/fixtures/defaults.emitted.lean.expected"
+
 #eval goldenCheck "tests/fixtures/object-is-tagged.emission.json"
   "tests/fixtures/object-is-tagged.emitted.lean.expected"
 
