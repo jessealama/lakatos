@@ -27,7 +27,7 @@ def spineKinds (t : TSyntax `term) : List String :=
   unless kinds == ["unbounded «p.x»", "unbounded «p.y»", "opaque p"] do
     throwError "the class-binder spine is {kinds}"
   -- Never enumerable: the domain is a constructor's image, not a range.
-  unless !(propSpine t).binders.all (· matches .ranged ..) do
+  unless (propSpine t).ranges?.isNone do
     throwError "an opaque binder was reported bounded"
 
 #eval show CoreM Unit from do
@@ -58,3 +58,18 @@ def spineKinds (t : TSyntax `term) : List String :=
     throwError "the bounded number head is {spineKinds t}"
   unless (propSpine t).guards.isEmpty do
     throwError "a guard under a number binder's bounds was recovered"
+
+#eval show CoreM Unit from do
+  -- `ranges?` is the one reading the elaboration takes: the endpoints the
+  -- search enumerates, present exactly when every binder has them.
+  let t := Unhygienic.run `(ballIco 0 5 fun x =>
+    ballIco (-2) 3 fun y => ((pure true : JsM Bool) = pure true))
+  unless (propSpine t).ranges? == some [("x", 0, 5), ("y", -2, 3)] do
+    throwError "the all-ranged spine reads {repr (propSpine t).ranges?}"
+  let u := Unhygienic.run `(ballIco 0 5 fun x =>
+    ∀ (n : Int), ((pure true : JsM Bool) = pure true))
+  unless (propSpine u).ranges?.isNone do
+    throwError "a spine with an unbounded binder reported ranges"
+  let v := Unhygienic.run `(((pure true : JsM Bool) = pure true))
+  unless (propSpine v).ranges? == some [] do
+    throwError "a closed leaf is bounded with no ranges, not {repr (propSpine v).ranges?}"

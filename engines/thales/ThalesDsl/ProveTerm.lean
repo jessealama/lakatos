@@ -53,6 +53,13 @@ structure PropSpine where
   leaf : TSyntax `term
   deriving Inhabited
 
+/-- The binders as ranges, when every one of them is; `none` is a domain
+neither enumerable nor searchable, so the decide tiers are skipped. -/
+def PropSpine.ranges? (s : PropSpine) : Option (List (String × Int × Int)) :=
+  s.binders.mapM fun
+    | .ranged x lo hi => some (x, lo, hi)
+    | .unbounded _ | .opaque _ => none
+
 /-- Whether a term is an emitted guard hypothesis: a boolean island's
 `= pure true` proposition. A nat binder's `0 ≤ n` occupies the same arrow
 position and is deliberately not one — it stays in the leaf. -/
@@ -154,12 +161,12 @@ elab_rules : command
         -- closed leaf, domain size 1).
         -- A leaf the decide rungs cannot handle falls through them the way
         -- any undecidable goal does.
-        let allBounded := spine.binders.all (· matches .ranged ..)
-        let ranged := spine.binders.filterMap fun
-          | .ranged x lo hi => some (x, lo, hi)
-          | .unbounded _ | .opaque _ => none
+        let ranges? := spine.ranges?
+        let allBounded := ranges?.isSome
+        let ranged := ranges?.getD []
         -- How many assignments the enumeration would visit; an empty range
-        -- contributes 0, since there is nothing to evaluate.
+        -- contributes 0, since there is nothing to evaluate. Read only on a
+        -- bounded domain, so the unbounded reading of 1 is never consulted.
         let domainSize := ranged.foldl
           (fun acc (_, lo, hi) => acc * (hi - lo).toNat) 1
         -- Witness search never runs on an unbounded domain.
