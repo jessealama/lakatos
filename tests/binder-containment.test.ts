@@ -28,7 +28,9 @@ import { numberGuard } from "../engines/thales/frontend/src/readings.js";
  * Checking it needs no Lean: JavaScript's < and <= on `number` are the same
  * IEEE-754 binary64 comparisons as Lean's on `Float`, down to how they treat
  * the zeros. What the op strings MEAN on the Lean side is the one leg this
- * cannot see, and `Test/ThalesDsl/BoundRelationTest.lean` pins that.
+ * cannot see, and the number-binder case in `Test/ThalesEmit/RenderTest.lean`
+ * pins that: which relation each op string renders as, and which side of it
+ * the bound variable sits on.
  */
 
 /** Interval spellings, each named for the drift it encodes. */
