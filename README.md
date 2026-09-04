@@ -196,7 +196,7 @@ metadata, shared with both engines' own output:
 | ------------------ | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | PROVED             | `Theorem`            | Holds for all inputs. Any assumptions (opaque callees, assumed contracts) are listed with the verdict — the trust boundary is impossible to miss. |
 | REFUTED            | `CounterSatisfiable` | A concrete counterexample was found and is reported.                                                                                              |
-| TESTED, not proved | `Unknown`            | The refuter found nothing in its budget and the prover gave up; per-engine sub-statuses (`GaveUp`, `Timeout`) say why.                            |
+| TESTED, not proved | `Unknown`            | The refuter found nothing in its sampled runs and the prover gave up; per-engine sub-statuses (`GaveUp`, `Timeout`) say why.                      |
 
 Exit codes are deliberately boring: `0` — no property refuted; `1` — at
 least one property refuted (or a counterexample found by the prover);

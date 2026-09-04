@@ -290,7 +290,7 @@ codes.
 |---|---|---|
 | PROVED | `Theorem` | Established for all inputs (exhaustive check or proof). Assumptions (opaque islands, assumed callee contracts) must be listed with the verdict. |
 | REFUTED | `CounterSatisfiable` | A concrete counterexample exists (and is reported). |
-| TESTED, not proved | `Unknown` | No engine established the claim; sub-statuses per engine (e.g. refuter `GaveUp` after its budget with no counterexample, prover `GaveUp`). |
+| TESTED, not proved | `Unknown` | No engine established the claim; sub-statuses per engine (e.g. refuter `GaveUp` after its sampling runs with no counterexample, prover `GaveUp`). |
 | UNSUPPORTED | `Inappropriate` | The code the annotation depends on is outside the engine's mappable subset — the claim was never evaluated, which is a statement about the engine, not the property. The verdict carries a reason naming the offending construct. |
 | — | `Timeout` | An engine exhausted its budget. |
 | — | `InputError` / `SyntaxError` / `TypeError` | The annotation or the annotated code is malformed. |
