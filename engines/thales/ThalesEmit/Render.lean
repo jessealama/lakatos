@@ -529,6 +529,14 @@ def boolIsland (coerced : String → Bool) (expr : JsExpr) :
   if lifted then `(((do return $t) : JsM Bool) = pure true)
   else `((pure $t : JsM Bool) = pure true)
 
+/-- One bound hypothesis `a op b → body`, the operand order carrying
+which side the bound is: upper as `x op e`, lower as `e op x`. -/
+def boundHyp (a b : TSyntax `term) (op : BoundOp) (body : TSyntax `term) :
+    RenderM (TSyntax `term) :=
+  match op with
+  | .lt => `($a < $b → $body)
+  | .le => `($a ≤ $b → $body)
+
 /-- One class-valued level of a binder's spine: its constructor arguments,
 then the instance, then the hypothesis naming it as `construct`'s output —
 so `-0` normalization and every guard are part of the domain by
@@ -605,15 +613,9 @@ def obligationCommand (e : Emission) (o : Obligation) : RenderM (TSyntax `comman
         let xi ← scopedIdent name
         let mut body := acc
         if let some (op, lit) := upper then
-          let e ← numTerm lit
-          body ← match op with
-            | .lt => `($xi < $e → $body)
-            | .le => `($xi ≤ $e → $body)
+          body ← boundHyp xi (← numTerm lit) op body
         if let some (op, lit) := lower then
-          let e ← numTerm lit
-          body ← match op with
-            | .lt => `($e < $xi → $body)
-            | .le => `($e ≤ $xi → $body)
+          body ← boundHyp (← numTerm lit) xi op body
         `(∀ ($xi : JsNumber), $body)
       | .cls name className module ctorParams =>
         classBinderSpine (← scopedIdent name) name className module
