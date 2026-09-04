@@ -46,10 +46,8 @@ no bucket here.
 - `inappropriate/` — the annotation is outside the model: the function uses
   a construct the pipeline cannot map, an operator the model does not cover
   (`&`, `??`, ...), an operator the model refuses on the merits (`**`), or a
-  well-typed call shape the model does not follow (a widened union, an
-  omitted or explicitly-`undefined` argument for a constructor's defaulted
-  parameter, a default whose initializer is outside the slice)
-  (`Inappropriate`).
+  well-typed call shape the model does not follow (a widened union, a
+  default whose initializer is outside the slice) (`Inappropriate`).
 - `timeout/` — every annotation must report `Timeout` under the reduced
   heartbeat budget the harness sets via `LAKATOS_PROVE_HEARTBEATS`; the
   bucket runs as its own prove invocation so the rest of the corpus keeps

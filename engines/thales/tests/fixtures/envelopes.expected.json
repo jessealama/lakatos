@@ -733,20 +733,39 @@
       "reason": "'Tagged#v' could not be modeled: unmapped TypeScript construct 'HeritageClause' at 3:21"
     }
   ],
-  "engines/thales/tests/conformance/inappropriate/ctor-default-omitted.ts": [
+  "engines/thales/tests/conformance/theorem/ctor-default-omitted.ts": [
     {
       "function": "P#span",
       "property": "p",
-      "szs": "Inappropriate",
-      "reason": "'P' was constructed with 1 argument(s); parameter 'y' would take its default, which the model does not evaluate"
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_5623485941648601121",
+      "axioms": []
     }
   ],
-  "engines/thales/tests/conformance/inappropriate/ctor-default-undefined.ts": [
+  "engines/thales/tests/conformance/theorem/ctor-default-undefined.ts": [
     {
       "function": "g",
       "property": "p",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_9735310725740315479",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/class-binder-ctor-default.ts": [
+    {
+      "function": "sum",
+      "property": "p",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_1157210758544594098",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/inappropriate/ctor-default-this.ts": [
+    {
+      "function": "Q#z",
+      "property": "p",
       "szs": "Inappropriate",
-      "reason": "'g' could not be modeled: an explicit 'undefined' where a number is expected would take the parameter's default, which the model does not evaluate"
+      "reason": "'Q#z' could not be modeled: parameter 'y' has a default the model cannot evaluate: unmapped TypeScript construct 'PropertyAccessExpression' at 4:38"
     }
   ],
   "engines/thales/tests/conformance/theorem/method-default-omitted.ts": [
