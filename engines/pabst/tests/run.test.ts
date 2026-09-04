@@ -1,16 +1,16 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { runTests } from "../src/run.js";
+import { runTests, vitestEntry } from "../src/run.js";
 import { encodeIssue } from "../src/contract.js";
 import { FALSIFIED } from "./helpers/fixtures.js";
 
 const repoRoot = process.cwd();
 
-// The spawned vitest resolves its binary by walking up node_modules from cwd,
-// so these projects live inside the repo tree (gitignored under .lakatos/), not
-// os.tmpdir(). The spawned vitest also inherits the nearest config walking up
-// from cwd, so each fixture pins its own: `ok` an empty one (restoring
+// The fixture specs import vitest, resolved by walking up node_modules from
+// cwd, so these projects live inside the repo tree (gitignored under
+// .lakatos/), not os.tmpdir(). The spawned vitest also inherits the nearest
+// config walking up from cwd, so each fixture pins its own: `ok` an empty one (restoring
 // vitest's default include, which picks up *.spec.ts), `broken` the same
 // empty one, `crash` a throwing one. Fixture tests are *.spec.ts so the OUTER
 // suite's include (tests/**/*.test.ts, .lakatos/**/*.test.ts) never collects a
@@ -112,20 +112,36 @@ describe("runTests", () => {
     expect(result.stderr).toContain(RESULTS);
   });
 
+  it("launches lakatos's own vitest under this node, not npx", () => {
+    const launches: [string, string[]][] = [];
+    const capture = (cmd: string, args: string[]) => {
+      launches.push([cmd, args]);
+      return { status: 1, signal: null, stdout: "", stderr: "" };
+    };
+    inDir(okDir, () => runTests(".", RESULTS, capture));
+    expect(launches).toHaveLength(1);
+    const [cmd, args] = launches[0]!;
+    expect(cmd).toBe(process.execPath);
+    expect(args[0]).toBe(vitestEntry());
+    expect(fs.existsSync(vitestEntry())).toBe(true);
+    expect(args.slice(1, 3)).toEqual(["run", "."]);
+  });
+
   it("surfaces the spawn error when vitest cannot be launched", () => {
-    const prevPath = process.env.PATH;
-    const result = inDir(okDir, () => {
-      process.env.PATH = "";
-      try {
-        return runTests(".", RESULTS);
-      } finally {
-        process.env.PATH = prevPath;
-      }
+    const unlaunchable = () => ({
+      status: null,
+      signal: null,
+      stdout: "",
+      stderr: "",
+      error: Object.assign(new Error("spawnSync node ENOENT"), {
+        code: "ENOENT",
+      }),
     });
+    const result = inDir(okDir, () => runTests(".", RESULTS, unlaunchable));
     expect(result.kind).toBe("no-results");
     if (result.kind !== "no-results") return;
     expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain("npx");
+    expect(result.stderr).toContain("ENOENT");
   });
 
   it(
@@ -173,7 +189,7 @@ describe("runTests", () => {
       signal: "SIGTERM" as const,
       stdout: "",
       stderr: "",
-      error: Object.assign(new Error("spawnSync npx ETIMEDOUT"), {
+      error: Object.assign(new Error("spawnSync node ETIMEDOUT"), {
         code: "ETIMEDOUT",
       }),
     });
