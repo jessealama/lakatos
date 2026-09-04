@@ -200,10 +200,10 @@ function classifiedOf(decl: string, fn = "f"): string | undefined {
   return emitModule(src, "t.ts").classified[0]?.reason;
 }
 
-test("a free function's defaulted parameter still refuses", () => {
+test("a free function's defaulted parameter models", () => {
   expect(
     classifiedOf("export function f(x: number = 0): number { return x; }"),
-  ).toMatch(/unmapped TypeScript construct 'Parameter' at 2:\d+/);
+  ).toBeUndefined();
 });
 
 /** The payload of one obligation on a mappable identity function. */
@@ -5358,20 +5358,6 @@ describe("a method with a defaulted parameter", () => {
     ]);
   });
 
-  test("an explicit undefined for the defaulted argument is outside the model", () => {
-    const { classified } = emitModule(
-      src.replace("%CALL%", "new C(a).plus(undefined)"),
-      "t.ts",
-    );
-    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
-      [
-        "Inappropriate",
-        "an explicit 'undefined' where a number is expected would take the " +
-          "parameter's default, which the model does not evaluate",
-      ],
-    ]);
-  });
-
   test("an omitted defaulted argument in a body travels as the input's refusal", () => {
     const body = `export class C {
   readonly x: number;
@@ -5433,6 +5419,52 @@ export function f(a: number): number {
         "Inappropriate",
         "'D#plus' was called with 0 argument(s); parameter 'k' would " +
           "take its default, which the model does not evaluate",
+      ],
+    ]);
+  });
+});
+
+describe("a defaulted parameter's slot type", () => {
+  test("a defaulted number parameter is typed number-or-undefined on the wire", () => {
+    const src =
+      "/** @ensures{p} forall (a: int ∈ [0, 5)) { add(a, a) >= 0 } */\n" +
+      "export function add(x: number, y: number = 0): number {\n" +
+      "  return x + y;\n}\n";
+    const { classified, emission } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    const fn = emission.declarations[0];
+    assert(fn?.kind === "function");
+    expect(fn.params).toEqual([
+      { name: "x", type: "number" },
+      { name: "y", type: ["number", "undefined"] },
+    ]);
+  });
+
+  test("a defaulted keyword-union parameter adds undefined once, normalized", () => {
+    const src =
+      "/** @ensures{p} forall (a: int ∈ [0, 5)) { f(a, a) >= 0 } */\n" +
+      "export function f(x: number, y: undefined | number | null = 0): number {\n" +
+      "  return x;\n}\n";
+    const { classified, emission } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    const fn = emission.declarations[0];
+    assert(fn?.kind === "function");
+    expect(fn.params[1]).toEqual({
+      name: "y",
+      type: ["number", "undefined", "null"],
+    });
+  });
+
+  test("a defaulted instance parameter still refuses at the parameter", () => {
+    const src =
+      BOX +
+      "/** @ensures{p} forall (a: int ∈ [0, 5)) { g(a) >= 0 } */\n" +
+      "export function g(a: number, b: Box = new Box(1)): number {\n" +
+      "  return a;\n}\n";
+    expect(classifications(src).classified).toEqual([
+      [
+        "Inappropriate",
+        "'g' could not be modeled: unmapped TypeScript construct 'Parameter' at 12:30",
       ],
     ]);
   });

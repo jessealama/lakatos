@@ -263,10 +263,10 @@ export interface FnSig {
  * defaulted, the same fold `ctorRequired` uses. */
 function sigOf(params: WalkedParams): FnSig {
   return {
-    params: params.map((p) => p.ty),
+    params: params.map((p) => p.slot),
     required: params.filter((p) => !p.optional).length,
     minArgs:
-      params.map((p) => p.optional || p.defaulted).lastIndexOf(false) + 1,
+      params.map((p) => p.optional || p.init !== undefined).lastIndexOf(false) + 1,
     paramNames: params.map((p) => p.name),
   };
 }
@@ -2585,13 +2585,11 @@ function paramShapeFailure(
   return undefined;
 }
 
-/** A free function's parameter additionally refuses a default; only the
- * class walks model defaulted parameters so far. */
+/** A free function's parameter shape: the shared rule, optionals admitted. */
 function fnParamFailure(
   p: ts.ParameterDeclaration,
   sf: ts.SourceFile,
 ): FailedDecl | undefined {
-  if (p.initializer !== undefined) return constructAt(p, p.kind, sf);
   return paramShapeFailure(p, sf, true);
 }
 
@@ -2721,14 +2719,34 @@ function normalizedUnion(
   return constructAt(t, t.kind, sf);
 }
 
-/** A walked parameter list: names with their types, whether a call may
- * omit them, and whether they carry a default, in declaration order. */
-type WalkedParams = {
+/** A walked parameter: its declared type `ty` (what the body binds), the
+ * `slot` a call fills (the declared type widened by `undefined` when an
+ * initializer makes the argument optional), and the initializer itself. */
+type WalkedParam = {
   name: string;
   ty: ValueTy;
+  slot: ValueTy;
   optional: boolean;
-  defaulted: boolean;
-}[];
+  init?: ts.Expression;
+};
+type WalkedParams = WalkedParam[];
+
+/** The boundary type a defaulted parameter presents to callers. The
+ * tagged domain has no instance tag, so a class default keeps its refusal. */
+function boundaryTy(
+  ty: ValueTy,
+  p: ts.ParameterDeclaration,
+  sf: ts.SourceFile,
+): ValueTy | FailedDecl {
+  if (ty === "num") return { union: ["number", "undefined"] };
+  if ("union" in ty) {
+    const tags = UNION_TAGS.filter(
+      (t) => ty.union.includes(t) || t === "undefined",
+    );
+    return { union: [...tags] };
+  }
+  return constructAt(p, p.kind, sf);
+}
 
 /** Names and types for a parameter list, or the first failure — the
  * shape check ahead of the type, as the old order has it. */
@@ -2754,11 +2772,19 @@ function walkParams(
     seenOptional ||= optional;
     const ty = paramValueTy(p, sf, reg);
     if (typeof ty !== "string" && "reason" in ty) return ty;
+    const init = p.initializer;
+    // A slot admitting `undefined` is a union slot, so only a callable
+    // that takes unions widens; a constructor keeps its full arity, its
+    // initializer dead code.
+    const slot =
+      init === undefined || !reg.unions ? ty : boundaryTy(ty, p, sf);
+    if (typeof slot !== "string" && "reason" in slot) return slot;
     out.push({
       name: (p.name as ts.Identifier).text,
       ty,
+      slot,
       optional,
-      defaulted: p.initializer !== undefined,
+      ...(init !== undefined ? { init } : {}),
     });
   }
   return out;
@@ -3018,9 +3044,9 @@ function walkClass(
   const shapeCtorParams: CtorValueTy[] = [];
   for (const p of ctorParams) {
     /* v8 ignore next 2 -- unreachable: ctorReg refused the union first. */
-    if (typeof p.ty !== "string" && "union" in p.ty)
+    if (typeof p.slot !== "string" && "union" in p.slot)
       return constructAt(ctor, ctor.kind, sf);
-    shapeCtorParams.push(p.ty);
+    shapeCtorParams.push(p.slot);
   }
 
   const methodSigs = new Map<string, FnSig>();
@@ -3029,7 +3055,7 @@ function walkClass(
     getters: getterNames,
     ctorParams: shapeCtorParams,
     ctorParamNames: ctorParams.map((p) => p.name),
-    ctorRequired: ctorParams.map((p) => p.defaulted).lastIndexOf(false) + 1,
+    ctorRequired: ctorParams.map((p) => p.init !== undefined).lastIndexOf(false) + 1,
     methods: methodSigs,
   };
   const self = { ref: { module: qualifier, name: className }, shape };
@@ -3129,7 +3155,7 @@ function walkClass(
     try {
       methods.push({
         name: spelling,
-        params: params.map((p) => wireParam(p.name, p.ty)),
+        params: params.map((p) => wireParam(p.name, p.slot)),
         body: lowerTree(
           body,
           params.map((p) => [p.name, p.ty] as const),
@@ -3155,7 +3181,7 @@ function walkClass(
       source: cls.getText(sf),
       fields,
       ctor: {
-        params: ctorParams.map((p) => wireParam(p.name, p.ty)),
+        params: ctorParams.map((p) => wireParam(p.name, p.slot)),
         body: ctorBody,
       },
       getters,
@@ -3280,7 +3306,7 @@ function walkFunction(
         kind: "function",
         name: fn.name!.text,
         ...(module !== "" ? { module } : {}),
-        params: params.map((p) => wireParam(p.name, p.ty)),
+        params: params.map((p) => wireParam(p.name, p.slot)),
         source: fn.getText(sf),
         body,
       },
