@@ -381,8 +381,8 @@ export interface ClassShape {
 
 /** A binder's denoted domain: a finite half-open integer range, the whole
  * int line, the naturals, or a `number` binder — the whole double line,
- * narrowed by whichever bounds its interval carries. The same shapes the
- * old grammar's binder constructors carry. */
+ * narrowed by whichever bounds its interval carries. These are the shapes
+ * `ThalesEmit/Render.lean` renders as ∀ heads. */
 export type EmitBinder =
   | { name: string; kind: "range"; lo: string; hi: string }
   | { name: string; kind: "int" }
@@ -441,9 +441,9 @@ export interface Emission {
 }
 
 /** An annotation the frontend itself settles: outside the model
- * (`Inappropriate`) or failed by the engine's own gaps (`Error`), with a
- * reason byte-identical to the old pipeline's — which is what the parity
- * harness pins. */
+ * (`Inappropriate`) or failed by the engine's own gaps (`Error`), with the
+ * reason the CLI reports verbatim — `tests/fixtures/envelopes.expected.json`
+ * pins it. */
 export interface ClassifiedAnnotation {
   annotation: RawAnnotation;
   szs: "Inappropriate" | "Error" | "NotTried";
@@ -459,9 +459,9 @@ export interface PlainEmission {
   classified: ClassifiedAnnotation[];
 }
 
-/** Mirror of the old pipeline's `FailedDecl`: why a declaration is not in
- * the model, with a construct name exactly when the failure is a statement
- * about the input rather than about the engine. */
+/** Why a declaration is not in the model. A construct name is present
+ * exactly when the failure is a statement about the input rather than about
+ * the engine — which is what separates Inappropriate from Error. */
 interface FailedDecl {
   construct?: string;
   reason: string;
@@ -2047,10 +2047,9 @@ function signatureFailure(
   return { params };
 }
 
-/** Names a body binds itself, and whether each may be assigned — the old
- * transcriber's `Locals`, with the same discipline: a branch's arm gets
- * its own copy, and a redeclaration of a name from an enclosing scope is
- * refused rather than shadowed. */
+/** Names a body binds itself, and whether each may be assigned. A branch's
+ * arm gets its own copy, and a redeclaration of a name from an enclosing
+ * scope is refused rather than shadowed. */
 type Locals = Map<string, "const" | "mutable">;
 
 /** The types a local binding may carry: the numeric slice, or a keyword
@@ -2058,9 +2057,10 @@ type Locals = Map<string, "const" | "mutable">;
  * out: a class-valued local keeps its refusal. */
 type LocalTy = "num" | { union: UnionTag[] };
 
-/** The statement tree as the old transcriber would have rendered it: each
- * node is either a mapped statement (its expressions still tsc nodes) or
- * the opaque failure the transcriber would have emitted in its place. */
+/** The body as a tree of mapped statements, their expressions still tsc
+ * nodes, each unmappable statement replaced by the opaque failure that
+ * degrades the declaration. One node per source statement; `lowerTree`
+ * truncates a path at its first return. */
 type TStmt =
   | { t: "return"; expr: ts.Expression }
   | { t: "throw"; error: string }
@@ -3563,9 +3563,10 @@ function builtinCall(
 
 /** A binder's emitted domain: a finite half-open range, the whole int
  * line, the naturals, or a bounded `number` — reading the domain the binder
- * *denotes*, the same folding the old transcriber applies. `bare` covers
- * everything this slice cannot express; a safe-integer clamp reports its
- * offending endpoints instead, for the unsupported-range refusal. */
+ * *denotes*, so equivalent spellings of one interval fold to the same
+ * shape. `bare` covers everything this slice cannot express; a
+ * safe-integer clamp reports its offending endpoints instead, for the
+ * unsupported-range refusal. */
 function lowerBinder(b: Binder): EmitBinder | "bare" | { clamped: string[] } {
   if (b.domain === "number") {
     // No safe-integer clamp: a number binder denotes binary64 values
