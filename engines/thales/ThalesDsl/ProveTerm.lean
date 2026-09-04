@@ -53,6 +53,13 @@ structure PropSpine where
   leaf : TSyntax `term
   deriving Inhabited
 
+/-- The binders as ranges, when every one of them is; `none` is a domain
+neither enumerable nor searchable, so the decide tiers are skipped. -/
+def PropSpine.ranges? (s : PropSpine) : Option (List (String × Int × Int)) :=
+  s.binders.mapM fun
+    | .ranged x lo hi => some (x, lo, hi)
+    | .unbounded _ | .opaque _ => none
+
 /-- Whether a term is an emitted guard hypothesis: a boolean island's
 `= pure true` proposition. A nat binder's `0 ≤ n` occupies the same arrow
 position and is deliberately not one — it stays in the leaf. -/
@@ -60,26 +67,6 @@ partial def isGuardProp : TSyntax `term → Bool
   | `(($inner)) => isGuardProp inner
   | `($_ = pure true) => true
   | _ => false
-
-/-- Whether a term is a `number` binder's own bound hypothesis: a `<` or
-`≤` with the binder on one side. Only the Float heads consult this, so a
-nat binder's `0 ≤ n` is never mistaken for one; like its one caller
-`peelBounds`, it is structurally inert today. -/
-def isBoundHyp (x : Name) : TSyntax `term → Bool
-  | `($a < $b) | `($a ≤ $b) =>
-    (a.raw.isIdent && a.raw.getId.eraseMacroScopes == x) ||
-      (b.raw.isIdent && b.raw.getId.eraseMacroScopes == x)
-  | _ => false
-
-/-- Steps over the bound hypotheses a `number` binder head introduces, so
-the guards under them are still recovered. Structurally inert today: only
-an unbounded arm reaches it, and the guards and leaf it uncovers are read
-only by the witness search, which never runs on an unbounded domain. Kept
-because it becomes live the moment a number binder is searchable. -/
-partial def peelBounds (x : Name) (t : TSyntax `term) : TSyntax `term :=
-  match t with
-  | `($h → $rest) => if isBoundHyp x h then peelBounds x rest else t
-  | _ => t
 
 /-- Whether a hypothesis names `x` as some computation's successful
 result — the shape a class binder's domain is written as, since the
@@ -94,9 +81,10 @@ partial def isCtorImage (x : Name) : TSyntax `term → Bool
 outermost first, then the guard hypotheses under them, and the leaf under
 those. A plain Prop carries no structure, so the spine is recovered by
 matching the shapes `Render.lean` commits to — rung selection and witness
-search both read it. A payload with any other head is its own leaf; a nat
-binder's nonnegativity hypothesis stays in the leaf, since search never
-runs on an unbounded domain. -/
+search both read it. A payload with any other head is its own leaf; a
+binder's own bound hypotheses — a nat binder's nonnegativity, a `number`
+binder's endpoints — stay in the leaf, since search never runs on an
+unbounded domain. -/
 partial def propSpine (t : TSyntax `term) : PropSpine :=
   match t with
   | `(($inner)) => propSpine inner
@@ -108,12 +96,10 @@ partial def propSpine (t : TSyntax `term) : PropSpine :=
       { inner with
         binders := .ranged x.getId.eraseMacroScopes.toString l h :: inner.binders }
     | _, _ => ({ binders := [], guards := [], leaf := t } : PropSpine)
-  | `(∀ ($x:ident : Int), $body) =>
-    let inner := propSpine body
-    { inner with binders := .unbounded x.getId.eraseMacroScopes.toString :: inner.binders }
+  | `(∀ ($x:ident : Int), $body)
   | `(∀ ($x:ident : JsNumber), $body)
   | `(∀ ($x:ident : Float), $body) =>
-    let inner := propSpine (peelBounds x.getId.eraseMacroScopes body)
+    let inner := propSpine body
     { inner with binders := .unbounded x.getId.eraseMacroScopes.toString :: inner.binders }
   -- A constructor-image head: the instance and the hypothesis that names
   -- it as the constructor's output. Placed after the numeric heads, which
@@ -175,12 +161,12 @@ elab_rules : command
         -- closed leaf, domain size 1).
         -- A leaf the decide rungs cannot handle falls through them the way
         -- any undecidable goal does.
-        let allBounded := spine.binders.all (· matches .ranged ..)
-        let ranged := spine.binders.filterMap fun
-          | .ranged x lo hi => some (x, lo, hi)
-          | .unbounded _ | .opaque _ => none
+        let ranges? := spine.ranges?
+        let allBounded := ranges?.isSome
+        let ranged := ranges?.getD []
         -- How many assignments the enumeration would visit; an empty range
-        -- contributes 0, since there is nothing to evaluate.
+        -- contributes 0, since there is nothing to evaluate. Read only on a
+        -- bounded domain, so the unbounded reading of 1 is never consulted.
         let domainSize := ranged.foldl
           (fun acc (_, lo, hi) => acc * (hi - lo).toNat) 1
         -- Witness search never runs on an unbounded domain.
