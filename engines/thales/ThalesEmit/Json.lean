@@ -164,6 +164,13 @@ def CtorParamIR.defaulted : CtorParamIR → Bool
   | .number _ d => d
   | .cls _ _ _ _ d => d
 
+/-- The comparison a `number` binder's bound carries: the schema's
+`<`/`<=` enum, so an op outside it is unrepresentable past decoding. -/
+inductive BoundOp where
+  | lt
+  | le
+deriving Repr, DecidableEq, Inhabited
+
 /-- A binder's denoted domain: a finite half-open `[lo, hi)` integer
 range, the whole int line, the naturals, or the doubles a `number`
 binder's bounds admit — each bound an op × endpoint-literal pair. -/
@@ -171,7 +178,7 @@ inductive BinderIR where
   | range (name : String) (lo hi : Int)
   | int (name : String)
   | nat (name : String)
-  | number (name : String) (lower upper : Option (String × String))
+  | number (name : String) (lower upper : Option (BoundOp × String))
   /-- A class-valued binder: the instance ranges over the image of the
   named class's constructor, applied to one argument per `ctorParams`. -/
   | cls (name className : String) (module : Option String)
@@ -475,10 +482,15 @@ def decodeDecl (j : Json) : Except String Decl := do
 /-- One side of a `number` binder's interval, absent when unbounded: an
 absent side is a missing field, never a null. -/
 def decodeBound (j : Json) (field : String) :
-    Except String (Option (String × String)) := do
+    Except String (Option (BoundOp × String)) := do
   match j.getObjVal? field with
   | .error _ => pure none
-  | .ok v => pure (some (← getStr v "op", ← getStr v "lit"))
+  | .ok v =>
+    let op ← match ← getStr v "op" with
+      | "<" => pure .lt
+      | "<=" => pure .le
+      | s => throw s!"field '{field}' has op '{s}', not '<' or '<='"
+    pure (some (op, ← getStr v "lit"))
 
 partial def decodeCtorParam (j : Json) : Except String CtorParamIR := do
   let name ← getStr j "name"

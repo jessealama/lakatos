@@ -277,7 +277,19 @@ def numParamJson (name : String) : Json :=
     [("name", "a"), ("kind", "number"),
      ("lower", Json.mkObj [("op", "<"), ("lit", "0")]),
      ("upper", Json.mkObj [("op", "<="), ("lit", "1")])]))
-  matches .ok (.number "a" (some ("<", "0")) (some ("<=", "1")))
+  matches .ok (.number "a" (some (.lt, "0")) (some (.le, "1")))
+-- A bound's op is decoded into the schema enum, so an op outside it fails
+-- at decode time naming the side, never in the renderer.
+#guard
+  (decodeBinder (Json.mkObj
+    [("name", "a"), ("kind", "number"),
+     ("lower", Json.mkObj [("op", ">"), ("lit", "0")])]))
+  matches .error "field 'lower' has op '>', not '<' or '<='"
+#guard
+  (decodeBinder (Json.mkObj
+    [("name", "a"), ("kind", "number"),
+     ("upper", Json.mkObj [("op", ">="), ("lit", "1")])]))
+  matches .error "field 'upper' has op '>=', not '<' or '<='"
 -- An absent side is a missing field, so a rangeless binder decodes bare.
 #guard
   (decodeBinder (Json.mkObj [("name", "a"), ("kind", "number")]))
@@ -645,8 +657,8 @@ end
     obligations := #[{ function := "applyConversionFactors", property := "p",
                        formula := "f",
                        payload := .structured
-                         #[.number "x" (some ("<", "0")) (some ("<", "Infinity")),
-                           .number "y" (some ("<=", "-Infinity")) none]
+                         #[.number "x" (some (.lt, "0")) (some (.lt, "Infinity")),
+                           .number "y" (some (.le, "-Infinity")) none]
                          #[] (.istrue (.binop "<=" (call "x") (call "y"))) }] }
   let rendered ← renderEmission e
   unless (rendered.splitOn "∀ (x : JsNumber),").length == 2 do

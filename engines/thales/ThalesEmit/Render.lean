@@ -607,15 +607,13 @@ def obligationCommand (e : Emission) (o : Obligation) : RenderM (TSyntax `comman
         if let some (op, lit) := upper then
           let e ← numTerm lit
           body ← match op with
-            | "<" => `($xi < $e → $body)
-            | "<=" => `($xi ≤ $e → $body)
-            | _ => throw s!"unsupported upper bound '{op}'"
+            | .lt => `($xi < $e → $body)
+            | .le => `($xi ≤ $e → $body)
         if let some (op, lit) := lower then
           let e ← numTerm lit
           body ← match op with
-            | "<" => `($e < $xi → $body)
-            | "<=" => `($e ≤ $xi → $body)
-            | _ => throw s!"unsupported lower bound '{op}'"
+            | .lt => `($e < $xi → $body)
+            | .le => `($e ≤ $xi → $body)
         `(∀ ($xi : JsNumber), $body)
       | .cls name className module ctorParams =>
         classBinderSpine (← scopedIdent name) name className module
