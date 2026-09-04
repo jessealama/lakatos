@@ -22,7 +22,7 @@ From `engines/thales/`:
 ```bash
 lake build                       # build the ThalesDsl library
 lake build ThalesDslTest         # Lean tests under Test/
-lake env lean Test/ThalesDsl/NormTest.lean    # one Lean test file in isolation
+lake env lean Test/Js/NormTest.lean           # one Lean test file in isolation
 lake build thales-emit           # the emission executable (not a default target)
 npm run check:verdict-channel    # verdict-line contract over tests/fixtures/*.lean
 npm run check:envelopes          # emission envelopes against stored expectations
@@ -88,7 +88,7 @@ A verdict must also explain itself: an empty `reason` is a contract violation, c
 
 ## Tests and checks
 
-- `Test/ThalesDsl/` — Lean unit tests (`lake build ThalesDslTest`; each file also runs in isolation via `lake env lean`).
+- `Test/Js/`, `Test/ThalesDsl/`, `Test/ThalesEmit/` — Lean unit tests, one directory per library (`lake build ThalesDslTest` builds them all; each file also runs in isolation via `lake env lean`). Location follows ownership: a file under `Test/Js/` imports only `Js.*`, so a `ThalesDsl` import there is a boundary violation by inspection.
 - `frontend/tests/` — vitest unit tests for emission, emission-artifacts, module-graph, and run (run from the repo root; `run.test.ts` uses the injectable spawn, no real Lean needed).
 - `scripts/check-verdict-channel.js` — the verdict-line contract over the hand-written fixtures in `tests/fixtures/*.lean`.
 - `scripts/check-envelopes.js` — end-to-end over the fixture manifest: emits, renders, runs, and compares the projected envelope entries against the stored expectations.

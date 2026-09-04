@@ -1,7 +1,6 @@
 import Js
-import ThalesDsl.Prove
 
-open ThalesDsl Js Js.Number
+open Js Js.Number
 
 /-! `≡` is SameValue, and an emitted equation is propositional equality on
 `JsM Float`. That correspondence is an assumption the equation semantics
