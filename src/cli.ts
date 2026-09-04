@@ -27,12 +27,14 @@ import {
   unsupportedRangeReason,
 } from "../lemma/src/index.js";
 import {
+  identityOf,
   interruptedResults,
   joinProveVerdicts,
   joinRefuteVerdicts,
   UNSUPPORTED_RANGE_KIND,
   type AnnotationResult,
   type Envelope,
+  type PlannedProperty,
   type PropertyIdentity,
 } from "./envelope.js";
 import { withInterruptGuard, type InterruptSignal } from "./interrupt.js";
@@ -160,7 +162,7 @@ function noteUnsupportedRanges(untried: AnnotationResult[]): void {
 /** What one command's codegen produced, normalized across engines. */
 interface Plan {
   /** Annotations the engine will attempt; the verdict join accounts for each. */
-  identities: PropertyIdentity[];
+  identities: PlannedProperty[];
   /** Annotations already resolved at codegen time, in envelope form. */
   untried: AnnotationResult[];
   /** Extraction-level input errors, already echoed to stderr. */
@@ -302,7 +304,10 @@ function runCommand(spine: Spine, patterns: string[]): number {
       return stoppedExit(
         meta,
         plan,
-        plan.identities.map((i) => ({ ...i, szs: "NotTried" as const })),
+        plan.identities.map((i) => ({
+          ...identityOf(i),
+          szs: "NotTried" as const,
+        })),
       );
     }
 

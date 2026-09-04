@@ -8,9 +8,12 @@ import type {
 import {
   buildEnvelope,
   collectIssues,
+  identityOf,
+  interruptedResults,
   joinProveVerdicts,
   joinRefuteVerdicts,
   type AnnotationResult,
+  type PlannedProperty,
   type PropertyIdentity,
   type ProveVerdict,
 } from "../src/envelope.js";
@@ -185,6 +188,78 @@ describe("joinRefuteVerdicts", () => {
         "a failed test carries no readable issue payload: Error: boom",
       ],
     });
+  });
+
+  it("a planned enumeration with no issue is a Theorem with its case count", () => {
+    const planned: PlannedProperty[] = [{ ...IDS[0]!, cases: 10 }, IDS[1]!];
+    const v = json([passed, passed], 2, 0);
+    expect(joinRefuteVerdicts(planned, v)).toEqual({
+      kind: "joined",
+      annotations: [
+        { ...IDS[0], szs: "Theorem", kind: "enumerated", cases: 10 },
+        { ...IDS[1], szs: "GaveUp" },
+      ],
+    });
+  });
+
+  it("an enumeration that found a counterexample carries no case count", () => {
+    const planned: PlannedProperty[] = [{ ...IDS[0]!, cases: 10 }];
+    const v = json([failed(encodeIssue(ISSUE))], 0, 1);
+    expect(joinRefuteVerdicts(planned, v)).toEqual({
+      kind: "joined",
+      annotations: [
+        {
+          ...IDS[0],
+          szs: "CounterSatisfiable",
+          kind: "falsified",
+          counterexample: { n: 0 },
+        },
+      ],
+    });
+  });
+
+  it("a budget issue is a Timeout carrying the reason", () => {
+    const planned: PlannedProperty[] = [{ ...IDS[0]!, cases: 1000 }];
+    const v = json(
+      [
+        failed(
+          encodeIssue({
+            ...IDS[0]!,
+            kind: "budget",
+            reason:
+              "evaluated 412 of 1000 cases within the time budget, no counterexample",
+          }),
+        ),
+      ],
+      0,
+      1,
+    );
+    expect(joinRefuteVerdicts(planned, v)).toEqual({
+      kind: "joined",
+      annotations: [
+        {
+          ...IDS[0],
+          szs: "Timeout",
+          kind: "budget",
+          reason:
+            "evaluated 412 of 1000 cases within the time budget, no counterexample",
+        },
+      ],
+    });
+  });
+});
+
+describe("identityOf", () => {
+  it("drops planning detail so no envelope entry inherits it", () => {
+    expect(identityOf({ ...IDS[0]!, cases: 10 } as PlannedProperty)).toEqual(
+      IDS[0],
+    );
+  });
+
+  it("interrupted results never carry a case count", () => {
+    expect(interruptedResults([{ ...IDS[0]!, cases: 10 }], "SIGINT")).toEqual([
+      { ...IDS[0], szs: "User", reason: "the run was interrupted (SIGINT)" },
+    ]);
   });
 });
 

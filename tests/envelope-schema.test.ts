@@ -550,4 +550,144 @@ describe("envelope schema", () => {
       }),
     ).toThrow();
   });
+
+  it("accepts an enumerated Theorem with its case count", () => {
+    const envelope: Envelope = {
+      ...META,
+      seed: 1,
+      generated: 1,
+      passed: 1,
+      failed: 0,
+      annotations: [
+        {
+          file: "small.ts",
+          function: "square",
+          property: "pos",
+          szs: "Theorem",
+          kind: "enumerated",
+          cases: 10,
+        },
+      ],
+    };
+    expect(() => expectValidEnvelope(envelope)).not.toThrow();
+  });
+
+  it("rejects an enumerated Theorem that also claims axioms", () => {
+    expect(() =>
+      expectValidEnvelope({
+        ...META,
+        annotations: [
+          {
+            file: "f.ts",
+            function: "f",
+            property: "p",
+            szs: "Theorem",
+            kind: "enumerated",
+            cases: 10,
+            axioms: [],
+          },
+        ],
+      } as unknown as Envelope),
+    ).toThrow();
+  });
+
+  it("rejects an enumerated Theorem without a case count, or with none", () => {
+    expect(() =>
+      expectValidEnvelope({
+        ...META,
+        annotations: [
+          {
+            file: "f.ts",
+            function: "f",
+            property: "p",
+            szs: "Theorem",
+            kind: "enumerated",
+          },
+        ],
+      } as unknown as Envelope),
+    ).toThrow();
+    expect(() =>
+      expectValidEnvelope({
+        ...META,
+        annotations: [
+          {
+            file: "f.ts",
+            function: "f",
+            property: "p",
+            szs: "Theorem",
+            kind: "enumerated",
+            cases: 0,
+          },
+        ],
+      } as unknown as Envelope),
+    ).toThrow();
+  });
+
+  it("rejects the enumerated kind on a GaveUp", () => {
+    expect(() =>
+      expectValidEnvelope({
+        ...META,
+        annotations: [
+          {
+            file: "f.ts",
+            function: "f",
+            property: "p",
+            szs: "GaveUp",
+            kind: "enumerated",
+            cases: 3,
+          },
+        ],
+      } as unknown as Envelope),
+    ).toThrow();
+  });
+
+  it("accepts a refuter Timeout with the budget kind and reason", () => {
+    const envelope: Envelope = {
+      ...META,
+      annotations: [
+        {
+          file: "f.ts",
+          function: "f",
+          property: "p",
+          szs: "Timeout",
+          kind: "budget",
+          reason:
+            "evaluated 412 of 1000 cases within the time budget, no counterexample",
+        },
+      ],
+    };
+    expect(() => expectValidEnvelope(envelope)).not.toThrow();
+  });
+
+  it("rejects a budget Timeout without a reason, and the budget kind on a GaveUp", () => {
+    expect(() =>
+      expectValidEnvelope({
+        ...META,
+        annotations: [
+          {
+            file: "f.ts",
+            function: "f",
+            property: "p",
+            szs: "Timeout",
+            kind: "budget",
+          },
+        ],
+      } as unknown as Envelope),
+    ).toThrow();
+    expect(() =>
+      expectValidEnvelope({
+        ...META,
+        annotations: [
+          {
+            file: "f.ts",
+            function: "f",
+            property: "p",
+            szs: "GaveUp",
+            kind: "budget",
+            reason: "r",
+          },
+        ],
+      } as unknown as Envelope),
+    ).toThrow();
+  });
 });

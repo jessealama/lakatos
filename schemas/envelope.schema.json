@@ -74,7 +74,7 @@
         },
         {
           "title": "proven",
-          "description": "The property is a proven theorem. axioms lists the non-standard axioms the proof depends on: empty for a kernel-checked proof, and e.g. Lean.ofReduceBool for one admitted from compiled evaluation.",
+          "description": "The prover established the property. axioms lists the non-standard axioms the proof depends on: empty for a kernel-checked proof, and e.g. Lean.ofReduceBool for one admitted from compiled evaluation.",
           "additionalProperties": false,
           "required": ["file", "function", "property", "szs", "axioms"],
           "properties": {
@@ -86,6 +86,34 @@
               "type": "array",
               "items": { "type": "string", "minLength": 1 }
             }
+          }
+        },
+        {
+          "title": "enumerated",
+          "description": "The refuter evaluated every tuple of the annotation's finite domain and none failed; cases is the tuple count. The claim is about the observed executions under the runtime that ran them, so it carries no axioms.",
+          "additionalProperties": false,
+          "required": ["file", "function", "property", "szs", "kind", "cases"],
+          "properties": {
+            "file": { "type": "string" },
+            "function": { "$ref": "#/definitions/functionName" },
+            "property": { "type": "string", "minLength": 1 },
+            "szs": { "const": "Theorem" },
+            "kind": { "const": "enumerated" },
+            "cases": { "type": "integer", "minimum": 1 }
+          }
+        },
+        {
+          "title": "budget",
+          "description": "The refuter's enumeration ran out of wall clock before walking the whole domain: neither established nor refuted. reason says how far it got.",
+          "additionalProperties": false,
+          "required": ["file", "function", "property", "szs", "kind", "reason"],
+          "properties": {
+            "file": { "type": "string" },
+            "function": { "$ref": "#/definitions/functionName" },
+            "property": { "type": "string", "minLength": 1 },
+            "szs": { "const": "Timeout" },
+            "kind": { "const": "budget" },
+            "reason": { "type": "string", "minLength": 1 }
           }
         },
         {
