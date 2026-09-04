@@ -93,6 +93,12 @@ describe("loopHeader", () => {
       }),
     ).toThrow(/not enumerable/);
   });
+
+  it("refuses int endpoints a number literal could not denote", () => {
+    expect(() =>
+      loopHeader(int("9007199254740993", "9007199254740999")),
+    ).toThrow(/outside the safe integer range/);
+  });
 });
 
 describe("the budget constants", () => {

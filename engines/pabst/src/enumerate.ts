@@ -32,8 +32,16 @@ export function loopHeader(binder: Binder): string {
     if (domain === "boolean") return `for (const ${v} of [false, true]) {`;
     if (domain === "int" || domain === "nat") {
       const { lo, hi } = intInterval(domain, range ?? {});
-      if (lo !== undefined && hi !== undefined)
+      if (lo !== undefined && hi !== undefined) {
+        // The loop counter is a number, so the decimal endpoints it is
+        // written with only denote themselves inside the safe range.
+        const safe = BigInt(Number.MAX_SAFE_INTEGER);
+        if (lo < -safe || hi > safe)
+          throw new Error(
+            `binder '${v}' has endpoints outside the safe integer range`,
+          );
         return `for (let ${v} = ${lo}; ${v} <= ${hi}; ${v}++) {`;
+      }
     }
     if (domain === "bigint") {
       const { lo, hi } = bigintBounds(range ?? {});
