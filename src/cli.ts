@@ -30,6 +30,7 @@ import {
   interruptedResults,
   joinProveVerdicts,
   joinRefuteVerdicts,
+  UNSUPPORTED_RANGE_KIND,
   type AnnotationResult,
   type Envelope,
   type PropertyIdentity,
@@ -149,7 +150,7 @@ function stoppedExit(
 /** Every command refuses a domain it cannot represent as written, engine
  * or stub alike; the count on stderr is the one place that says so. */
 function noteUnsupportedRanges(untried: AnnotationResult[]): void {
-  const n = untried.filter((u) => u.kind === "unsupported-range").length;
+  const n = untried.filter((u) => u.kind === UNSUPPORTED_RANGE_KIND).length;
   if (n > 0)
     console.error(
       `lakatos: ${n} annotation${n === 1 ? "" : "s"} not tried (unsupported range)`,
@@ -477,7 +478,7 @@ function enumerate(files: string[]): {
           untried.push({
             ...identity,
             szs: "NotTried",
-            kind: "unsupported-range",
+            kind: UNSUPPORTED_RANGE_KIND,
             reason: unsupportedRangeReason(clamped),
           });
           continue;
@@ -488,7 +489,7 @@ function enumerate(files: string[]): {
           untried.push({
             ...identity,
             szs: "NotTried",
-            kind: "unsupported-range",
+            kind: UNSUPPORTED_RANGE_KIND,
             reason: unsupportedRangeReason(e.endpoints),
           });
           continue;
@@ -532,7 +533,7 @@ function refuteSpine(seed: number): Spine {
             function: u.function,
             property: u.property,
             szs: "NotTried" as const,
-            kind: "unsupported-range" as const,
+            kind: UNSUPPORTED_RANGE_KIND,
             reason: u.reason,
           })),
         ),
