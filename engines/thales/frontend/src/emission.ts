@@ -2021,8 +2021,8 @@ function typedOrFailure(
   }
 }
 
-/** The signature check `transcribeFunction` applies: the walked
- * parameters, or the failure that degrades the function. */
+/** A function declaration's signature check: the walked parameters, or the
+ * failure that degrades the function. */
 function signatureFailure(
   fn: ts.FunctionDeclaration,
   sf: ts.SourceFile,
@@ -2081,8 +2081,8 @@ type TStmt =
     }
   | { t: "opaque"; failure: FailedDecl };
 
-/** The error kind a `throw` carries — the constructor's name, exactly as
- * the old transcriber reads it; the message is discarded. */
+/** The error kind a `throw` carries: the constructor's name. The message is
+ * discarded — the model distinguishes throws by kind alone. */
 function errorKind(e: ts.Expression): string | undefined {
   const inner = unwrapParens(e);
   if (!ts.isNewExpression(inner)) return undefined;
@@ -2112,8 +2112,8 @@ function localValueTy(
  * outside the slice — `var`, `using`, destructuring, an uninitialized
  * `let`, a type annotation that is neither `number` nor a keyword union,
  * or a redeclaration of a name already bound here. Locals set for
- * earlier declarators persist even when a later one fails, exactly as
- * the old transcriber leaves them. */
+ * earlier declarators persist even when a later one fails, so the scans
+ * that follow still see them. */
 function declStmts(
   s: ts.VariableStatement,
   locals: Locals,
@@ -2168,8 +2168,8 @@ function thisFieldAssignment(
   return { field: target.name.text, expr: e.right };
 }
 
-/** One statement's `TStmt`s, mirroring the old transcriber's fallthrough:
- * whatever it cannot say becomes the opaque node it would have emitted. */
+/** One statement's `TStmt`s. Whatever the slice cannot say falls through
+ * to an opaque node carrying the construct that stopped it. */
 function structureStmt(
   s: ts.Statement,
   sf: ts.SourceFile,
@@ -2229,9 +2229,9 @@ function structureStmt(
 }
 
 /** The mapped expressions of a statement tree in tree order — the order
- * the old pipeline's pre-scans see them in the constructor text. An
- * opaque statement contributes nothing: the transcriber replaced its whole
- * subtree. The scan goes into branches, dead code included. */
+ * the pre-scans see them in the source text. An opaque statement
+ * contributes nothing: its whole subtree was replaced. The scan goes into
+ * branches, dead code included. */
 function treeExprs(
   stmts: readonly TStmt[],
   into: ts.Expression[] = [],
@@ -2264,7 +2264,7 @@ function treeExprs(
 
 /** The first opaque node in the statement tree, in tree order: an opaque
  * statement, an opaque condition, or an unmapped construct inside a mapped
- * expression — whichever the old pipeline's scan reaches first. Each decl
+ * expression — whichever comes first in tree order. Each decl
  * binds the rest of its list — an arm its own copy — mirroring the
  * lowering's scoping, so the scan types an identifier (a typeof test over
  * a union local, say) off the same binding the walk will. */
@@ -2334,17 +2334,15 @@ function stmtsLeave(stmts: readonly TStmt[]): boolean {
 }
 
 /** The rest of the body, validated where control falls off a statement
- * list — the mirror of the old lowering's `Cont`, kept only for its two
- * observable effects: the order errors are discovered in, and the tail
- * statements it yields exactly once. */
+ * list. It exists for two observable effects: the order errors are
+ * discovered in, and the tail statements it yields exactly once. */
 type Cont = () => void;
 
 /** Lowers a statement tree into the emitted statement list, walking every
- * expression in exactly the order the old `lowerStmts` elaborates them, so
- * the first failure — and its message — is the one the old pipeline
- * reports. A return or throw ends its path (what follows never reaches
- * the artifact); a branch's tail is validated once, in the old lowering's
- * join order, and stays after the branch — do-notation needs no join. */
+ * expression in tree order so the first failure — and its message — is
+ * fixed by the source. A return or throw ends its path (what follows never
+ * reaches the artifact); a branch's tail is validated once and stays after
+ * the branch — do-notation needs no join. */
 function lowerTree(
   stmts: readonly TStmt[],
   vars: readonly (readonly [string, ValueTy])[],
@@ -2406,7 +2404,8 @@ function lowerTree(
     }
     /* v8 ignore start -- an opaque statement or condition is unreachable
        here: the construct scan already degraded the declaration. The throw
-       mirrors the old elaborator's, kept for the same defense. */
+       is a defense, so a scan regression becomes a contained failure
+       rather than a bad artifact. */
     case "opaque":
       throw new ModelError(s.failure.reason);
     case "if": {
@@ -2419,15 +2418,16 @@ function lowerTree(
       let tail: EmitStmt[] = [];
       let tailBuilt = false;
       const after: Cont = () => {
-        /* v8 ignore next -- each continuation runs at most once by
-           construction; the guard is the old lowering's invariant. */
+        /* v8 ignore next -- at most one arm reaches this continuation, so
+           the flag never fires; it holds the yields-once invariant even
+           if that changes. */
         if (tailBuilt) return;
         tailBuilt = true;
         tail = lowerTree(rest, vars, k, scope, sf);
       };
-      /* v8 ignore start -- the mirror of the old lowering's ruled-out
-         continuation: an arm the leave-analysis proved leaving never
-         invokes it, so it exists only to fail loudly on a bug. */
+      /* v8 ignore start -- the continuation an arm that leaves can never
+         invoke: `stmtsLeave` already proved it returns or throws, so this
+         exists only to fail loudly if that analysis is wrong. */
       const ruledOut: Cont = () => {
         throw new ModelError("the lowering reached an arm it had ruled out");
       };
@@ -2445,8 +2445,8 @@ function lowerTree(
       } else if (elseLeaves) {
         thenK = after;
       } else {
-        // Both arms fall through: the old lowering binds the tail as the
-        // join before either arm, so it is validated first here too.
+        // Both arms fall through, so the tail is the join both reach: it
+        // is validated before either arm, and only once.
         after();
         thenK = () => {};
         elseK = () => {};
