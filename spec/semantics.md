@@ -15,8 +15,9 @@ Every construct is specified in three parts:
   over the value space of its domains. One meaning, stated once. This
   section never mentions any engine.
 - **Engine obligations** — what each kind of engine does with the claim: a
-  *refuter* approximates truth by sampling (it can establish falsity, never
-  truth); a *prover* establishes truth by translation into a proof
+  *refuter* approximates truth by sampling, or establishes it outright when
+  it can evaluate every tuple of a finite domain, and refutes with a
+  witness; a *prover* establishes truth by translation into a proof
   assistant (it can establish truth, and reports counterexamples as
   falsity). If this document ever specifies the behavior of a particular
   tool (fast-check, Lean), that is a bug in this document.
@@ -38,12 +39,13 @@ Every construct is specified in three parts:
   scope over the formula body.
 - **Truth conditions**: the formula holds for every assignment of values to
   the bound variables drawn from their (guarded) domains.
-- **Engine obligations**: the refuter samples assignments and evaluates;
-  the prover quantifies universally over the (guarded) domain's
-  translation. The prover establishes a property only where its methods
-  genuinely reach — exhaustive evaluation over a domain it can enumerate,
-  or symbolic proof over one it cannot — and a claim it cannot settle is
-  reported unproven, never assumed.
+- **Engine obligations**: the refuter samples assignments, or walks every
+  one of them when the domain is small enough, and evaluates; the prover
+  quantifies universally over the (guarded) domain's translation. The
+  prover establishes a property only where its methods genuinely reach —
+  exhaustive evaluation over a domain it can enumerate, or symbolic proof
+  over one it cannot — and a claim it cannot settle is reported unproven,
+  never assumed.
 
 ### Attachment points
 
