@@ -62,10 +62,10 @@ def scopedIdent (name : String) : RenderM Ident := do
     return mkIdent (Name.mkSimple (name ++ "'"))
   return mkIdent (Name.mkSimple name)
 
-/-- A model reference: emitted defs live under the old pipeline's
-`TsModel` namespace, so they collide with no root-level name and no
-binder can capture them. A dependency's models sit one component deeper,
-under their module's entry-relative path. -/
+/-- A model reference: emitted defs live under the `TsModel` namespace, so
+they collide with no root-level name and no binder can capture them. A
+dependency's models sit one component deeper, under their module's
+entry-relative path. -/
 def modelIdent (module : Option String) (name : String) : RenderM Ident := do
   let _ ← identTerm name
   match module with
@@ -109,7 +109,7 @@ def ctorLocal (field : String) : RenderM Ident := do
 
 /-- A value-level rendering: a Float- or Bool-valued term that may embed
 `(← call)` lifts, and whether any lift occurred. Lifts appear left to
-right in JS evaluation order, which is the old model's bind order. -/
+right, in JS evaluation order. -/
 structure Rendered where
   term : TSyntax `term
   lifted : Bool
@@ -124,8 +124,7 @@ def typeofResultTerm (r : String) : RenderM (TSyntax `term) := do
 mutual
 
 /-- `coerced` names the Int-valued binder variables: a use inside an
-obligation body crosses to the Float world as `Float.ofInt x`, the same
-boundary the old pipeline's binders cross. -/
+obligation body crosses to the Float world as `Float.ofInt x`. -/
 partial def valueTerm (coerced : String → Bool) : JsExpr → RenderM Rendered
   | .num lit => return ⟨← numTerm lit, false⟩
   | .id name => do
@@ -346,7 +345,8 @@ partial def stmtDoElem (straight : Option (List String)) :
     JsStmt → RenderM (TSyntax `doElem)
   | .ret e => do `(doElem| return $(← bodyTerm e))
   | .throwErr kind =>
-    -- The error carries its constructor name alone, like the old model.
+    -- A thrown error's identity is its constructor name; the message the
+    -- source passes has no place in the model.
     `(doElem| throw (JsError.error $(Syntax.mkStrLit kind)))
   | .constDecl x ty e => do
     -- Locals are ascribed: a bare literal initializer would otherwise
@@ -449,8 +449,8 @@ def fnCommand (f : EmitFn) : RenderM (TSyntax `command) := do
   let rebound ← reboundParams f.params f.body
   let body ← f.body.mapM (stmtDoElem none)
   let elems := rebound ++ body
-  -- Dual-tagged like the old models: the js_norm closers and the grind
-  -- rung both unfold a model by its equations.
+  -- Dual-tagged: the js_norm closers and the grind rung both unfold a
+  -- model by its equations.
   `(@[js_norm, grind] def $name $binders* : JsM JsNumber := do
       $[$elems:doElem]*)
 
@@ -521,8 +521,8 @@ def getterCommand (c : EmitClass) (g : EmitGetter) : RenderM (TSyntax `command) 
   methodCommand c { name := g.name, params := #[], body := g.body }
 
 /-- A boolean-valued expression as the proposition that it evaluates to
-`pure true` — the shape the old pipeline elaborates for both a boolean
-island conclusion and a guard hypothesis. -/
+`pure true` — one shape for both a boolean island conclusion and a guard
+hypothesis. -/
 def boolIsland (coerced : String → Bool) (expr : JsExpr) :
     RenderM (TSyntax `term) := do
   let ⟨t, lifted⟩ ← valueTerm coerced expr
@@ -569,7 +569,7 @@ def obligationCommand (e : Emission) (o : Obligation) : RenderM (TSyntax `comman
   | .bare => `(#thales_prove $file $fn $prop)
   | .structured binders guards conclusion =>
     -- Only the Int-enumerated binders coerce; a `number` binder is already
-    -- a double, the way the old pipeline's Float ∀ is.
+    -- a double.
     let bound := (binders.filter (·.isIntValued)).map (·.name)
     let coerced := fun n => bound.contains n
     let leaf ← match conclusion with
@@ -599,7 +599,7 @@ def obligationCommand (e : Emission) (o : Obligation) : RenderM (TSyntax `comman
         `(∀ ($xi : Int), 0 ≤ $xi → $acc)
       | .number name lower upper =>
         -- Never enumerated: the binder is its type plus whichever bounds it
-        -- carries as hypotheses, lower outermost — the old pipeline's shape.
+        -- carries as hypotheses, lower outermost.
         -- One ungrouped ∀ head per binder, never `∀ (x y : JsNumber)`: that
         -- is the only spelling `ProveTerm.propSpine` recovers.
         let xi ← scopedIdent name
@@ -678,7 +678,7 @@ quotations build. -/
 def renderEmission (e : Emission) : CoreM String := do
   let mut blocks : Array String := #[header e]
   -- A dependency's declarations are contiguous and introduced by their
-  -- module, the way the old pipeline writes it; the entry's carry none.
+  -- module comment; the entry's carry none.
   let mut fromModule : Option String := none
   for d in e.declarations do
     let module := match d with
