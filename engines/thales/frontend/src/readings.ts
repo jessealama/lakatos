@@ -77,7 +77,8 @@ export interface GuardBound extends FloatBound {
 }
 
 /** The bounds a `number` binder's interval lowers to — the single authority
- * both pipelines read. An interval bounds both of its sides: an ∞ endpoint
+ * the emitter and `numberGuard` both read. An interval bounds both of its
+ * sides: an ∞ endpoint
  * bounds against the literal infinity — strictly when open, so that sign's
  * infinity is excluded, non-strictly when closed, which IEEE comparison
  * still refuses for NaN. That makes any interval NaN-free, matching the

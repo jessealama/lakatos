@@ -97,7 +97,7 @@ const CORPUS: { text: string; hazard: string }[] = [
   },
 ];
 
-/** Whether a value satisfies the guard the transcriber emits for `range`.
+/** Whether a value satisfies the guard emitted for `range`.
  * The comparisons are JS's, which are Lean's `Float` comparisons. An absent
  * bound is no hypothesis at all on the prover's side — since every interval
  * guards both sides, that happens only for a binder with no interval. */
