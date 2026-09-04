@@ -251,12 +251,20 @@ def ctorParamJson (n : String) : Json :=
   (decodeBinder (Json.mkObj
     [("name", "p"), ("kind", "class"), ("className", "Point"),
      ("ctorParams", Json.arr #[ctorParamJson "x", ctorParamJson "y"])]))
-  matches .ok (.cls "p" "Point" none #[.number "x", .number "y"])
+  matches .ok (.cls "p" "Point" none #[.number "x" false, .number "y" false])
 #guard
   (decodeBinder (Json.mkObj
     [("name", "p"), ("kind", "class"), ("className", "Point"),
      ("module", "dep.ts"), ("ctorParams", Json.arr #[])]))
   matches .ok (.cls "p" "Point" (some "dep.ts") #[])
+-- A defaulted parameter carries its marker; its absence is not defaulted.
+#guard
+  (decodeCtorParam (Json.mkObj
+    [("name", "y"), ("kind", "number"), ("defaulted", true)]))
+  matches .ok (.number "y" true)
+#guard
+  (decodeCtorParam (Json.mkObj [("name", "x"), ("kind", "number")]))
+  matches .ok (.number "x" false)
 -- A class-typed parameter carries its own parameters, so the tree bottoms
 -- out in numbers.
 #guard
@@ -265,7 +273,7 @@ def ctorParamJson (n : String) : Json :=
      ("ctorParams", Json.arr #[Json.mkObj
        [("name", "p"), ("kind", "class"), ("className", "Point"),
         ("ctorParams", Json.arr #[ctorParamJson "x"])]])]))
-  matches .ok (.cls "s" "Span" none #[.cls "p" "Point" none #[.number "x"]])
+  matches .ok (.cls "s" "Span" none #[.cls "p" "Point" none #[.number "x" false] false])
 -- The parameters are objects with a known kind, and a missing list fails
 -- the run.
 #guard
@@ -400,6 +408,9 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
 
 #eval goldenCheck "tests/fixtures/defaults.emission.json"
   "tests/fixtures/defaults.emitted.lean.expected"
+
+#eval goldenCheck "tests/fixtures/ctor-defaults.emission.json"
+  "tests/fixtures/ctor-defaults.emitted.lean.expected"
 
 #eval goldenCheck "tests/fixtures/object-is-tagged.emission.json"
   "tests/fixtures/object-is-tagged.emitted.lean.expected"
@@ -838,7 +849,7 @@ end
     obligations := #[{ function := "Point#gap", property := "nn"
                        formula := "forall (p: Point) { … }"
                        payload := .structured
-                         #[.cls "p" "Point" none #[.number "x"]]
+                         #[.cls "p" "Point" none #[.number "x" false]]
                          #[] (.istrue (.binop "<="
                            (.num "0")
                            (.methodCall "Point" none "gap" (.id "p")

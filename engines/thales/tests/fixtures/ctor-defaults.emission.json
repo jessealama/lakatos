@@ -1,0 +1,282 @@
+{
+  "file": "engines/thales/tests/fixtures/ctor-defaults.ts",
+  "declarations": [
+    {
+      "kind": "class",
+      "name": "P",
+      "source": "export class P {\n  readonly x: number;\n  readonly y: number;\n  constructor(x: number, y: number = 0) {\n    this.x = x;\n    this.y = y;\n  }\n\n  /** @ensures{omitted} forall (a: int ∈ [0, 4)) { Object.is(new P(a).span(), a * a) } */\n  span(): number {\n    return this.x * this.x + this.y * this.y;\n  }\n}",
+      "fields": ["x", "y"],
+      "ctor": {
+        "params": [
+          {
+            "name": "x",
+            "type": "number"
+          },
+          {
+            "name": "y",
+            "type": ["number", "undefined"]
+          }
+        ],
+        "body": [
+          {
+            "kind": "const",
+            "name": "y",
+            "init": {
+              "kind": "cond",
+              "cond": {
+                "kind": "jsval-eq",
+                "semantics": "strict",
+                "left": {
+                  "kind": "id",
+                  "name": "y"
+                },
+                "right": {
+                  "kind": "inject",
+                  "tag": "undefined"
+                }
+              },
+              "then": {
+                "kind": "num",
+                "lit": "0"
+              },
+              "else": {
+                "kind": "project",
+                "tag": "number",
+                "expr": {
+                  "kind": "id",
+                  "name": "y"
+                }
+              }
+            }
+          },
+          {
+            "kind": "field-set",
+            "field": "x",
+            "expr": {
+              "kind": "id",
+              "name": "x"
+            }
+          },
+          {
+            "kind": "field-set",
+            "field": "y",
+            "expr": {
+              "kind": "id",
+              "name": "y"
+            }
+          }
+        ]
+      },
+      "getters": [],
+      "methods": [
+        {
+          "name": "span",
+          "params": [],
+          "body": [
+            {
+              "kind": "return",
+              "expr": {
+                "kind": "binop",
+                "op": "+",
+                "left": {
+                  "kind": "binop",
+                  "op": "*",
+                  "left": {
+                    "kind": "field-read",
+                    "className": "P",
+                    "field": "x",
+                    "object": {
+                      "kind": "self"
+                    }
+                  },
+                  "right": {
+                    "kind": "field-read",
+                    "className": "P",
+                    "field": "x",
+                    "object": {
+                      "kind": "self"
+                    }
+                  }
+                },
+                "right": {
+                  "kind": "binop",
+                  "op": "*",
+                  "left": {
+                    "kind": "field-read",
+                    "className": "P",
+                    "field": "y",
+                    "object": {
+                      "kind": "self"
+                    }
+                  },
+                  "right": {
+                    "kind": "field-read",
+                    "className": "P",
+                    "field": "y",
+                    "object": {
+                      "kind": "self"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "function",
+      "name": "sum",
+      "params": [
+        {
+          "name": "p",
+          "type": {
+            "class": "P"
+          }
+        }
+      ],
+      "source": "export function sum(p: P): number {\n  return p.x + p.y;\n}",
+      "body": [
+        {
+          "kind": "return",
+          "expr": {
+            "kind": "binop",
+            "op": "+",
+            "left": {
+              "kind": "field-read",
+              "className": "P",
+              "field": "x",
+              "object": {
+                "kind": "id",
+                "name": "p"
+              }
+            },
+            "right": {
+              "kind": "field-read",
+              "className": "P",
+              "field": "y",
+              "object": {
+                "kind": "id",
+                "name": "p"
+              }
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "obligations": [
+    {
+      "function": "P#span",
+      "property": "omitted",
+      "formula": "forall (a: int ∈ [0, 4)) { Object.is(new P(a).span(), a * a) }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "a",
+            "kind": "range",
+            "lo": "0",
+            "hi": "4"
+          }
+        ],
+        "conclusion": {
+          "kind": "eq",
+          "left": {
+            "kind": "method-call",
+            "className": "P",
+            "name": "span",
+            "object": {
+              "kind": "new",
+              "className": "P",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "a"
+                },
+                {
+                  "kind": "inject",
+                  "tag": "undefined"
+                }
+              ]
+            },
+            "args": []
+          },
+          "right": {
+            "kind": "binop",
+            "op": "*",
+            "left": {
+              "kind": "id",
+              "name": "a"
+            },
+            "right": {
+              "kind": "id",
+              "name": "a"
+            }
+          }
+        }
+      }
+    },
+    {
+      "function": "sum",
+      "property": "binder",
+      "formula": "forall (p: P) { Object.is(sum(p), p.x + p.y) }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "p",
+            "kind": "class",
+            "className": "P",
+            "ctorParams": [
+              {
+                "name": "x",
+                "kind": "number"
+              },
+              {
+                "name": "y",
+                "kind": "number",
+                "defaulted": true
+              }
+            ]
+          }
+        ],
+        "conclusion": {
+          "kind": "eq",
+          "left": {
+            "kind": "call",
+            "callee": "sum",
+            "args": [
+              {
+                "kind": "id",
+                "name": "p"
+              }
+            ]
+          },
+          "right": {
+            "kind": "binop",
+            "op": "+",
+            "left": {
+              "kind": "field-read",
+              "className": "P",
+              "field": "x",
+              "object": {
+                "kind": "id",
+                "name": "p"
+              }
+            },
+            "right": {
+              "kind": "field-read",
+              "className": "P",
+              "field": "y",
+              "object": {
+                "kind": "id",
+                "name": "p"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

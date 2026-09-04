@@ -524,16 +524,23 @@ partial def classBinderSpine (pi : Ident) (path className : String)
     RenderM Term := do
   let cls ← classIdent module className
   let ctor ← classMember module className "construct"
-  let args ← ctorParams.mapM fun p => do
+  let names ← ctorParams.mapM fun p => do
     pure (mkIdent (← fieldComponent (path ++ "." ++ p.name)))
+  -- A defaulted parameter is quantified at its declared type and injected
+  -- into the boundary slot the constructor takes.
+  let args ← (ctorParams.zip names).mapM fun (p, a) => do
+    match p with
+    | .number _ true => `(JsVal.num $a)
+    | _ => pure (a : Term)
   let mut body ← `($ctor $args* = .ok $pi → $acc)
   body ← `(∀ ($pi : $cls), $body)
   -- One ungrouped ∀ per head, outermost first: `ProveTerm.propSpine`
   -- recovers no other spelling.
-  for (p, a) in (ctorParams.zip args).reverse do
+  for (p, a) in (ctorParams.zip names).reverse do
     match p with
-    | .number _ => body ← `(∀ ($a : JsNumber), $body)
-    | .cls n c m ps => body ← classBinderSpine a (path ++ "." ++ n) c m ps body
+    | .number _ _ => body ← `(∀ ($a : JsNumber), $body)
+    | .cls n c m ps _ =>
+      body ← classBinderSpine a (path ++ "." ++ n) c m ps body
   pure body
 
 def obligationCommand (e : Emission) (o : Obligation) : RenderM (TSyntax `command) := do

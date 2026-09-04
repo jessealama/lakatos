@@ -197,10 +197,6 @@ function sameClass(a: ModelRef, b: ModelRef): boolean {
   return a.module === b.module && a.name === b.name;
 }
 
-/** A constructor parameter's type. Constructors keep the union ban, so a
- * class shape's parameters are numbers and instances only. */
-export type CtorValueTy = "num" | { instance: ModelRef };
-
 /** Whether two normalized unions are the same spelling — the only
  * relationship under which a union identifier flows to a union slot. */
 function sameUnion(a: UnionTag[], b: UnionTag[]): boolean {
@@ -278,27 +274,25 @@ function checkArity(name: string, sig: FnSig, got: number): void {
   throw new ModelError(`'${name}' expects ${expected} argument(s), got ${got}`);
 }
 
-/** A construction's arity. Omitting a defaulted trailing parameter is legal
- * TypeScript the model does not follow — the initializer never rides the
- * wire — so the call is refused as outside the model rather than filled.
- * Any other mismatch is tsc's to refuse, and an invariant here. */
+/** A construction's arity: the same rule a call has. */
 function checkCtorArity(ref: ModelRef, shape: ClassShape, got: number): void {
   const total = shape.ctorParams.length;
-  if (got === total) return;
-  if (got >= shape.ctorRequired && got < total) {
-    throw new ModelError(
-      `'${displayName(ref)}' was constructed with ${got} argument(s); ` +
-        `parameter '${shape.ctorParamNames[got]!}' would take its default, ` +
-        `which the model does not evaluate`,
-      "Parameter",
-    );
-  }
+  if (got >= shape.ctorRequired && got <= total) return;
+  const expected =
+    shape.ctorRequired === total
+      ? `${total}`
+      : `${shape.ctorRequired} to ${total}`;
   throw new ModelError(
-    `'${displayName(ref)}' expects ${total} argument(s), got ${got}`,
+    `'${displayName(ref)}' expects ${expected} argument(s), got ${got}`,
   );
 }
 
-/** A call's arguments against a signature, each omitted trailing optional
+/** What an omitted argument becomes at a slot that admits omission. */
+function fillOmitted(_slot: ValueTy): EmitExpr {
+  return { kind: "inject", tag: "undefined" };
+}
+
+/** A call's arguments against a signature, each omitted trailing one
  * filled with the `undefined` that parameter's own union carries. */
 function walkArgs(
   args: readonly ts.Expression[],
@@ -308,9 +302,21 @@ function walkArgs(
 ): EmitExpr[] {
   return sig.params.map((ty, i): EmitExpr => {
     const a = args[i];
-    return a === undefined
-      ? { kind: "inject", tag: "undefined" }
-      : walkTyped(a, ty, scope, sf);
+    return a === undefined ? fillOmitted(ty) : walkTyped(a, ty, scope, sf);
+  });
+}
+
+/** A construction's arguments against the class's slots, each omitted
+ * trailing one filled with the slot's own `undefined`. */
+function walkCtorArgs(
+  args: readonly ts.Expression[],
+  shape: ClassShape,
+  scope: WalkScope,
+  sf: ts.SourceFile,
+): EmitExpr[] {
+  return shape.ctorParams.map((slot, i): EmitExpr => {
+    const a = args[i];
+    return a === undefined ? fillOmitted(slot) : walkTyped(a, slot, scope, sf);
   });
 }
 
@@ -319,12 +325,14 @@ function walkArgs(
 export interface ClassShape {
   fields: string[];
   getters: ReadonlySet<string>;
-  ctorParams: CtorValueTy[];
+  /** The slot types a construction fills, in declaration order: a number,
+   * an instance, or — for a defaulted parameter — its boundary union. */
+  ctorParams: ValueTy[];
   /** The constructor parameters' source spellings, positionally aligned
    * with `ctorParams`. A class binder quantifies over them by name. */
   ctorParamNames: string[];
   /** Leading parameters a construction must supply: one past the last
-   * without a default. Fewer than every parameter is refused, not filled. */
+   * without a default. Everything past it fills at the call. */
   ctorRequired: number;
   /** Modeled methods by name, with their signatures. */
   methods: ReadonlyMap<string, FnSig>;
@@ -348,15 +356,18 @@ export type EmitBinder =
     };
 
 /** One constructor parameter of a class binder's class. A class-typed one
- * carries its own parameters, so the tree bottoms out in numbers. */
+ * carries its own parameters, so the tree bottoms out in numbers. A
+ * defaulted one is quantified at its declared type and injected into its
+ * boundary slot at the construct call. */
 export type EmitCtorParam =
-  | { name: string; kind: "number" }
+  | { name: string; kind: "number"; defaulted?: true }
   | {
       name: string;
       kind: "class";
       className: string;
       module?: string;
       ctorParams: EmitCtorParam[];
+      defaulted?: true;
     };
 
 export interface EmitObligation {
@@ -1313,17 +1324,6 @@ function walkTyped(
           `'${displayName(ref)}' has no model: ${failed.reason}`,
         );
       }
-      // A constructor's defaulted parameter keeps its declared type as
-      // its slot, so a bare `undefined` can still reach a non-union
-      // position: that is the input's refusal, not an unbound name.
-      if (e.text === "undefined") {
-        throw new ModelError(
-          `an explicit 'undefined' where ${describeTy(expected)} is ` +
-            `expected would take the parameter's default, which the model ` +
-            `does not evaluate`,
-          "UndefinedKeyword",
-        );
-      }
       throw new ModelError(`unbound identifier '${e.text}'`);
     }
     // The atoms and module constants are numbers; a bound name carries
@@ -1581,9 +1581,7 @@ function walkTyped(
       kind: "new",
       className: ref.name,
       ...module,
-      args: rawCtorArgs.map((a, i) =>
-        walkTyped(a, shape.ctorParams[i]!, scope, sf),
-      ),
+      args: walkCtorArgs(rawCtorArgs, shape, scope, sf),
     };
     return {
       kind: "method-call",
@@ -1610,9 +1608,7 @@ function walkTyped(
       kind: "new",
       className: ref.name,
       ...module,
-      args: rawArgs.map((a, i) =>
-        walkTyped(a, shape.ctorParams[i]!, scope, sf),
-      ),
+      args: walkCtorArgs(rawArgs, shape, scope, sf),
     };
     if (shape.getters.has(access.name)) {
       return {
@@ -1717,9 +1713,7 @@ function walkTyped(
         kind: "new",
         className: ref.name,
         ...(ref.module !== "" ? { module: ref.module } : {}),
-        args: rawArgs.map((a, i) =>
-          walkTyped(a, shape.ctorParams[i]!, scope, sf),
-        ),
+        args: walkCtorArgs(rawArgs, shape, scope, sf),
       };
     }
     throw new ModelError(
@@ -2840,10 +2834,7 @@ function walkParams(
     const ty = paramValueTy(p, sf, reg);
     if (typeof ty !== "string" && "reason" in ty) return ty;
     const init = p.initializer;
-    // A slot admitting `undefined` is a union slot, so only a callable
-    // that takes unions widens; a constructor keeps its full arity, its
-    // initializer dead code.
-    const slot = init === undefined || !reg.unions ? ty : boundaryTy(ty, p, sf);
+    const slot = init === undefined ? ty : boundaryTy(ty, p, sf);
     if (typeof slot !== "string" && "reason" in slot) return slot;
     out.push({
       name: (p.name as ts.Identifier).text,
@@ -3090,13 +3081,17 @@ function walkClass(
     if (failure !== undefined) return failure;
     // Falling off the end is a constructor's normal exit: the renderer
     // appends the instance return.
-    ctorBody = lowerTree(
-      tree,
-      ctorParams.map((p) => [p.name, p.ty] as const),
-      () => {},
-      ctorScope,
-      sf,
-    );
+    const openings = defaultOpenings(ctorParams, tree, ctorScope, sf);
+    ctorBody = [
+      ...openings,
+      ...lowerTree(
+        tree,
+        ctorParams.map((p) => [p.name, p.ty] as const),
+        () => {},
+        ctorScope,
+        sf,
+      ),
+    ];
   } catch (err) {
     if (err instanceof CtorPrecondition)
       return { construct: "constructor", reason: err.message };
@@ -3105,12 +3100,14 @@ function walkClass(
     return modelFailure(err);
   }
 
-  // `ctorReg` bans unions, so this restates the ban where the shape is
-  // recorded rather than trusting the flag everywhere downstream.
-  const shapeCtorParams: CtorValueTy[] = [];
+  // `ctorReg` bans declared unions, so this restates the ban where the
+  // shape is recorded rather than trusting the flag everywhere
+  // downstream. A defaulted parameter's slot is a union all the same:
+  // the ban is on what the source declares, not on the boundary.
+  const shapeCtorParams: ValueTy[] = [];
   for (const p of ctorParams) {
     /* v8 ignore next 2 -- unreachable: ctorReg refused the union first. */
-    if (typeof p.slot !== "string" && "union" in p.slot)
+    if (typeof p.ty !== "string" && "union" in p.ty)
       return constructAt(ctor, ctor.kind, sf);
     shapeCtorParams.push(p.slot);
   }
@@ -3565,10 +3562,13 @@ function lowerCtorParams(
   shape: ClassShape,
   classes: ReadonlyMap<string, ClassShape>,
 ): EmitCtorParam[] {
-  return shape.ctorParams.map((ty, i) => {
+  return shape.ctorParams.map((slot, i) => {
     const name = shape.ctorParamNames[i]!;
-    if (ty === "num") return { name, kind: "number" };
-    const ref = ty.instance;
+    if (slot === "num") return { name, kind: "number" };
+    // A constructor admits no declared union, so a union slot is exactly
+    // a defaulted number.
+    if ("union" in slot) return { name, kind: "number", defaulted: true };
+    const ref = slot.instance;
     const inner = classes.get(modelKey(ref))!;
     return {
       name,

@@ -120,6 +120,7 @@ describe("emitModule on the tracer fixture", () => {
     ["engines/thales/tests/fixtures/unions.ts"],
     ["engines/thales/tests/fixtures/optionals.ts"],
     ["engines/thales/tests/fixtures/defaults.ts"],
+    ["engines/thales/tests/fixtures/ctor-defaults.ts"],
     ["engines/thales/tests/fixtures/object-is-tagged.ts"],
     [
       "engines/thales/tests/conformance/theorem/class-binder-equality-guards.ts",
@@ -155,6 +156,10 @@ describe("emitModule on the tracer fixture", () => {
     ["engines/thales/tests/fixtures/unions.ts", "unions.emission.json"],
     ["engines/thales/tests/fixtures/optionals.ts", "optionals.emission.json"],
     ["engines/thales/tests/fixtures/defaults.ts", "defaults.emission.json"],
+    [
+      "engines/thales/tests/fixtures/ctor-defaults.ts",
+      "ctor-defaults.emission.json",
+    ],
     [
       "engines/thales/tests/fixtures/object-is-tagged.ts",
       "object-is-tagged.emission.json",
@@ -1521,7 +1526,7 @@ describe("class-valued binders lower to a binder IR", () => {
     ]);
   });
 
-  test("a defaulted constructor parameter models, quantified at full arity", () => {
+  test("a defaulted constructor parameter models, quantified at its declared type", () => {
     const src = [
       "export class P {",
       "  readonly x: number;",
@@ -1546,7 +1551,7 @@ describe("class-valued binders lower to a binder IR", () => {
         className: "P",
         ctorParams: [
           { name: "x", kind: "number" },
-          { name: "y", kind: "number" },
+          { name: "y", kind: "number", defaulted: true },
         ],
       },
     ]);
@@ -5256,27 +5261,44 @@ describe("a constructor with a defaulted parameter", () => {
   }
 }
 `;
-  const OMITTED =
-    "'P' was constructed with 1 argument(s); parameter 'y' would take its " +
-    "default, which the model does not evaluate";
-  const EXPLICIT =
-    "an explicit 'undefined' where a number is expected would take the " +
-    "parameter's default, which the model does not evaluate";
-
-  test("full arity models", () => {
+  test("the constructor is typed at the boundary and opens on the default", () => {
     const { classified, emission } = emitModule(src("new P(a, a)"), "t.ts");
     expect(classified).toEqual([]);
-    expect(emission.obligations).toHaveLength(1);
-  });
-
-  test("an explicit undefined for the defaulted argument in a property is outside the model", () => {
-    const { classified } = emitModule(src("new P(a, undefined)"), "t.ts");
-    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
-      ["Inappropriate", EXPLICIT],
+    const cls = emission.declarations[0];
+    assert(cls?.kind === "class");
+    expect(cls.ctor.params).toEqual([
+      { name: "x", type: "number" },
+      { name: "y", type: ["number", "undefined"] },
     ]);
+    expect(cls.ctor.body[0]).toMatchObject({
+      kind: "const",
+      name: "y",
+      init: { kind: "cond", then: { kind: "num", lit: "0" } },
+    });
   });
 
-  test("an explicit undefined for the defaulted argument in a body travels as the input's refusal", () => {
+  test("an omitted defaulted argument injects undefined in an atom", () => {
+    const { classified, emission } = emitModule(src("new P(a)"), "t.ts");
+    expect(classified).toEqual([]);
+    const payload = emission.obligations[0]!.payload;
+    assert(payload.kind === "structured");
+    expect(payload.conclusion).toMatchObject({
+      expr: {
+        left: {
+          object: {
+            kind: "new",
+            className: "P",
+            args: [
+              { kind: "id", name: "a" },
+              { kind: "inject", tag: "undefined" },
+            ],
+          },
+        },
+      },
+    });
+  });
+
+  test("an explicit undefined in a body injects the same and travels nowhere", () => {
     const body = `export class P {
   readonly x: number;
   readonly y: number;
@@ -5290,21 +5312,74 @@ export function g(a: number): number {
   return new P(a, undefined).x;
 }
 `;
-    const { classified } = emitModule(body, "t.ts");
-    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
-      ["Inappropriate", `'g' could not be modeled: ${EXPLICIT}`],
+    const { classified, emission } = emitModule(body, "t.ts");
+    expect(classified).toEqual([]);
+    const g = emission.declarations[1];
+    assert(g?.kind === "function");
+    expect(g.body[0]).toMatchObject({
+      expr: {
+        kind: "field-read",
+        object: {
+          kind: "new",
+          args: [expect.anything(), { kind: "inject", tag: "undefined" }],
+        },
+      },
+    });
+  });
+
+  test("below the minimum is an invariant, as a range", () => {
+    expect(classifications(src("new P()")).classified).toEqual([
+      [
+        "Error",
+        "property elaboration failed: 'P' expects 1 to 2 argument(s), got 0",
+      ],
     ]);
   });
 
-  test("an omitted defaulted argument in a property is outside the model", () => {
-    const { classified } = emitModule(src("new P(a)"), "t.ts");
-    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
-      ["Inappropriate", OMITTED],
+  test("a constructor default reading this refuses with a construct", () => {
+    const bad = `export class Q {
+  readonly x: number;
+  readonly y: number;
+  constructor(x: number, y: number = this.x) {
+    this.x = x;
+    this.y = y;
+  }
+  /** @ensures{p} forall (a: int ∈ [0, 5)) { new Q(a).z >= 0 } */
+  get z(): number {
+    return this.y;
+  }
+}
+`;
+    expect(classifications(bad).classified).toEqual([
+      [
+        "Inappropriate",
+        "'Q#z' could not be modeled: parameter 'y' has a default the model " +
+          "cannot evaluate: unmapped TypeScript construct " +
+          "'PropertyAccessExpression' at 4:38",
+      ],
     ]);
   });
 
-  test("an omitted defaulted argument in a body travels as the input's refusal", () => {
-    const body = `export class P {
+  test("a declared union without a default keeps the constructor's refusal", () => {
+    const bad = `export class R {
+  readonly x: number;
+  constructor(x: number | undefined) {
+    this.x = 1;
+  }
+  /** @ensures{p} forall (a: int ∈ [0, 5)) { new R(a).x >= 0 } */
+  get z(): number {
+    return this.x;
+  }
+}
+`;
+    const [first] = classifications(bad).classified;
+    expect(first![0]).toBe("Inappropriate");
+    expect(first![1]).toContain("UnionType");
+  });
+});
+
+describe("a class binder over a class with a defaulted constructor parameter", () => {
+  const src = `export class P {
   readonly x: number;
   readonly y: number;
   constructor(x: number, y: number = 0) {
@@ -5312,24 +5387,27 @@ export function g(a: number): number {
     this.y = y;
   }
 }
-/** @ensures{p} forall (a: int ∈ [0, 5)) { origin(a) >= 0 } */
-export function origin(a: number): number {
-  return new P(a).x;
+/** @ensures{p} forall (p: P) { span(p) >= 0 } */
+export function span(p: P): number {
+  return p.x * p.x + p.y * p.y;
 }
 `;
-    const { classified } = emitModule(body, "t.ts");
-    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
-      ["Inappropriate", `'origin' could not be modeled: ${OMITTED}`],
-    ]);
-  });
 
-  test("below the required count is an invariant, not a refusal", () => {
-    const { classified } = emitModule(src("new P()"), "t.ts");
-    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
-      [
-        "Error",
-        "property elaboration failed: 'P' expects 2 argument(s), got 0",
-      ],
+  test("the binder tree marks the defaulted parameter and quantifies over numbers", () => {
+    const { classified, emission } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    const payload = emission.obligations[0]!.payload;
+    assert(payload.kind === "structured");
+    expect(payload.binders).toEqual([
+      {
+        name: "p",
+        kind: "class",
+        className: "P",
+        ctorParams: [
+          { name: "x", kind: "number" },
+          { name: "y", kind: "number", defaulted: true },
+        ],
+      },
     ]);
   });
 });

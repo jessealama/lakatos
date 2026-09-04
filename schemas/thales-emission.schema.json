@@ -83,7 +83,8 @@
           "required": ["name", "kind"],
           "properties": {
             "name": { "$ref": "#/definitions/identifier" },
-            "kind": { "const": "number" }
+            "kind": { "const": "number" },
+            "defaulted": { "const": true }
           }
         },
         {
@@ -98,7 +99,8 @@
             "ctorParams": {
               "type": "array",
               "items": { "$ref": "#/definitions/ctorParamNode" }
-            }
+            },
+            "defaulted": { "const": true }
           }
         }
       ]

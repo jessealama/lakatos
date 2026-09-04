@@ -10,10 +10,41 @@
         "params": [
           {
             "name": "x",
-            "type": "number"
+            "type": ["number", "undefined"]
           }
         ],
         "body": [
+          {
+            "kind": "const",
+            "name": "x",
+            "init": {
+              "kind": "cond",
+              "cond": {
+                "kind": "jsval-eq",
+                "semantics": "strict",
+                "left": {
+                  "kind": "id",
+                  "name": "x"
+                },
+                "right": {
+                  "kind": "inject",
+                  "tag": "undefined"
+                }
+              },
+              "then": {
+                "kind": "num",
+                "lit": "0"
+              },
+              "else": {
+                "kind": "project",
+                "tag": "number",
+                "expr": {
+                  "kind": "id",
+                  "name": "x"
+                }
+              }
+            }
+          },
           {
             "kind": "field-set",
             "field": "x",
@@ -218,8 +249,12 @@
               "className": "Point",
               "args": [
                 {
-                  "kind": "id",
-                  "name": "a"
+                  "kind": "inject",
+                  "tag": "number",
+                  "expr": {
+                    "kind": "id",
+                    "name": "a"
+                  }
                 }
               ]
             },
@@ -229,8 +264,12 @@
                 "className": "Point",
                 "args": [
                   {
-                    "kind": "id",
-                    "name": "a"
+                    "kind": "inject",
+                    "tag": "number",
+                    "expr": {
+                      "kind": "id",
+                      "name": "a"
+                    }
                   }
                 ]
               }
@@ -268,8 +307,12 @@
               "className": "Point",
               "args": [
                 {
-                  "kind": "id",
-                  "name": "a"
+                  "kind": "inject",
+                  "tag": "number",
+                  "expr": {
+                    "kind": "id",
+                    "name": "a"
+                  }
                 }
               ]
             },
@@ -279,8 +322,12 @@
                 "className": "Point",
                 "args": [
                   {
-                    "kind": "id",
-                    "name": "a"
+                    "kind": "inject",
+                    "tag": "number",
+                    "expr": {
+                      "kind": "id",
+                      "name": "a"
+                    }
                   }
                 ]
               }
@@ -322,8 +369,12 @@
                   "className": "Point",
                   "args": [
                     {
-                      "kind": "id",
-                      "name": "a"
+                      "kind": "inject",
+                      "tag": "number",
+                      "expr": {
+                        "kind": "id",
+                        "name": "a"
+                      }
                     }
                   ]
                 }
@@ -362,8 +413,12 @@
                 "className": "Point",
                 "args": [
                   {
-                    "kind": "id",
-                    "name": "a"
+                    "kind": "inject",
+                    "tag": "number",
+                    "expr": {
+                      "kind": "id",
+                      "name": "a"
+                    }
                   }
                 ]
               }
