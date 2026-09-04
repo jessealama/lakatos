@@ -61,26 +61,6 @@ partial def isGuardProp : TSyntax `term → Bool
   | `($_ = pure true) => true
   | _ => false
 
-/-- Whether a term is a `number` binder's own bound hypothesis: a `<` or
-`≤` with the binder on one side. Only the Float heads consult this, so a
-nat binder's `0 ≤ n` is never mistaken for one; like its one caller
-`peelBounds`, it is structurally inert today. -/
-def isBoundHyp (x : Name) : TSyntax `term → Bool
-  | `($a < $b) | `($a ≤ $b) =>
-    (a.raw.isIdent && a.raw.getId.eraseMacroScopes == x) ||
-      (b.raw.isIdent && b.raw.getId.eraseMacroScopes == x)
-  | _ => false
-
-/-- Steps over the bound hypotheses a `number` binder head introduces, so
-the guards under them are still recovered. Structurally inert today: only
-an unbounded arm reaches it, and the guards and leaf it uncovers are read
-only by the witness search, which never runs on an unbounded domain. Kept
-because it becomes live the moment a number binder is searchable. -/
-partial def peelBounds (x : Name) (t : TSyntax `term) : TSyntax `term :=
-  match t with
-  | `($h → $rest) => if isBoundHyp x h then peelBounds x rest else t
-  | _ => t
-
 /-- Whether a hypothesis names `x` as some computation's successful
 result — the shape a class binder's domain is written as, since the
 binder ranges over the constructor's image. -/
@@ -94,9 +74,10 @@ partial def isCtorImage (x : Name) : TSyntax `term → Bool
 outermost first, then the guard hypotheses under them, and the leaf under
 those. A plain Prop carries no structure, so the spine is recovered by
 matching the shapes `Render.lean` commits to — rung selection and witness
-search both read it. A payload with any other head is its own leaf; a nat
-binder's nonnegativity hypothesis stays in the leaf, since search never
-runs on an unbounded domain. -/
+search both read it. A payload with any other head is its own leaf; a
+binder's own bound hypotheses — a nat binder's nonnegativity, a `number`
+binder's endpoints — stay in the leaf, since search never runs on an
+unbounded domain. -/
 partial def propSpine (t : TSyntax `term) : PropSpine :=
   match t with
   | `(($inner)) => propSpine inner
@@ -108,12 +89,10 @@ partial def propSpine (t : TSyntax `term) : PropSpine :=
       { inner with
         binders := .ranged x.getId.eraseMacroScopes.toString l h :: inner.binders }
     | _, _ => ({ binders := [], guards := [], leaf := t } : PropSpine)
-  | `(∀ ($x:ident : Int), $body) =>
-    let inner := propSpine body
-    { inner with binders := .unbounded x.getId.eraseMacroScopes.toString :: inner.binders }
+  | `(∀ ($x:ident : Int), $body)
   | `(∀ ($x:ident : JsNumber), $body)
   | `(∀ ($x:ident : Float), $body) =>
-    let inner := propSpine (peelBounds x.getId.eraseMacroScopes body)
+    let inner := propSpine body
     { inner with binders := .unbounded x.getId.eraseMacroScopes.toString :: inner.binders }
   -- A constructor-image head: the instance and the hypothesis that names
   -- it as the constructor's output. Placed after the numeric heads, which

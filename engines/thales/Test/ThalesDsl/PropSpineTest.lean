@@ -47,3 +47,14 @@ def spineKinds (t : TSyntax `term) : List String :=
   let t := Unhygienic.run `(∀ (p : TsModel.Point), (0 : Nat) = 0 → ((pure true : JsM Bool) = pure true))
   unless spineKinds t == [] do
     throwError "a non-image implication was read as a binder: {spineKinds t}"
+
+#eval show CoreM Unit from do
+  -- A number binder's endpoints are hypotheses in the leaf, the way a nat
+  -- binder's nonnegativity is: nothing under them is read, since search
+  -- never runs on an unbounded domain.
+  let t := Unhygienic.run `(∀ (sf : JsNumber), 0 < sf → sf < floatInf →
+    ((pure true : JsM Bool) = pure true) → ((pure true : JsM Bool) = pure true))
+  unless spineKinds t == ["unbounded sf"] do
+    throwError "the bounded number head is {spineKinds t}"
+  unless (propSpine t).guards.isEmpty do
+    throwError "a guard under a number binder's bounds was recovered"
