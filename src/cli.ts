@@ -517,7 +517,7 @@ function refuteSpine(seed: number): Spine {
     plan(files, runDir) {
       const outRoot = path.join(runDir, "pabst");
       const results = generate(files, outRoot, seed);
-      const identities: PropertyIdentity[] = results.flatMap((r) =>
+      const identities: PlannedProperty[] = results.flatMap((r) =>
         r.properties.map((p) => ({ file: r.sourceFile, ...p })),
       );
       const inputErrors = inputErrorResults(

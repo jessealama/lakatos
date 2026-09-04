@@ -138,10 +138,11 @@ function run(gen: GenResult): Envelope {
   return env;
 }
 
-/** The flagged annotations, reshaped as bare issues for the pinned checks. */
+/** The flagged annotations, reshaped as bare issues for the pinned checks.
+ * An enumerated Theorem carries a kind too, and is not an issue. */
 function issuesOf(env: Envelope): Issue[] {
   return env.annotations
-    .filter((a) => a.kind !== undefined)
+    .filter((a) => a.kind !== undefined && a.kind !== "enumerated")
     .map(({ szs, ...issue }) => issue as Issue);
 }
 

@@ -597,7 +597,7 @@ export function keep(n: number): number {
           a.szs,
         ]),
       );
-      expect(byProperty).toEqual({ p: "InputError", q: "GaveUp" });
+      expect(byProperty).toEqual({ p: "InputError", q: "Theorem" });
       expect(env.generated).toBe(1);
     },
   );
@@ -619,7 +619,7 @@ export function keep(n: number): number {
       );
       expect(byProperty).toEqual({
         tooBig: "CounterSatisfiable",
-        atLeastOne: "GaveUp",
+        atLeastOne: "Theorem",
       });
     },
   );

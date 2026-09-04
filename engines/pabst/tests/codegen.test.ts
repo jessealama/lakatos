@@ -20,6 +20,11 @@ describe("generate", () => {
       "utf8",
     );
     fs.writeFileSync(
+      path.join(dir, "small.ts"),
+      `/** @ensures{pos} forall (n: int ∈ [1, 10]) { square(n) > 0 } */\nexport function square(n: number): number { return n * n; }\n`,
+      "utf8",
+    );
+    fs.writeFileSync(
       path.join(dir, "plain.ts"),
       `export function plain(n: number): number { return n; }\n`,
       "utf8",
@@ -65,6 +70,15 @@ export class Counter {
       { function: "abs", property: "nonneg" },
       { function: "Counter#bump", property: "grows" },
     ]);
+  });
+
+  it("reports the case count of a property it will walk in full", () => {
+    const [r] = generate(["small.ts"], OUT, 7);
+    expect(r!.properties).toEqual([
+      { function: "square", property: "pos", cases: 10 },
+    ]);
+    const code = fs.readFileSync(r!.outFile!, "utf8");
+    expect(code).toContain('test("pos", { timeout: 8000 }');
   });
 
   it("skips a file with no @ensures annotations", () => {
@@ -150,7 +164,7 @@ export function two(n: number): number { return n; }
   it("generates only the testable properties of a mixed file", () => {
     const results = generate(["mixedhuge.ts"], OUT, 7);
     expect(results[0]!.properties).toEqual([
-      { function: "two", property: "small" },
+      { function: "two", property: "small", cases: 11 },
     ]);
     expect(results[0]!.untried.map((u) => u.property)).toEqual(["huge"]);
     const code = fs.readFileSync(results[0]!.outFile!, "utf8");
