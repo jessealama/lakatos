@@ -158,10 +158,18 @@ A domain may be a class name: `∀ (p q : Point) { 0 <= p.distance(q) }`.
   it for the same reason defaults are admitted: a constructor that
   observes its own arity (through `arguments.length` or its kin) can
   make a defaulted call construct an instance no full-arity call
-  produces, and such instances are outside the claim. An always-throwing
-  constructor yields an empty domain, over which every property holds
-  vacuously — the same situation as an interval guard denoting the
-  empty set.
+  produces, and such instances are outside the claim. The domain can
+  also be wider than what callers can reach. A class whose constructor
+  is inaccessible (`private` or `protected`) still has its binder domain
+  defined by that constructor: a validating static factory that guards
+  before delegating to `new` narrows what callers can build, never the
+  domain. The prover must then establish the property on instances no
+  factory would produce, and the refuter may report a counterexample no
+  caller could construct. Accessibility is erased at runtime and carries
+  no semantic weight — the same ground as the structural-impostor
+  non-claim above. An always-throwing constructor yields an empty
+  domain, over which every property holds vacuously — the same situation
+  as an interval guard denoting the empty set.
 - **Engine obligations**: the refuter draws argument tuples from the
   constructor's parameter domains, runs the real constructor, and
   discards any tuple on which construction throws — the same discard
