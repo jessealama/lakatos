@@ -45,6 +45,14 @@ inductive JsExpr where
   /-- JS equality over `JsVal`: `===` as strict, `Object.is` as
   same-value. Neither coerces, so cross-tag is false. -/
   | jsvalEq (sameValue : Bool) (left right : JsExpr)
+  /-- Injection into an option slot: `some` with the operand, `none`
+  without it. -/
+  | optionInject (operand : Option JsExpr)
+  | optionTest (operand : JsExpr) (present : Bool)
+  /-- The throwing projection out of an option slot, the twin of
+  `project`; unreachable behind its test, present so the rendering is
+  total. -/
+  | optionGet (operand : JsExpr)
 deriving Repr, Inhabited
 
 /-- A local's declared type: the numeric slice, or a keyword union riding
@@ -54,6 +62,7 @@ frontend's record of what may be injected — the local's Lean type is
 inductive LocalTy where
   | number
   | union (tags : Array JsTag)
+  | cls (name : String) (module : Option String)
 deriving Repr, Inhabited, BEq
 
 inductive JsStmt where
@@ -74,6 +83,8 @@ inductive ParamTy where
   | number
   | union (tags : Array JsTag)
   | cls (name : String) (module : Option String)
+  /-- A defaulted class parameter's slot: the instance or `undefined`. -/
+  | option (name : String) (module : Option String)
 deriving Repr, Inhabited, BEq
 
 structure Param where
@@ -336,6 +347,17 @@ partial def decodeExpr (j : Json) : Except String JsExpr := do
       | s => throw s!"unknown equality semantics '{s}'"
     pure (.jsvalEq same (← decodeExpr (← j.getObjVal? "left"))
       (← decodeExpr (← j.getObjVal? "right")))
+  | "option" =>
+    match j.getObjVal? "expr" with
+    | .ok v => pure (.optionInject (some (← decodeExpr v)))
+    | .error _ => pure (.optionInject none)
+  | "option-test" =>
+    let present ← match (← j.getObjVal? "present").getBool? with
+      | .ok b => pure b
+      | .error _ => throw "field 'present' is not a boolean"
+    pure (.optionTest (← decodeExpr (← j.getObjVal? "expr")) present)
+  | "option-get" =>
+    pure (.optionGet (← decodeExpr (← j.getObjVal? "expr")))
   | k => throw s!"unknown expression kind '{k}'"
 
 /-- A local's optional `type` field: absent is the numeric slice the
@@ -347,7 +369,7 @@ def decodeLocalTy (j : Json) : Except String LocalTy :=
   | .ok v =>
     match v.getArr? with
     | .ok tags => LocalTy.union <$> decodeUnionTags tags "local"
-    | .error _ => throw "a local's type is a union-tag array"
+    | .error _ => do pure (.cls (← getStr v "class") (← getStrOpt v "module"))
 
 partial def decodeStmt (j : Json) : Except String JsStmt := do
   match ← getStr j "kind" with
@@ -394,7 +416,10 @@ def decodeParamTy (j : Json) : Except String ParamTy :=
   | .error _ =>
     match j.getArr? with
     | .ok tags => ParamTy.union <$> decodeUnionTags tags "parameter"
-    | .error _ => do pure (.cls (← getStr j "class") (← getStrOpt j "module"))
+    | .error _ =>
+      match j.getObjVal? "option" with
+      | .ok o => do pure (.option (← getStr o "class") (← getStrOpt o "module"))
+      | .error _ => do pure (.cls (← getStr j "class") (← getStrOpt j "module"))
 
 def decodeParam (j : Json) : Except String Param := do
   pure { name := ← getStr j "name"

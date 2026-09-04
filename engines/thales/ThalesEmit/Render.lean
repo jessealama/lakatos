@@ -52,7 +52,7 @@ capture the reference. -/
 def reservedNames : List String :=
   ["pure", "ballIco", "floatInf", "floatNaN", "Float", "Number", "Int",
    "JsM", "JsNumber", "Bool", "TsModel", "JsError", "mut", "self",
-   "JsVal", "TypeofResult"]
+   "JsVal", "TypeofResult", "Option", "some", "none"]
 
 /-- A binder or parameter: the source name, primed out of the reserved
 vocabulary — a spelling no TS identifier has. -/
@@ -265,6 +265,19 @@ partial def valueTerm (coerced : String → Bool) : JsExpr → RenderM Rendered
     let ⟨rt, rl⟩ ← valueTerm coerced r
     if same then return ⟨← `(JsVal.sameValue $lt $rt), ll || rl⟩
     return ⟨← `(JsVal.strictEq $lt $rt), ll || rl⟩
+  | .optionInject operand => do
+    match operand with
+    | some e =>
+      let ⟨t, lifted⟩ ← valueTerm coerced e
+      return ⟨← `(some $t), lifted⟩
+    | none => return ⟨← `(none), false⟩
+  | .optionTest e present => do
+    let ⟨t, lifted⟩ ← valueTerm coerced e
+    if present then return ⟨← `(Option.isSome $t), lifted⟩
+    return ⟨← `(Option.isNone $t), lifted⟩
+  | .optionGet e => do
+    let ⟨t, _⟩ ← valueTerm coerced e
+    return ⟨← `((← Js.optionGet $t)), true⟩
 
 /-- A call as the `JsM` value it denotes, its arguments still
 value-level. -/
@@ -313,6 +326,7 @@ domain, exactly as `paramBinders` renders a union parameter's. -/
 def localTyTerm : LocalTy → RenderM (TSyntax `term)
   | .number => `(JsNumber)
   | .union _ => `(JsVal)
+  | .cls n m => do let c ← classIdent m n; `($c)
 
 mutual
 
@@ -407,6 +421,9 @@ def paramBinders (params : Array Param) :
       -- may be injected, never what the binder's type is.
       | .union _ => `(JsVal)
       | .cls n m => do let c ← classIdent m n; `($c)
+      -- A defaulted class parameter: the instance or its absence, which
+      -- the tagged domain cannot hold.
+      | .option n m => do let c ← classIdent m n; `(Option $c)
     let b ← `(Lean.Parser.Term.bracketedBinderF| ($xs* : $t))
     return (b : TSyntax ``Lean.Parser.Term.bracketedBinder)
 
@@ -531,6 +548,7 @@ partial def classBinderSpine (pi : Ident) (path className : String)
   let args ← (ctorParams.zip names).mapM fun (p, a) => do
     match p with
     | .number _ true => `(JsVal.num $a)
+    | .cls _ _ _ _ true => `(some $a)
     | _ => pure (a : Term)
   let mut body ← `($ctor $args* = .ok $pi → $acc)
   body ← `(∀ ($pi : $cls), $body)

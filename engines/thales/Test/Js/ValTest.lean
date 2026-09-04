@@ -118,3 +118,10 @@ example (x : Float) : JsVal.strictEq (.num x) .null = false := by
   simp only [js_norm]
 example (x : Float) : JsVal.sameValue (.num x) .null = false := by
   simp only [js_norm]
+
+-- The option projection: pure on `some`, the same reserved throw the
+-- tagged projection uses on `none`.
+#guard decide (Js.optionGet (some (2.5 : Float)) = pure 2.5)
+#guard
+  decide (Js.optionGet (none : Option Float)
+    = (Js.JsM.throw (.error "type-projection") : Js.JsM Float))

@@ -114,4 +114,27 @@ def JsVal.sameValue : JsVal → JsVal → Bool
 @[js_norm, grind =] theorem TypeofResult.string_beq_number :
     (TypeofResult.string == TypeofResult.number) = false := rfl
 
+/-- Project an option slot — a defaulted class parameter's boundary type,
+which `JsVal` cannot hold. `none` throws the projection's reserved error,
+exactly as `JsVal.toNumber` does on a wrong tag; behind the emitted test
+the throw is unreachable, the total rendering just needs a value. -/
+@[js_norm, grind]
+def optionGet {α : Type} : Option α → JsM α
+  | some v => pure v
+  | none => JsM.throw (.error "type-projection")
+
+-- `Option.isNone`/`isSome` on a literal constructor are the ground
+-- rewrites the emitted opening's test reduces through.
+@[js_norm, grind =] theorem isNone_some' {α : Type} (a : α) :
+    (some a).isNone = false := rfl
+
+@[js_norm, grind =] theorem isNone_none' {α : Type} :
+    (none : Option α).isNone = true := rfl
+
+@[js_norm, grind =] theorem isSome_some' {α : Type} (a : α) :
+    (some a).isSome = true := rfl
+
+@[js_norm, grind =] theorem isSome_none' {α : Type} :
+    (none : Option α).isSome = false := rfl
+
 end Js

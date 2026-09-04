@@ -122,6 +122,7 @@ describe("emitModule on the tracer fixture", () => {
     ["engines/thales/tests/fixtures/optionals.ts"],
     ["engines/thales/tests/fixtures/defaults.ts"],
     ["engines/thales/tests/fixtures/ctor-defaults.ts"],
+    ["engines/thales/tests/fixtures/instance-defaults.ts"],
     ["engines/thales/tests/fixtures/object-is-tagged.ts"],
     [
       "engines/thales/tests/conformance/theorem/class-binder-equality-guards.ts",
@@ -160,6 +161,10 @@ describe("emitModule on the tracer fixture", () => {
     [
       "engines/thales/tests/fixtures/ctor-defaults.ts",
       "ctor-defaults.emission.json",
+    ],
+    [
+      "engines/thales/tests/fixtures/instance-defaults.ts",
+      "instance-defaults.emission.json",
     ],
     [
       "engines/thales/tests/fixtures/object-is-tagged.ts",
