@@ -126,9 +126,50 @@ def numParamJson (name : String) : Json :=
     [("name", "p"),
      ("type", Json.mkObj [("class", "Point"), ("module", "point.mts")])]))
   matches .ok { name := "p", ty := .cls "Point" (some "point.mts") }
+-- A defaulted class parameter's slot is an option of that class.
+#guard
+  (decodeParam (Json.mkObj
+    [("name", "p"),
+     ("type", Json.mkObj [("option", Json.mkObj [("class", "Pt")])])]))
+  matches .ok { name := "p", ty := .option "Pt" none }
 #guard
   (decodeParam (Json.mkObj [("name", "s"), ("type", "string")]))
   matches .error "unknown parameter type 'string'"
+-- The three option expression kinds decode strictly, and a local may bind
+-- at a class.
+#guard
+  (decodeExpr (Json.mkObj [("kind", "option")]))
+  matches .ok (.optionInject none)
+#guard
+  (decodeExpr (Json.mkObj
+    [("kind", "option"), ("expr", Json.mkObj [("kind", "id"), ("name", "q")])]))
+  matches .ok (.optionInject (some (.id "q")))
+#guard
+  (decodeExpr (Json.mkObj
+    [("kind", "option-test"),
+     ("expr", Json.mkObj [("kind", "id"), ("name", "p")]), ("present", false)]))
+  matches .ok (.optionTest (.id "p") false)
+#guard
+  (decodeExpr (Json.mkObj
+    [("kind", "option-test"),
+     ("expr", Json.mkObj [("kind", "id"), ("name", "p")]), ("present", "no")]))
+  matches .error "field 'present' is not a boolean"
+#guard
+  (decodeExpr (Json.mkObj
+    [("kind", "option-test"),
+     ("expr", Json.mkObj [("kind", "id"), ("name", "p")])]))
+  matches .error "property not found: present"
+#guard
+  (decodeExpr (Json.mkObj
+    [("kind", "option-get"),
+     ("expr", Json.mkObj [("kind", "id"), ("name", "p")])]))
+  matches .ok (.optionGet (.id "p"))
+#guard
+  (decodeStmt (Json.mkObj
+    [("kind", "const"), ("name", "p"),
+     ("type", Json.mkObj [("class", "Pt")]),
+     ("init", Json.mkObj [("kind", "id"), ("name", "q")])]))
+  matches .ok (.constDecl "p" (.cls "Pt" none) (.id "q"))
 #guard
   (decodeParams (Json.mkObj [("params", Json.arr #[Json.mkObj [("name", "x")]])])
     "params")
@@ -411,6 +452,9 @@ def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
 
 #eval goldenCheck "tests/fixtures/ctor-defaults.emission.json"
   "tests/fixtures/ctor-defaults.emitted.lean.expected"
+
+#eval goldenCheck "tests/fixtures/instance-defaults.emission.json"
+  "tests/fixtures/instance-defaults.emitted.lean.expected"
 
 #eval goldenCheck "tests/fixtures/object-is-tagged.emission.json"
   "tests/fixtures/object-is-tagged.emitted.lean.expected"

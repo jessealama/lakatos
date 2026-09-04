@@ -195,6 +195,43 @@ describe("emission import closures", () => {
     ]);
   });
 
+  test("a default at an imported class carries its module in the option slot", () => {
+    const main = [
+      'import { Pt } from "./pt.mjs";',
+      "/** @ensures{p} forall (a: int ∈ [0, 4)) { Object.is(shift(a), a + 1) } */",
+      "export function shift(a: number, p: Pt = new Pt(1)): number {",
+      "  return a + p.x;",
+      "}",
+      "",
+    ].join("\n");
+    const pt = [
+      "export class Pt {",
+      "  readonly x: number;",
+      "  constructor(x: number) {",
+      "    this.x = x;",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(
+      main,
+      "main.mts",
+      reader({ "pt.mts": pt }),
+    );
+    expect(classified).toEqual([]);
+    const shift = emission.declarations.find((d) => d.name === "shift")!;
+    assert(shift.kind === "function");
+    expect(shift.params[1]).toEqual({
+      name: "p",
+      type: { option: { class: "Pt", module: "pt.mts" } },
+    });
+    expect(shift.body[0]).toMatchObject({
+      kind: "const",
+      name: "p",
+      type: { class: "Pt", module: "pt.mts" },
+    });
+  });
+
   test("a method call on an imported class carries its module", () => {
     const boxed = [
       'import { Dep } from "./dep.mjs";',

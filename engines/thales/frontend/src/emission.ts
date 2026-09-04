@@ -81,6 +81,14 @@ export type EmitExpr =
   /** A union-typed read at a number position: the model refuses coercion,
    * so a wrong-tag value throws rather than converting. */
   | { kind: "project"; tag: "number"; expr: EmitExpr }
+  /** Injection into an option slot: `some expr` with the operand, `none`
+   * without it. */
+  | { kind: "option"; expr?: EmitExpr }
+  | { kind: "option-test"; expr: EmitExpr; present: boolean }
+  /** The throwing projection out of an option slot, the twin of
+   * `project`; unreachable behind its test, present so the rendering is
+   * total. */
+  | { kind: "option-get"; expr: EmitExpr }
   /** A `typeof` test on a union-typed operand, against one of the eight
    * results `typeof` can answer. */
   | { kind: "typeof-test"; expr: EmitExpr; result: string }
@@ -101,11 +109,21 @@ export type EmitExpr =
 export type EmitStmt =
   | { kind: "return"; expr: EmitExpr }
   | { kind: "throw"; error: string }
-  /** A local's `type` is present exactly for a union binding — the same
-   * normalized tag array a parameter's type carries; absent means the
-   * numeric slice the statement always had. */
-  | { kind: "const"; name: string; init: EmitExpr; type?: UnionTag[] }
-  | { kind: "let"; name: string; init: EmitExpr; type?: UnionTag[] }
+  /** A local's `type` is present exactly for a union or class binding —
+   * the same normalized tag array or class reference a parameter's type
+   * carries; absent means the numeric slice the statement always had. */
+  | {
+      kind: "const";
+      name: string;
+      init: EmitExpr;
+      type?: UnionTag[] | { class: string; module?: string };
+    }
+  | {
+      kind: "let";
+      name: string;
+      init: EmitExpr;
+      type?: UnionTag[] | { class: string; module?: string };
+    }
   | { kind: "assign"; name: string; expr: EmitExpr }
   | { kind: "if"; cond: EmitExpr; then: EmitStmt[]; else?: EmitStmt[] }
   | { kind: "field-set"; field: string; expr: EmitExpr };
@@ -115,7 +133,11 @@ export type EmitStmt =
  * class. */
 export interface EmitParam {
   name: string;
-  type: "number" | UnionTag[] | { class: string; module?: string };
+  type:
+    | "number"
+    | UnionTag[]
+    | { class: string; module?: string }
+    | { option: { class: string; module?: string } };
 }
 
 export interface EmitFunction {
@@ -190,7 +212,17 @@ export type UnionTag = (typeof UNION_TAGS)[number];
 /** A value's type in the walk: a number, a keyword union, or an instance
  * of a modeled class. Only parameters can carry the union and instance
  * types; locals, fields, and returns are numbers. */
-export type ValueTy = "num" | { instance: ModelRef } | { union: UnionTag[] };
+export type ValueTy =
+  | "num"
+  | { instance: ModelRef }
+  | { union: UnionTag[] }
+  /** A defaulted class parameter's slot: the instance or `undefined`,
+   * which the tagged domain cannot hold, so it is Lean's `Option`. */
+  | { option: ModelRef };
+
+function isOptionTy(t: Expected): t is { option: ModelRef } {
+  return typeof t !== "string" && "option" in t;
+}
 
 /** Whether two model references name the same class. */
 function sameClass(a: ModelRef, b: ModelRef): boolean {
@@ -233,6 +265,13 @@ function keywordTag(m: ts.TypeNode): UnionTag | undefined {
 function wireParam(name: string, ty: ValueTy): EmitParam {
   if (ty === "num") return { name, type: "number" };
   if ("union" in ty) return { name, type: [...ty.union] };
+  if ("option" in ty) {
+    const { module, name: cls } = ty.option;
+    return {
+      name,
+      type: { option: { class: cls, ...(module !== "" ? { module } : {}) } },
+    };
+  }
   const { module, name: cls } = ty.instance;
   return {
     name,
@@ -288,8 +327,10 @@ function checkCtorArity(ref: ModelRef, shape: ClassShape, got: number): void {
 }
 
 /** What an omitted argument becomes at a slot that admits omission. */
-function fillOmitted(_slot: ValueTy): EmitExpr {
-  return { kind: "inject", tag: "undefined" };
+function fillOmitted(slot: ValueTy): EmitExpr {
+  return isOptionTy(slot)
+    ? { kind: "option" }
+    : { kind: "inject", tag: "undefined" };
 }
 
 /** A call's arguments against a signature, each omitted trailing one
@@ -519,8 +560,10 @@ function varAccess(
   if (!ts.isIdentifier(obj)) return undefined;
   const ty = scope.vars.get(obj.text);
   // A union-typed identifier has no members: the domain holds values, not
-  // shapes, so a member read of one is not this access.
-  if (ty === undefined || ty === "num" || "union" in ty) return undefined;
+  // shapes, so a member read of one is not this access. A body binds at
+  // the declared type, never at an option, so that case cannot arise.
+  if (ty === undefined || ty === "num" || "union" in ty || "option" in ty)
+    return undefined;
   if (!ts.isIdentifier(e.name)) return undefined;
   return { ref: ty.instance, object: obj.text, name: e.name.text };
 }
@@ -1215,6 +1258,11 @@ function describeTy(t: Expected): string {
   if (t === "num") return "a number";
   if (t === "bool") return "a boolean";
   if ("union" in t) return `a '${t.union.join(" | ")}' value`;
+  // The walk dispatches an option slot before any mismatch is reported,
+  // so no message names one; the arm keeps the description total.
+  /* v8 ignore next 2 */
+  if ("option" in t)
+    return `an optional instance of '${displayName(t.option)}'`;
   return `an instance of '${displayName(t.instance)}'`;
 }
 
@@ -1279,6 +1327,8 @@ function walkTyped(
     return walkTyped(e.expression, expected, scope, sf);
   }
   if (isUnionTy(expected)) return walkUnionSlot(e, expected.union, scope, sf);
+  if (isOptionTy(expected))
+    return walkOptionSlot(e, expected.option, scope, sf);
   const negated = negatedLiteral(e);
   if (ts.isNumericLiteral(e) || negated !== undefined) {
     if (expected !== "num") {
@@ -1859,6 +1909,18 @@ function unionEquality(
     left: eqOperand(l, scope, sf),
     right: eqOperand(r, scope, sf),
   };
+}
+
+/** An expression meeting an option slot: `undefined` is `none`, an
+ * instance of the slot's class is `some`, anything else is tsc's. */
+function walkOptionSlot(
+  e: ts.Expression,
+  ref: ModelRef,
+  scope: WalkScope,
+  sf: ts.SourceFile,
+): EmitExpr {
+  if (undefAtom(e, scope)) return { kind: "option" };
+  return { kind: "option", expr: walkTyped(e, { instance: ref }, scope, sf) };
 }
 
 /** An expression meeting a union slot. An identical-union identifier
@@ -2460,6 +2522,19 @@ function defaultFailure(name: string, reason: string): string {
   return `parameter '${name}' has a default the model cannot evaluate: ${reason}`;
 }
 
+/** The `type` a local binding at `ty` carries on the wire: absent for the
+ * numeric slice, the tag array for a union, the class for an instance. */
+function bindingTy(ty: ValueTy): {
+  type?: UnionTag[] | { class: string; module?: string };
+} {
+  if (ty === "num") return {};
+  if ("union" in ty) return { type: [...ty.union] };
+  /* v8 ignore next -- a body never binds at an option; the opening is T */
+  if ("option" in ty) return {};
+  const { module, name } = ty.instance;
+  return { type: { class: name, ...(module !== "" ? { module } : {}) } };
+}
+
 /** The statements a body opens with: each defaulted parameter rebound at
  * its declared type to its initializer when the slot holds `undefined`.
  * JavaScript resolves defaults after every argument, left to right, with
@@ -2495,24 +2570,27 @@ function defaultOpenings(
       throw new ModelError(defaultFailure(p.name, err.message), err.construct);
     }
     const slot: EmitExpr = { kind: "id", name: p.name };
-    out.push({
-      kind: assigned.has(p.name) ? "let" : "const",
-      name: p.name,
-      init: {
-        kind: "cond",
-        cond: {
+    // A class default's slot is an option, tested and projected on its
+    // own; every other slot lives in the tagged domain.
+    const optional = isOptionTy(p.slot);
+    const cond: EmitExpr = optional
+      ? { kind: "option-test", expr: slot, present: false }
+      : {
           kind: "jsval-eq",
           semantics: "strict",
           left: slot,
           right: { kind: "inject", tag: "undefined" },
-        },
-        then: init,
-        else:
-          p.ty === "num"
-            ? { kind: "project", tag: "number", expr: slot }
-            : slot,
-      },
-      ...(p.ty !== "num" && "union" in p.ty ? { type: [...p.ty.union] } : {}),
+        };
+    const fallthrough: EmitExpr = optional
+      ? { kind: "option-get", expr: slot }
+      : p.ty === "num"
+        ? { kind: "project", tag: "number", expr: slot }
+        : slot;
+    out.push({
+      kind: assigned.has(p.name) ? "let" : "const",
+      name: p.name,
+      init: { kind: "cond", cond, then: init, else: fallthrough },
+      ...bindingTy(p.ty),
     });
   });
   return out;
@@ -2793,12 +2871,9 @@ type WalkedParam = {
 type WalkedParams = WalkedParam[];
 
 /** The boundary type a defaulted parameter presents to callers. The
- * tagged domain has no instance tag, so a class default keeps its refusal. */
-function boundaryTy(
-  ty: ValueTy,
-  p: ts.ParameterDeclaration,
-  sf: ts.SourceFile,
-): ValueTy | FailedDecl {
+ * tagged domain has no instance tag, so a class default takes an option
+ * of that class instead. */
+function boundaryTy(ty: ValueTy): ValueTy {
   if (ty === "num") return { union: ["number", "undefined"] };
   if ("union" in ty) {
     const tags = UNION_TAGS.filter(
@@ -2806,7 +2881,9 @@ function boundaryTy(
     );
     return { union: [...tags] };
   }
-  return constructAt(p, p.kind, sf);
+  /* v8 ignore next -- a walked parameter's type is never already an option */
+  if ("option" in ty) return ty;
+  return { option: ty.instance };
 }
 
 /** Names and types for a parameter list, or the first failure — the
@@ -2834,8 +2911,7 @@ function walkParams(
     const ty = paramValueTy(p, sf, reg);
     if (typeof ty !== "string" && "reason" in ty) return ty;
     const init = p.initializer;
-    const slot = init === undefined ? ty : boundaryTy(ty, p, sf);
-    if (typeof slot !== "string" && "reason" in slot) return slot;
+    const slot = init === undefined ? ty : boundaryTy(ty);
     out.push({
       name: (p.name as ts.Identifier).text,
       ty,
@@ -3566,9 +3642,9 @@ function lowerCtorParams(
     const name = shape.ctorParamNames[i]!;
     if (slot === "num") return { name, kind: "number" };
     // A constructor admits no declared union, so a union slot is exactly
-    // a defaulted number.
+    // a defaulted number; an option slot is a defaulted class.
     if ("union" in slot) return { name, kind: "number", defaulted: true };
-    const ref = slot.instance;
+    const ref = "option" in slot ? slot.option : slot.instance;
     const inner = classes.get(modelKey(ref))!;
     return {
       name,
@@ -3576,6 +3652,7 @@ function lowerCtorParams(
       className: ref.name,
       ...(ref.module !== "" ? { module: ref.module } : {}),
       ctorParams: lowerCtorParams(inner, classes),
+      ...("option" in slot ? { defaulted: true } : {}),
     };
   });
 }
