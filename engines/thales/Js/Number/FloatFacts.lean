@@ -3327,12 +3327,12 @@ theorem float_lt_of_le_of_lt {a b c : Float} (hab : Float.le a b = true)
 
 IEEE comparison is total except at NaN, where every comparison is false.
 A branch condition that came back false therefore says something about the
-reverse comparison only once NaN is ruled out — which the infinity bounds
-a `number` binder emits do. -/
+reverse comparison only once NaN is ruled out — which strict infinity
+bounds on both operands do. -/
 
 -- Bound-shaped hypotheses here are spelled `1.0 / 0.0`: `floatInf` lives
 -- in `Js/Binders`, which this file does not import. `Js/Norm` restates
--- these on that spelling for the search.
+-- these on that spelling.
 
 /-- A float strictly inside the infinities is not NaN. -/
 theorem unpack_ne_nan {c : Float} (hLo : (-(1.0 / 0.0) : Float) < c)

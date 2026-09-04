@@ -6,8 +6,8 @@ Binary64 operations JavaScript has and Lean does not.
 Lean ships no float remainder at all — no `Float.mod`, no `Mod Float`
 instance — so `%` has nothing to map to. It is built here from
 `Float.Model` rather than an `extern`, which keeps it reducible in the
-kernel: the `decide` rung can evaluate it, and no proof that uses it
-rests on an axiom.
+kernel: `decide` can evaluate it, and no proof that uses it rests on an
+axiom.
 -/
 
 namespace Js.Number.FloatOps

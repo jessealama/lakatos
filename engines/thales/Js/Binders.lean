@@ -4,9 +4,8 @@ namespace Js
 against (core has `Float.isInf` but no constant). -/
 def floatInf : Float := 1.0 / 0.0
 
-/-- Bounded ∀ over the half-open interval `[lo, hi)` of `Int` — the shape
-Lemma binder guards elaborate to. Carries its own `Decidable` instance so
-`decide` works on bounded properties. -/
+/-- Bounded ∀ over the half-open interval `[lo, hi)` of `Int`. Carries its
+own `Decidable` instance so `decide` works on bounded properties. -/
 def ballIco (lo hi : Int) (p : Int → Prop) : Prop :=
   ∀ x : Int, lo ≤ x → x < hi → p x
 

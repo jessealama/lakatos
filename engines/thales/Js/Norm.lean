@@ -8,10 +8,10 @@ import Js.Binders
 
 /-! The `js_norm` simp set: normalization lemmas that strip JsM's
 monadic wrapping from pure-looking goals, leaving bare Int arithmetic
-for the closers, plus the binary64 facts `FloatFacts` proves — vanilla
-Lean carries no float theory, so a residual goal about `Float` has none
-until one lands here. Model definitions join the set at
-model-elaboration time, so goals can unfold them. -/
+for `simp` and `grind` to finish, plus the binary64 facts `FloatFacts`
+proves — vanilla Lean carries no float theory, so a residual goal about
+`Float` has none until one lands here. Definitions tagged `@[js_norm]`
+join the set, so goals can unfold them. -/
 
 namespace Js
 
@@ -26,15 +26,14 @@ open Js.Number
     ((pure a : JsM α) = pure b) ↔ a = b :=
   ⟨fun h => Except.ok.inj h, fun h => h ▸ rfl⟩
 
-/-! A lowered `if` is a `cond` between two `JsM` computations. The set
-keeps such a branch at the top of its expression — everything downstream
-of it is pushed into both arms — and splits it into the two implications
-its arms carry, which is what hands the closers the branch condition as a
-hypothesis on the arm it selects. Only that shape lets a literal arm
-reduce: while a branch sits under an operation, neither arm is a term the
-ground evaluators can see. A branch both of whose arms came out as one
-term collapses to that term instead of splitting, so it never reaches the
-closers at all. -/
+/-! A JS `if` is a `cond` between two `JsM` computations. The set keeps
+such a branch at the top of its expression — everything downstream of it
+is pushed into both arms — and splits it into the two implications its
+arms carry, so each arm is proved under its own branch condition. Only
+that shape lets a literal arm reduce: while a branch sits under an
+operation, neither arm is a term a ground evaluator can see. A branch
+both of whose arms came out as one term collapses to that term instead
+of splitting. -/
 
 /-- What follows a branch runs in whichever arm was taken. -/
 @[js_norm] theorem jsm_cond_bind {α β : Type} (c : Bool)
@@ -42,20 +41,20 @@ closers at all. -/
     ((bif c then x else y) >>= f) = bif c then (x >>= f) else (y >>= f) := by
   cases c <;> rfl
 
-/-- A branch on one side of an equation is one obligation per arm. -/
+/-- A branch on one side of an equation is one goal per arm. -/
 @[js_norm] theorem jsm_cond_eq {α : Type} (c : Bool) (x y z : JsM α) :
     ((bif c then x else y) = z) ↔ ((c = true → x = z) ∧ (c = false → y = z)) := by
   cases c <;> simp
 
-/-- The same split for a branch that reached the boolean island itself. -/
+/-- The same split for a `Bool`-valued branch equated to `true`. -/
 @[js_norm] theorem cond_eq_true_iff (c a b : Bool) :
     ((bif c then a else b) = true) ↔ ((c = true → a = true) ∧ (c = false → b = true)) := by
   cases c <;> simp
 
--- Boolean islands: after jsm_pure_inj, `decide P = true` becomes `P`.
+-- Once jsm_pure_inj has stripped the `pure`, `decide P = true` becomes `P`.
 attribute [js_norm] decide_eq_true_eq
 
-/-! A guarded constructor lowers to an `ite` per guard with the whole
+/-! A constructor whose guards throw is an `ite` per guard with the whole
 continuation copied into both arms, so its image is exponential in the
 guards before anything reasons about it. The lemmas below flatten it back:
 the throw guard becomes a `= false` conjunct, the branches migrate out of
@@ -65,10 +64,10 @@ field. -/
 
 /-- A guard that throws succeeds exactly when it was down and the rest
 succeeded. Only the rest survives, so the fact is linear in the guards
-however much the lowering copied under the throw. The `throw` stays
-spelled as it was: the facts grind brings to a guard it could not refute
-are keyed on that spelling, and normalizing it away puts them out of
-reach. -/
+however many copies of the continuation sit under the throw. The `throw`
+stays spelled as it was: the facts grind brings to a guard it could not
+refute are keyed on that spelling, and normalizing it away puts them out
+of reach. -/
 @[js_norm] theorem jsm_ite_throw_ok_iff {α : Type} (c : Bool) (e : JsError)
     (r : JsM α) (v : α) :
     ((if c = true then (throw e : JsM α) else r) = Except.ok v) ↔
@@ -89,20 +88,20 @@ reach. -/
       pure (if c = true then a else b) := by
   cases c <;> rfl
 
-/-- The emitted image equation spells its right-hand side `.ok`, so the
-`pure`-on-both-sides injection never reaches it. -/
+/-- An image equation spelled with `.ok` on the right, which the
+`pure`-on-both-sides injection never reaches. -/
 @[js_norm] theorem jsm_pure_eq_ok {α : Type} (a b : α) :
     ((pure a : JsM α) = Except.ok b) ↔ a = b :=
   ⟨fun h => Except.ok.inj h, fun h => h ▸ rfl⟩
 
 -- A branch both of whose arms are one term, and a branch whose condition a
 -- ground evaluator settled: neither carries information, and each collapse
--- halves the tree the closers walk.
+-- halves the tree left to simplify.
 attribute [js_norm] Bool.cond_self ite_self Bool.cond_true Bool.cond_false
   Bool.false_eq_true ite_true ite_false
 
--- Binary64 theory from FloatFacts. Rewriting subtraction away leaves the
--- closers one operator fewer to reason about.
+-- Binary64 theory from FloatFacts. Rewriting subtraction away leaves one
+-- operator fewer to reason about.
 attribute [js_norm, grind =] Js.Number.FloatFacts.float_sub_eq_add_neg
 
 -- Double negation strips: reachable now that unary minus is in the
@@ -116,17 +115,18 @@ attribute [js_norm, grind =] Js.Number.FloatFacts.float_neg_neg
 attribute [grind =] Js.Number.FloatFacts.float_mul_comm
 attribute [grind =] Js.Number.FloatFacts.float_add_comm
 
-/-- Open bounded ∀s so the closers see the inequalities. Tagged for grind
-too: the grind rung shares the normalization knowledge. -/
+/-- Open bounded ∀s so the inequalities become hypotheses. Tagged for
+grind too, so it can open them without a simp pass first. -/
 @[js_norm, grind =] theorem ballIco_iff (lo hi : Int) (p : Int → Prop) :
     ballIco lo hi p ↔ ∀ x : Int, lo ≤ x → x < hi → p x :=
   Iff.rfl
 
 /-! The four monotonicity facts, restated on `floatInf` so their bound
-hypotheses match what number binders emit, and given grind patterns keyed
-on the operation terms: whenever both sides of a comparison goal apply
-the same operation, the fact instantiates and the guard chain closes by
-forward reasoning. -/
+hypotheses match the strict infinity bounds a finite `JsNumber` carries
+(`-floatInf < x`, `x < floatInf`), and given grind patterns keyed on the
+operation terms: whenever both sides of a comparison goal apply the same
+operation, the fact instantiates and the implication closes by forward
+reasoning. -/
 
 /-- Multiplying both sides by a positive finite factor. -/
 theorem float_le_mul_of_le {x y c : Float} (h : Float.le x y = true)
@@ -154,11 +154,11 @@ theorem float_neg_lo {c : Float} (h : c < floatInf) : -floatInf < -c :=
 theorem float_neg_hi {c : Float} (h : -floatInf < c) : -c < floatInf :=
   FloatFacts.float_neg_bound_hi h
 
-/-! A finite binder bound reaches the infinity hypotheses through one
-ground comparison: transitivity chains `c < 1000` with `1000 < floatInf`,
-and the ground link evaluates away during grind preprocessing. The
-infinity endpoint is fixed in each statement so the binder-emitted
-comparison alone determines the instantiation. -/
+/-! A finite bound reaches the infinity hypotheses through one ground
+comparison: transitivity chains `c < 1000` with `1000 < floatInf`, and
+the ground link evaluates away during grind preprocessing. The infinity
+endpoint is fixed in each statement so the finite comparison alone
+determines the instantiation. -/
 
 theorem float_lt_inf_of_lt {a b : Float} (h : a < b) (hb : b < floatInf) :
     a < floatInf :=
@@ -177,9 +177,9 @@ theorem float_gt_neg_inf_of_le {a b : Float} (ha : -floatInf < a) (h : a ≤ b) 
   FloatFacts.float_lt_of_lt_of_le ha h
 
 /-- IEEE comparison is total away from NaN, so a branch condition that came
-back false is the reverse comparison. What rules NaN out is the pair of
-infinity bounds a `number` binder emits; a literal operand's own pair is
-ground and evaluates away. -/
+back false is the reverse comparison. What rules NaN out is each operand's
+pair of strict infinity bounds; a literal operand's own pair is ground
+and evaluates away. -/
 theorem float_le_of_not_lt {x y : Float} (hxLo : -floatInf < x) (hxHi : x < floatInf)
     (hyLo : -floatInf < y) (hyHi : y < floatInf) (h : Float.lt x y = false) :
     Float.le y x = true :=
@@ -192,8 +192,8 @@ theorem float_lt_eq_false_of_le {x y : Float} (h : Float.le y x = true) :
   FloatFacts.float_lt_eq_false_of_le h
 
 /-! The non-negativity chain: square, sum, square root. The NaN bridges
-are its entry points, restated on `floatInf` so the bound hypotheses a
-`number` binder emits instantiate them directly. -/
+are its entry points, restated on `floatInf` so strict infinity bounds
+instantiate them directly. -/
 
 /-- A float strictly inside the infinities is not NaN. -/
 theorem float_ne_nan_of_bounds {c : Float} (hLo : -floatInf < c) (hHi : c < floatInf) :
@@ -225,10 +225,10 @@ theorem float_sqrt_nonneg {x : Float} (hx : Float.le 0 x = true) :
     Float.le 0 (Float.sqrt x) = true :=
   FloatFacts.float_sqrt_nonneg hx
 
-/-! Guard refutation: the bounds a `number` binder emits rule out the
-equality tests a throwing guard makes — IEEE equality with an infinity,
-SameValue with NaN. Refuting the condition is the only way to discharge
-an arm whose body is a `throw`, which no pure result equals. -/
+/-! Guard refutation: strict infinity bounds rule out the equality tests
+a throwing guard makes — IEEE equality with an infinity, SameValue with
+NaN. Refuting the condition is the only way to discharge an arm whose
+body is a `throw`, which no pure result equals. -/
 
 /-- Bounded above means not `+∞`. -/
 theorem float_beq_inf_eq_false {x : Float} (hHi : x < floatInf) :
@@ -248,8 +248,8 @@ theorem sameValue_nan_eq_false {x : Float}
 
 /-! The converse direction: a constructor that survived its guards hands
 the proof refuted equality tests, not bounds. These recover the strict
-bounds from the refutations, which is the only finiteness a class binder
-has. -/
+bounds from the refutations, all the finiteness a value known only
+through its guards has. -/
 
 /-- Not IEEE-equal to `+∞` (and not NaN) means strictly below it. -/
 theorem float_lt_inf_of_beq_false {x : Float}
@@ -289,7 +289,7 @@ theorem isFinite_iff {x : Float} :
 /-! A constructor's guards throw, so what follows a triggered guard never
 runs. These two are what let a successful construction refute the guards
 it passed; both are definitional on `Except`, and neither is derivable
-from the monad laws the closers already know. -/
+from the monad laws already in the simp set. -/
 
 /-- A throw discards its continuation. -/
 @[simp, grind =] theorem jsm_throw_bind {α β : Type} (e : JsError) (k : α → JsM β) :
@@ -328,16 +328,16 @@ def reduceGroundFloatCmp (e : Expr) : SimpM Step := do
 
 /-- A literal factor instantiates a monotonicity fact with ground bound
 hypotheses; these evaluate away during normalization. Registered in
-`seval` because that is the set both grind and the generic rung draw
-their simprocs from. -/
+`seval`, the symbolic evaluator's set, which grind's preprocessing draws
+its simprocs from and a simp call can take alongside `js_norm`. -/
 simproc [seval] reduceFloatLt ((_ : Float) < _) := reduceGroundFloatCmp
 
 simproc [seval] reduceFloatLe ((_ : Float) ≤ _) := reduceGroundFloatCmp
 
 open Lean Meta Simp in
-/-- The same evaluation one level down, on the `Bool` the source-level
-comparisons actually lower to. A branch whose arms are literals leaves
-exactly these behind once the condition has been split on. -/
+/-- The same evaluation one level down, on the `Bool` a JS comparison
+denotes. A branch whose arms are literals leaves exactly these behind
+once the condition has been split on. -/
 def reduceGroundFloatBool (e : Expr) : SimpM Step := do
   if e.hasFVar || e.hasExprMVar then return .continue
   let r ← withAtLeastTransparency .default <| whnf e
@@ -404,8 +404,8 @@ grind_pattern float_le_of_not_lt => Float.lt x y
 grind_pattern float_lt_eq_false_of_le => Float.lt x y
 grind_pattern float_ne_nan_of_bounds => c.toModel.unpack
 grind_pattern float_sub_ne_nan_of_bounds => (a - b).toModel.unpack
--- Normalization rewrites subtraction to addition of the negation, so the
--- residual a closer actually sees carries the second spelling.
+-- Normalization rewrites subtraction to addition of the negation, so a
+-- normalized goal carries the second spelling.
 grind_pattern float_sub_ne_nan_of_bounds => (a + -b).toModel.unpack
 grind_pattern float_sq_nonneg => x * x
 grind_pattern float_add_nonneg => a + b
