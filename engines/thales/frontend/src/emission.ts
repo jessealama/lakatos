@@ -2457,6 +2457,96 @@ function bodyPrescan(
   return undefined;
 }
 
+/** The names a statement tree assigns anywhere, arms included. */
+function assignedIn(
+  stmts: readonly TStmt[],
+  into = new Set<string>(),
+): Set<string> {
+  for (const s of stmts) {
+    if (s.t === "assign") into.add(s.name);
+    else if (s.t === "if") {
+      assignedIn(s.then, into);
+      if (s.else !== undefined) assignedIn(s.else, into);
+    }
+  }
+  return into;
+}
+
+/** The pre-scans a body runs, over one initializer expression. */
+function exprPrescan(
+  e: ts.Expression,
+  sf: ts.SourceFile,
+  scope: WalkScope,
+): FailedDecl | undefined {
+  return (
+    findConstruct(e, sf, scope) ??
+    findRefusedOp(e) ??
+    failedCalleeIn(callNames(e, scope), scope) ??
+    findFailedMemberUse(e, scope)
+  );
+}
+
+function defaultFailure(name: string, reason: string): string {
+  return `parameter '${name}' has a default the model cannot evaluate: ${reason}`;
+}
+
+/** The statements a body opens with: each defaulted parameter rebound at
+ * its declared type to its initializer when the slot holds `undefined`.
+ * JavaScript resolves defaults after every argument, left to right, with
+ * earlier parameters in scope — which is what statements in declaration
+ * order at the top of the body denote. */
+function defaultOpenings(
+  params: WalkedParams,
+  tree: readonly TStmt[],
+  scope: WalkScope,
+  sf: ts.SourceFile,
+): EmitStmt[] {
+  const assigned = assignedIn(tree);
+  const out: EmitStmt[] = [];
+  params.forEach((p, i) => {
+    if (p.init === undefined) return;
+    const initScope: WalkScope = {
+      ...scope,
+      vars: new Map(params.slice(0, i).map((q) => [q.name, q.ty])),
+    };
+    const failed = exprPrescan(p.init, sf, initScope);
+    if (failed !== undefined) {
+      throw new ModelError(
+        defaultFailure(p.name, failed.reason),
+        failed.construct,
+      );
+    }
+    let init: EmitExpr;
+    try {
+      init = walkTyped(p.init, p.ty, initScope, sf);
+    } catch (err) {
+      if (err instanceof ModelError)
+        throw new ModelError(defaultFailure(p.name, err.message), err.construct);
+      /* v8 ignore next 2 -- the walk throws nothing else */
+      throw err;
+    }
+    const slot: EmitExpr = { kind: "id", name: p.name };
+    out.push({
+      kind: assigned.has(p.name) ? "let" : "const",
+      name: p.name,
+      init: {
+        kind: "cond",
+        cond: {
+          kind: "jsval-eq",
+          semantics: "strict",
+          left: slot,
+          right: { kind: "inject", tag: "undefined" },
+        },
+        then: init,
+        else:
+          p.ty === "num" ? { kind: "project", tag: "number", expr: slot } : slot,
+      },
+      ...(p.ty !== "num" && "union" in p.ty ? { type: [...p.ty.union] } : {}),
+    });
+  });
+  return out;
+}
+
 /** The synthesized vocabulary a member name may not take: the
  * constructor model, and the names Lean's structure command generates. */
 const RESERVED_MEMBERS = new Set([
@@ -3153,18 +3243,22 @@ function walkClass(
       continue;
     }
     try {
+      const openings = defaultOpenings(params, body, scope, sf);
       methods.push({
         name: spelling,
         params: params.map((p) => wireParam(p.name, p.slot)),
-        body: lowerTree(
-          body,
-          params.map((p) => [p.name, p.ty] as const),
-          () => {
-            throw new ModelError("the body must return on every path");
-          },
-          scope,
-          sf,
-        ),
+        body: [
+          ...openings,
+          ...lowerTree(
+            body,
+            params.map((p) => [p.name, p.ty] as const),
+            () => {
+              throw new ModelError("the body must return on every path");
+            },
+            scope,
+            sf,
+          ),
+        ],
       });
       methodSigs.set(spelling, sigOf(params));
     } catch (err) {
@@ -3290,17 +3384,21 @@ function walkFunction(
   const prescan = bodyPrescan(tree, sf, scope);
   if (prescan !== undefined) return prescan;
   try {
-    const body = lowerTree(
-      tree,
-      params.map((p) => [p.name, p.ty] as const),
-      () => {
-        // A `number` function that runs off the end returns undefined,
-        // which this slice has no value for.
-        throw new ModelError("the body must return on every path");
-      },
-      scope,
-      sf,
-    );
+    const openings = defaultOpenings(params, tree, scope, sf);
+    const body = [
+      ...openings,
+      ...lowerTree(
+        tree,
+        params.map((p) => [p.name, p.ty] as const),
+        () => {
+          // A `number` function that runs off the end returns undefined,
+          // which this slice has no value for.
+          throw new ModelError("the body must return on every path");
+        },
+        scope,
+        sf,
+      ),
+    ];
     return {
       emit: {
         kind: "function",

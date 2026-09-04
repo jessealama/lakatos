@@ -5470,6 +5470,152 @@ describe("a defaulted parameter's slot type", () => {
   });
 });
 
+describe("a body opens by resolving each default", () => {
+  const ADD =
+    "/** @ensures{p} forall (a: int ∈ [0, 5)) { add(a, a) >= 0 } */\n" +
+    "export function add(x: number, y: number = 0): number {\n" +
+    "  return x + y;\n}\n";
+
+  test("a defaulted number is rebound at number ahead of the body", () => {
+    const { emission } = emitModule(ADD, "t.ts");
+    const fn = emission.declarations[0];
+    assert(fn?.kind === "function");
+    expect(fn.body).toEqual([
+      {
+        kind: "const",
+        name: "y",
+        init: {
+          kind: "cond",
+          cond: {
+            kind: "jsval-eq",
+            semantics: "strict",
+            left: { kind: "id", name: "y" },
+            right: { kind: "inject", tag: "undefined" },
+          },
+          then: { kind: "num", lit: "0" },
+          else: {
+            kind: "project",
+            tag: "number",
+            expr: { kind: "id", name: "y" },
+          },
+        },
+      },
+      {
+        kind: "return",
+        expr: {
+          kind: "binop",
+          op: "+",
+          left: { kind: "id", name: "x" },
+          right: { kind: "id", name: "y" },
+        },
+      },
+    ]);
+  });
+
+  test("a defaulted union rebinds at its declared union", () => {
+    const src =
+      "/** @ensures{p} forall (a: int ∈ [0, 5)) { f(a) >= 0 } */\n" +
+      "export function f(x: number, y: number | null | undefined = null): number {\n" +
+      "  return x;\n}\n";
+    const { emission } = emitModule(src, "t.ts");
+    const fn = emission.declarations[0];
+    assert(fn?.kind === "function");
+    expect(fn.body[0]).toEqual({
+      kind: "const",
+      name: "y",
+      type: ["number", "undefined", "null"],
+      init: {
+        kind: "cond",
+        cond: {
+          kind: "jsval-eq",
+          semantics: "strict",
+          left: { kind: "id", name: "y" },
+          right: { kind: "inject", tag: "undefined" },
+        },
+        then: { kind: "inject", tag: "null" },
+        else: { kind: "id", name: "y" },
+      },
+    });
+  });
+
+  test("a parameter the body assigns opens as a mutable binding", () => {
+    const src =
+      "/** @ensures{p} forall (a: int ∈ [0, 5)) { f(a) >= 0 } */\n" +
+      "export function f(x: number, y: number = 1): number {\n" +
+      "  y = y + x;\n  return y;\n}\n";
+    const { emission } = emitModule(src, "t.ts");
+    const fn = emission.declarations[0];
+    assert(fn?.kind === "function");
+    expect(fn.body[0]).toMatchObject({ kind: "let", name: "y" });
+  });
+
+  test("an initializer sees earlier parameters at their declared type", () => {
+    const src =
+      "/** @ensures{p} forall (a: int ∈ [0, 5)) { f(a) >= 0 } */\n" +
+      "export function f(x: number, y: number = x * 2): number {\n" +
+      "  return y;\n}\n";
+    const { classified, emission } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    const fn = emission.declarations[0];
+    assert(fn?.kind === "function");
+    expect(fn.body[0]).toMatchObject({
+      init: {
+        then: {
+          kind: "binop",
+          op: "*",
+          left: { kind: "id", name: "x" },
+          right: { kind: "num", lit: "2" },
+        },
+      },
+    });
+  });
+
+  test("an initializer naming a later parameter is the unbound invariant", () => {
+    const src =
+      "/** @ensures{p} forall (a: int ∈ [0, 5)) { f(a) >= 0 } */\n" +
+      "export function f(x: number = y, y: number = 1): number {\n" +
+      "  return x;\n}\n";
+    expect(classifications(src).classified).toEqual([
+      [
+        "Error",
+        "'f' could not be modeled: parameter 'x' has a default the model " +
+          "cannot evaluate: unbound identifier 'y'",
+      ],
+    ]);
+  });
+
+  test("an initializer outside the slice refuses the declaration with its construct", () => {
+    const src =
+      "/** @ensures{p} forall (a: int ∈ [0, 5)) { f(a) >= 0 } */\n" +
+      "export function f(x: number, y: number = 2 ** 3): number {\n" +
+      "  return x;\n}\n";
+    expect(classifications(src).classified).toEqual([
+      [
+        "Inappropriate",
+        "'f' could not be modeled: parameter 'y' has a default the model " +
+          "cannot evaluate: '**' is implementation-approximated in " +
+          "JavaScript, so any model would certify results a conforming " +
+          "engine may disagree with",
+      ],
+    ]);
+  });
+
+  test("an initializer calling into the model lowers as a call", () => {
+    const src =
+      "export function two(): number { return 2; }\n" +
+      "/** @ensures{p} forall (a: int ∈ [0, 5)) { f(a) >= 0 } */\n" +
+      "export function f(x: number, y: number = two()): number {\n" +
+      "  return x + y;\n}\n";
+    const { classified, emission } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    const fn = emission.declarations[1];
+    assert(fn?.kind === "function");
+    expect(fn.body[0]).toMatchObject({
+      init: { then: { kind: "call", callee: "two", args: [] } },
+    });
+  });
+});
+
 describe("class-typed parameters", () => {
   const gapSrc = `
 export class Point {
