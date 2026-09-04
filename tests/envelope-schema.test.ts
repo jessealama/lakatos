@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { expectValidEnvelope } from "./helpers/envelope-schema.js";
-import type { Envelope } from "../src/envelope.js";
+import { UNSUPPORTED_RANGE_KIND, type Envelope } from "../src/envelope.js";
 import { SZS_STATUSES } from "../src/szs.js";
 import { QUALIFIED_NAME_PATTERN } from "../lemma/src/index.js";
 
@@ -504,6 +504,26 @@ describe("envelope schema", () => {
     };
     collect(JSON.parse(schema));
     expect(named).toEqual(new Set(SZS_STATUSES));
+  });
+
+  it("pins the NotTried branch's kind to the unsupported-range constant", () => {
+    const schema = JSON.parse(
+      readFileSync(
+        fileURLToPath(
+          new URL("../schemas/envelope.schema.json", import.meta.url),
+        ),
+        "utf8",
+      ),
+    );
+    const branches = schema.definitions.annotation.oneOf as {
+      properties: { szs: { const?: string }; kind?: { const?: string } };
+    }[];
+    const kinded = branches.filter(
+      (b) => b.properties.szs.const === "NotTried" && b.properties.kind,
+    );
+    expect(kinded.map((b) => b.properties.kind?.const)).toEqual([
+      UNSUPPORTED_RANGE_KIND,
+    ]);
   });
 
   it("keeps the schema's functionName pattern in sync with the builder's", () => {

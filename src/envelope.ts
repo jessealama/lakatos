@@ -14,12 +14,16 @@ export interface PropertyIdentity {
   property: string;
 }
 
-/** One annotation's outcome in a lakatos run. Beyond the refutation
- * kinds, `unsupported-range` marks a NotTried whose range only fits the
- * prover's domain after the safe-integer clamp. */
+/** The one kind outside pabst's Issue kinds: a NotTried whose range only
+ * fits the prover's domain after the safe-integer clamp. The schema's
+ * branch is pinned to this spelling by test; thales's own literal is
+ * pinned by the type union. */
+export const UNSUPPORTED_RANGE_KIND = "unsupported-range" as const;
+
+/** One annotation's outcome in a lakatos run. */
 export interface AnnotationResult extends PropertyIdentity {
   szs: SzsStatus;
-  kind?: IssueKind | "unsupported-range";
+  kind?: IssueKind | typeof UNSUPPORTED_RANGE_KIND;
   counterexample?: Record<string, unknown>;
   error?: string;
   /** Prove pipeline: the construct outside the mappable subset
