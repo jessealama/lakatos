@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { domainCardinality, prefixCardinality } from "../src/cardinality.js";
-import type { Binder } from "../src/binder.js";
+import type { Binder, CtorParam } from "../src/binder.js";
 
 const b = (domain: Binder["domain"], range?: Binder["range"]): Binder => ({
   varName: "x",
@@ -81,13 +81,68 @@ describe("domainCardinality", () => {
     ).toBeUndefined();
   });
 
-  it("a class binder is not enumerable", () => {
-    expect(
-      domainCardinality({
-        varName: "p",
-        domain: { className: "Point", ctorParams: [] },
-      }),
-    ).toBeUndefined();
+  describe("a class binder", () => {
+    const cls = (className: string, ctorParams?: CtorParam[]): Binder => ({
+      varName: "c",
+      domain: {
+        className,
+        ...(ctorParams !== undefined ? { ctorParams } : {}),
+      },
+    });
+    const flag: CtorParam[] = [
+      { name: "on", domain: "boolean" },
+      { name: "armed", domain: "boolean" },
+    ];
+
+    it("multiplies its boolean constructor slots", () => {
+      expect(domainCardinality(cls("Flag", flag))).toBe(4n);
+    });
+
+    it("with a zero-argument constructor has one value", () => {
+      expect(domainCardinality(cls("Unit", []))).toBe(1n);
+    });
+
+    it("is not enumerable with a number, string, or bigint slot", () => {
+      for (const domain of ["number", "string", "bigint"] as const) {
+        expect(
+          domainCardinality(
+            cls("C", [
+              { name: "on", domain: "boolean" },
+              { name: "x", domain },
+            ]),
+          ),
+        ).toBeUndefined();
+      }
+    });
+
+    it("nests: a class-typed slot contributes its own product", () => {
+      const pair: CtorParam[] = [
+        { name: "a", domain: { className: "Flag", ctorParams: flag } },
+        { name: "b", domain: { className: "Flag", ctorParams: flag } },
+        { name: "tag", domain: "boolean" },
+      ];
+      expect(domainCardinality(cls("Pair", pair))).toBe(32n);
+    });
+
+    it("nests: an infinite inner slot makes the outer not enumerable", () => {
+      const inner: CtorParam[] = [{ name: "n", domain: "number" }];
+      expect(
+        domainCardinality(
+          cls("Outer", [
+            { name: "c", domain: { className: "Counter", ctorParams: inner } },
+          ]),
+        ),
+      ).toBeUndefined();
+    });
+
+    it("is not enumerable while its constructor is unresolved", () => {
+      expect(domainCardinality(cls("Point"))).toBeUndefined();
+      expect(
+        domainCardinality(
+          cls("Outer", [{ name: "p", domain: { className: "Point" } }]),
+        ),
+      ).toBeUndefined();
+    });
   });
 });
 
