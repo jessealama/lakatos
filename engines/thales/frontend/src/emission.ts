@@ -1258,6 +1258,9 @@ function describeTy(t: Expected): string {
   if (t === "num") return "a number";
   if (t === "bool") return "a boolean";
   if ("union" in t) return `a '${t.union.join(" | ")}' value`;
+  // The walk dispatches an option slot before any mismatch is reported,
+  // so no message names one; the arm keeps the description total.
+  /* v8 ignore next 2 */
   if ("option" in t)
     return `an optional instance of '${displayName(t.option)}'`;
   return `an instance of '${displayName(t.instance)}'`;

@@ -5683,6 +5683,29 @@ describe("an instance-typed default", () => {
     ]);
   });
 
+  test("a default constructing the enclosing class travels the source-order refusal", () => {
+    // A member body cannot construct its own class either: the class is
+    // not registered until its walk ends. The default takes the same road.
+    const src = `export class Pt {
+  readonly x: number;
+  constructor(x: number) {
+    this.x = x;
+  }
+  /** @ensures{p} forall (a: int ∈ [0, 4)) { new Pt(a).plus() >= 0 } */
+  plus(o: Pt = new Pt(1)): number {
+    return this.x + o.x;
+  }
+}
+`;
+    expect(classifications(src).classified).toEqual([
+      [
+        "Error",
+        "'Pt#plus' could not be modeled: parameter 'o' has a default the " +
+          "model cannot evaluate: no model registered for 'Pt'",
+      ],
+    ]);
+  });
+
   test("a constructor's instance default marks the binder tree", () => {
     const src =
       POINT +

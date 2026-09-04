@@ -760,6 +760,33 @@
       "axioms": []
     }
   ],
+  "engines/thales/tests/conformance/theorem/fn-default-instance.ts": [
+    {
+      "function": "shift",
+      "property": "p",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_5180765680376606950",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/ctor-default-instance.ts": [
+    {
+      "function": "Seg#len",
+      "property": "p",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_1852834193147441580",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/method-default-instance.ts": [
+    {
+      "function": "Pt#plus",
+      "property": "p",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_10595024648801353354",
+      "axioms": []
+    }
+  ],
   "engines/thales/tests/conformance/inappropriate/ctor-default-this.ts": [
     {
       "function": "Q#z",
