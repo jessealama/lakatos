@@ -293,5 +293,13 @@ codes.
 | — | `Timeout` | An engine exhausted its budget. |
 | — | `InputError` / `SyntaxError` / `TypeError` | The annotation or the annotated code is malformed. |
 
+A refuter that evaluates every tuple of a finite binder domain and finds no
+failure reports `Theorem` with kind `enumerated` and the number of tuples
+as `cases`. The claim is about the observed executions under the runtime
+that ran them: impure code invalidates it exactly as it invalidates a
+sampled counterexample. A refuter whose walk runs out of budget reports
+`Timeout` with kind `budget`, never `GaveUp`: it neither sampled nor
+finished, and its reason says how many tuples it evaluated.
+
 TODO: the exact sub-status composition rules for frontends aggregating two
 engines' reports.

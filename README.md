@@ -71,19 +71,25 @@ The report (schema: `schemas/envelope.schema.json`) lists every scraped
 annotation with an [SZS ontology](https://tptp.org/UserDocs/SZSOntology/)
 status:
 
-| Outcome                                 | SZS status           |
-| --------------------------------------- | -------------------- |
-| proved for all inputs                   | `Theorem`            |
-| falsified (counterexample)              | `CounterSatisfiable` |
-| property body threw / prover errored    | `Error`              |
-| generation exhausted / passed / gave up | `GaveUp`             |
-| annotation depends on unmappable code   | `Inappropriate`      |
-| not attempted (stubs, unhealthy runs)   | `NotTried`           |
-| malformed annotation input              | `InputError`         |
-| run interrupted before evaluating it    | `User`               |
+| Outcome                                                            | SZS status           |
+| ------------------------------------------------------------------ | -------------------- |
+| proved for all inputs, or every tuple of a finite domain evaluated | `Theorem`            |
+| falsified (counterexample)                                         | `CounterSatisfiable` |
+| property body threw / prover errored                               | `Error`              |
+| generation exhausted / passed / gave up                            | `GaveUp`             |
+| engine ran out of budget (prover attempt, refuter walk)            | `Timeout`            |
+| annotation depends on unmappable code                              | `Inappropriate`      |
+| not attempted (stubs, unhealthy runs)                              | `NotTried`           |
+| malformed annotation input                                         | `InputError`         |
+| run interrupted before evaluating it                               | `User`               |
 
-The two `GaveUp` cases are distinguished by the `kind` field: present
-(`"exhausted"`) when generation gave up, absent when every run passed.
+`refute` walks a domain of at most 1,000 tuples in full instead of sampling
+it, so a clean pass over such a domain is a `Theorem` with
+`kind: "enumerated"` and `cases`, the number of tuples evaluated; a walk
+that outruns its wall-clock budget is a `Timeout` with `kind: "budget"`.
+Larger domains are sampled, and the two sampled `GaveUp` cases are
+distinguished by the `kind` field: present (`"exhausted"`) when generation
+gave up, absent when every run passed.
 
 `NotTried` also covers unhealthy runs: when the underlying engine run
 fails outright — the test runner dies before reporting, a generated test
