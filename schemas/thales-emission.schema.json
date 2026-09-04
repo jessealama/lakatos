@@ -50,20 +50,29 @@
       }
     },
     "paramType": {
-      "description": "A parameter's declared type: a TypeScript number, a keyword union, or an instance of a modeled class.",
+      "description": "A parameter's slot type: a TypeScript number, a keyword union, an instance of a modeled class, or — for a defaulted class parameter — an option of one.",
       "oneOf": [
         { "const": "number" },
         { "$ref": "#/definitions/unionTags" },
+        { "$ref": "#/definitions/classRef" },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["class"],
+          "required": ["option"],
           "properties": {
-            "class": { "$ref": "#/definitions/identifier" },
-            "module": { "$ref": "#/definitions/modulePath" }
+            "option": { "$ref": "#/definitions/classRef" }
           }
         }
       ]
+    },
+    "classRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["class"],
+      "properties": {
+        "class": { "$ref": "#/definitions/identifier" },
+        "module": { "$ref": "#/definitions/modulePath" }
+      }
     },
     "param": {
       "type": "object",
@@ -352,6 +361,37 @@
         },
         {
           "type": "object",
+          "description": "Injection into an option slot: some with the operand, none without it.",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": {
+            "kind": { "const": "option" },
+            "expr": { "$ref": "#/definitions/expr" }
+          }
+        },
+        {
+          "type": "object",
+          "description": "A presence test on an option slot.",
+          "additionalProperties": false,
+          "required": ["kind", "expr", "present"],
+          "properties": {
+            "kind": { "const": "option-test" },
+            "expr": { "$ref": "#/definitions/expr" },
+            "present": { "type": "boolean" }
+          }
+        },
+        {
+          "type": "object",
+          "description": "The throwing projection out of an option slot, the twin of project; unreachable behind its test, present so the rendering is total.",
+          "additionalProperties": false,
+          "required": ["kind", "expr"],
+          "properties": {
+            "kind": { "const": "option-get" },
+            "expr": { "$ref": "#/definitions/expr" }
+          }
+        },
+        {
+          "type": "object",
           "description": "A typeof test on a union-typed operand against one of the eight typeof results.",
           "additionalProperties": false,
           "required": ["kind", "expr", "result"],
@@ -541,8 +581,11 @@
             "name": { "$ref": "#/definitions/identifier" },
             "init": { "$ref": "#/definitions/expr" },
             "type": {
-              "$ref": "#/definitions/unionTags",
-              "description": "Present exactly for a union-typed local; absent means the numeric slice the statement always had."
+              "description": "Present exactly for a union-typed or class-typed local; absent means the numeric slice the statement always had.",
+              "oneOf": [
+                { "$ref": "#/definitions/unionTags" },
+                { "$ref": "#/definitions/classRef" }
+              ]
             }
           }
         },

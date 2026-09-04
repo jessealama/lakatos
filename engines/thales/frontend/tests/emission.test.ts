@@ -4,6 +4,7 @@ import { schemaValidator } from "../../../../tests/helpers/schema-validator.js";
 import {
   type EmitClass,
   type EmitDecl,
+  type EmitExpr,
   type EmitFunction,
   type EmitStmt,
   emitModule,
@@ -5596,19 +5597,113 @@ describe("a defaulted parameter's slot type", () => {
       type: ["number", "undefined", "null"],
     });
   });
+});
 
-  test("a defaulted instance parameter still refuses at the parameter", () => {
+describe("an instance-typed default", () => {
+  const POINT = `export class Pt {
+  readonly x: number;
+  constructor(x: number) {
+    this.x = x;
+  }
+}
+`;
+
+  test("the parameter is an option slot and the body opens on it", () => {
     const src =
-      BOX +
+      POINT +
       "/** @ensures{p} forall (a: int ∈ [0, 5)) { g(a) >= 0 } */\n" +
-      "export function g(a: number, b: Box = new Box(1)): number {\n" +
-      "  return a;\n}\n";
-    expect(classifications(src).classified).toEqual([
-      [
-        "Inappropriate",
-        "'g' could not be modeled: unmapped TypeScript construct 'Parameter' at 12:30",
-      ],
+      "export function g(a: number, p: Pt = new Pt(1)): number {\n" +
+      "  return a + p.x;\n}\n";
+    const { classified, emission } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    const g = emission.declarations[1];
+    assert(g?.kind === "function");
+    expect(g.params[1]).toEqual({
+      name: "p",
+      type: { option: { class: "Pt" } },
+    });
+    expect(g.body[0]).toEqual({
+      kind: "const",
+      name: "p",
+      type: { class: "Pt" },
+      init: {
+        kind: "cond",
+        cond: {
+          kind: "option-test",
+          expr: { kind: "id", name: "p" },
+          present: false,
+        },
+        then: {
+          kind: "new",
+          className: "Pt",
+          args: [{ kind: "num", lit: "1" }],
+        },
+        else: { kind: "option-get", expr: { kind: "id", name: "p" } },
+      },
+    });
+  });
+
+  test("an omitted, an explicit undefined, and a supplied instance fill the option", () => {
+    const src =
+      POINT +
+      "export function g(a: number, p: Pt = new Pt(1)): number { return a + p.x; }\n" +
+      "/** @ensures{p} forall (a: int ∈ [0, 5)) { h(a) >= 0 } */\n" +
+      "export function h(a: number): number {\n" +
+      "  return g(a) + g(a, undefined) + g(a, new Pt(a));\n}\n";
+    const { classified, emission } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    const h = emission.declarations[2];
+    assert(h?.kind === "function");
+    const ret = h.body[0];
+    assert(ret?.kind === "return");
+    const calls: EmitExpr[] = [];
+    const collect = (e: EmitExpr) => {
+      if (e.kind === "binop") {
+        collect(e.left);
+        collect(e.right);
+      } else calls.push(e);
+    };
+    collect(ret.expr);
+    expect(calls.map((c) => c.kind === "call" && c.args[1])).toEqual([
+      { kind: "option" },
+      { kind: "option" },
+      {
+        kind: "option",
+        expr: {
+          kind: "new",
+          className: "Pt",
+          args: [{ kind: "id", name: "a" }],
+        },
+      },
     ]);
+  });
+
+  test("a constructor's instance default marks the binder tree", () => {
+    const src =
+      POINT +
+      `export class Seg {
+  readonly a: number;
+  readonly b: number;
+  constructor(a: Pt, b: Pt = new Pt(0)) {
+    this.a = a.x;
+    this.b = b.x;
+  }
+}
+/** @ensures{p} forall (s: Seg) { len(s) >= 0 } */
+export function len(s: Seg): number {
+  return s.b - s.a;
+}
+`;
+    const { classified, emission } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    const payload = emission.obligations[0]!.payload;
+    assert(payload.kind === "structured");
+    expect(payload.binders[0]).toMatchObject({
+      ctorParams: [
+        { name: "a", kind: "class", className: "Pt" },
+        { name: "b", kind: "class", className: "Pt", defaulted: true },
+      ],
+    });
   });
 });
 
