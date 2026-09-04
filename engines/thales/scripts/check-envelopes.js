@@ -275,20 +275,13 @@ function entry(fn, property, szs, reason, axioms, counterexample, kind) {
   return { function: fn, property, szs, reason, axioms, counterexample, kind };
 }
 
-/** A native_decide axiom's ordinal is a per-file gensym — it counts the
- * elaborator's attempts, not anything about the annotation — so the store
- * masks it; the axiom's identity is the rest of the name. */
-function maskAxiom(name) {
-  return name.replace(/native_decide\.ax_\d+$/, "native_decide.ax_N");
-}
-
 function projectVerdict(v) {
   return entry(
     v.identity[1],
     v.identity[2],
     v.szs,
     v.reason,
-    v.axioms?.map(maskAxiom),
+    v.axioms,
     v.counterexample,
   );
 }
