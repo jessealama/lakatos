@@ -6,7 +6,7 @@
  * each seam import this module instead of spelling the string twice.
  */
 
-export type IssueKind = "falsified" | "threw" | "exhausted";
+export type IssueKind = "falsified" | "threw" | "exhausted" | "budget";
 
 export interface Issue {
   file: string;
@@ -15,6 +15,8 @@ export interface Issue {
   kind: IssueKind;
   counterexample?: Record<string, unknown>;
   error?: string;
+  /** budget only: how far the enumeration got before its clock ran out. */
+  reason?: string;
 }
 
 /**
@@ -26,10 +28,12 @@ export const RUNTIME_SPECIFIER = "lakatos/runtime";
 /** Names the runtime module exports (pinned against src/runtime.ts by a test). */
 export const BOOL_EXPORT = "bool";
 export const REPORT_EXPORT = "report";
+export const BUDGET_EXPORT = "budget";
 
 /** Aliases those exports are bound to inside generated test files. */
 export const BOOL_ALIAS = "__bool";
 export const REPORT_ALIAS = "__pabstReport";
+export const BUDGET_ALIAS = "__pabstBudget";
 
 /**
  * The exact message fast-check puts on the error it synthesizes when a

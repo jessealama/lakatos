@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { report, bool } from "../src/runtime.js";
+import { report, bool, budget } from "../src/runtime.js";
 import { parseIssue, type Issue } from "../src/contract.js";
 
 function thrownIssue(fn: () => void): Issue {
@@ -187,6 +187,20 @@ describe("runtime report — class binders", () => {
     );
     expect(issue).toMatchObject({
       counterexample: { b: "new Box(new Point(1,2),3)" },
+    });
+  });
+});
+
+describe("runtime budget", () => {
+  it("throws a budget issue saying how far the walk got", () => {
+    const issue = thrownIssue(() => budget("f.ts", "f", "p", 412, 1000));
+    expect(issue).toEqual({
+      file: "f.ts",
+      function: "f",
+      property: "p",
+      kind: "budget",
+      reason:
+        "evaluated 412 of 1000 cases within the time budget, no counterexample",
     });
   });
 });
