@@ -1,5 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync, rmSync } from "node:fs";
+import { createRequire } from "node:module";
+import * as path from "node:path";
 import { interruptedBy, type InterruptSignal } from "../../../src/interrupt.js";
 import type { FileResult, VitestJson } from "./vitest-json.js";
 
@@ -23,6 +25,16 @@ type Spawn = (
   args: string[],
   opts: { encoding: "utf8" },
 ) => SpawnOutcome;
+
+/** Lakatos's own vitest, to run under this node: no shell or npx between
+ * the two, and no download when the target's tree carries no vitest. */
+export function vitestEntry(): string {
+  const pkgPath = createRequire(import.meta.url).resolve("vitest/package.json");
+  const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as {
+    bin: { vitest: string };
+  };
+  return path.resolve(path.dirname(pkgPath), pkg.bin.vitest);
+}
 
 /**
  * Run vitest over `target` (the generated out-files of one invocation, or a
@@ -51,9 +63,9 @@ export function runTests(
   }
   const targets = Array.isArray(target) ? target : [target];
   const res = spawn(
-    "npx",
+    process.execPath,
     [
-      "vitest",
+      vitestEntry(),
       "run",
       ...targets,
       "--reporter=json",

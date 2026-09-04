@@ -220,7 +220,7 @@ interface Spine {
  * the engine's codegen, and turn its outcome into one envelope and one exit
  * code. Only the codegen, the run, the verdict join, and the two exit-code
  * contributions are engine-specific. */
-function runCommand(spine: Spine, patterns: string[]): number {
+async function runCommand(spine: Spine, patterns: string[]): Promise<number> {
   const files = resolve(patterns);
   const base = captureMeta();
   // The gate sits before claimRunDir so a refused run leaves no empty run
@@ -286,19 +286,21 @@ function runCommand(spine: Spine, patterns: string[]): number {
   // must not cut the envelope short: Ctrl-C is rarely pressed just once,
   // and the first one lands while the engine is still dying.
   const run = spine.run;
-  return withInterruptGuard(() => {
+  const interruptedExit = (signal: InterruptSignal): number => {
+    const n = plan.identities.length;
+    console.error(
+      `lakatos: interrupted by ${signal}; reporting ${n} annotation${n === 1 ? "" : "s"} as User`,
+    );
+    return stoppedExit(meta, plan, interruptedResults(plan.identities, signal));
+  };
+  return withInterruptGuard(async (interrupted) => {
     const outcome = run(plan, runDir);
-    if (outcome.kind === "interrupted") {
-      const n = plan.identities.length;
-      console.error(
-        `lakatos: interrupted by ${outcome.signal}; reporting ${n} annotation${n === 1 ? "" : "s"} as User`,
-      );
-      return stoppedExit(
-        meta,
-        plan,
-        interruptedResults(plan.identities, outcome.signal),
-      );
-    }
+    // The signal that reached lakatos decides, whatever the engine made of
+    // its own copy; a child that died of one lakatos never saw still counts.
+    const observed = await interrupted();
+    if (outcome.kind === "interrupted")
+      return interruptedExit(observed ?? outcome.signal);
+    if (observed !== undefined) return interruptedExit(observed);
     if (outcome.kind === "unhealthy") {
       for (const m of outcome.messages) console.error(`error: ${m}`);
       return stoppedExit(
@@ -359,7 +361,9 @@ options:
 const COMMANDS = ["prove", "refute", "check"] as const;
 type Command = (typeof COMMANDS)[number];
 
-export function main(argv: string[] = process.argv.slice(2)): number {
+export async function main(
+  argv: string[] = process.argv.slice(2),
+): Promise<number> {
   // parseArgs throws on unknown options and the like — usage errors, which
   // map to the documented exit-2 mode; anything else crashes loudly.
   let positionals: string[];
@@ -410,7 +414,8 @@ export function main(argv: string[] = process.argv.slice(2)): number {
         : command === "prove"
           ? plainProveSpine()
           : stubSpine(command as Command);
-    return runCommand(spine, patterns);
+    // Awaited, not returned: the catch below must see the run's rejection.
+    return await runCommand(spine, patterns);
   } catch (e) {
     if (e instanceof LemmaError) {
       console.error(`error: ${e.message}`);
@@ -754,5 +759,5 @@ if (
   process.argv[1] &&
   import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href
 ) {
-  process.exit(main());
+  process.exit(await main());
 }

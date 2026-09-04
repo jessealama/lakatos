@@ -118,12 +118,12 @@ describe.runIf(enabled)("verdict corpus", () => {
   it(
     "every annotation receives its bucket's SZS status",
     { timeout: proveTimeoutMs(mainFixtures.length) },
-    () => {
+    async () => {
       // These fixtures are graded at the default budget; only the timeout
       // bucket reduces it.
       vi.stubEnv("LAKATOS_PROVE_HEARTBEATS", undefined);
       // The countersatisfiable bucket guarantees refutations: exit 1.
-      const env = runForEnvelope(["prove", ...mainFixtures], 1);
+      const env = await runForEnvelope(["prove", ...mainFixtures], 1);
 
       // Completeness: every fixture contributes at least one annotation.
       const covered = new Set(env.annotations.map((a) => a.file));
@@ -159,11 +159,11 @@ describe.runIf(enabled)("verdict corpus", () => {
   it(
     "timeout fixtures exceed a reduced heartbeat budget",
     { timeout: proveTimeoutMs(timeoutFixtures.length) },
-    () => {
+    async () => {
       // The reduced budget is what makes Timeout deterministic: the
       // fixtures are ordinary annotations, not CI-grinding pathologies.
       vi.stubEnv("LAKATOS_PROVE_HEARTBEATS", "1");
-      const env = runForEnvelope(["prove", ...timeoutFixtures], 0);
+      const env = await runForEnvelope(["prove", ...timeoutFixtures], 0);
       const covered = new Set(env.annotations.map((a) => a.file));
       expect(timeoutFixtures.filter((f) => !covered.has(f))).toEqual([]);
       for (const a of env.annotations) {

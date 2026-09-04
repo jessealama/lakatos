@@ -35,34 +35,53 @@ describe("interruptedBy", () => {
 });
 
 describe("withInterruptGuard", () => {
-  it("returns the body's value", () => {
-    expect(withInterruptGuard(() => "verdicts")).toBe("verdicts");
+  it("returns the body's value", async () => {
+    expect(await withInterruptGuard(async () => "verdicts")).toBe("verdicts");
   });
 
-  it("guards every covered signal, and only while the body runs", () => {
+  it("guards every covered signal, and only while the body runs", async () => {
     const before = guardCounts();
-    withInterruptGuard(() => {
+    await withInterruptGuard(async () => {
       expect(guardCounts()).toEqual(before.map((n) => n + 1));
     });
     expect(guardCounts()).toEqual(before);
   });
 
-  it("disarms even when the body throws", () => {
+  it("disarms even when the body throws", async () => {
     const before = guardCounts();
-    expect(() =>
-      withInterruptGuard(() => {
+    await expect(
+      withInterruptGuard(async () => {
         throw new Error("boom");
       }),
-    ).toThrow("boom");
+    ).rejects.toThrow("boom");
     expect(guardCounts()).toEqual(before);
   });
 
-  it("installs listeners that do nothing: they exist only to keep the default disposition from killing the run", () => {
-    withInterruptGuard(() => {
-      for (const s of INTERRUPT_SIGNALS) {
-        const guard = process.listeners(s).at(-1)!;
-        expect(guard(s)).toBeUndefined();
-      }
+  it.each([...INTERRUPT_SIGNALS])(
+    "reports %s when it reached this process during the body",
+    async (s) => {
+      // The signal is delivered while the body runs, as a group signal
+      // is during spawnSync; the listener can only fire once the loop
+      // turns, which is what `interrupted` waits for.
+      const seen = await withInterruptGuard(async (interrupted) => {
+        process.kill(process.pid, s);
+        return interrupted();
+      });
+      expect(seen).toBe(s);
+    },
+  );
+
+  it("reports nothing when no signal arrived", async () => {
+    const seen = await withInterruptGuard(async (interrupted) => interrupted());
+    expect(seen).toBeUndefined();
+  });
+
+  it("keeps the first signal: a second Ctrl-C does not change the report", async () => {
+    const seen = await withInterruptGuard(async (interrupted) => {
+      process.kill(process.pid, "SIGINT");
+      process.kill(process.pid, "SIGTERM");
+      return interrupted();
     });
+    expect(seen).toBe("SIGINT");
   });
 });
