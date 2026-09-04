@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working on the 
 
 Thales is lakatos's proof engine. It backs `lakatos prove`: annotated TypeScript is emitted as plain Lean 4, Lean attempts to prove each `@ensures` property against a model of each function, and one SZS verdict per annotation comes back to the CLI as a JSON line.
 
-This is a ground-up rewrite; the previous whole-file subset-checking compiler (its `Thales/` library, `thales` executable, TH-code diagnostics, and conformance harness) has been removed, and the layers of the new engine are landing slice by slice. If a doc or comment mentions those, it predates the rewrite.
+This is a ground-up rewrite; the previous whole-file subset-checking compiler (its `Thales/` library, `thales` executable, TH-code diagnostics, and conformance harness) has been removed, and the layers of the new engine are landing slice by slice. If a doc mentions those, it predates the rewrite; the code's own comments have been brought current.
 
 The engine has two halves in two languages:
 
