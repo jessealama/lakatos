@@ -138,14 +138,20 @@ deriving Repr, Inhabited
 instance of a class carrying its own parameters. The graph is acyclic, so
 the tree bottoms out in numbers. -/
 inductive CtorParamIR where
-  | number (name : String)
+  | number (name : String) (defaulted : Bool)
   | cls (name className : String) (module : Option String)
-      (ctorParams : Array CtorParamIR)
+      (ctorParams : Array CtorParamIR) (defaulted : Bool)
 deriving Repr, Inhabited
 
 def CtorParamIR.name : CtorParamIR → String
-  | .number n => n
+  | .number n _ => n
   | .cls n .. => n
+
+/-- Whether the parameter carries a default, so a construction fills its
+boundary slot rather than passing the quantified value straight in. -/
+def CtorParamIR.defaulted : CtorParamIR → Bool
+  | .number _ d => d
+  | .cls _ _ _ _ d => d
 
 /-- A binder's denoted domain: a finite half-open `[lo, hi)` integer
 range, the whole int line, the naturals, or the doubles a `number`
@@ -213,6 +219,15 @@ def getStrOpt (j : Json) (field : String) : Except String (Option String) :=
   | .ok v => match v.getStr? with
     | .ok s => pure (some s)
     | .error _ => throw s!"field '{field}' is not a string"
+
+/-- An optional boolean flag: absent is false, present but not a boolean
+is a schema violation naming the field. -/
+def getBoolOpt (j : Json) (field : String) : Except String Bool :=
+  match j.getObjVal? field with
+  | .error _ => pure false
+  | .ok v => match v.getBool? with
+    | .ok b => pure b
+    | .error _ => throw s!"field '{field}' is not a boolean"
 
 def getArr (j : Json) (field : String) : Except String (Array Json) := do
   match (← j.getObjVal? field).getArr? with
@@ -442,11 +457,13 @@ def decodeBound (j : Json) (field : String) :
 
 partial def decodeCtorParam (j : Json) : Except String CtorParamIR := do
   let name ← getStr j "name"
+  let defaulted ← getBoolOpt j "defaulted"
   match ← getStr j "kind" with
-  | "number" => pure (.number name)
+  | "number" => pure (.number name defaulted)
   | "class" =>
     let params ← (← getArr j "ctorParams").mapM decodeCtorParam
-    pure (.cls name (← getStr j "className") (← getStrOpt j "module") params)
+    pure (.cls name (← getStr j "className") (← getStrOpt j "module") params
+      defaulted)
   | k => throw s!"unknown constructor parameter kind '{k}'"
 
 def decodeBinder (j : Json) : Except String BinderIR := do

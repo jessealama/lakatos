@@ -23,7 +23,17 @@ structure TsModel.Point where
   x : JsNumber
 
 @[js_norm, grind]
-def TsModel.Point.construct (x : JsNumber) : JsM TsModel.Point := do
+def TsModel.Point.construct (x : JsVal) : JsM TsModel.Point := do
+  let x : JsNumber :=
+    (←
+      if JsVal.strictEq x JsVal.undef then
+        ((do
+              return 0) :
+            JsM _)
+      else
+        ((do
+              return (← JsVal.toNumber x)) :
+            JsM _))
   let «this.x» : JsNumber := x
   return TsModel.Point.mk «this.x»
 
@@ -69,8 +79,8 @@ def TsModel.readX (p : TsModel.Point) : JsM JsNumber := do
   ballIco 0 10 fun a =>
     (do
         return (←
-            TsModel.Point.gap (← TsModel.Point.construct (Float.ofInt a))
-                (← TsModel.Point.construct (Float.ofInt a))) :
+            TsModel.Point.gap (← TsModel.Point.construct (JsVal.num (Float.ofInt a)))
+                (← TsModel.Point.construct (JsVal.num (Float.ofInt a)))) :
         JsM JsNumber) =
       pure 0
 
@@ -79,8 +89,8 @@ def TsModel.readX (p : TsModel.Point) : JsM JsNumber := do
   ballIco 0 10 fun a =>
     (do
         return (←
-            TsModel.Point.twice (← TsModel.Point.construct (Float.ofInt a))
-                (← TsModel.Point.construct (Float.ofInt a))) :
+            TsModel.Point.twice (← TsModel.Point.construct (JsVal.num (Float.ofInt a)))
+                (← TsModel.Point.construct (JsVal.num (Float.ofInt a)))) :
         JsM JsNumber) =
       pure 0
 
@@ -89,7 +99,9 @@ def TsModel.readX (p : TsModel.Point) : JsM JsNumber := do
   ballIco 0 10 fun a =>
     (do
         return (←
-            TsModel.Wrap.v (← TsModel.Wrap.construct (← TsModel.Point.construct (Float.ofInt a)))) :
+            TsModel.Wrap.v
+                (←
+                  TsModel.Wrap.construct (← TsModel.Point.construct (JsVal.num (Float.ofInt a))))) :
         JsM JsNumber) =
       pure (Float.ofInt a)
 
@@ -97,5 +109,6 @@ def TsModel.readX (p : TsModel.Point) : JsM JsNumber := do
 #thales_prove "engines/thales/tests/fixtures/class-params.ts" "readX" "reads" :=
   ballIco 0 10 fun a =>
     (do
-        return (← TsModel.readX (← TsModel.Point.construct (Float.ofInt a))) : JsM JsNumber) =
+        return (← TsModel.readX (← TsModel.Point.construct (JsVal.num (Float.ofInt a)))) :
+        JsM JsNumber) =
       pure (Float.ofInt a)
