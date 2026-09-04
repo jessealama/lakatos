@@ -2496,10 +2496,9 @@ function defaultOpenings(
     try {
       init = walkTyped(p.init, p.ty, initScope, sf);
     } catch (err) {
-      if (err instanceof ModelError)
-        throw new ModelError(defaultFailure(p.name, err.message), err.construct);
-      /* v8 ignore next 2 -- the walk throws nothing else */
-      throw err;
+      /* v8 ignore next -- the walk throws nothing else */
+      if (!(err instanceof ModelError)) throw err;
+      throw new ModelError(defaultFailure(p.name, err.message), err.construct);
     }
     const slot: EmitExpr = { kind: "id", name: p.name };
     out.push({
@@ -2515,7 +2514,9 @@ function defaultOpenings(
         },
         then: init,
         else:
-          p.ty === "num" ? { kind: "project", tag: "number", expr: slot } : slot,
+          p.ty === "num"
+            ? { kind: "project", tag: "number", expr: slot }
+            : slot,
       },
       ...(p.ty !== "num" && "union" in p.ty ? { type: [...p.ty.union] } : {}),
     });
@@ -2842,8 +2843,7 @@ function walkParams(
     // A slot admitting `undefined` is a union slot, so only a callable
     // that takes unions widens; a constructor keeps its full arity, its
     // initializer dead code.
-    const slot =
-      init === undefined || !reg.unions ? ty : boundaryTy(ty, p, sf);
+    const slot = init === undefined || !reg.unions ? ty : boundaryTy(ty, p, sf);
     if (typeof slot !== "string" && "reason" in slot) return slot;
     out.push({
       name: (p.name as ts.Identifier).text,
@@ -3121,7 +3121,8 @@ function walkClass(
     getters: getterNames,
     ctorParams: shapeCtorParams,
     ctorParamNames: ctorParams.map((p) => p.name),
-    ctorRequired: ctorParams.map((p) => p.init !== undefined).lastIndexOf(false) + 1,
+    ctorRequired:
+      ctorParams.map((p) => p.init !== undefined).lastIndexOf(false) + 1,
     methods: methodSigs,
   };
   const self = { ref: { module: qualifier, name: className }, shape };

@@ -5428,7 +5428,10 @@ describe("a free function with a defaulted parameter", () => {
       expr: {
         kind: "call",
         callee: "add",
-        args: [{ kind: "id", name: "a" }, { kind: "inject", tag: "undefined" }],
+        args: [
+          { kind: "id", name: "a" },
+          { kind: "inject", tag: "undefined" },
+        ],
       },
     });
   });
@@ -5443,7 +5446,12 @@ describe("a free function with a defaulted parameter", () => {
     const g = emission.declarations[1];
     assert(g?.kind === "function");
     expect(g.body[0]).toMatchObject({
-      expr: { args: [{ kind: "id", name: "a" }, { kind: "id", name: "u" }] },
+      expr: {
+        args: [
+          { kind: "id", name: "a" },
+          { kind: "id", name: "u" },
+        ],
+      },
     });
   });
 
@@ -5458,7 +5466,10 @@ describe("a free function with a defaulted parameter", () => {
     assert(g?.kind === "function");
     expect(g.body[0]).toMatchObject({
       expr: {
-        args: [{ kind: "inject", tag: "undefined" }, { kind: "id", name: "a" }],
+        args: [
+          { kind: "inject", tag: "undefined" },
+          { kind: "id", name: "a" },
+        ],
       },
     });
   });
