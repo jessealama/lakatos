@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import {
   BOOL_EXPORT,
+  BUDGET_EXPORT,
   FC_PROPERTY_FAILED_MESSAGE,
   REPORT_EXPORT,
   RUNTIME_SPECIFIER,
@@ -32,6 +33,7 @@ describe("contract pins", () => {
     const mod = runtime as Record<string, unknown>;
     expect(typeof mod[BOOL_EXPORT]).toBe("function");
     expect(typeof mod[REPORT_EXPORT]).toBe("function");
+    expect(typeof mod[BUDGET_EXPORT]).toBe("function");
   });
 
   it("matches fast-check's returned-false wording", () => {

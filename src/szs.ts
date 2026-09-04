@@ -4,8 +4,10 @@ import type { IssueKind } from "../engines/pabst/src/contract.js";
  * SZS statuses lakatos emits (https://tptp.org/UserDocs/SZSOntology/), the
  * single source of truth for the vocabulary: the union, the prove subset,
  * and the engine-side allowlist all derive from this array.
- * A pass also maps to GaveUp: N clean runs refute nothing, and the engine
- * stopped of its own accord — the `kind` field disambiguates. Theorem and
+ * A pass also maps to GaveUp when the domain was sampled: N clean runs
+ * refute nothing, and the engine stopped of its own accord — the `kind`
+ * field disambiguates. A pass over a domain the refuter walked in full is
+ * a Theorem, `kind` enumerated. Theorem and
  * Inappropriate come from the prove pipeline: a property proven for all
  * inputs, and an annotation depending on code outside the mappable subset
  * (its `reason` names the offending construct). CounterSatisfiable comes
@@ -15,11 +17,11 @@ import type { IssueKind } from "../engines/pabst/src/contract.js";
  * annotation whose input is malformed at extraction (a duplicate property
  * name, an inaccessible subject) or whose program fails to type check;
  * its `error` carries the diagnostic and the run exits 2, the documented
- * error mode. Timeout marks an annotation
- * whose proof attempt exceeded its per-annotation budget; later
- * annotations in the same file still run. User marks an annotation an
- * interrupted run never finished evaluating: processing stopped at the
- * user's request.
+ * error mode. Timeout marks an annotation whose proof attempt exceeded
+ * its per-annotation budget, or whose enumeration ran out of wall clock
+ * before walking its domain; later annotations in the same file still
+ * run. User marks an annotation an interrupted run never finished
+ * evaluating: processing stopped at the user's request.
  */
 export const SZS_STATUSES = [
   "Theorem",
@@ -66,5 +68,7 @@ export function szsForIssue(kind: IssueKind): SzsStatus {
       return "Error";
     case "exhausted":
       return "GaveUp";
+    case "budget":
+      return "Timeout";
   }
 }

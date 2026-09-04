@@ -27,12 +27,14 @@ import {
   unsupportedRangeReason,
 } from "../lemma/src/index.js";
 import {
+  identityOf,
   interruptedResults,
   joinProveVerdicts,
   joinRefuteVerdicts,
   UNSUPPORTED_RANGE_KIND,
   type AnnotationResult,
   type Envelope,
+  type PlannedProperty,
   type PropertyIdentity,
 } from "./envelope.js";
 import { withInterruptGuard, type InterruptSignal } from "./interrupt.js";
@@ -160,7 +162,7 @@ function noteUnsupportedRanges(untried: AnnotationResult[]): void {
 /** What one command's codegen produced, normalized across engines. */
 interface Plan {
   /** Annotations the engine will attempt; the verdict join accounts for each. */
-  identities: PropertyIdentity[];
+  identities: PlannedProperty[];
   /** Annotations already resolved at codegen time, in envelope form. */
   untried: AnnotationResult[];
   /** Extraction-level input errors, already echoed to stderr. */
@@ -302,7 +304,10 @@ function runCommand(spine: Spine, patterns: string[]): number {
       return stoppedExit(
         meta,
         plan,
-        plan.identities.map((i) => ({ ...i, szs: "NotTried" as const })),
+        plan.identities.map((i) => ({
+          ...identityOf(i),
+          szs: "NotTried" as const,
+        })),
       );
     }
 
@@ -512,7 +517,7 @@ function refuteSpine(seed: number): Spine {
     plan(files, runDir) {
       const outRoot = path.join(runDir, "pabst");
       const results = generate(files, outRoot, seed);
-      const identities: PropertyIdentity[] = results.flatMap((r) =>
+      const identities: PlannedProperty[] = results.flatMap((r) =>
         r.properties.map((p) => ({ file: r.sourceFile, ...p })),
       );
       const inputErrors = inputErrorResults(
@@ -617,7 +622,7 @@ function leanRunOutcome(
   const failedResults: AnnotationResult[] = plan.identities
     .filter((i) => failedSources.has(i.file))
     .map((i) => ({
-      ...i,
+      ...identityOf(i),
       szs: "Error" as const,
       error:
         "the Lean run on this file's artifact failed before reporting its verdicts",

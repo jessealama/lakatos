@@ -22,5 +22,8 @@ export interface PropertySpec {
   preconditions: string[];
   /** Module exports the body/preconditions reference. */
   freeExports: string[];
+  /** Present when the refuter walks the whole domain instead of sampling:
+   * the tuple count, at or under the enumeration cap. */
+  cases?: number;
   location: { file: string; line: number };
 }

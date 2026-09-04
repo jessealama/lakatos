@@ -38,6 +38,44 @@ describe("issue schema", () => {
     ).not.toThrow();
   });
 
+  it("accepts a budget issue with its reason", () => {
+    expect(() =>
+      expectValidIssue({
+        file: "f.ts",
+        function: "f",
+        property: "p",
+        kind: "budget",
+        reason:
+          "evaluated 412 of 1000 cases within the time budget, no counterexample",
+      }),
+    ).not.toThrow();
+  });
+
+  it("rejects a budget issue without a reason", () => {
+    expect(() =>
+      expectValidIssue({
+        file: "f.ts",
+        function: "f",
+        property: "p",
+        kind: "budget",
+      }),
+    ).toThrow();
+  });
+
+  it("rejects a budget issue carrying a counterexample it never found", () => {
+    expect(() =>
+      expectValidIssue({
+        file: "f.ts",
+        function: "f",
+        property: "p",
+        kind: "budget",
+        reason:
+          "evaluated 1 of 2 cases within the time budget, no counterexample",
+        counterexample: { x: 1 },
+      }),
+    ).toThrow();
+  });
+
   it("accepts $-containing identifiers, which are legal TypeScript", () => {
     expect(() =>
       expectValidIssue({

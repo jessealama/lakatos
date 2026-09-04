@@ -15,8 +15,9 @@ Every construct is specified in three parts:
   over the value space of its domains. One meaning, stated once. This
   section never mentions any engine.
 - **Engine obligations** — what each kind of engine does with the claim: a
-  *refuter* approximates truth by sampling (it can establish falsity, never
-  truth); a *prover* establishes truth by translation into a proof
+  *refuter* approximates truth by sampling, or establishes it outright when
+  it can evaluate every tuple of a finite domain, and refutes with a
+  witness; a *prover* establishes truth by translation into a proof
   assistant (it can establish truth, and reports counterexamples as
   falsity). If this document ever specifies the behavior of a particular
   tool (fast-check, Lean), that is a bug in this document.
@@ -38,12 +39,13 @@ Every construct is specified in three parts:
   scope over the formula body.
 - **Truth conditions**: the formula holds for every assignment of values to
   the bound variables drawn from their (guarded) domains.
-- **Engine obligations**: the refuter samples assignments and evaluates;
-  the prover quantifies universally over the (guarded) domain's
-  translation. The prover establishes a property only where its methods
-  genuinely reach — exhaustive evaluation over a domain it can enumerate,
-  or symbolic proof over one it cannot — and a claim it cannot settle is
-  reported unproven, never assumed.
+- **Engine obligations**: the refuter samples assignments, or walks every
+  one of them when the domain is small enough, and evaluates; the prover
+  quantifies universally over the (guarded) domain's translation. The
+  prover establishes a property only where its methods genuinely reach —
+  exhaustive evaluation over a domain it can enumerate, or symbolic proof
+  over one it cannot — and a claim it cannot settle is reported unproven,
+  never assumed.
 
 ### Attachment points
 
@@ -288,10 +290,18 @@ codes.
 |---|---|---|
 | PROVED | `Theorem` | Established for all inputs (exhaustive check or proof). Assumptions (opaque islands, assumed callee contracts) must be listed with the verdict. |
 | REFUTED | `CounterSatisfiable` | A concrete counterexample exists (and is reported). |
-| TESTED, not proved | `Unknown` | No engine established the claim; sub-statuses per engine (e.g. refuter `GaveUp` after its budget with no counterexample, prover `GaveUp`). |
+| TESTED, not proved | `Unknown` | No engine established the claim; sub-statuses per engine (e.g. refuter `GaveUp` after its sampling runs with no counterexample, prover `GaveUp`). |
 | UNSUPPORTED | `Inappropriate` | The code the annotation depends on is outside the engine's mappable subset — the claim was never evaluated, which is a statement about the engine, not the property. The verdict carries a reason naming the offending construct. |
 | — | `Timeout` | An engine exhausted its budget. |
 | — | `InputError` / `SyntaxError` / `TypeError` | The annotation or the annotated code is malformed. |
+
+A refuter that evaluates every tuple of a finite binder domain and finds no
+failure reports `Theorem` with kind `enumerated` and the number of tuples
+as `cases`. The claim is about the observed executions under the runtime
+that ran them: impure code invalidates it exactly as it invalidates a
+sampled counterexample. A refuter whose walk runs out of budget reports
+`Timeout` with kind `budget`, never `GaveUp`: it neither sampled nor
+finished, and its reason says how many tuples it evaluated.
 
 TODO: the exact sub-status composition rules for frontends aggregating two
 engines' reports.

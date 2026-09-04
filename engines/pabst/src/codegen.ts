@@ -12,6 +12,8 @@ import { randomSeed } from "./seed.js";
 export interface GeneratedProperty {
   function: string;
   property: string;
+  /** Present when the refuter walks the whole domain: the tuple count. */
+  cases?: number;
 }
 
 /** An annotation no test was generated for, and why. */
@@ -68,6 +70,7 @@ export function generate(
       properties: specs.map((s) => ({
         function: qualifiedName(s.functionName, s.className, s.isStatic),
         property: s.name,
+        ...(s.cases !== undefined ? { cases: s.cases } : {}),
       })),
       invalid,
       untried: refused,

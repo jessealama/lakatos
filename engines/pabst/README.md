@@ -119,12 +119,20 @@ issue format ([`schemas/issue.schema.json`](schemas/issue.schema.json)):
 ```
 
 - `kind` is `"falsified"` (returned `false`), `"threw"` (raised an exception —
-  see `error`), or `"exhausted"` (too many precondition skips — `error` explains,
-  and there is no `counterexample`).
+  see `error`), `"exhausted"` (too many precondition skips — `error` explains,
+  and there is no `counterexample`), or `"budget"` (an enumerated domain outran
+  its wall-clock budget: `reason` says how far the walk got, and there is no
+  `counterexample`).
 - Counterexample values are JSON-native where they round-trip; bigints and
   non-finite numbers appear as fast-check strings (e.g. `"1n"`).
 - The `seed` is generated per run and echoed back; pass it to `--seed` to
   reproduce a failing run exactly.
+
+A property whose binders range over at most 1,000 tuples (booleans, bounded
+`int`/`nat`/`bigint` intervals) is not sampled at all: the generated test
+walks every tuple, ascending per binder and lexicographic across binders,
+so a clean pass reports `Theorem` and a failure reports the least tuple.
+Number, string, and class binders always sample.
 
 The process exits `0` when nothing was flagged, `1` when at least one
 annotation was, and `2` on usage errors — including annotation errors such

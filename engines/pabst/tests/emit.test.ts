@@ -50,7 +50,7 @@ describe("emit", () => {
     // "lakatos" is the root package name (the self-reference the
     // generated tests resolve), distinct from any bin name.
     expect(out).toContain(
-      'import { report as __pabstReport, bool as __bool } from "lakatos/runtime";',
+      'import { report as __pabstReport, bool as __bool, budget as __pabstBudget } from "lakatos/runtime";',
     );
     // no inline copy of the helper
     expect(out).not.toContain("function __pabstReport(");
@@ -268,5 +268,72 @@ describe("emit — nested class binders", () => {
       '["b"], d, [{"className":"Box","params":' +
         '[{"className":"Point","params":[null,null]},null]}])',
     );
+  });
+});
+
+const enumeratedSpec: PropertySpec = {
+  name: "pos",
+  functionName: "square",
+  binders: [
+    { varName: "n", domain: "int", range: { min: "1", max: "10" } },
+    { varName: "b", domain: "boolean" },
+  ],
+  body: '__bool(square(n) > 0, "square(n) > 0")',
+  preconditions: ['__bool(b, "b")'],
+  freeExports: ["square"],
+  cases: 20,
+  location: { file: "small.ts", line: 1 },
+};
+
+describe("emit — enumerated specs", () => {
+  const out = emit([enumeratedSpec], "small.ts", "out/small.pabst.test.ts", 42);
+
+  it("imports the budget reporter beside the others", () => {
+    expect(out).toContain(
+      'import { report as __pabstReport, bool as __bool, budget as __pabstBudget } from "lakatos/runtime";',
+    );
+  });
+
+  it("emits a plain test with an explicit timeout above the loop budget", () => {
+    expect(out).toContain('    test("pos", { timeout: 8000 }, () => {');
+    expect(out).not.toContain("test.prop(");
+  });
+
+  it("nests one ascending loop per binder, in binder order", () => {
+    expect(out).toContain(
+      "      for (let n = 1; n <= 10; n++) {\n        for (const b of [false, true]) {",
+    );
+  });
+
+  it("checks the wall clock before every tuple and reports the budget with the count", () => {
+    expect(out).toContain(
+      '          if (performance.now() - __t0 > 4000) __pabstBudget("small.ts", "square", "pos", __done, 20);',
+    );
+    expect(out).toContain("          __done++;");
+  });
+
+  it("skips a tuple a precondition rejects, inside the try", () => {
+    expect(out).toContain('            if (!(__bool(b, "b"))) continue;');
+  });
+
+  it("reports the first failing tuple through the runtime reporter", () => {
+    expect(out).toContain(
+      '      const __fail = (__cx: unknown[], __e: { message?: string } | null) => __pabstReport("small.ts", "square", "pos", ["n", "b"], { failed: true, counterexample: __cx, errorInstance: __e });',
+    );
+    expect(out).toContain(
+      "            __fail([n, b], __e instanceof Error ? __e : { message: String(__e) });",
+    );
+    expect(out).toContain("          if (!__r) __fail([n, b], null);");
+  });
+
+  it("leaves a sampled spec on test.prop", () => {
+    const both = emit(
+      [spec, enumeratedSpec],
+      "small.ts",
+      "out/small.pabst.test.ts",
+      42,
+    );
+    expect(both).toContain("test.prop([fc.integer(), fc.double()]");
+    expect(both).toContain('test("pos", { timeout: 8000 }');
   });
 });

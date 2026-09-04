@@ -13,6 +13,7 @@ const runTestsMock = vi.mocked(runTests);
 describe("cli refute on unhealthy runs", () => {
   useTempProject("lakatos-cli-unhealthy-", {
     "annotated.ts": `/** @ensures{pos} forall (n: nat) { annotated(n) >= 0 } */\nexport function annotated(n: number): number { return n; }\n`,
+    "bounded.ts": `/** @ensures{pos} forall (n: int \u2208 [0, 5)) { bounded(n) >= 0 } */\nexport function bounded(n: number): number { return n; }\n`,
   });
 
   afterEach(() => {
@@ -76,6 +77,27 @@ describe("cli refute on unhealthy runs", () => {
       },
     ]);
     expect(stderr).toContain("error: Cannot find module 'lakatos/runtime'");
+  });
+
+  it("an unevaluated annotation carries no planned case count", () => {
+    // The plan knows this domain has five tuples, but nothing walked them.
+    runTestsMock.mockReturnValue({
+      kind: "broken-run",
+      status: 1,
+      messages: ["Cannot find module 'lakatos/runtime'"],
+    });
+    const { code, stdout } = runMain(["refute", "bounded.ts"]);
+    expect(code).toBe(2);
+    const env = JSON.parse(stdout[0]!);
+    expectValidEnvelope(env);
+    expect(env.annotations).toEqual([
+      {
+        file: "bounded.ts",
+        function: "bounded",
+        property: "pos",
+        szs: "NotTried",
+      },
+    ]);
   });
 
   it("a failure with no readable payload: NotTried envelope, exit 2", () => {

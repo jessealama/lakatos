@@ -48,6 +48,18 @@
         "kind": { "const": "exhausted" },
         "error": { "type": "string" }
       }
+    },
+    {
+      "title": "budget",
+      "additionalProperties": false,
+      "required": ["file", "function", "property", "kind", "reason"],
+      "properties": {
+        "file": { "type": "string" },
+        "function": { "$ref": "#/definitions/functionName" },
+        "property": { "type": "string", "minLength": 1 },
+        "kind": { "const": "budget" },
+        "reason": { "type": "string", "minLength": 1 }
+      }
     }
   ],
   "definitions": {

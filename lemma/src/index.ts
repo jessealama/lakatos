@@ -69,6 +69,8 @@ export type {
   NumberConstraints,
 } from "./domains.js";
 
+export { domainCardinality, prefixCardinality } from "./cardinality.js";
+
 export { EmptyAfterClampError, parseRange } from "./range.js";
 
 export { anchoredSource, regexGuardDomainError } from "./regex-guard.js";

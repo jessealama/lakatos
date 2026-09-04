@@ -2,11 +2,14 @@ import * as path from "node:path";
 import {
   BOOL_ALIAS,
   BOOL_EXPORT,
+  BUDGET_ALIAS,
+  BUDGET_EXPORT,
   REPORT_ALIAS,
   REPORT_EXPORT,
   RUNTIME_SPECIFIER,
 } from "./contract.js";
 import { arbitraryFor } from "./domains.js";
+import { emitEnumerated } from "./enumerate.js";
 import {
   type ClassCtorDomain,
   type CtorParam,
@@ -36,7 +39,7 @@ export function emit(
   lines.push(`import { describe } from "vitest";`);
   lines.push(`import { test, fc } from "@fast-check/vitest";`);
   lines.push(
-    `import { ${REPORT_EXPORT} as ${REPORT_ALIAS}, ${BOOL_EXPORT} as ${BOOL_ALIAS} } from "${RUNTIME_SPECIFIER}";`,
+    `import { ${REPORT_EXPORT} as ${REPORT_ALIAS}, ${BOOL_EXPORT} as ${BOOL_ALIAS}, ${BUDGET_EXPORT} as ${BUDGET_ALIAS} } from "${RUNTIME_SPECIFIER}";`,
   );
   lines.push(`import * as __M from "${rel}";`);
   if (allExports.length > 0)
@@ -62,7 +65,7 @@ export function emit(
       for (const [fnName, fnSpecs] of methods) {
         lines.push(`  describe(${JSON.stringify(fnName)}, () => {`);
         for (const s of fnSpecs)
-          lines.push(emitProp(s, sourceFile, seed, "    "));
+          lines.push(emitSpec(s, sourceFile, seed, "    "));
         lines.push(`  });`);
       }
     } else {
@@ -70,7 +73,7 @@ export function emit(
       for (const [methodName, mSpecs] of methods) {
         lines.push(`    describe(${JSON.stringify(methodName)}, () => {`);
         for (const s of mSpecs)
-          lines.push(emitProp(s, sourceFile, seed, "      "));
+          lines.push(emitSpec(s, sourceFile, seed, "      "));
         lines.push(`    });`);
       }
       lines.push(`  });`);
@@ -80,6 +83,18 @@ export function emit(
   lines.push(`});`);
   lines.push("");
   return lines.join("\n");
+}
+
+/** A spec at or under the enumeration cap walks its domain; the rest sample. */
+function emitSpec(
+  s: PropertySpec,
+  sourceFile: string,
+  seed: number,
+  indent: string,
+): string {
+  return s.cases === undefined
+    ? emitProp(s, sourceFile, seed, indent)
+    : emitEnumerated(s, s.cases, sourceFile, indent);
 }
 
 function emitProp(

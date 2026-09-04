@@ -111,3 +111,23 @@ export function report(
   }
   throwIssue({ ...base, kind: "falsified", counterexample });
 }
+
+/**
+ * Thrown by an enumerated test whose wall-clock budget expires before the
+ * domain is walked: the property is neither established nor refuted.
+ */
+export function budget(
+  file: string,
+  functionName: string,
+  name: string,
+  evaluated: number,
+  total: number,
+): never {
+  throwIssue({
+    file,
+    function: functionName,
+    property: name,
+    kind: "budget",
+    reason: `evaluated ${evaluated} of ${total} cases within the time budget, no counterexample`,
+  });
+}

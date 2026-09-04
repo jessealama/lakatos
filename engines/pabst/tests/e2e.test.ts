@@ -112,6 +112,26 @@ const readmeExampleSrc = path.join(
   root,
   "engines/pabst/tests/fixtures/e2e/readme-example.ts",
 );
+const enumeratedPassSrc = path.join(
+  root,
+  "engines/pabst/tests/fixtures/e2e/enumerated-pass.ts",
+);
+const enumeratedFailSrc = path.join(
+  root,
+  "engines/pabst/tests/fixtures/e2e/enumerated-fail.ts",
+);
+const enumeratedVacuousSrc = path.join(
+  root,
+  "engines/pabst/tests/fixtures/e2e/enumerated-vacuous.ts",
+);
+const enumeratedBudgetSrc = path.join(
+  root,
+  "engines/pabst/tests/fixtures/e2e/enumerated-budget.ts",
+);
+const enumeratedCapSrc = path.join(
+  root,
+  "engines/pabst/tests/fixtures/e2e/enumerated-cap.ts",
+);
 // The generated tests import "lakatos/runtime" via the package
 // self-reference, so they must live inside the repo tree; this suite gets its
 // own root there rather than sharing one with a CLI run.
@@ -138,10 +158,11 @@ function run(gen: GenResult): Envelope {
   return env;
 }
 
-/** The flagged annotations, reshaped as bare issues for the pinned checks. */
+/** The flagged annotations, reshaped as bare issues for the pinned checks.
+ * An enumerated Theorem carries a kind too, and is not an issue. */
 function issuesOf(env: Envelope): Issue[] {
   return env.annotations
-    .filter((a) => a.kind !== undefined)
+    .filter((a) => a.kind !== undefined && a.kind !== "enumerated")
     .map(({ szs, ...issue }) => issue as Issue);
 }
 
@@ -189,17 +210,8 @@ describe("end-to-end", () => {
         function: "f",
         property: "commutes",
         kind: "falsified",
+        counterexample: { a: 0, b: 1 },
       });
-      // f(a, b) = 2a against f(b, a) = 2b: any a ≠ b in-bounds falsifies,
-      // so pin the shape and round-trip rather than exact shrunk values.
-      const cex = issue.counterexample as Record<string, number>;
-      expect(Object.keys(cex).sort()).toEqual(["a", "b"]);
-      for (const v of Object.values(cex)) {
-        expect(Number.isInteger(v)).toBe(true);
-        expect(v).toBeGreaterThanOrEqual(0);
-        expect(v).toBeLessThan(10);
-      }
-      expect(cex.a).not.toBe(cex.b);
     },
   );
 
@@ -533,6 +545,40 @@ describe("end-to-end", () => {
       const env = run(r!);
       expect(env.failed).toBe(0);
       expect(issuesOf(env)).toEqual([]);
+      const by = new Map(env.annotations.map((a) => [a.property, a]));
+      expect(by.get("staysInRange")).toMatchObject({
+        szs: "Theorem",
+        kind: "enumerated",
+        cases: 30,
+      });
+      expect(by.get("bigintBounds")).toMatchObject({
+        szs: "Theorem",
+        kind: "enumerated",
+        cases: 101,
+      });
+      expect(by.get("halfOpenInt")).toMatchObject({
+        szs: "Theorem",
+        kind: "enumerated",
+        cases: 10,
+      });
+      expect(by.get("bigintOpen")).toMatchObject({
+        szs: "Theorem",
+        kind: "enumerated",
+        cases: 100,
+      });
+      expect(by.get("clampedNat")).toMatchObject({
+        szs: "Theorem",
+        kind: "enumerated",
+        cases: 6,
+      });
+      for (const p of [
+        "unitInterval",
+        "strictlyPositive",
+        "positiveNat",
+        "farOutOneSided",
+        "halfOpenAtZero",
+      ])
+        expect(by.get(p)).toMatchObject({ szs: "GaveUp" });
     },
   );
 
@@ -582,6 +628,111 @@ describe("end-to-end", () => {
       });
     },
   );
+
+  it(
+    "a small domain walked in full is a Theorem with its case count",
+    { timeout: 30000 },
+    () => {
+      const [r] = generate([enumeratedPassSrc], OUT_ROOT);
+      const env = run(r!);
+      expect(env).toMatchObject({ passed: 1, failed: 0 });
+      expect(env.annotations).toEqual([
+        {
+          file: enumeratedPassSrc,
+          function: "square",
+          property: "pos",
+          szs: "Theorem",
+          kind: "enumerated",
+          cases: 10,
+        },
+      ]);
+      expect(fs.readFileSync(r!.outFile!, "utf8")).not.toContain("test.prop(");
+    },
+  );
+
+  it(
+    "a walked domain reports the least counterexample, and a throw with its tuple",
+    { timeout: 30000 },
+    () => {
+      const [r] = generate([enumeratedFailSrc], OUT_ROOT);
+      const env = run(r!);
+      expect(env.failed).toBe(2);
+      const by = new Map(env.annotations.map((a) => [a.property, a]));
+      expect(by.get("noThree")).toMatchObject({
+        szs: "CounterSatisfiable",
+        kind: "falsified",
+        counterexample: { a: 0, b: 3 },
+      });
+      expect(by.get("rootDefined")).toMatchObject({
+        szs: "Error",
+        kind: "threw",
+        counterexample: { n: -2 },
+        error: "negative: -2",
+      });
+      for (const issue of issuesOf(env)) expectValidIssue(issue);
+    },
+  );
+
+  it(
+    "a domain the preconditions discard entirely is a vacuous Theorem",
+    { timeout: 30000 },
+    () => {
+      const [r] = generate([enumeratedVacuousSrc], OUT_ROOT);
+      const env = run(r!);
+      expect(env.annotations[0]).toMatchObject({
+        szs: "Theorem",
+        kind: "enumerated",
+        cases: 10,
+      });
+    },
+  );
+
+  it(
+    "a walk that outruns its budget is a Timeout saying how far it got",
+    { timeout: 60000 },
+    () => {
+      const [r] = generate([enumeratedBudgetSrc], OUT_ROOT);
+      const env = run(r!);
+      expect(env.failed).toBe(1);
+      const a = env.annotations[0]!;
+      expect(a).toMatchObject({ szs: "Timeout", kind: "budget" });
+      expect(a.reason).toMatch(
+        /^evaluated \d+ of 1000 cases within the time budget, no counterexample$/,
+      );
+      const evaluated = Number(/evaluated (\d+)/.exec(a.reason!)![1]);
+      expect(evaluated).toBeGreaterThan(0);
+      expect(evaluated).toBeLessThan(1000);
+      expectValidIssue(issuesOf(env)[0]);
+    },
+  );
+
+  it(
+    "the cap: 1000 tuples walk, 1001 sample exactly as before",
+    { timeout: 30000 },
+    () => {
+      const [r] = generate([enumeratedCapSrc], OUT_ROOT);
+      expect(r!.properties).toEqual([
+        { function: "keep", property: "atCap", cases: 1000 },
+        { function: "hold", property: "aboveCap" },
+      ]);
+      const code = fs.readFileSync(r!.outFile!, "utf8");
+      expect(code).toContain('test("atCap", { timeout: 8000 }');
+      expect(code).toContain("test.prop([fc.integer({ min: 0, max: 1000 })]");
+      const env = run(r!);
+      const by = new Map(env.annotations.map((a) => [a.property, a]));
+      expect(by.get("atCap")).toMatchObject({
+        szs: "Theorem",
+        kind: "enumerated",
+        cases: 1000,
+      });
+      expect(by.get("aboveCap")).toEqual({
+        file: enumeratedCapSrc,
+        function: "hold",
+        property: "aboveCap",
+        szs: "GaveUp",
+      });
+    },
+  );
 });
 
 describe("e2e — math-y connectives", () => {
@@ -596,6 +747,13 @@ describe("e2e — math-y connectives", () => {
       const env = run(res!);
       expect(issuesOf(env)).toEqual([]);
       expect(env.failed).toBe(0);
+      const by = new Map(env.annotations.map((a) => [a.property, a]));
+      expect(by.get("deMorgan")).toMatchObject({
+        szs: "Theorem",
+        kind: "enumerated",
+        cases: 4,
+      });
+      expect(by.get("guarded")).toMatchObject({ szs: "GaveUp" });
     },
   );
 

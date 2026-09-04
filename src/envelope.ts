@@ -20,18 +20,36 @@ export interface PropertyIdentity {
  * pinned by the type union. */
 export const UNSUPPORTED_RANGE_KIND = "unsupported-range" as const;
 
-/** One annotation's outcome in a lakatos run. */
+/** One annotation's outcome in a lakatos run. Beyond the refutation
+ * kinds, `unsupported-range` marks a NotTried whose range only fits the
+ * prover's domain after the safe-integer clamp, and `enumerated` a
+ * Theorem the refuter earned by walking the whole domain. */
 export interface AnnotationResult extends PropertyIdentity {
   szs: SzsStatus;
-  kind?: IssueKind | typeof UNSUPPORTED_RANGE_KIND;
+  kind?: IssueKind | typeof UNSUPPORTED_RANGE_KIND | "enumerated";
   counterexample?: Record<string, unknown>;
   error?: string;
   /** Prove pipeline: the construct outside the mappable subset
-   * (Inappropriate), or why the prover stopped (GaveUp, NotTried). */
+   * (Inappropriate), or why the prover stopped (GaveUp, NotTried).
+   * Refute pipeline: how far a budget-expired enumeration got (Timeout). */
   reason?: string;
-  /** Theorem only: the non-standard axioms the proof depends on. Empty
-   * for a kernel-checked proof. */
+  /** Theorem from the prover only: the non-standard axioms the proof
+   * depends on. Empty for a kernel-checked proof. */
   axioms?: string[];
+  /** Theorem from the refuter only: how many tuples it evaluated. */
+  cases?: number;
+}
+
+/** What codegen planned for one annotation: its identity, plus, when the
+ * refuter walks the whole domain, the tuple count the join will report. */
+export interface PlannedProperty extends PropertyIdentity {
+  cases?: number;
+}
+
+/** The identity alone. Planning detail must never reach the envelope by
+ * spread: every result shape but the enumerated Theorem rejects it. */
+export function identityOf(p: PropertyIdentity): PropertyIdentity {
+  return { file: p.file, function: p.function, property: p.property };
 }
 
 /** Run metadata the refute command captures before running tests. */
@@ -105,12 +123,13 @@ export type RefuteJoin =
 /**
  * Join the generated properties against the run's parsed issues: every
  * identity gets an entry — flagged ones carry the issue's kind and detail,
- * the rest ran without a counterexample and report GaveUp. A failed
+ * the rest ran without a counterexample. A pass over a planned enumeration
+ * is the Theorem; a pass over a sampled domain is only a GaveUp. A failed
  * assertion whose payload cannot be read is not a GaveUp — the run is
  * returned unreadable and the caller contains it.
  */
 export function joinRefuteVerdicts(
-  identities: PropertyIdentity[],
+  identities: PlannedProperty[],
   json: VitestJson,
 ): RefuteJoin {
   const { issues, unreadable } = collectIssues(json);
@@ -122,9 +141,20 @@ export function joinRefuteVerdicts(
       i,
     ]),
   );
-  const annotations = identities.map((id) => {
+  const annotations = identities.map((planned) => {
+    const id = identityOf(planned);
     const issue = flagged.get(identityKey(id));
-    if (!issue) return { ...id, szs: "GaveUp" as const };
+    if (!issue) {
+      // A pass carries no message: only the plan says whether the whole
+      // domain was walked.
+      if (planned.cases === undefined) return { ...id, szs: "GaveUp" as const };
+      return {
+        ...id,
+        szs: "Theorem" as const,
+        kind: "enumerated" as const,
+        cases: planned.cases,
+      };
+    }
     const result: AnnotationResult = {
       ...id,
       szs: szsForIssue(issue.kind),
@@ -133,6 +163,7 @@ export function joinRefuteVerdicts(
     if (issue.counterexample !== undefined)
       result.counterexample = issue.counterexample;
     if (issue.error !== undefined) result.error = issue.error;
+    if (issue.reason !== undefined) result.reason = issue.reason;
     return result;
   });
   return { kind: "joined", annotations };
@@ -143,11 +174,11 @@ export function joinRefuteVerdicts(
  * reason names the signal that asked. Annotations already resolved
  * before the engine ran keep the status they earned. */
 export function interruptedResults(
-  identities: PropertyIdentity[],
+  identities: PlannedProperty[],
   signal: string,
 ): AnnotationResult[] {
-  return identities.map((id) => ({
-    ...id,
+  return identities.map((p) => ({
+    ...identityOf(p),
     szs: "User" as const,
     reason: `the run was interrupted (${signal})`,
   }));
@@ -159,7 +190,7 @@ export function interruptedResults(
 export function buildEnvelope(
   meta: RunMeta,
   json: VitestJson,
-  identities: PropertyIdentity[],
+  identities: PlannedProperty[],
 ): Envelope {
   const join = joinRefuteVerdicts(identities, json);
   if (join.kind === "unreadable") throw new Error(join.messages.join("\n"));
@@ -188,10 +219,8 @@ export type ProveJoin =
  * one: its substance is the counterexample, which ships in the same
  * falsified shape the refutation engine uses. Error diagnostics travel in
  * `error` like every other engine failure. */
-function verdictResult(
-  id: PropertyIdentity,
-  v: ProveVerdict,
-): AnnotationResult {
+function verdictResult(p: PropertyIdentity, v: ProveVerdict): AnnotationResult {
+  const id = identityOf(p);
   const szs = v.szs;
   if (szs === "Theorem") return { ...id, szs, axioms: v.axioms ?? [] };
   if (szs === "CounterSatisfiable")

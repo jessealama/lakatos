@@ -15,6 +15,7 @@ import {
   resolveClassBinders,
   unsupportedRangeReason,
 } from "../../../lemma/src/index.js";
+import { enumerationCases } from "./enumerate.js";
 import { lowerTop } from "./lower.js";
 import { freeIdentifiers, classify } from "./free-idents.js";
 import type { PropertySpec } from "./ir.js";
@@ -99,6 +100,7 @@ function buildSpec(
   for (const b of binders) {
     if (isClassDomain(b.domain)) collectCtorClasses(b.domain, freeExports);
   }
+  const cases = enumerationCases(binders);
   return {
     name: a.propertyName,
     functionName: a.functionName,
@@ -108,6 +110,7 @@ function buildSpec(
     body: loweredBody,
     preconditions,
     freeExports,
+    ...(cases !== undefined ? { cases } : {}),
     location: { file, line: a.line },
   };
 }

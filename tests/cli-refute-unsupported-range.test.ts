@@ -50,7 +50,14 @@ describe("cli refute on unrepresentable domains", () => {
     const env = JSON.parse(stdout[0]!);
     expectValidEnvelope(env);
     expect(env.annotations).toEqual([
-      { file: "mixed.ts", function: "small", property: "pos", szs: "GaveUp" },
+      {
+        file: "mixed.ts",
+        function: "small",
+        property: "pos",
+        szs: "Theorem",
+        kind: "enumerated",
+        cases: 5,
+      },
       {
         file: "mixed.ts",
         function: "huge",

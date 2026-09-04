@@ -18,6 +18,10 @@ describe("szsForIssue", () => {
   it("maps exhausted to GaveUp", () => {
     expect(szsForIssue("exhausted")).toBe("GaveUp");
   });
+
+  it("maps budget to Timeout", () => {
+    expect(szsForIssue("budget")).toBe("Timeout");
+  });
 });
 
 describe("the prove subset", () => {
