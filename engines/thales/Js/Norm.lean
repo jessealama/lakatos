@@ -8,10 +8,10 @@ import Js.Binders
 
 /-! The `js_norm` simp set: normalization lemmas that strip JsM's
 monadic wrapping from pure-looking goals, leaving bare Int arithmetic
-for the closers, plus the binary64 facts `FloatFacts` proves — vanilla
-Lean carries no float theory, so a residual goal about `Float` has none
-until one lands here. Model definitions join the set at
-model-elaboration time, so goals can unfold them. -/
+for `simp` and `grind` to finish, plus the binary64 facts `FloatFacts`
+proves — vanilla Lean carries no float theory, so a residual goal about
+`Float` has none until one lands here. Definitions tagged `@[js_norm]`
+join the set, so goals can unfold them. -/
 
 namespace Js
 
@@ -26,15 +26,14 @@ open Js.Number
     ((pure a : JsM α) = pure b) ↔ a = b :=
   ⟨fun h => Except.ok.inj h, fun h => h ▸ rfl⟩
 
-/-! A lowered `if` is a `cond` between two `JsM` computations. The set
-keeps such a branch at the top of its expression — everything downstream
-of it is pushed into both arms — and splits it into the two implications
-its arms carry, which is what hands the closers the branch condition as a
-hypothesis on the arm it selects. Only that shape lets a literal arm
-reduce: while a branch sits under an operation, neither arm is a term the
-ground evaluators can see. A branch both of whose arms came out as one
-term collapses to that term instead of splitting, so it never reaches the
-closers at all. -/
+/-! A JS `if` is a `cond` between two `JsM` computations. The set keeps
+such a branch at the top of its expression — everything downstream of it
+is pushed into both arms — and splits it into the two implications its
+arms carry, so each arm is proved under its own branch condition. Only
+that shape lets a literal arm reduce: while a branch sits under an
+operation, neither arm is a term a ground evaluator can see. A branch
+both of whose arms came out as one term collapses to that term instead
+of splitting. -/
 
 /-- What follows a branch runs in whichever arm was taken. -/
 @[js_norm] theorem jsm_cond_bind {α β : Type} (c : Bool)
@@ -42,20 +41,20 @@ closers at all. -/
     ((bif c then x else y) >>= f) = bif c then (x >>= f) else (y >>= f) := by
   cases c <;> rfl
 
-/-- A branch on one side of an equation is one obligation per arm. -/
+/-- A branch on one side of an equation is one goal per arm. -/
 @[js_norm] theorem jsm_cond_eq {α : Type} (c : Bool) (x y z : JsM α) :
     ((bif c then x else y) = z) ↔ ((c = true → x = z) ∧ (c = false → y = z)) := by
   cases c <;> simp
 
-/-- The same split for a branch that reached the boolean island itself. -/
+/-- The same split for a `Bool`-valued branch equated to `true`. -/
 @[js_norm] theorem cond_eq_true_iff (c a b : Bool) :
     ((bif c then a else b) = true) ↔ ((c = true → a = true) ∧ (c = false → b = true)) := by
   cases c <;> simp
 
--- Boolean islands: after jsm_pure_inj, `decide P = true` becomes `P`.
+-- Once jsm_pure_inj has stripped the `pure`, `decide P = true` becomes `P`.
 attribute [js_norm] decide_eq_true_eq
 
-/-! A guarded constructor lowers to an `ite` per guard with the whole
+/-! A constructor whose guards throw is an `ite` per guard with the whole
 continuation copied into both arms, so its image is exponential in the
 guards before anything reasons about it. The lemmas below flatten it back:
 the throw guard becomes a `= false` conjunct, the branches migrate out of
@@ -65,10 +64,10 @@ field. -/
 
 /-- A guard that throws succeeds exactly when it was down and the rest
 succeeded. Only the rest survives, so the fact is linear in the guards
-however much the lowering copied under the throw. The `throw` stays
-spelled as it was: the facts grind brings to a guard it could not refute
-are keyed on that spelling, and normalizing it away puts them out of
-reach. -/
+however many copies of the continuation sit under the throw. The `throw`
+stays spelled as it was: the facts grind brings to a guard it could not
+refute are keyed on that spelling, and normalizing it away puts them out
+of reach. -/
 @[js_norm] theorem jsm_ite_throw_ok_iff {α : Type} (c : Bool) (e : JsError)
     (r : JsM α) (v : α) :
     ((if c = true then (throw e : JsM α) else r) = Except.ok v) ↔
@@ -89,20 +88,20 @@ reach. -/
       pure (if c = true then a else b) := by
   cases c <;> rfl
 
-/-- The emitted image equation spells its right-hand side `.ok`, so the
-`pure`-on-both-sides injection never reaches it. -/
+/-- An image equation spelled with `.ok` on the right, which the
+`pure`-on-both-sides injection never reaches. -/
 @[js_norm] theorem jsm_pure_eq_ok {α : Type} (a b : α) :
     ((pure a : JsM α) = Except.ok b) ↔ a = b :=
   ⟨fun h => Except.ok.inj h, fun h => h ▸ rfl⟩
 
 -- A branch both of whose arms are one term, and a branch whose condition a
 -- ground evaluator settled: neither carries information, and each collapse
--- halves the tree the closers walk.
+-- halves the tree left to simplify.
 attribute [js_norm] Bool.cond_self ite_self Bool.cond_true Bool.cond_false
   Bool.false_eq_true ite_true ite_false
 
--- Binary64 theory from FloatFacts. Rewriting subtraction away leaves the
--- closers one operator fewer to reason about.
+-- Binary64 theory from FloatFacts. Rewriting subtraction away leaves one
+-- operator fewer to reason about.
 attribute [js_norm, grind =] Js.Number.FloatFacts.float_sub_eq_add_neg
 
 -- Double negation strips: reachable now that unary minus is in the
