@@ -602,6 +602,8 @@ def obligationCommand (e : Emission) (o : Obligation) : RenderM (TSyntax `comman
         -- carries as hypotheses, lower outermost.
         -- One ungrouped ∀ head per binder, never `∀ (x y : JsNumber)`: that
         -- is the only spelling `ProveTerm.propSpine` recovers.
+        -- Bounds render as strict comparisons against `floatInf`, lower
+        -- outermost: the hypothesis shape `Js/Norm`'s facts are keyed on.
         let xi ← scopedIdent name
         let mut body := acc
         if let some (op, lit) := upper then
