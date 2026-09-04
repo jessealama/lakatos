@@ -381,8 +381,8 @@ export interface ClassShape {
 
 /** A binder's denoted domain: a finite half-open integer range, the whole
  * int line, the naturals, or a `number` binder — the whole double line,
- * narrowed by whichever bounds its interval carries. The same shapes the
- * old grammar's binder constructors carry. */
+ * narrowed by whichever bounds its interval carries. These are the shapes
+ * `ThalesEmit/Render.lean` renders as ∀ heads. */
 export type EmitBinder =
   | { name: string; kind: "range"; lo: string; hi: string }
   | { name: string; kind: "int" }
@@ -441,9 +441,9 @@ export interface Emission {
 }
 
 /** An annotation the frontend itself settles: outside the model
- * (`Inappropriate`) or failed by the engine's own gaps (`Error`), with a
- * reason byte-identical to the old pipeline's — which is what the parity
- * harness pins. */
+ * (`Inappropriate`) or failed by the engine's own gaps (`Error`), with the
+ * reason the CLI reports verbatim — `tests/fixtures/envelopes.expected.json`
+ * pins it. */
 export interface ClassifiedAnnotation {
   annotation: RawAnnotation;
   szs: "Inappropriate" | "Error" | "NotTried";
@@ -459,9 +459,9 @@ export interface PlainEmission {
   classified: ClassifiedAnnotation[];
 }
 
-/** Mirror of the old pipeline's `FailedDecl`: why a declaration is not in
- * the model, with a construct name exactly when the failure is a statement
- * about the input rather than about the engine. */
+/** Why a declaration is not in the model. A construct name is present
+ * exactly when the failure is a statement about the input rather than about
+ * the engine — which is what separates Inappropriate from Error. */
 interface FailedDecl {
   construct?: string;
   reason: string;
@@ -751,8 +751,8 @@ function nonBooleanOperand(
   };
 }
 
-/** The first construct in tree order the old transcriber would have made
- * opaque: anything outside identifiers, numeric literals, unary ±,
+/** The first construct in tree order this slice cannot map: anything
+ * outside identifiers, numeric literals, unary ±,
  * parentheses, binary operators (any operator — meaning is checked
  * later), and calls of a plain identifier. */
 function findConstruct(
@@ -886,7 +886,8 @@ function findConstruct(
 }
 
 /** The first refused operator in tree order, as a failure that names it.
- * Runs after the construct scan, like the old elaborator's pre-scans. */
+ * Runs after the construct scan: an unmappable construct outranks a
+ * refused operator, so the two never race. */
 function findRefusedOp(e: ts.Expression): FailedDecl | undefined {
   if (ts.isParenthesizedExpression(e)) return findRefusedOp(e.expression);
   if (isUnaryArith(e) && negatedLiteral(e) === undefined) {
@@ -1038,8 +1039,7 @@ function refOf(scope: WalkScope, name: string): ModelRef {
 
 /** The first callee among `names` whose own declaration failed on a named
  * construct: the refusal travels with the call. A callee that failed for
- * any other reason is left to the typed walk, as the old elaborator leaves
- * it to `evalExpr`. */
+ * any other reason is left to the typed walk, which reports it by name. */
 function failedCalleeIn(
   names: readonly string[],
   scope: WalkScope,
@@ -1314,9 +1314,9 @@ function shapeOfRef(scope: WalkScope, ref: ModelRef): ClassShape {
   return classShapeOf(scope, ref);
 }
 
-/** The typed walk, mirroring `evalExpr`: operand types are checked in the
- * old elaboration order so the first failure — and its message — is the
- * same one the old pipeline reports. */
+/** The typed walk: operand types are checked in tree order, so which
+ * failure a declaration reports — and with what message — is fixed by the
+ * source rather than by walk order. */
 function walkTyped(
   e: ts.Expression,
   expected: Expected,
@@ -1984,9 +1984,9 @@ interface ScanRoot {
   sf: ts.SourceFile;
 }
 
-/** The old elaborator's pre-scans — opaque constructs, then refused
- * operators, then construct-failed callees — each across every root
- * before the next begins. */
+/** The pre-scans, in the order that fixes which failure wins — opaque
+ * constructs, then refused operators, then construct-failed callees —
+ * each across every root before the next begins. */
 function prescanFailure(
   roots: readonly ScanRoot[],
   scope: WalkScope,
@@ -2021,8 +2021,8 @@ function typedOrFailure(
   }
 }
 
-/** The signature check `transcribeFunction` applies: the walked
- * parameters, or the failure that degrades the function. */
+/** A function declaration's signature check: the walked parameters, or the
+ * failure that degrades the function. */
 function signatureFailure(
   fn: ts.FunctionDeclaration,
   sf: ts.SourceFile,
@@ -2047,10 +2047,9 @@ function signatureFailure(
   return { params };
 }
 
-/** Names a body binds itself, and whether each may be assigned — the old
- * transcriber's `Locals`, with the same discipline: a branch's arm gets
- * its own copy, and a redeclaration of a name from an enclosing scope is
- * refused rather than shadowed. */
+/** Names a body binds itself, and whether each may be assigned. A branch's
+ * arm gets its own copy, and a redeclaration of a name from an enclosing
+ * scope is refused rather than shadowed. */
 type Locals = Map<string, "const" | "mutable">;
 
 /** The types a local binding may carry: the numeric slice, or a keyword
@@ -2058,9 +2057,10 @@ type Locals = Map<string, "const" | "mutable">;
  * out: a class-valued local keeps its refusal. */
 type LocalTy = "num" | { union: UnionTag[] };
 
-/** The statement tree as the old transcriber would have rendered it: each
- * node is either a mapped statement (its expressions still tsc nodes) or
- * the opaque failure the transcriber would have emitted in its place. */
+/** The body as a tree of mapped statements, their expressions still tsc
+ * nodes, each unmappable statement replaced by the opaque failure that
+ * degrades the declaration. One node per source statement; `lowerTree`
+ * truncates a path at its first return. */
 type TStmt =
   | { t: "return"; expr: ts.Expression }
   | { t: "throw"; error: string }
@@ -2081,8 +2081,8 @@ type TStmt =
     }
   | { t: "opaque"; failure: FailedDecl };
 
-/** The error kind a `throw` carries — the constructor's name, exactly as
- * the old transcriber reads it; the message is discarded. */
+/** The error kind a `throw` carries: the constructor's name. The message is
+ * discarded — the model distinguishes throws by kind alone. */
 function errorKind(e: ts.Expression): string | undefined {
   const inner = unwrapParens(e);
   if (!ts.isNewExpression(inner)) return undefined;
@@ -2112,8 +2112,8 @@ function localValueTy(
  * outside the slice — `var`, `using`, destructuring, an uninitialized
  * `let`, a type annotation that is neither `number` nor a keyword union,
  * or a redeclaration of a name already bound here. Locals set for
- * earlier declarators persist even when a later one fails, exactly as
- * the old transcriber leaves them. */
+ * earlier declarators persist even when a later one fails, so the scans
+ * that follow still see them. */
 function declStmts(
   s: ts.VariableStatement,
   locals: Locals,
@@ -2168,8 +2168,8 @@ function thisFieldAssignment(
   return { field: target.name.text, expr: e.right };
 }
 
-/** One statement's `TStmt`s, mirroring the old transcriber's fallthrough:
- * whatever it cannot say becomes the opaque node it would have emitted. */
+/** One statement's `TStmt`s. Whatever the slice cannot say falls through
+ * to an opaque node carrying the construct that stopped it. */
 function structureStmt(
   s: ts.Statement,
   sf: ts.SourceFile,
@@ -2229,9 +2229,9 @@ function structureStmt(
 }
 
 /** The mapped expressions of a statement tree in tree order — the order
- * the old pipeline's pre-scans see them in the constructor text. An
- * opaque statement contributes nothing: the transcriber replaced its whole
- * subtree. The scan goes into branches, dead code included. */
+ * the pre-scans see them in the source text. An opaque statement
+ * contributes nothing: its whole subtree was replaced. The scan goes into
+ * branches, dead code included. */
 function treeExprs(
   stmts: readonly TStmt[],
   into: ts.Expression[] = [],
@@ -2264,7 +2264,7 @@ function treeExprs(
 
 /** The first opaque node in the statement tree, in tree order: an opaque
  * statement, an opaque condition, or an unmapped construct inside a mapped
- * expression — whichever the old pipeline's scan reaches first. Each decl
+ * expression — whichever comes first in tree order. Each decl
  * binds the rest of its list — an arm its own copy — mirroring the
  * lowering's scoping, so the scan types an identifier (a typeof test over
  * a union local, say) off the same binding the walk will. */
@@ -2334,17 +2334,15 @@ function stmtsLeave(stmts: readonly TStmt[]): boolean {
 }
 
 /** The rest of the body, validated where control falls off a statement
- * list — the mirror of the old lowering's `Cont`, kept only for its two
- * observable effects: the order errors are discovered in, and the tail
- * statements it yields exactly once. */
+ * list. It exists for two observable effects: the order errors are
+ * discovered in, and the tail statements it yields exactly once. */
 type Cont = () => void;
 
 /** Lowers a statement tree into the emitted statement list, walking every
- * expression in exactly the order the old `lowerStmts` elaborates them, so
- * the first failure — and its message — is the one the old pipeline
- * reports. A return or throw ends its path (what follows never reaches
- * the artifact); a branch's tail is validated once, in the old lowering's
- * join order, and stays after the branch — do-notation needs no join. */
+ * expression in tree order so the first failure — and its message — is
+ * fixed by the source. A return or throw ends its path (what follows never
+ * reaches the artifact); a branch's tail is validated once and stays after
+ * the branch — do-notation needs no join. */
 function lowerTree(
   stmts: readonly TStmt[],
   vars: readonly (readonly [string, ValueTy])[],
@@ -2406,7 +2404,8 @@ function lowerTree(
     }
     /* v8 ignore start -- an opaque statement or condition is unreachable
        here: the construct scan already degraded the declaration. The throw
-       mirrors the old elaborator's, kept for the same defense. */
+       is a defense, so a scan regression becomes a contained failure
+       rather than a bad artifact. */
     case "opaque":
       throw new ModelError(s.failure.reason);
     case "if": {
@@ -2419,15 +2418,16 @@ function lowerTree(
       let tail: EmitStmt[] = [];
       let tailBuilt = false;
       const after: Cont = () => {
-        /* v8 ignore next -- each continuation runs at most once by
-           construction; the guard is the old lowering's invariant. */
+        /* v8 ignore next -- at most one arm reaches this continuation, so
+           the flag never fires; it holds the yields-once invariant even
+           if that changes. */
         if (tailBuilt) return;
         tailBuilt = true;
         tail = lowerTree(rest, vars, k, scope, sf);
       };
-      /* v8 ignore start -- the mirror of the old lowering's ruled-out
-         continuation: an arm the leave-analysis proved leaving never
-         invokes it, so it exists only to fail loudly on a bug. */
+      /* v8 ignore start -- the continuation an arm that leaves can never
+         invoke: `stmtsLeave` already proved it returns or throws, so this
+         exists only to fail loudly if that analysis is wrong. */
       const ruledOut: Cont = () => {
         throw new ModelError("the lowering reached an arm it had ruled out");
       };
@@ -2445,8 +2445,8 @@ function lowerTree(
       } else if (elseLeaves) {
         thenK = after;
       } else {
-        // Both arms fall through: the old lowering binds the tail as the
-        // join before either arm, so it is validated first here too.
+        // Both arms fall through, so the tail is the join both reach: it
+        // is validated before either arm, and only once.
         after();
         thenK = () => {};
         elseK = () => {};
@@ -2462,9 +2462,9 @@ function lowerTree(
   }
 }
 
-/** The pre-scans over a whole statement tree, in the old elaborator's
- * order — opaque constructs, then refused operators, then
- * construct-failed callees — dead code included. */
+/** The pre-scans over a whole statement tree, in that same fixed order —
+ * opaque constructs, then refused operators, then construct-failed
+ * callees — dead code included. */
 function bodyPrescan(
   tree: readonly TStmt[],
   sf: ts.SourceFile,
@@ -2886,8 +2886,9 @@ function boundaryTy(ty: ValueTy): ValueTy {
   return { option: ty.instance };
 }
 
-/** Names and types for a parameter list, or the first failure — the
- * shape check ahead of the type, as the old order has it. */
+/** Names and types for a parameter list, or the first failure. The shape
+ * check leads: a parameter the caller's `shapeFailure` rejects has no
+ * type worth asking about. */
 function walkParams(
   params: readonly ts.ParameterDeclaration[],
   sf: ts.SourceFile,
@@ -3467,8 +3468,8 @@ function walkFunction(
   }
 }
 
-/** Parse one formula atom the way the transcriber does: wrapped in
- * parentheses, rejected on any parser diagnostic. */
+/** Parse one formula atom: wrapped in parentheses so it parses as an
+ * expression, rejected on any parser diagnostic. */
 function parseAtomExpr(
   js: string,
 ): { sf: ts.SourceFile; expr: ts.Expression } | undefined {
@@ -3563,9 +3564,10 @@ function builtinCall(
 
 /** A binder's emitted domain: a finite half-open range, the whole int
  * line, the naturals, or a bounded `number` — reading the domain the binder
- * *denotes*, the same folding the old transcriber applies. `bare` covers
- * everything this slice cannot express; a safe-integer clamp reports its
- * offending endpoints instead, for the unsupported-range refusal. */
+ * *denotes*, so equivalent spellings of one interval fold to the same
+ * shape. `bare` covers everything this slice cannot express; a
+ * safe-integer clamp reports its offending endpoints instead, for the
+ * unsupported-range refusal. */
 function lowerBinder(b: Binder): EmitBinder | "bare" | { clamped: string[] } {
   if (b.domain === "number") {
     // No safe-integer clamp: a number binder denotes binary64 values
@@ -3765,10 +3767,10 @@ function obligationPayload(
     // lowering the atom gets in a guard or a branch condition.
     const asEquation =
       sides !== undefined && !sides.some((s) => taggedOperand(s, scope));
-    // Guards precede the conclusion in the old elaborator's tree order, so
-    // the first refusal either pipeline reports is the same one. The
-    // conclusion is pre-scanned as written — an equation splits into its
-    // sides only for the typed walk, which lifts them separately.
+    // Guards precede the conclusion in the pre-scan roots, so a refusal in
+    // a guard is reported before one in the conclusion. The conclusion is
+    // pre-scanned as written — an equation splits into its sides only for
+    // the typed walk, which lifts them separately.
     const prescanRoots: ScanRoot[] = [...guardRoots, { expr, sf: parsed.sf }];
     const walkRoots: (ScanRoot & { expected: Expected })[] = [
       ...guardRoots,
@@ -4061,9 +4063,9 @@ function walkEmitModule(
       }
       continue;
     }
-    // Every other name a declaration binds degrades to the old pipeline's
-    // opaque failure, position on the binding identifier — except a
-    // declarator the constant scan positively admits.
+    // Every other name a declaration binds degrades to an opaque failure,
+    // positioned on the binding identifier — except a declarator the
+    // constant scan positively admits.
     if (ts.isVariableStatement(stmt)) {
       const admissible =
         (stmt.declarationList.flags & ts.NodeFlags.Const) !== 0 &&

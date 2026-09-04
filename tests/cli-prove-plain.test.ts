@@ -8,10 +8,9 @@ import type { ProveVerdict } from "../src/envelope.js";
 import type { ProveStatus } from "../src/szs.js";
 import { RUN_ROOT } from "../src/run-dir.js";
 
-// The plain-Lean emission pipeline through the CLI spine, which prove runs
-// by default — nothing needs selecting. The engine is mocked at the same
-// module seam cli-prove.test.ts uses; the containment, interrupt, and health
-// contracts must match the transcriber spine's, exit codes included.
+// The emission pipeline through the CLI spine. The engine is mocked at the
+// same module seam cli-prove.test.ts uses; this file pins the containment,
+// interrupt, and health contracts, exit codes included.
 vi.mock("../engines/thales/frontend/src/run.js", () => ({
   runLean: vi.fn(),
   runEmission: vi.fn(),

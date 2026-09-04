@@ -699,7 +699,7 @@ const formulaWith = (formula: string) =>
   `/** @ensures{p} ${formula} */\n` +
   `export function f(x: number): number { return x; }\n`;
 
-describe("body classification parity with the old pipeline", () => {
+describe("body classification", () => {
   test("an overload signature does not shadow its implementation", () => {
     const src =
       "/** @ensures{p} forall (x: int ∈ [0, 5)) { f(x) ≡ x } */\n" +
@@ -708,7 +708,7 @@ describe("body classification parity with the old pipeline", () => {
     expect(classifications(src)).toEqual({ classified: [], obligations: 1 });
   });
 
-  test("statements after a return are unreachable, as in the old lowering", () => {
+  test("statements after a return never reach the artifact", () => {
     const src =
       "/** @ensures{p} forall (x: int ∈ [0, 5)) { f(x) ≡ x } */\n" +
       "export function f(x: number): number { return x; return q; }\n";
@@ -720,7 +720,7 @@ describe("body classification parity with the old pipeline", () => {
     ]);
   });
 
-  test("a body that can run off the end degrades like the old lowering", () => {
+  test("a body that can run off the end degrades", () => {
     const src =
       "/** @ensures{p} forall (x: int ∈ [0, 5)) { f(x) ≡ x } */\n" +
       "export function f(x: number): number {}\n";
@@ -800,7 +800,7 @@ describe("body classification parity with the old pipeline", () => {
     ]);
   });
 
-  test("a call to a later declaration finds no model, as in the old order", () => {
+  test("a call to a later declaration finds no model", () => {
     const src =
       fnWith("g(x)") + "export function g(x: number): number { return x; }\n";
     expect(classifications(src).classified).toEqual([
@@ -1144,7 +1144,7 @@ describe("statement bodies (#148)", () => {
     ]);
   });
 
-  test("an arm's own binding dies with the arm, as in the old lowering", () => {
+  test("an arm's own binding dies with the arm", () => {
     const src = annotated(
       "export function f(x: number): number { if (x < 0) { const y = 1; x = y; } return y; }",
     );
@@ -1163,7 +1163,7 @@ describe("statement bodies (#148)", () => {
   });
 });
 
-describe("formula classification parity with the old pipeline", () => {
+describe("formula classification", () => {
   test("** in a formula is Inappropriate with the bare reason", () => {
     expect(
       classifications(
@@ -1722,7 +1722,7 @@ describe("unsupported ranges classify NotTried before emission", () => {
     "/** @ensures{nonneg} forall (x: int ∈ [0, 1000000000000000000000000000000]) { keep(x) >= 0 } */\n" +
     "export function keep(x: number): number {\n  return x;\n}\n";
 
-  test("a clamped endpoint classifies NotTried with the old reason", () => {
+  test("a clamped endpoint classifies NotTried, naming the endpoint", () => {
     const { classified, emission } = emitModule(HUGE, "huge.ts");
     expect(emission.obligations).toEqual([]);
     expect(classified).toEqual([

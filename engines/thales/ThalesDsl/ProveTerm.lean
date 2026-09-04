@@ -92,10 +92,11 @@ partial def isCtorImage (x : Name) : TSyntax `term → Bool
 
 /-- The binder spine of a plain-Prop payload: the heads emission writes,
 outermost first, then the guard hypotheses under them, and the leaf under
-those — the same data the old grammar carried structurally, recovered here
-for rung selection and witness search. A payload with any other head is
-its own leaf; a nat binder's nonnegativity hypothesis stays in the leaf,
-since search never runs on an unbounded domain. -/
+those. A plain Prop carries no structure, so the spine is recovered by
+matching the shapes `Render.lean` commits to — rung selection and witness
+search both read it. A payload with any other head is its own leaf; a nat
+binder's nonnegativity hypothesis stays in the leaf, since search never
+runs on an unbounded domain. -/
 partial def propSpine (t : TSyntax `term) : PropSpine :=
   match t with
   | `(($inner)) => propSpine inner
@@ -171,7 +172,7 @@ elab_rules : command
         -- artifact's primed spellings, which the leaf references.
         let names := spine.binders.map (·.sourceName)
         -- Bounded whenever every recovered binder is (an empty spine is a
-        -- closed leaf, domain size 1, like the old grammar's bare islands).
+        -- closed leaf, domain size 1).
         -- A leaf the decide rungs cannot handle falls through them the way
         -- any undecidable goal does.
         let allBounded := spine.binders.all (· matches .ranged ..)

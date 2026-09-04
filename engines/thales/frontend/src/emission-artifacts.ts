@@ -19,10 +19,11 @@ export interface EmissionArtifact {
   classified: ClassifiedAnnotation[];
 }
 
-/** Emit each source file's per-declaration JSON into `outRoot`, via the
- * mirroring shared with the transcriber. The .lean artifact is rendered
- * later by thales-emit, inside the engine run; a file whose annotations
- * are all classified frontend-side never reaches Lean at all. */
+/** Emit each source file's per-declaration JSON into `outRoot`, via
+ * `mirrorPath` — the same source-tree mirroring the run directory uses.
+ * The .lean artifact is rendered later by thales-emit, inside the engine
+ * run; a file whose annotations are all classified frontend-side never
+ * reaches Lean at all. */
 export function writeEmissionArtifacts(
   files: string[],
   outRoot: string,
