@@ -132,6 +132,14 @@ const enumeratedCapSrc = path.join(
   root,
   "engines/pabst/tests/fixtures/e2e/enumerated-cap.ts",
 );
+const enumeratedClassPassSrc = path.join(
+  root,
+  "engines/pabst/tests/fixtures/e2e/enumerated-class-pass.ts",
+);
+const enumeratedClassFailSrc = path.join(
+  root,
+  "engines/pabst/tests/fixtures/e2e/enumerated-class-fail.ts",
+);
 // The generated tests import "lakatos/runtime" via the package
 // self-reference, so they must live inside the repo tree; this suite gets its
 // own root there rather than sharing one with a CLI run.
@@ -684,6 +692,58 @@ describe("end-to-end", () => {
         kind: "enumerated",
         cases: 10,
       });
+    },
+  );
+
+  it(
+    "a class binder whose constructor slots are all finite is walked in full",
+    { timeout: 30000 },
+    () => {
+      const [r] = generate([enumeratedClassPassSrc], OUT_ROOT);
+      const env = run(r!);
+      expect(env.failed).toBe(0);
+      expect(issuesOf(env)).toEqual([]);
+      const by = new Map(env.annotations.map((a) => [a.property, a]));
+      const walked = (cases: number) => ({
+        szs: "Theorem",
+        kind: "enumerated",
+        cases,
+      });
+      expect(by.get("sound")).toMatchObject(walked(4));
+      expect(by.get("unit")).toMatchObject(walked(1));
+      expect(by.get("nested")).toMatchObject(walked(16));
+      expect(by.get("mixed")).toMatchObject(walked(8));
+      // A rejected tuple is skipped yet counted; a class every tuple of
+      // which is rejected is walked to a vacuous Theorem.
+      expect(by.get("partialThrow")).toMatchObject(walked(4));
+      expect(by.get("allThrow")).toMatchObject(walked(2));
+      expect(by.get("sampled")).toMatchObject({ szs: "GaveUp" });
+      expect(by.get("sampled")!.cases).toBeUndefined();
+    },
+  );
+
+  it(
+    "a falsified class binder renders the least tuple as its construction",
+    { timeout: 30000 },
+    () => {
+      const [r] = generate([enumeratedClassFailSrc], OUT_ROOT);
+      const env = run(r!);
+      expect(env.failed).toBe(2);
+      const by = new Map(env.annotations.map((a) => [a.property, a]));
+      expect(by.get("onIsLive")).toMatchObject({
+        function: "isLive",
+        szs: "CounterSatisfiable",
+        kind: "falsified",
+        counterexample: { f: "new Flag(true,false)" },
+      });
+      expect(by.get("leftLeads")).toMatchObject({
+        szs: "CounterSatisfiable",
+        kind: "falsified",
+        counterexample: {
+          p: "new Pair(new Flag(false,false),new Flag(true,true))",
+        },
+      });
+      for (const issue of issuesOf(env)) expectValidIssue(issue);
     },
   );
 

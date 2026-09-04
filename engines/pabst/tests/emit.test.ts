@@ -337,3 +337,144 @@ describe("emit — enumerated specs", () => {
     expect(both).toContain('test("pos", { timeout: 8000 }');
   });
 });
+
+const flagDomain = {
+  className: "Flag",
+  ctorParams: [
+    { name: "on", domain: "boolean" as const },
+    { name: "armed", domain: "boolean" as const },
+  ],
+};
+
+const enumeratedClassSpec: PropertySpec = {
+  name: "sound",
+  functionName: "live",
+  binders: [
+    { varName: "f", domain: flagDomain },
+    { varName: "b", domain: "boolean" },
+  ],
+  body: '__bool(live(f) === b, "live(f) === b")',
+  preconditions: [],
+  freeExports: ["Flag", "live"],
+  cases: 8,
+  location: { file: "flag.ts", line: 1 },
+};
+
+describe("emit — enumerated class binders", () => {
+  const out = emit(
+    [enumeratedClassSpec],
+    "flag.ts",
+    "out/flag.pabst.test.ts",
+    42,
+  );
+
+  it("opens one loop per constructor slot before the primitive binder's", () => {
+    expect(out).toContain(
+      "      for (const __f_0 of [false, true]) {\n" +
+        "        for (const __f_1 of [false, true]) {\n" +
+        "          for (const b of [false, true]) {",
+    );
+  });
+
+  it("constructs the instance after counting the tuple and skips one the constructor rejects", () => {
+    expect(out).toContain(
+      "            __done++;\n" +
+        "            const __args_f = [__f_0, __f_1];\n" +
+        "            let f!: Flag;\n" +
+        "            try { f = new Flag(...__args_f); } catch { continue; }\n" +
+        "            let __r = false;",
+    );
+  });
+
+  it("reports the argument tuple and tells the reporter it is a construction", () => {
+    expect(out).toContain(
+      '["f", "b"], { failed: true, counterexample: __cx, errorInstance: __e }, ' +
+        '[{"className":"Flag","params":[null,null]}, null]);',
+    );
+    expect(out).toContain("            if (!__r) __fail([__args_f, b], null);");
+  });
+
+  it("imports the binder class from the module under test", () => {
+    expect(out).toContain("const { Flag, live } = __M;");
+  });
+
+  it("passes no constructor list when every binder is primitive", () => {
+    const plain = emit(
+      [enumeratedSpec],
+      "small.ts",
+      "out/small.pabst.test.ts",
+      42,
+    );
+    expect(plain).toContain("errorInstance: __e });");
+  });
+
+  it("hands the reporter the same construction tree as the sampled path", () => {
+    // Both emitters render a counterexample through one runtime function,
+    // so parity holds exactly when they pass it the same shape list.
+    const shapes = (s: string) => s.match(/\[\{"className".*?\]\)/)?.[0];
+    const { cases: _cases, ...sampledSpec } = enumeratedClassSpec;
+    const sampled = emit(
+      [sampledSpec],
+      "flag.ts",
+      "out/flag.pabst.test.ts",
+      42,
+    );
+    expect(shapes(sampled)).toBeDefined();
+    expect(shapes(out)).toBe(shapes(sampled));
+  });
+
+  it("gives a zero-argument class binder one iteration to skip out of", () => {
+    const unitSpec: PropertySpec = {
+      ...enumeratedClassSpec,
+      binders: [
+        { varName: "u", domain: { className: "Unit", ctorParams: [] } },
+      ],
+      body: '__bool(live(u), "live(u)")',
+      freeExports: ["Unit", "live"],
+      cases: 1,
+    };
+    const out = emit([unitSpec], "unit.ts", "out/unit.pabst.test.ts", 42);
+    expect(out).toContain(
+      "      for (const __once of [0]) {\n" +
+        "        if (performance.now() - __t0 > 4000)",
+    );
+    expect(out).toContain(
+      "        const __args_u = [];\n" +
+        "        let u!: Unit;\n" +
+        "        try { u = new Unit(...__args_u); } catch { continue; }",
+    );
+  });
+
+  it("rebuilds a nested tuple and constructs innermost-out", () => {
+    const pairSpec: PropertySpec = {
+      ...enumeratedClassSpec,
+      binders: [
+        {
+          varName: "p",
+          domain: {
+            className: "Pair",
+            ctorParams: [
+              { name: "a", domain: flagDomain },
+              { name: "tag", domain: "boolean" },
+            ],
+          },
+        },
+      ],
+      freeExports: ["Flag", "Pair", "live"],
+      cases: 8,
+    };
+    const nested = emit([pairSpec], "flag.ts", "out/flag.pabst.test.ts", 42);
+    expect(nested).toContain(
+      "      for (const __p_0_0 of [false, true]) {\n" +
+        "        for (const __p_0_1 of [false, true]) {\n" +
+        "          for (const __p_1 of [false, true]) {",
+    );
+    expect(nested).toContain("const __args_p = [[__p_0_0, __p_0_1], __p_1];");
+    expect(nested).toContain(
+      "try { p = new Pair(new Flag(...__args_p[0]), __args_p[1]); } catch { continue; }",
+    );
+    expect(nested).toContain(
+      '[{"className":"Pair","params":[{"className":"Flag","params":[null,null]},null]}]);',
+    );
+  });
+});
