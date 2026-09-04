@@ -142,6 +142,18 @@ describe("buildSpecs — unrepresentable domains", () => {
   });
 });
 
+describe("buildSpecs — enumerable domains", () => {
+  it("records the case count on a spec the refuter will walk", () => {
+    const { specs } = buildSpecs(fixture("clamped.ts"));
+    expect(specs.map((s) => [s.name, s.cases])).toEqual([["ordinary", 11]]);
+  });
+
+  it("records no case count on a sampled spec", () => {
+    const { specs } = buildSpecs(fixture("class-binder.ts"));
+    for (const s of specs) expect(s.cases).toBeUndefined();
+  });
+});
+
 const CLASS_BINDER = new URL(
   "./fixtures/build-spec/class-binder.ts",
   import.meta.url,
