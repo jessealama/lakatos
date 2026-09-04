@@ -219,10 +219,8 @@ export type ProveJoin =
  * one: its substance is the counterexample, which ships in the same
  * falsified shape the refutation engine uses. Error diagnostics travel in
  * `error` like every other engine failure. */
-function verdictResult(
-  id: PropertyIdentity,
-  v: ProveVerdict,
-): AnnotationResult {
+function verdictResult(p: PropertyIdentity, v: ProveVerdict): AnnotationResult {
+  const id = identityOf(p);
   const szs = v.szs;
   if (szs === "Theorem") return { ...id, szs, axioms: v.axioms ?? [] };
   if (szs === "CounterSatisfiable")

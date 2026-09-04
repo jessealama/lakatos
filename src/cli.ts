@@ -622,7 +622,7 @@ function leanRunOutcome(
   const failedResults: AnnotationResult[] = plan.identities
     .filter((i) => failedSources.has(i.file))
     .map((i) => ({
-      ...i,
+      ...identityOf(i),
       szs: "Error" as const,
       error:
         "the Lean run on this file's artifact failed before reporting its verdicts",

@@ -261,6 +261,24 @@ describe("identityOf", () => {
       { ...IDS[0], szs: "User", reason: "the run was interrupted (SIGINT)" },
     ]);
   });
+
+  it("a prover verdict never inherits the plan's case count", () => {
+    const planned: PlannedProperty = { ...IDS[0]!, cases: 10 };
+    const join = joinProveVerdicts(
+      [planned],
+      [
+        {
+          identity: [IDS[0]!.file, IDS[0]!.function, IDS[0]!.property],
+          szs: "Theorem",
+          reason: "kernel-checked",
+        },
+      ],
+    );
+    expect(join).toEqual({
+      kind: "joined",
+      annotations: [{ ...IDS[0], szs: "Theorem", axioms: [] }],
+    });
+  });
 });
 
 describe("buildEnvelope", () => {

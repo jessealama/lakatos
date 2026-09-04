@@ -5,7 +5,7 @@ import { runForEnvelope, useRepoScratchDir } from "./helpers/cli.js";
 
 const repoRoot = process.cwd();
 
-// The repro from the issue that motivated enumeration.
+// A bounded int binder whose clean pass used to report GaveUp.
 const SMALL = [
   "/** @ensures{pos} forall (n: int ∈ [1, 10]) { square(n) > 0 } */",
   "export function square(n: number): number { return n * n; }",
