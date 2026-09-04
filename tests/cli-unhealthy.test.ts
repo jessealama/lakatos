@@ -20,7 +20,7 @@ describe("cli refute on unhealthy runs", () => {
     runTestsMock.mockReset();
   });
 
-  it("no-results: prints a NotTried envelope, raw output on stderr, exit 2", () => {
+  it("no-results: prints a NotTried envelope, raw output on stderr, exit 2", async () => {
     runTestsMock.mockReturnValue({
       kind: "no-results",
       status: 137,
@@ -35,7 +35,7 @@ describe("cli refute on unhealthy runs", () => {
         return true;
       });
     try {
-      const { code, stdout } = runMain(["refute", "annotated.ts"]);
+      const { code, stdout } = await runMain(["refute", "annotated.ts"]);
       expect(code).toBe(2);
       expect(stdout).toHaveLength(1);
       const env = JSON.parse(stdout[0]!);
@@ -57,13 +57,13 @@ describe("cli refute on unhealthy runs", () => {
     }
   });
 
-  it("broken-run: prints a NotTried envelope, error lines on stderr, exit 2", () => {
+  it("broken-run: prints a NotTried envelope, error lines on stderr, exit 2", async () => {
     runTestsMock.mockReturnValue({
       kind: "broken-run",
       status: 1,
       messages: ["Cannot find module 'lakatos/runtime'"],
     });
-    const { code, stdout, stderr } = runMain(["refute", "annotated.ts"]);
+    const { code, stdout, stderr } = await runMain(["refute", "annotated.ts"]);
     expect(code).toBe(2);
     expect(stdout).toHaveLength(1);
     const env = JSON.parse(stdout[0]!);
@@ -79,14 +79,14 @@ describe("cli refute on unhealthy runs", () => {
     expect(stderr).toContain("error: Cannot find module 'lakatos/runtime'");
   });
 
-  it("an unevaluated annotation carries no planned case count", () => {
+  it("an unevaluated annotation carries no planned case count", async () => {
     // The plan knows this domain has five tuples, but nothing walked them.
     runTestsMock.mockReturnValue({
       kind: "broken-run",
       status: 1,
       messages: ["Cannot find module 'lakatos/runtime'"],
     });
-    const { code, stdout } = runMain(["refute", "bounded.ts"]);
+    const { code, stdout } = await runMain(["refute", "bounded.ts"]);
     expect(code).toBe(2);
     const env = JSON.parse(stdout[0]!);
     expectValidEnvelope(env);
@@ -100,7 +100,7 @@ describe("cli refute on unhealthy runs", () => {
     ]);
   });
 
-  it("a failure with no readable payload: NotTried envelope, exit 2", () => {
+  it("a failure with no readable payload: NotTried envelope, exit 2", async () => {
     // The runtime throws a tagged payload for every failing property, so a
     // failure carrying none means the reporter never ran.
     runTestsMock.mockReturnValue({
@@ -121,7 +121,7 @@ describe("cli refute on unhealthy runs", () => {
         ],
       },
     });
-    const { code, stdout, stderr } = runMain(["refute", "annotated.ts"]);
+    const { code, stdout, stderr } = await runMain(["refute", "annotated.ts"]);
     expect(code).toBe(2);
     expect(stdout).toHaveLength(1);
     const env = JSON.parse(stdout[0]!);

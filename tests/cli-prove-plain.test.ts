@@ -60,14 +60,14 @@ describe("cli prove, plain pipeline", () => {
     fs.rmSync(RUN_ROOT, { recursive: true, force: true });
   });
 
-  it("healthy run: classified and proved annotations merge, exit 0", () => {
+  it("healthy run: classified and proved annotations merge, exit 0", async () => {
     runEmissionMock.mockReturnValue({
       kind: "completed",
       verdicts: [verdict("mixed.ts", "small", "pos", "Theorem")],
       failures: [],
       diagnostics: [],
     });
-    const { code, stdout, stderr } = runMain(["prove", "mixed.ts"]);
+    const { code, stdout, stderr } = await runMain(["prove", "mixed.ts"]);
     expect(code).toBe(0);
     const env = JSON.parse(stdout[0]!);
     expectValidEnvelope(env);
@@ -107,8 +107,12 @@ describe("cli prove, plain pipeline", () => {
     expect(emission.obligations).toHaveLength(1);
   });
 
-  it("a fully classified file never reaches the engine", () => {
-    const { code, stdout } = runMain(["prove", "consts.ts", "classbinder.ts"]);
+  it("a fully classified file never reaches the engine", async () => {
+    const { code, stdout } = await runMain([
+      "prove",
+      "consts.ts",
+      "classbinder.ts",
+    ]);
     expect(runEmissionMock).not.toHaveBeenCalled();
     expect(code).toBe(0);
     const env = JSON.parse(stdout[0]!);
@@ -138,7 +142,7 @@ describe("cli prove, plain pipeline", () => {
     expect(env.annotations).toHaveLength(2);
   });
 
-  it("a contained file failure: Error entries for that file, siblings verdict, exit 2", () => {
+  it("a contained file failure: Error entries for that file, siblings verdict, exit 2", async () => {
     runEmissionMock.mockImplementation((jobs) => {
       const other = jobs.find((j) => j.leanFile.endsWith("other.ts.lean"))!;
       return {
@@ -155,7 +159,11 @@ describe("cli prove, plain pipeline", () => {
         diagnostics: [],
       };
     });
-    const { code, stdout } = runMain(["prove", "annotated.ts", "other.ts"]);
+    const { code, stdout } = await runMain([
+      "prove",
+      "annotated.ts",
+      "other.ts",
+    ]);
     expect(code).toBe(2);
     const env = JSON.parse(stdout[0]!);
     expectValidEnvelope(env);
@@ -181,7 +189,7 @@ describe("cli prove, plain pipeline", () => {
     expect(env.annotations).toHaveLength(2);
   });
 
-  it("an unhealthy join: all NotTried, exit 2", () => {
+  it("an unhealthy join: all NotTried, exit 2", async () => {
     runEmissionMock.mockReturnValue({
       kind: "completed",
       verdicts: [
@@ -191,7 +199,7 @@ describe("cli prove, plain pipeline", () => {
       failures: [],
       diagnostics: [],
     });
-    const { code, stdout } = runMain(["prove", "annotated.ts"]);
+    const { code, stdout } = await runMain(["prove", "annotated.ts"]);
     expect(code).toBe(2);
     const env = JSON.parse(stdout[0]!);
     expectValidEnvelope(env);
@@ -205,9 +213,13 @@ describe("cli prove, plain pipeline", () => {
     ]);
   });
 
-  it("an interrupted run reports User for everything planned, exit 2", () => {
+  it("an interrupted run reports User for everything planned, exit 2", async () => {
     runEmissionMock.mockReturnValue({ kind: "interrupted", signal: "SIGINT" });
-    const { code, stdout } = runMain(["prove", "annotated.ts", "mixed.ts"]);
+    const { code, stdout } = await runMain([
+      "prove",
+      "annotated.ts",
+      "mixed.ts",
+    ]);
     expect(code).toBe(2);
     const env = JSON.parse(stdout[0]!);
     expectValidEnvelope(env);
@@ -243,12 +255,12 @@ describe("cli prove, plain pipeline", () => {
     expect(env.annotations).toHaveLength(3);
   });
 
-  it("no Lean engine: NotTried envelope, exit 2", () => {
+  it("no Lean engine: NotTried envelope, exit 2", async () => {
     runEmissionMock.mockReturnValue({
       kind: "no-project",
       message: "the Lean proof engine is not part of this installation",
     });
-    const { code, stdout } = runMain(["prove", "annotated.ts"]);
+    const { code, stdout } = await runMain(["prove", "annotated.ts"]);
     expect(code).toBe(2);
     const env = JSON.parse(stdout[0]!);
     expectValidEnvelope(env);
@@ -262,7 +274,7 @@ describe("cli prove, plain pipeline", () => {
     ]);
   });
 
-  it("verdict fields map through: an Inappropriate reason survives", () => {
+  it("verdict fields map through: an Inappropriate reason survives", async () => {
     runEmissionMock.mockReturnValue({
       kind: "completed",
       verdicts: [
@@ -275,7 +287,7 @@ describe("cli prove, plain pipeline", () => {
       failures: [],
       diagnostics: [],
     });
-    const { code, stdout } = runMain(["prove", "annotated.ts"]);
+    const { code, stdout } = await runMain(["prove", "annotated.ts"]);
     expect(code).toBe(0);
     const env = JSON.parse(stdout[0]!);
     expectValidEnvelope(env);
@@ -285,7 +297,7 @@ describe("cli prove, plain pipeline", () => {
     });
   });
 
-  it("a refuted property ships falsified and exits 1, like refute", () => {
+  it("a refuted property ships falsified and exits 1, like refute", async () => {
     runEmissionMock.mockReturnValue({
       kind: "completed",
       verdicts: [
@@ -297,7 +309,7 @@ describe("cli prove, plain pipeline", () => {
       failures: [],
       diagnostics: [],
     });
-    const { code, stdout } = runMain(["prove", "annotated.ts"]);
+    const { code, stdout } = await runMain(["prove", "annotated.ts"]);
     expect(code).toBe(1);
     const env = JSON.parse(stdout[0]!);
     expectValidEnvelope(env);
@@ -308,9 +320,9 @@ describe("cli prove, plain pipeline", () => {
     });
   });
 
-  it("an unhealthy run keeps the unsupported-range metadata", () => {
+  it("an unhealthy run keeps the unsupported-range metadata", async () => {
     runEmissionMock.mockReturnValue({ kind: "failed", stdout: "", stderr: "" });
-    const { code, stdout } = runMain(["prove", "mixed.ts"]);
+    const { code, stdout } = await runMain(["prove", "mixed.ts"]);
     expect(code).toBe(2);
     const env = JSON.parse(stdout[0]!);
     expectValidEnvelope(env);
@@ -336,8 +348,8 @@ describe("cli prove, plain pipeline", () => {
     expect(env.annotations).toHaveLength(2);
   });
 
-  it("input errors join the envelope and force exit 2", () => {
-    const { code, stdout, stderr } = runMain(["prove", "invalid.ts"]);
+  it("input errors join the envelope and force exit 2", async () => {
+    const { code, stdout, stderr } = await runMain(["prove", "invalid.ts"]);
     expect(code).toBe(2);
     const env = JSON.parse(stdout[0]!);
     expectValidEnvelope(env);
@@ -355,8 +367,8 @@ describe("cli prove, plain pipeline", () => {
     expect(stderr.join("\n")).toContain("invalid.ts:2: ");
   });
 
-  it("no annotations at all: empty envelope, no prover run, exit 0", () => {
-    const { code, stdout } = runMain(["prove", "plain.ts"]);
+  it("no annotations at all: empty envelope, no prover run, exit 0", async () => {
+    const { code, stdout } = await runMain(["prove", "plain.ts"]);
     expect(code).toBe(0);
     const env = JSON.parse(stdout[0]!);
     expectValidEnvelope(env);
@@ -364,7 +376,7 @@ describe("cli prove, plain pipeline", () => {
     expect(runEmissionMock).not.toHaveBeenCalled();
   });
 
-  it("failed: raw output on stderr, NotTried envelope, exit 2", () => {
+  it("failed: raw output on stderr, NotTried envelope, exit 2", async () => {
     runEmissionMock.mockReturnValue({
       kind: "failed",
       stdout: "raw lake stdout\n",
@@ -378,7 +390,7 @@ describe("cli prove, plain pipeline", () => {
         return true;
       });
     try {
-      const { code, stdout } = runMain(["prove", "annotated.ts"]);
+      const { code, stdout } = await runMain(["prove", "annotated.ts"]);
       expect(code).toBe(2);
       const env = JSON.parse(stdout[0]!);
       expectValidEnvelope(env);
@@ -390,7 +402,7 @@ describe("cli prove, plain pipeline", () => {
     }
   });
 
-  it("join mismatches surface as unhealthy exit 2", () => {
+  it("join mismatches surface as unhealthy exit 2", async () => {
     // A healthy Lean run whose verdicts do not cover the annotations is
     // untrustworthy: it indicates an emitter or engine bug.
     runEmissionMock.mockReturnValue({
@@ -399,7 +411,7 @@ describe("cli prove, plain pipeline", () => {
       failures: [],
       diagnostics: [],
     });
-    const missing = runMain(["prove", "annotated.ts"]);
+    const missing = await runMain(["prove", "annotated.ts"]);
     expect(missing.code).toBe(2);
     expect(missing.stderr.join("\n")).toContain("no verdict for");
     const env = JSON.parse(missing.stdout[0]!);
@@ -407,14 +419,14 @@ describe("cli prove, plain pipeline", () => {
     expect(env.annotations[0].szs).toBe("NotTried");
   });
 
-  it("Lean diagnostics pass through to stderr on a healthy run", () => {
+  it("Lean diagnostics pass through to stderr on a healthy run", async () => {
     runEmissionMock.mockReturnValue({
       kind: "completed",
       verdicts: [verdict("annotated.ts", "annotated", "pos", "Theorem")],
       failures: [],
       diagnostics: ["note: some linter chatter"],
     });
-    const { code, stderr } = runMain(["prove", "annotated.ts"]);
+    const { code, stderr } = await runMain(["prove", "annotated.ts"]);
     expect(code).toBe(0);
     expect(stderr.join("\n")).toContain("note: some linter chatter");
   });
