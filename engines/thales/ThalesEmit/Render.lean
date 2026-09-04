@@ -411,12 +411,18 @@ def paramBinders (params : Array Param) :
     return (b : TSyntax ``Lean.Parser.Term.bracketedBinder)
 
 /-- The parameters a statement tree reassigns, rebound `let mut` ahead of
-the body — the way JavaScript has parameters assignable. -/
+the body — the way JavaScript has parameters assignable. A parameter the
+body's top level already rebinds (a defaulted one resolving its
+initializer) is skipped: that binding is the one the body reads. -/
 def reboundParams (params : Array Param) (body : Array JsStmt) :
     RenderM (Array (TSyntax `doElem)) := do
   let assigned := body.toList.flatMap assignedNames
+  let rebound := body.toList.filterMap fun s => match s with
+    | .constDecl x _ _ => some x
+    | .letDecl x _ _ => some x
+    | _ => none
   params.filterMapM fun p => do
-    unless assigned.contains p.name do return none
+    unless assigned.contains p.name && !rebound.contains p.name do return none
     let pi ← scopedIdent p.name
     return some (← `(doElem| let mut $pi:ident := $pi))
 

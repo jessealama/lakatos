@@ -327,6 +327,27 @@ def payloadShell (guards : Json) : Json :=
   (decodePayload (payloadShell (Json.arr #[Json.mkObj [("kind", "typeof")]])))
   matches .error "field 'guards': unknown expression kind 'typeof'"
 
+-- A parameter the body both rebinds at its top level and assigns is not
+-- also rebound `let mut x := x`: the top-level binding is the one the
+-- body reads, so a second shadow would only be noise.
+#eval show CoreM Unit from do
+  let f : EmitFn := {
+    name := "f", module := none, source := "",
+    params := #[{ name := "x", ty := .number },
+                { name := "y", ty := .union #[.number, .undefined] }],
+    body := #[
+      .letDecl "y" .number
+        (.cond (.jsvalEq false (.id "y") (.inject .undefined none))
+          (.num "1") (.project .number (.id "y"))),
+      .assign "y" (.binop "+" (.id "y") (.id "x")),
+      .ret (.id "y")] }
+  let cmd ← match RenderM.run (fnCommand f) with
+    | .error msg => throwError msg
+    | .ok cmd => pure cmd
+  let text := toString (← Lean.PrettyPrinter.ppCommand ⟨unscope cmd.raw⟩)
+  unless (text.splitOn "let mut y").length == 2 do
+    throwError "expected exactly one `let mut y` binding, got:\n{text}"
+
 -- The pinned emissions render to the golden artifacts — files a human
 -- inspected and accepted. #eval runs CoreM inside this module's own
 -- environment, which imports ThalesDsl transitively, so the printer has
