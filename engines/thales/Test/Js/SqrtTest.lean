@@ -1,7 +1,6 @@
 import Js
-import ThalesDsl.Prove
 
-open ThalesDsl Js Js.Number
+open Js Js.Number
 
 /-! `Math.sqrt` is exactly specified — ECMA-262 returns 𝔽(√ℝ(n)),
 correctly rounded — and IEEE-754 sqrt is that rounding, so core

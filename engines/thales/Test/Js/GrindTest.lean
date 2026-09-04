@@ -1,6 +1,6 @@
-import ThalesDsl
+import Js
 
-open ThalesDsl Js Js.Number
+open Js Js.Number
 
 -- The grind rung shares the normalization knowledge: the js_norm
 -- lemmas and model equations are tagged for grind too, so it can attack

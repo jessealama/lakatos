@@ -1,6 +1,6 @@
-import ThalesDsl
+import Js
 
-open ThalesDsl Js Js.Number
+open Js Js.Number
 
 -- The normalization lemmas settle the goal shapes the ladder's generic
 -- stage faces: model-shaped bind chains reduced to bare Int arithmetic.

@@ -1,6 +1,6 @@
-import ThalesDsl
+import Js
 
-open ThalesDsl Js Js.Number
+open Js Js.Number
 
 /-! The non-negativity chain must close under plain `grind`: the grind
 rung hands the closer nothing beyond the patterns registered in
