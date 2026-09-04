@@ -5344,51 +5344,57 @@ describe("a method with a defaulted parameter", () => {
   }
 }
 `;
-  const OMITTED =
-    "'C#plus' was called with 0 argument(s); parameter 'k' would take its " +
-    "default, which the model does not evaluate";
-
-  test("an omitted defaulted argument in a property is outside the model", () => {
-    const { classified } = emitModule(
+  test("an omitted defaulted argument injects undefined at the slot", () => {
+    const { classified, emission } = emitModule(
       src.replace("%CALL%", "new C(a).plus()"),
       "t.ts",
     );
-    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
-      ["Inappropriate", OMITTED],
-    ]);
+    expect(classified).toEqual([]);
+    const payload = emission.obligations[0]!.payload;
+    assert(payload.kind === "structured");
+    expect(payload.conclusion).toMatchObject({
+      expr: {
+        left: {
+          kind: "method-call",
+          name: "plus",
+          args: [{ kind: "inject", tag: "undefined" }],
+        },
+      },
+    });
   });
 
-  test("an omitted defaulted argument in a body travels as the input's refusal", () => {
-    const body = `export class C {
-  readonly x: number;
-  constructor(x: number) {
-    this.x = x;
-  }
-  plus(k: number = 1): number {
-    return this.x + k;
-  }
-}
-/** @ensures{p} forall (a: int ∈ [0, 5)) { f(a) >= 0 } */
-export function f(a: number): number {
-  return new C(a).plus();
-}
-`;
-    const { classified } = emitModule(body, "t.ts");
-    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
-      ["Inappropriate", `'f' could not be modeled: ${OMITTED}`],
-    ]);
-  });
-
-  test("full arity still models", () => {
+  test("an explicit undefined injects the same", () => {
     const { classified, emission } = emitModule(
-      src.replace("%CALL%", "new C(a).plus(a)"),
+      src.replace("%CALL%", "new C(a).plus(undefined)"),
       "t.ts",
     );
     expect(classified).toEqual([]);
-    expect(emission.obligations).toHaveLength(1);
+    const payload = emission.obligations[0]!.payload;
+    assert(payload.kind === "structured");
+    expect(payload.conclusion).toMatchObject({
+      expr: { left: { args: [{ kind: "inject", tag: "undefined" }] } },
+    });
   });
 
-  test("over the total count is an invariant, not a refusal", () => {
+  test("a supplied argument injects at the number tag", () => {
+    const { emission } = emitModule(
+      src.replace("%CALL%", "new C(a).plus(a)"),
+      "t.ts",
+    );
+    const payload = emission.obligations[0]!.payload;
+    assert(payload.kind === "structured");
+    expect(payload.conclusion).toMatchObject({
+      expr: {
+        left: {
+          args: [
+            { kind: "inject", tag: "number", expr: { kind: "id", name: "a" } },
+          ],
+        },
+      },
+    });
+  });
+
+  test("over-arity is the engine's error, as a range", () => {
     const { classified } = emitModule(
       src.replace("%CALL%", "new C(a).plus(a, a)"),
       "t.ts",
@@ -5396,29 +5402,74 @@ export function f(a: number): number {
     expect(classified.map((c) => [c.szs, c.reason])).toEqual([
       [
         "Error",
-        "property elaboration failed: 'C#plus' expects 1 argument(s), got 2",
+        "property elaboration failed: 'C#plus' expects 0 to 1 argument(s), got 2",
       ],
     ]);
   });
+});
 
-  test("a defaulted parameter followed by an optional refuses at zero, models at one", () => {
-    const twoParamSrc = `export class D {
-  readonly x: number;
-  constructor(x: number) {
-    this.x = x;
-  }
-  /** @ensures{p} forall (a: int ∈ [0, 5)) { new D(a).plus() >= 0 } */
-  plus(k: number = 1, b?: number): number {
-    return this.x + k;
-  }
-}
-`;
-    const { classified } = emitModule(twoParamSrc, "t.ts");
-    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
+describe("a free function with a defaulted parameter", () => {
+  const ADD =
+    "export function add(x: number, y: number = 0): number {\n" +
+    "  return x + y;\n}\n";
+
+  test("a call omitting the default injects undefined", () => {
+    const src =
+      ADD +
+      "/** @ensures{p} forall (a: int ∈ [0, 5)) { g(a) >= 0 } */\n" +
+      "export function g(a: number): number { return add(a); }\n";
+    const { classified, emission } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    const g = emission.declarations[1];
+    assert(g?.kind === "function");
+    expect(g.body[0]).toMatchObject({
+      expr: {
+        kind: "call",
+        callee: "add",
+        args: [{ kind: "id", name: "a" }, { kind: "inject", tag: "undefined" }],
+      },
+    });
+  });
+
+  test("a union variable admitting undefined flows to the slot", () => {
+    const src =
+      ADD +
+      "/** @ensures{p} forall (a: int ∈ [0, 5)) { g(a, undefined) >= 0 } */\n" +
+      "export function g(a: number, u: number | undefined): number { return add(a, u); }\n";
+    const { classified, emission } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    const g = emission.declarations[1];
+    assert(g?.kind === "function");
+    expect(g.body[0]).toMatchObject({
+      expr: { args: [{ kind: "id", name: "a" }, { kind: "id", name: "u" }] },
+    });
+  });
+
+  test("a non-trailing default takes an explicit undefined", () => {
+    const src =
+      "export function f(x: number = 1, y: number): number { return x + y; }\n" +
+      "/** @ensures{p} forall (a: int ∈ [0, 5)) { g(a) >= 0 } */\n" +
+      "export function g(a: number): number { return f(undefined, a); }\n";
+    const { classified, emission } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    const g = emission.declarations[1];
+    assert(g?.kind === "function");
+    expect(g.body[0]).toMatchObject({
+      expr: {
+        args: [{ kind: "inject", tag: "undefined" }, { kind: "id", name: "a" }],
+      },
+    });
+  });
+
+  test("under the minimum is the engine's error", () => {
+    const src =
+      ADD +
+      "/** @ensures{p} forall (a: int ∈ [0, 5)) { g(a) >= 0 } */\n" +
+      "export function g(a: number): number { return add(); }\n";
+    expect(classifications(src).classified).toEqual([
       [
-        "Inappropriate",
-        "'D#plus' was called with 0 argument(s); parameter 'k' would " +
-          "take its default, which the model does not evaluate",
+        "Error",
+        "'g' could not be modeled: 'add' expects 1 to 2 argument(s), got 0",
       ],
     ]);
   });

@@ -244,62 +244,37 @@ function wireParam(name: string, ty: ValueTy): EmitParam {
   };
 }
 
-/** A callable's signature: its parameter types in declaration order, how
- * many of them a call must actually supply (TypeScript's own arity, where
- * a defaulted parameter still counts as required), and the fewest the
- * model tolerates before a defaulted one goes unfilled. `paramNames` names
- * the parameter an under-`required` call is missing; a fixed-arity
- * signature leaves it empty since that branch is unreachable there. */
+/** A callable's signature: its slot types in declaration order and the
+ * fewest arguments a call may supply — one past the last parameter that
+ * is neither optional nor defaulted. Everything up to `params.length`
+ * fills at the call. */
 export interface FnSig {
   params: ValueTy[];
-  required: number;
   minArgs: number;
-  paramNames: string[];
 }
 
-/** The signature a walked parameter list denotes. Optionals are trailing
- * by `walkParams`'s own check, so counting the required ones is enough;
- * `minArgs` stops at the last parameter that is neither optional nor
- * defaulted, the same fold `ctorRequired` uses. */
 function sigOf(params: WalkedParams): FnSig {
   return {
     params: params.map((p) => p.slot),
-    required: params.filter((p) => !p.optional).length,
     minArgs:
-      params.map((p) => p.optional || p.init !== undefined).lastIndexOf(false) + 1,
-    paramNames: params.map((p) => p.name),
+      params.map((p) => p.optional || p.init !== undefined).lastIndexOf(false) +
+      1,
   };
 }
 
-/** A fixed-arity signature: what a constructor or a getter has, neither
- * admitting an optional or a default. */
+/** A fixed-arity signature: what a getter has. */
 function exactSig(params: ValueTy[]): FnSig {
-  return {
-    params,
-    required: params.length,
-    minArgs: params.length,
-    paramNames: [],
-  };
+  return { params, minArgs: params.length };
 }
 
-/** The arity check every call shares. A call may omit trailing optionals
- * and nothing else; a signature without them keeps the single-count
- * message it has always reported. A call short of `required` but at or
- * past `minArgs` is short only a defaulted parameter, outside the model
- * rather than invariant-broken. */
+/** The arity check every call shares. A call may omit arguments the
+ * signature fills — trailing optionals and defaults — and nothing else;
+ * tsc refuses the rest first, so a miss here is an invariant. */
 function checkArity(name: string, sig: FnSig, got: number): void {
   const total = sig.params.length;
-  if (got >= sig.required && got <= total) return;
-  if (got >= sig.minArgs && got < sig.required) {
-    throw new ModelError(
-      `'${name}' was called with ${got} argument(s); parameter ` +
-        `'${sig.paramNames[got]!}' would take its default, which the ` +
-        `model does not evaluate`,
-      "Parameter",
-    );
-  }
+  if (got >= sig.minArgs && got <= total) return;
   const expected =
-    sig.required === total ? `${total}` : `${sig.required} to ${total}`;
+    sig.minArgs === total ? `${total}` : `${sig.minArgs} to ${total}`;
   throw new ModelError(`'${name}' expects ${expected} argument(s), got ${got}`);
 }
 
@@ -1338,8 +1313,9 @@ function walkTyped(
           `'${displayName(ref)}' has no model: ${failed.reason}`,
         );
       }
-      // The gate lets a bare `undefined` reach a non-union slot only
-      // through a defaulted parameter, so it is the input's, not unbound.
+      // A constructor's defaulted parameter keeps its declared type as
+      // its slot, so a bare `undefined` can still reach a non-union
+      // position: that is the input's refusal, not an unbound name.
       if (e.text === "undefined") {
         throw new ModelError(
           `an explicit 'undefined' where ${describeTy(expected)} is ` +
