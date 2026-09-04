@@ -113,7 +113,13 @@ const CLASS_FIXTURES = [
   `${CONFORMANCE}/inappropriate/class-extends.ts`,
   `${CONFORMANCE}/inappropriate/ctor-default-omitted.ts`,
   `${CONFORMANCE}/inappropriate/ctor-default-undefined.ts`,
-  `${CONFORMANCE}/inappropriate/method-default-omitted.ts`,
+  `${CONFORMANCE}/theorem/method-default-omitted.ts`,
+  `${CONFORMANCE}/theorem/method-default-this.ts`,
+  `${CONFORMANCE}/theorem/fn-default-omitted.ts`,
+  `${CONFORMANCE}/theorem/fn-default-explicit-undefined.ts`,
+  `${CONFORMANCE}/theorem/fn-default-leading.ts`,
+  `${CONFORMANCE}/theorem/fn-default-calls.ts`,
+  `${CONFORMANCE}/inappropriate/fn-default-outside-slice.ts`,
 ];
 
 /** The method slice (#130): instance methods, this-chains, method atoms,

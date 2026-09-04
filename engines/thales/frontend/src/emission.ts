@@ -244,62 +244,37 @@ function wireParam(name: string, ty: ValueTy): EmitParam {
   };
 }
 
-/** A callable's signature: its parameter types in declaration order, how
- * many of them a call must actually supply (TypeScript's own arity, where
- * a defaulted parameter still counts as required), and the fewest the
- * model tolerates before a defaulted one goes unfilled. `paramNames` names
- * the parameter an under-`required` call is missing; a fixed-arity
- * signature leaves it empty since that branch is unreachable there. */
+/** A callable's signature: its slot types in declaration order and the
+ * fewest arguments a call may supply — one past the last parameter that
+ * is neither optional nor defaulted. Everything up to `params.length`
+ * fills at the call. */
 export interface FnSig {
   params: ValueTy[];
-  required: number;
   minArgs: number;
-  paramNames: string[];
 }
 
-/** The signature a walked parameter list denotes. Optionals are trailing
- * by `walkParams`'s own check, so counting the required ones is enough;
- * `minArgs` stops at the last parameter that is neither optional nor
- * defaulted, the same fold `ctorRequired` uses. */
 function sigOf(params: WalkedParams): FnSig {
   return {
-    params: params.map((p) => p.ty),
-    required: params.filter((p) => !p.optional).length,
+    params: params.map((p) => p.slot),
     minArgs:
-      params.map((p) => p.optional || p.defaulted).lastIndexOf(false) + 1,
-    paramNames: params.map((p) => p.name),
+      params.map((p) => p.optional || p.init !== undefined).lastIndexOf(false) +
+      1,
   };
 }
 
-/** A fixed-arity signature: what a constructor or a getter has, neither
- * admitting an optional or a default. */
+/** A fixed-arity signature: what a getter has. */
 function exactSig(params: ValueTy[]): FnSig {
-  return {
-    params,
-    required: params.length,
-    minArgs: params.length,
-    paramNames: [],
-  };
+  return { params, minArgs: params.length };
 }
 
-/** The arity check every call shares. A call may omit trailing optionals
- * and nothing else; a signature without them keeps the single-count
- * message it has always reported. A call short of `required` but at or
- * past `minArgs` is short only a defaulted parameter, outside the model
- * rather than invariant-broken. */
+/** The arity check every call shares. A call may omit arguments the
+ * signature fills — trailing optionals and defaults — and nothing else;
+ * tsc refuses the rest first, so a miss here is an invariant. */
 function checkArity(name: string, sig: FnSig, got: number): void {
   const total = sig.params.length;
-  if (got >= sig.required && got <= total) return;
-  if (got >= sig.minArgs && got < sig.required) {
-    throw new ModelError(
-      `'${name}' was called with ${got} argument(s); parameter ` +
-        `'${sig.paramNames[got]!}' would take its default, which the ` +
-        `model does not evaluate`,
-      "Parameter",
-    );
-  }
+  if (got >= sig.minArgs && got <= total) return;
   const expected =
-    sig.required === total ? `${total}` : `${sig.required} to ${total}`;
+    sig.minArgs === total ? `${total}` : `${sig.minArgs} to ${total}`;
   throw new ModelError(`'${name}' expects ${expected} argument(s), got ${got}`);
 }
 
@@ -1338,8 +1313,9 @@ function walkTyped(
           `'${displayName(ref)}' has no model: ${failed.reason}`,
         );
       }
-      // The gate lets a bare `undefined` reach a non-union slot only
-      // through a defaulted parameter, so it is the input's, not unbound.
+      // A constructor's defaulted parameter keeps its declared type as
+      // its slot, so a bare `undefined` can still reach a non-union
+      // position: that is the input's refusal, not an unbound name.
       if (e.text === "undefined") {
         throw new ModelError(
           `an explicit 'undefined' where ${describeTy(expected)} is ` +
@@ -2457,6 +2433,97 @@ function bodyPrescan(
   return undefined;
 }
 
+/** The names a statement tree assigns anywhere, arms included. */
+function assignedIn(
+  stmts: readonly TStmt[],
+  into = new Set<string>(),
+): Set<string> {
+  for (const s of stmts) {
+    if (s.t === "assign") into.add(s.name);
+    else if (s.t === "if") {
+      assignedIn(s.then, into);
+      if (s.else !== undefined) assignedIn(s.else, into);
+    }
+  }
+  return into;
+}
+
+/** The pre-scans a body runs, over one initializer expression. */
+function exprPrescan(
+  e: ts.Expression,
+  sf: ts.SourceFile,
+  scope: WalkScope,
+): FailedDecl | undefined {
+  return (
+    findConstruct(e, sf, scope) ??
+    findRefusedOp(e) ??
+    failedCalleeIn(callNames(e, scope), scope) ??
+    findFailedMemberUse(e, scope)
+  );
+}
+
+function defaultFailure(name: string, reason: string): string {
+  return `parameter '${name}' has a default the model cannot evaluate: ${reason}`;
+}
+
+/** The statements a body opens with: each defaulted parameter rebound at
+ * its declared type to its initializer when the slot holds `undefined`.
+ * JavaScript resolves defaults after every argument, left to right, with
+ * earlier parameters in scope — which is what statements in declaration
+ * order at the top of the body denote. */
+function defaultOpenings(
+  params: WalkedParams,
+  tree: readonly TStmt[],
+  scope: WalkScope,
+  sf: ts.SourceFile,
+): EmitStmt[] {
+  const assigned = assignedIn(tree);
+  const out: EmitStmt[] = [];
+  params.forEach((p, i) => {
+    if (p.init === undefined) return;
+    const initScope: WalkScope = {
+      ...scope,
+      vars: new Map(params.slice(0, i).map((q) => [q.name, q.ty])),
+    };
+    const failed = exprPrescan(p.init, sf, initScope);
+    if (failed !== undefined) {
+      throw new ModelError(
+        defaultFailure(p.name, failed.reason),
+        failed.construct,
+      );
+    }
+    let init: EmitExpr;
+    try {
+      init = walkTyped(p.init, p.ty, initScope, sf);
+    } catch (err) {
+      /* v8 ignore next -- the walk throws nothing else */
+      if (!(err instanceof ModelError)) throw err;
+      throw new ModelError(defaultFailure(p.name, err.message), err.construct);
+    }
+    const slot: EmitExpr = { kind: "id", name: p.name };
+    out.push({
+      kind: assigned.has(p.name) ? "let" : "const",
+      name: p.name,
+      init: {
+        kind: "cond",
+        cond: {
+          kind: "jsval-eq",
+          semantics: "strict",
+          left: slot,
+          right: { kind: "inject", tag: "undefined" },
+        },
+        then: init,
+        else:
+          p.ty === "num"
+            ? { kind: "project", tag: "number", expr: slot }
+            : slot,
+      },
+      ...(p.ty !== "num" && "union" in p.ty ? { type: [...p.ty.union] } : {}),
+    });
+  });
+  return out;
+}
+
 /** The synthesized vocabulary a member name may not take: the
  * constructor model, and the names Lean's structure command generates. */
 const RESERVED_MEMBERS = new Set([
@@ -2585,13 +2652,11 @@ function paramShapeFailure(
   return undefined;
 }
 
-/** A free function's parameter additionally refuses a default; only the
- * class walks model defaulted parameters so far. */
+/** A free function's parameter shape: the shared rule, optionals admitted. */
 function fnParamFailure(
   p: ts.ParameterDeclaration,
   sf: ts.SourceFile,
 ): FailedDecl | undefined {
-  if (p.initializer !== undefined) return constructAt(p, p.kind, sf);
   return paramShapeFailure(p, sf, true);
 }
 
@@ -2721,14 +2786,34 @@ function normalizedUnion(
   return constructAt(t, t.kind, sf);
 }
 
-/** A walked parameter list: names with their types, whether a call may
- * omit them, and whether they carry a default, in declaration order. */
-type WalkedParams = {
+/** A walked parameter: its declared type `ty` (what the body binds), the
+ * `slot` a call fills (the declared type widened by `undefined` when an
+ * initializer makes the argument optional), and the initializer itself. */
+type WalkedParam = {
   name: string;
   ty: ValueTy;
+  slot: ValueTy;
   optional: boolean;
-  defaulted: boolean;
-}[];
+  init?: ts.Expression;
+};
+type WalkedParams = WalkedParam[];
+
+/** The boundary type a defaulted parameter presents to callers. The
+ * tagged domain has no instance tag, so a class default keeps its refusal. */
+function boundaryTy(
+  ty: ValueTy,
+  p: ts.ParameterDeclaration,
+  sf: ts.SourceFile,
+): ValueTy | FailedDecl {
+  if (ty === "num") return { union: ["number", "undefined"] };
+  if ("union" in ty) {
+    const tags = UNION_TAGS.filter(
+      (t) => ty.union.includes(t) || t === "undefined",
+    );
+    return { union: [...tags] };
+  }
+  return constructAt(p, p.kind, sf);
+}
 
 /** Names and types for a parameter list, or the first failure — the
  * shape check ahead of the type, as the old order has it. */
@@ -2754,11 +2839,18 @@ function walkParams(
     seenOptional ||= optional;
     const ty = paramValueTy(p, sf, reg);
     if (typeof ty !== "string" && "reason" in ty) return ty;
+    const init = p.initializer;
+    // A slot admitting `undefined` is a union slot, so only a callable
+    // that takes unions widens; a constructor keeps its full arity, its
+    // initializer dead code.
+    const slot = init === undefined || !reg.unions ? ty : boundaryTy(ty, p, sf);
+    if (typeof slot !== "string" && "reason" in slot) return slot;
     out.push({
       name: (p.name as ts.Identifier).text,
       ty,
+      slot,
       optional,
-      defaulted: p.initializer !== undefined,
+      ...(init !== undefined ? { init } : {}),
     });
   }
   return out;
@@ -3018,9 +3110,9 @@ function walkClass(
   const shapeCtorParams: CtorValueTy[] = [];
   for (const p of ctorParams) {
     /* v8 ignore next 2 -- unreachable: ctorReg refused the union first. */
-    if (typeof p.ty !== "string" && "union" in p.ty)
+    if (typeof p.slot !== "string" && "union" in p.slot)
       return constructAt(ctor, ctor.kind, sf);
-    shapeCtorParams.push(p.ty);
+    shapeCtorParams.push(p.slot);
   }
 
   const methodSigs = new Map<string, FnSig>();
@@ -3029,7 +3121,8 @@ function walkClass(
     getters: getterNames,
     ctorParams: shapeCtorParams,
     ctorParamNames: ctorParams.map((p) => p.name),
-    ctorRequired: ctorParams.map((p) => p.defaulted).lastIndexOf(false) + 1,
+    ctorRequired:
+      ctorParams.map((p) => p.init !== undefined).lastIndexOf(false) + 1,
     methods: methodSigs,
   };
   const self = { ref: { module: qualifier, name: className }, shape };
@@ -3127,18 +3220,22 @@ function walkClass(
       continue;
     }
     try {
+      const openings = defaultOpenings(params, body, scope, sf);
       methods.push({
         name: spelling,
-        params: params.map((p) => wireParam(p.name, p.ty)),
-        body: lowerTree(
-          body,
-          params.map((p) => [p.name, p.ty] as const),
-          () => {
-            throw new ModelError("the body must return on every path");
-          },
-          scope,
-          sf,
-        ),
+        params: params.map((p) => wireParam(p.name, p.slot)),
+        body: [
+          ...openings,
+          ...lowerTree(
+            body,
+            params.map((p) => [p.name, p.ty] as const),
+            () => {
+              throw new ModelError("the body must return on every path");
+            },
+            scope,
+            sf,
+          ),
+        ],
       });
       methodSigs.set(spelling, sigOf(params));
     } catch (err) {
@@ -3155,7 +3252,7 @@ function walkClass(
       source: cls.getText(sf),
       fields,
       ctor: {
-        params: ctorParams.map((p) => wireParam(p.name, p.ty)),
+        params: ctorParams.map((p) => wireParam(p.name, p.slot)),
         body: ctorBody,
       },
       getters,
@@ -3264,23 +3361,27 @@ function walkFunction(
   const prescan = bodyPrescan(tree, sf, scope);
   if (prescan !== undefined) return prescan;
   try {
-    const body = lowerTree(
-      tree,
-      params.map((p) => [p.name, p.ty] as const),
-      () => {
-        // A `number` function that runs off the end returns undefined,
-        // which this slice has no value for.
-        throw new ModelError("the body must return on every path");
-      },
-      scope,
-      sf,
-    );
+    const openings = defaultOpenings(params, tree, scope, sf);
+    const body = [
+      ...openings,
+      ...lowerTree(
+        tree,
+        params.map((p) => [p.name, p.ty] as const),
+        () => {
+          // A `number` function that runs off the end returns undefined,
+          // which this slice has no value for.
+          throw new ModelError("the body must return on every path");
+        },
+        scope,
+        sf,
+      ),
+    ];
     return {
       emit: {
         kind: "function",
         name: fn.name!.text,
         ...(module !== "" ? { module } : {}),
-        params: params.map((p) => wireParam(p.name, p.ty)),
+        params: params.map((p) => wireParam(p.name, p.slot)),
         source: fn.getText(sf),
         body,
       },

@@ -749,12 +749,66 @@
       "reason": "'g' could not be modeled: an explicit 'undefined' where a number is expected would take the parameter's default, which the model does not evaluate"
     }
   ],
-  "engines/thales/tests/conformance/inappropriate/method-default-omitted.ts": [
+  "engines/thales/tests/conformance/theorem/method-default-omitted.ts": [
     {
       "function": "C#plus",
       "property": "p",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_11509348648523625725",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/method-default-this.ts": [
+    {
+      "function": "Counter#twice",
+      "property": "p",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_16567784728133608805",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/fn-default-omitted.ts": [
+    {
+      "function": "g",
+      "property": "p",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_13329223072062943022",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/fn-default-explicit-undefined.ts": [
+    {
+      "function": "g",
+      "property": "p",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_8060313726161277148",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/fn-default-leading.ts": [
+    {
+      "function": "g",
+      "property": "p",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_18012134406986952614",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/fn-default-calls.ts": [
+    {
+      "function": "g",
+      "property": "p",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_9516637316216518132",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/inappropriate/fn-default-outside-slice.ts": [
+    {
+      "function": "g",
+      "property": "p",
       "szs": "Inappropriate",
-      "reason": "'C#plus' was called with 0 argument(s); parameter 'k' would take its default, which the model does not evaluate"
+      "reason": "'g' could not be modeled: 'pow' could not be modeled: parameter 'y' has a default the model cannot evaluate: '**' is implementation-approximated in JavaScript, so any model would certify results a conforming engine may disagree with"
     }
   ],
   "engines/thales/tests/conformance/theorem/method-double.ts": [
