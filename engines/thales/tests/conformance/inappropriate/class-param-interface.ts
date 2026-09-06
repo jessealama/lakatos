@@ -7,7 +7,7 @@ export class Point {
   constructor(x: number) {
     this.x = x;
   }
-  /** @ensures{p} forall (a: int ∈ [0, 10)) { Object.is(new Point(a).near(a), 0) } */
+  /** @ensures{p} forall (a: int ∈ [0, 10)) { Object.is(new Point(a).near(new Point(a)), 0) } */
   near(other: Named): number {
     return this.x;
   }
