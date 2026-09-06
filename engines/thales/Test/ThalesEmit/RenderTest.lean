@@ -137,6 +137,137 @@ def call1 (f x : String) : JsExpr := .call f none #[.id x]
 #guard rendersAs (v (.optionTest (.id "p") false)) `(Option.isNone p)
 #guard rendersLifted (v (.optionGet (.id "p"))) true `((← Js.optionGet p))
 
+def m (e : JsExpr) : RenderM (Term × Bool) := monadicTerm (fun _ => false) e
+
+-- A bare call pins the monad; anything else lifts with `pure` or a
+-- `do return` and pins nothing.
+#guard monadicAs (m (.call "f" none #[.id "x"])) true `(TsModel.f x)
+#guard monadicAs (m (.call "f" none #[call1 "g" "x"])) false
+  `(do return (← TsModel.f (← TsModel.g x)))
+#guard monadicAs (m (.binop "+" (call1 "f" "x") (.num "1"))) false
+  `(do return (← TsModel.f x) + 1)
+#guard monadicAs (m (.binop "+" (.id "x") (.num "1"))) false `(pure (x + 1))
+
+-- A boolean island is `= pure true`, ascribed on the pure side too.
+#guard rendersSyntax (boolIsland (fun _ => false) (.binop "<" (.id "x") (.num "1")))
+  `((pure (Float.lt x 1) : JsM Bool) = pure true)
+#guard rendersSyntax (boolIsland (fun _ => false) (.binop "<" (call1 "f" "x") (.num "1")))
+  `(((do return Float.lt (← TsModel.f x) 1) : JsM Bool) = pure true)
+
+-- The operand order of a bound hypothesis carries which side it is.
+#guard rendersSyntax (do boundHyp (← `(a)) (← `(b)) .lt (← `(P))) `(a < b → P)
+#guard rendersSyntax (do boundHyp (← `(a)) (← `(b)) .le (← `(P))) `(a ≤ b → P)
+
+/-- One obligation over `f`, as the emitter sees it. -/
+def obl (binders : Array BinderIR) (guards : Array JsExpr) (c : Conclusion) :
+    RenderM (TSyntax `command) :=
+  obligationCommand { file := "t.ts", declarations := #[], obligations := #[] }
+    { function := "f", property := "p", formula := "",
+      payload := .structured binders guards c }
+
+-- The bare payload is the stub form.
+#guard rendersSyntax
+  (obligationCommand { file := "t.ts", declarations := #[], obligations := #[] }
+    { function := "f", property := "p", formula := "", payload := .bare })
+  `(#thales_prove "t.ts" "f" "p")
+
+-- Conclusions: a pinning side leaves the equation bare; neither pinning
+-- ascribes the left; a boolean island is the `= pure true` shape.
+#guard rendersSyntax (obl #[.number "x" none none] #[] (.eq (call1 "f" "x") (.id "x")))
+  `(#thales_prove "t.ts" "f" "p" := ∀ (x : JsNumber), TsModel.f x = pure x)
+#guard rendersSyntax (obl #[.number "x" none none] #[] (.eq (.id "x") (call1 "f" "x")))
+  `(#thales_prove "t.ts" "f" "p" := ∀ (x : JsNumber), pure x = TsModel.f x)
+#guard rendersSyntax
+  (obl #[.number "x" none none] #[]
+    (.eq (.binop "+" (.id "x") (.num "1")) (.binop "+" (.num "1") (.id "x"))))
+  `(#thales_prove "t.ts" "f" "p" :=
+      ∀ (x : JsNumber), (pure (x + 1) : JsM JsNumber) = pure (1 + x))
+#guard rendersSyntax (obl #[.number "x" none none] #[] (.istrue (.binop "<" (.id "x") (.num "1"))))
+  `(#thales_prove "t.ts" "f" "p" :=
+      ∀ (x : JsNumber), (pure (Float.lt x 1) : JsM Bool) = pure true)
+
+-- Guards are hypotheses in front of the leaf, first guard outermost.
+#guard rendersSyntax
+  (obl #[.number "x" none none] #[.binop "<" (.num "0") (.id "x"), .binop "<" (.id "x") (.num "9")]
+    (.eq (call1 "f" "x") (.id "x")))
+  `(#thales_prove "t.ts" "f" "p" :=
+      ∀ (x : JsNumber),
+        (pure (Float.lt 0 x) : JsM Bool) = pure true →
+          (pure (Float.lt x 9) : JsM Bool) = pure true → TsModel.f x = pure x)
+
+-- Binder folds, first binder outermost. Int-valued binders coerce at
+-- each use; a `number` binder never does.
+#guard rendersSyntax (obl #[.range "x" 0 10] #[] (.eq (call1 "f" "x") (.id "x")))
+  `(#thales_prove "t.ts" "f" "p" :=
+      ballIco 0 10 fun x => TsModel.f (Float.ofInt x) = pure (Float.ofInt x))
+#guard rendersSyntax (obl #[.range "x" (-5) 5] #[] (.eq (call1 "f" "x") (.id "x")))
+  `(#thales_prove "t.ts" "f" "p" :=
+      ballIco (-5) 5 fun x => TsModel.f (Float.ofInt x) = pure (Float.ofInt x))
+#guard rendersSyntax (obl #[.range "a" 0 2, .range "b" 0 3] #[] (.eq (.id "a") (.id "b")))
+  `(#thales_prove "t.ts" "f" "p" :=
+      ballIco 0 2 fun a => ballIco 0 3 fun b =>
+        (pure (Float.ofInt a) : JsM JsNumber) = pure (Float.ofInt b))
+#guard rendersSyntax (obl #[.int "x"] #[] (.eq (call1 "f" "x") (.id "x")))
+  `(#thales_prove "t.ts" "f" "p" :=
+      ∀ (x : Int), TsModel.f (Float.ofInt x) = pure (Float.ofInt x))
+#guard rendersSyntax (obl #[.nat "n"] #[] (.eq (call1 "f" "n") (.id "n")))
+  `(#thales_prove "t.ts" "f" "p" :=
+      ∀ (n : Int), 0 ≤ n → TsModel.f (Float.ofInt n) = pure (Float.ofInt n))
+#guard rendersSyntax
+  (obl #[.number "x" (some (.lt, "0")) (some (.lt, "Infinity"))] #[] (.eq (call1 "f" "x") (.id "x")))
+  `(#thales_prove "t.ts" "f" "p" :=
+      ∀ (x : JsNumber), 0 < x → x < floatInf → TsModel.f x = pure x)
+#guard rendersSyntax
+  (obl #[.number "y" (some (.le, "-Infinity")) none] #[] (.eq (call1 "f" "y") (.id "y")))
+  `(#thales_prove "t.ts" "f" "p" :=
+      ∀ (y : JsNumber), -floatInf ≤ y → TsModel.f y = pure y)
+#guard rendersSyntax
+  (obl #[.number "y" none (some (.le, "1"))] #[] (.eq (call1 "f" "y") (.id "y")))
+  `(#thales_prove "t.ts" "f" "p" := ∀ (y : JsNumber), y ≤ 1 → TsModel.f y = pure y)
+-- A reserved binder spelling is primed throughout.
+#guard rendersSyntax (obl #[.int "pure"] #[] (.eq (call1 "f" "pure") (.id "pure")))
+  `(#thales_prove "t.ts" "f" "p" :=
+      ∀ (pure' : Int), TsModel.f (Float.ofInt pure') = pure (Float.ofInt pure'))
+
+-- A class binder: one ungrouped ∀ per constructor argument, then the
+-- instance, then the constructor-image hypothesis; a defaulted argument
+-- is quantified at its type and injected at the call; nested classes
+-- recurse with dotted paths.
+#guard rendersSyntax
+  (obl #[.cls "p" "Point" none #[.number "x" false, .number "y" false]] #[]
+    (.istrue (.binop "<=" (.num "0") (.methodCall "Point" none "gap" (.id "p") #[.num "1"]))))
+  `(#thales_prove "t.ts" "f" "p" :=
+      ∀ («p.x» : JsNumber), ∀ («p.y» : JsNumber), ∀ (p : TsModel.Point),
+        TsModel.Point.construct «p.x» «p.y» = .ok p →
+          ((do return Float.le 0 (← TsModel.Point.gap p 1)) : JsM Bool) = pure true)
+#guard rendersSyntax
+  (obl #[.cls "p" "Point" none #[.number "x" false, .number "y" true]] #[]
+    (.eq (.fieldRead "Point" none "x" (.id "p")) (.fieldRead "Point" none "x" (.id "p"))))
+  `(#thales_prove "t.ts" "f" "p" :=
+      ∀ («p.x» : JsNumber), ∀ («p.y» : JsNumber), ∀ (p : TsModel.Point),
+        TsModel.Point.construct «p.x» (JsVal.num «p.y») = .ok p →
+          (pure (TsModel.Point.x p) : JsM JsNumber) = pure (TsModel.Point.x p))
+#guard rendersSyntax
+  (obl #[.cls "s" "Span" none #[.cls "p" "Point" none #[.number "x" false] false]] #[]
+    (.eq (.fieldRead "Span" none "w" (.id "s")) (.fieldRead "Span" none "w" (.id "s"))))
+  `(#thales_prove "t.ts" "f" "p" :=
+      ∀ («s.p.x» : JsNumber), ∀ («s.p» : TsModel.Point),
+        TsModel.Point.construct «s.p.x» = .ok «s.p» →
+          ∀ (s : TsModel.Span), TsModel.Span.construct «s.p» = .ok s →
+            (pure (TsModel.Span.w s) : JsM JsNumber) = pure (TsModel.Span.w s))
+#guard rendersSyntax
+  (obl #[.cls "s" "Span" none #[.cls "p" "Point" none #[.number "x" false] true]] #[]
+    (.eq (.fieldRead "Span" none "w" (.id "s")) (.fieldRead "Span" none "w" (.id "s"))))
+  `(#thales_prove "t.ts" "f" "p" :=
+      ∀ («s.p.x» : JsNumber), ∀ («s.p» : TsModel.Point),
+        TsModel.Point.construct «s.p.x» = .ok «s.p» →
+          ∀ (s : TsModel.Span), TsModel.Span.construct (some «s.p») = .ok s →
+            (pure (TsModel.Span.w s) : JsM JsNumber) = pure (TsModel.Span.w s))
+-- A binder named after the callee still renders the qualified call.
+#guard rendersSyntax (obl #[.int "bump"] #[] (.eq (call1 "bump" "bump") (call1 "bump" "bump")))
+  `(#thales_prove "t.ts" "f" "p" :=
+      ∀ (bump : Int), TsModel.bump (Float.ofInt bump) = TsModel.bump (Float.ofInt bump))
+
 -- A parameter the body both rebinds at its top level and assigns is not
 -- also rebound `let mut x := x`: the top-level binding is the one the
 -- body reads, so a second shadow would only be noise.
@@ -188,36 +319,6 @@ def call1 (f x : String) : JsExpr := .call f none #[.id x]
   let rendered ← renderEmission e
   unless (rendered.splitOn "def TsModel.id ").length == 2 do
     throwError "the emitted def is not namespaced:\n{rendered}"
-
--- The artifact is re-parsed plain text: a binder named after the
--- function it calls must not capture the call.
-#eval show CoreM Unit from do
-  let e : Emission := {
-    file := "t.ts"
-    declarations := #[.fn { name := "bump", params := nums #["x"], source := "bump",
-                            body := #[.ret (.binop "+" (.id "x") (.num "1"))] }]
-    obligations := #[{ function := "bump", property := "p", formula := "f",
-                       payload := .structured #[.int "bump"] #[]
-                         (.eq (.call "bump" none #[.id "bump"])
-                              (.call "bump" none #[.id "bump"])) }] }
-  let rendered ← renderEmission e
-  unless (rendered.splitOn "TsModel.bump (Float.ofInt bump)").length == 3 do
-    throwError "the call is exposed to binder capture:\n{rendered}"
-
--- A binder named after the emitted vocabulary itself (`pure`) is primed,
--- keeping the annotation provable instead of capturing the leaf.
-#eval show CoreM Unit from do
-  let e : Emission := {
-    file := "t.ts"
-    declarations := #[.fn { name := "f", params := nums #["x"], source := "f",
-                            body := #[.ret (.id "x")] }]
-    obligations := #[{ function := "f", property := "p", formula := "f",
-                       payload := .structured #[.int "pure"] #[]
-                         (.istrue (.binop ">=" (.call "f" none #[.id "pure"])
-                                             (.num "0"))) }] }
-  let rendered ← renderEmission e
-  unless (rendered.splitOn "pure'").length == 3 do
-    throwError "the reserved binder name is not primed:\n{rendered}"
 
 -- A mutable local renders as `let mut`, a reassigned parameter is rebound
 -- ahead of the body, and no join helper reaches the source text.
@@ -303,40 +404,6 @@ end
     throwError "the parameterized method def is missing:\n{rendered}"
   unless (rendered.splitOn "← TsModel.Box.base self").length == 2 do
     throwError "the this-call is not applied to self:\n{rendered}"
-
--- A class binder quantifies over the constructor's image: one ungrouped ∀
--- per synthesized argument, then the instance, then the hypothesis naming
--- it as the constructor's output. The `-0` normalization and every guard
--- are inside the domain by construction, since `p` is what `construct`
--- returned rather than a bare `mk` of the arguments.
-#eval show CoreM Unit from do
-  let point : EmitClass := {
-    name := "Point", source := "class Point"
-    fields := #["x"], ctorParams := nums #["x"]
-    ctorBody := #[.fieldSet "x" (.id "x")]
-    getters := #[]
-    methods := #[{ name := "gap", params := nums #["q"]
-                   body := #[.ret (.fieldRead "Point" none "x" .selfRef)] }] }
-  let e : Emission := {
-    file := "t.ts", declarations := #[.cls point]
-    obligations := #[{ function := "Point#gap", property := "nn"
-                       formula := "forall (p: Point) { … }"
-                       payload := .structured
-                         #[.cls "p" "Point" none #[.number "x" false]]
-                         #[] (.istrue (.binop "<="
-                           (.num "0")
-                           (.methodCall "Point" none "gap" (.id "p")
-                             #[.num "1"]))) }] }
-  let rendered ← renderEmission e
-  unless (rendered.splitOn "∀ («p.x» : JsNumber),").length == 2 do
-    throwError "the synthesized constructor argument is not its own ∀:\n{rendered}"
-  let underArg := rendered.splitOn "∀ («p.x» : JsNumber),"
-  unless ((underArg[1]!).splitOn "∀ (p : TsModel.Point),").length == 2 do
-    throwError "the instance ∀ is not inside its arguments:\n{rendered}"
-  unless (rendered.splitOn "TsModel.Point.construct «p.x» = .ok p →").length == 2 do
-    throwError "the constructor-image hypothesis did not render:\n{rendered}"
-  unless (rendered.splitOn "Float.ofInt").length == 1 do
-    throwError "a class binder was coerced from Int:\n{rendered}"
 
 /-- The union signature most union fixtures share. -/
 def unionParam (n : String) : Param :=
