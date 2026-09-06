@@ -156,9 +156,9 @@ function regexCanFollow(prev: ts.SyntaxKind | null): boolean {
 function rejectQuantifiers(text: string): void {
   if (text === "∃" || text === "exists") {
     throw new LemmaError(
-      "existential quantifiers (∃ / exists) are not supported: property-based " +
-        "testing samples inputs, so it can refute ∀ with a counterexample but cannot " +
-        "soundly confirm ∃ (a bounded/exhaustive mode would be needed)",
+      "existential quantifiers (∃ / exists) are not supported: sampling can " +
+        "refute ∀ with a counterexample but cannot confirm ∃, and the refuter's " +
+        "enumeration of finite domains is not yet wired to ∃",
     );
   }
   if (text === "∀" || text === "forall") {

@@ -289,11 +289,11 @@ codes.
 
 | Verdict (human) | SZS status | Meaning |
 |---|---|---|
-| PROVED | `Theorem` | Established for all inputs (exhaustive check or proof). Assumptions (opaque islands, assumed callee contracts) must be listed with the verdict. |
+| PROVED | `Theorem` | Established for all inputs (exhaustive check or proof). A prover lists what it assumed (opaque islands, assumed callee contracts) as `axioms`; a refuter's enumerated Theorem assumes nothing and carries its case count instead (see below). |
 | REFUTED | `CounterSatisfiable` | A concrete counterexample exists (and is reported). |
 | TESTED, not proved | `Unknown` | No engine established the claim; sub-statuses per engine (e.g. refuter `GaveUp` after its sampling runs with no counterexample, prover `GaveUp`). |
 | UNSUPPORTED | `Inappropriate` | The code the annotation depends on is outside the engine's mappable subset — the claim was never evaluated, which is a statement about the engine, not the property. The verdict carries a reason naming the offending construct. |
-| — | `Timeout` | An engine exhausted its budget. |
+| — | `Timeout` | An engine ran out of its budget. |
 | — | `InputError` / `SyntaxError` / `TypeError` | The annotation or the annotated code is malformed. |
 
 A refuter that evaluates every tuple of a finite binder domain and finds no
