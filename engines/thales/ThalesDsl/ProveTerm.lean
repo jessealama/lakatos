@@ -33,6 +33,7 @@ inductive SpineBinder where
   | ranged (name : String) (lo hi : Int)
   | unbounded (name : String)
   | opaque (name : String)
+  deriving BEq, Repr
 
 def SpineBinder.name : SpineBinder → String
   | .ranged n .. | .unbounded n | .opaque n => n
