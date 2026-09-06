@@ -1,5 +1,6 @@
 import ThalesEmit.Json
 import ThalesEmit.Render
+import ThalesEmit.Artifact
 
 /-! The `thales-emit` executable: one emission JSON in, one readable
 `.lean` artifact out. Any failure — unreadable file, schema mismatch, a

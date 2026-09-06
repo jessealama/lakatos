@@ -1,634 +1,415 @@
-import ThalesEmit
+import Test.ThalesEmit.Support
+
+/-! One guard per rendering rule: the tree the renderer builds against the
+tree a person would write, no pretty-printer in the loop. -/
 
 open Lean ThalesEmit
 
-/-- Number-typed parameters, the signature most of these fixtures have. -/
 def nums (names : Array String) : Array Param :=
   names.map fun n => { name := n, ty := .number }
 
-/-- A number parameter as the wire spells it. -/
-def numParamJson (name : String) : Json :=
-  Json.mkObj [("name", name), ("type", "number")]
+def v (e : JsExpr) : RenderM Rendered := valueTerm (fun _ => false) e
+/-- With `x` an Int-valued binder. -/
+def vx (e : JsExpr) : RenderM Rendered := valueTerm (· == "x") e
+def call1 (f x : String) : JsExpr := .call f none #[.id x]
 
--- Schema violations decode to errors naming the offender, never to
--- defaults.
-#guard (decodeEmission (Json.mkObj [])) matches .error _
-#guard
-  (decodeEmission (Json.mkObj
-    [("file", "t.ts"), ("declarations", Json.arr #[Json.mkObj [("kind", "enum")]]),
-     ("obligations", Json.arr #[])]))
-  matches .error "unknown declaration kind 'enum'"
--- A known kind is still decoded strictly: a class missing its name is a
--- field error, not a default.
-#guard
-  (decodeEmission (Json.mkObj
-    [("file", "t.ts"), ("declarations", Json.arr #[Json.mkObj [("kind", "class")]]),
-     ("obligations", Json.arr #[])]))
-  matches .error "property not found: name"
+-- Literals: decimal and scientific print as themselves, the two
+-- non-finite spellings as the Js library's constants, a sign as negation.
+#guard rendersAs (v (.num "3")) `(3)
+#guard rendersAs (v (.num "1.5")) `(1.5)
+#guard rendersAs (v (.num "1e3")) `(1e3)
+#guard rendersAs (v (.num "-2")) `(-2)
+#guard rendersAs (v (.num "Infinity")) `(floatInf)
+#guard rendersAs (v (.num "-Infinity")) `(-floatInf)
+#guard rendersAs (v (.num "NaN")) `(floatNaN)
 
--- The unary-operator and binder-domain IR decodes strictly.
-#guard
-  (decodeExpr (Json.mkObj
-    [("kind", "unop"), ("op", "-"), ("operand", Json.mkObj [("kind", "id"), ("name", "x")])]))
-  matches .ok (.unop "-" (.id "x"))
-#guard
-  (decodeExpr (Json.mkObj
-    [("kind", "same-value"),
-     ("left", Json.mkObj [("kind", "id"), ("name", "x")]),
-     ("right", Json.mkObj [("kind", "num"), ("lit", "-0")])]))
-  matches .ok (.sameValue (.id "x") (.num "-0"))
-#guard
-  (decodeExpr (Json.mkObj
-    [("kind", "cond"),
-     ("cond", Json.mkObj [("kind", "id"), ("name", "b")]),
-     ("then", Json.mkObj [("kind", "num"), ("lit", "0")]),
-     ("else", Json.mkObj [("kind", "id"), ("name", "x")])]))
-  matches .ok (.cond (.id "b") (.num "0") (.id "x"))
-#guard
-  (decodeExpr (Json.mkObj
-    [("kind", "math-sqrt"),
-     ("arg", Json.mkObj [("kind", "id"), ("name", "x")])]))
-  matches .ok (.mathSqrt (.id "x"))
-#guard
-  (decodeExpr (Json.mkObj
-    [("kind", "math-abs"),
-     ("arg", Json.mkObj [("kind", "id"), ("name", "x")])]))
-  matches .ok (.mathAbs (.id "x"))
-#guard
-  (decodeExpr (Json.mkObj
-    [("kind", "number-is-finite"),
-     ("arg", Json.mkObj [("kind", "id"), ("name", "x")])]))
-  matches .ok (.numberIsFinite (.id "x"))
-#guard
-  (decodeExpr (Json.mkObj
-    [("kind", "number-is-nan"),
-     ("arg", Json.mkObj [("kind", "id"), ("name", "x")])]))
-  matches .ok (.numberIsNaN (.id "x"))
--- The class IR: instance construction, member reads, the receiver, and
--- a constructor's field assignment.
-#guard
-  (decodeExpr (Json.mkObj
-    [("kind", "new"), ("className", "Box"),
-     ("args", Json.arr #[Json.mkObj [("kind", "id"), ("name", "x")]])]))
-  matches .ok (.newObj "Box" none #[.id "x"])
-#guard
-  (decodeExpr (Json.mkObj
-    [("kind", "getter-read"), ("className", "Box"), ("name", "v"),
-     ("object", Json.mkObj [("kind", "self")])]))
-  matches .ok (.getterRead "Box" none "v" .selfRef)
-#guard
-  (decodeExpr (Json.mkObj
-    [("kind", "field-read"), ("className", "Box"), ("field", "#v"),
-     ("object", Json.mkObj [("kind", "self")])]))
-  matches .ok (.fieldRead "Box" none "#v" .selfRef)
-#guard
-  (decodeExpr (Json.mkObj
-    [("kind", "method-call"), ("className", "Box"), ("name", "double"),
-     ("object", Json.mkObj [("kind", "self")]),
-     ("args", Json.arr #[Json.mkObj [("kind", "id"), ("name", "y")]])]))
-  matches .ok (.methodCall "Box" none "double" .selfRef #[.id "y"])
-#guard
-  (decodeStmt (Json.mkObj
-    [("kind", "field-set"), ("field", "#v"),
-     ("expr", Json.mkObj [("kind", "id"), ("name", "v")])]))
-  matches .ok (.fieldSet "#v" (.id "v"))
-#guard
-  (decodeDecl (Json.mkObj
-    [("kind", "class"), ("name", "Box"), ("source", "class Box {}"),
-     ("fields", Json.arr #["#v"]),
-     ("ctor", Json.mkObj
-       [("params", Json.arr #[numParamJson "v"]),
-        ("body", Json.arr #[Json.mkObj
-          [("kind", "field-set"), ("field", "#v"),
-           ("expr", Json.mkObj [("kind", "id"), ("name", "v")])]])]),
-     ("getters", Json.arr #[Json.mkObj
-       [("name", "v"),
-        ("body", Json.arr #[Json.mkObj
-          [("kind", "return"),
-           ("expr", Json.mkObj
-             [("kind", "field-read"), ("className", "Box"), ("field", "#v"),
-              ("object", Json.mkObj [("kind", "self")])])]])]]),
-     ("methods", Json.arr #[Json.mkObj
-       [("name", "scale"), ("params", Json.arr #[numParamJson "k"]),
-        ("body", Json.arr #[Json.mkObj
-          [("kind", "return"),
-           ("expr", Json.mkObj [("kind", "id"), ("name", "k")])]])]])]))
-  matches .ok (.cls { methods := #[{ name := "scale", .. }], .. })
--- A parameter's type is "number" or a class object; anything else fails
--- the run rather than defaulting to a number.
-#guard (decodeParam (numParamJson "x")) matches .ok { name := "x", ty := .number }
-#guard
-  (decodeParam (Json.mkObj
-    [("name", "p"), ("type", Json.mkObj [("class", "Point")])]))
-  matches .ok { name := "p", ty := .cls "Point" none }
-#guard
-  (decodeParam (Json.mkObj
-    [("name", "p"),
-     ("type", Json.mkObj [("class", "Point"), ("module", "point.mts")])]))
-  matches .ok { name := "p", ty := .cls "Point" (some "point.mts") }
--- A defaulted class parameter's slot is an option of that class.
-#guard
-  (decodeParam (Json.mkObj
-    [("name", "p"),
-     ("type", Json.mkObj [("option", Json.mkObj [("class", "Pt")])])]))
-  matches .ok { name := "p", ty := .option "Pt" none }
-#guard
-  (decodeParam (Json.mkObj [("name", "s"), ("type", "string")]))
-  matches .error "unknown parameter type 'string'"
--- The three option expression kinds decode strictly, and a local may bind
--- at a class.
-#guard
-  (decodeExpr (Json.mkObj [("kind", "option")]))
-  matches .ok (.optionInject none)
-#guard
-  (decodeExpr (Json.mkObj
-    [("kind", "option"), ("expr", Json.mkObj [("kind", "id"), ("name", "q")])]))
-  matches .ok (.optionInject (some (.id "q")))
-#guard
-  (decodeExpr (Json.mkObj
-    [("kind", "option-test"),
-     ("expr", Json.mkObj [("kind", "id"), ("name", "p")]), ("present", false)]))
-  matches .ok (.optionTest (.id "p") false)
-#guard
-  (decodeExpr (Json.mkObj
-    [("kind", "option-test"),
-     ("expr", Json.mkObj [("kind", "id"), ("name", "p")]), ("present", "no")]))
-  matches .error "field 'present' is not a boolean"
-#guard
-  (decodeExpr (Json.mkObj
-    [("kind", "option-test"),
-     ("expr", Json.mkObj [("kind", "id"), ("name", "p")])]))
-  matches .error "property not found: present"
-#guard
-  (decodeExpr (Json.mkObj
-    [("kind", "option-get"),
-     ("expr", Json.mkObj [("kind", "id"), ("name", "p")])]))
-  matches .ok (.optionGet (.id "p"))
-#guard
-  (decodeStmt (Json.mkObj
-    [("kind", "const"), ("name", "p"),
-     ("type", Json.mkObj [("class", "Pt")]),
-     ("init", Json.mkObj [("kind", "id"), ("name", "q")])]))
-  matches .ok (.constDecl "p" (.cls "Pt" none) (.id "q"))
-#guard
-  (decodeParams (Json.mkObj [("params", Json.arr #[Json.mkObj [("name", "x")]])])
-    "params")
-  matches .error "field 'params': property not found: type"
--- Union parameter types: an array of ≥2 known tags, order carried as-is.
-#guard
-  (decodeParam (Json.mkObj
-    [("name", "v"), ("type", Json.arr #["number", "string"])]))
-  matches .ok { name := "v", ty := .union #[.number, .string] }
-#guard
-  (decodeParam (Json.mkObj [("name", "v"), ("type", Json.arr #["number"])]))
-  matches .error "a union parameter type needs at least two tags"
-#guard
-  (decodeParam (Json.mkObj
-    [("name", "v"), ("type", Json.arr #["number", "object"])]))
-  matches .error "unknown union tag 'object'"
+-- Identifiers: an Int binder crosses to Float at each use; a reserved
+-- spelling is primed; a non-identifier is refused.
+#guard rendersAs (v (.id "x")) `(x)
+#guard rendersAs (vx (.id "x")) `(Float.ofInt x)
+#guard rendersAs (vx (.id "y")) `(y)
+#guard rendersAs (v (.id "pure")) `(pure')
+#guard rendersAs (v (.id "floatNaN")) `(floatNaN')
+#guard renderFails (v (.id ""))
+#guard renderFails (v (.id "a-b"))
 
--- The four union expression kinds decode strictly.
-#guard
-  (decodeExpr (Json.mkObj
-    [("kind", "inject"), ("tag", "number"),
-     ("expr", Json.mkObj [("kind", "id"), ("name", "x")])]))
-  matches .ok (.inject .number (some (.id "x")))
-#guard
-  (decodeExpr (Json.mkObj [("kind", "inject"), ("tag", "undefined")]))
-  matches .ok (.inject .undefined none)
-#guard
-  (decodeExpr (Json.mkObj [("kind", "inject"), ("tag", "null")]))
-  matches .ok (.inject .null none)
-#guard
-  (decodeExpr (Json.mkObj
-    [("kind", "inject"), ("tag", "boolean"),
-     ("expr", Json.mkObj [("kind", "id"), ("name", "b")])]))
-  matches .ok (.inject .boolean (some (.id "b")))
-#guard
-  (decodeExpr (Json.mkObj [("kind", "inject"), ("tag", "number")]))
-  matches .error "an inject at 'number' needs its operand"
-#guard
-  (decodeExpr (Json.mkObj [("kind", "inject"), ("tag", "boolean")]))
-  matches .error "an inject at 'boolean' needs its operand"
-#guard
-  (decodeExpr (Json.mkObj [("kind", "inject"), ("tag", "string")]))
-  matches .error _
-#guard
-  (decodeExpr (Json.mkObj
-    [("kind", "project"), ("tag", "number"),
-     ("expr", Json.mkObj [("kind", "id"), ("name", "v")])]))
-  matches .ok (.project .number (.id "v"))
-#guard
-  (decodeExpr (Json.mkObj
-    [("kind", "typeof-test"), ("result", "number"),
-     ("expr", Json.mkObj [("kind", "id"), ("name", "v")])]))
-  matches .ok (.typeofTest (.id "v") "number")
-#guard
-  (decodeExpr (Json.mkObj
-    [("kind", "typeof-test"), ("result", "numbr"),
-     ("expr", Json.mkObj [("kind", "id"), ("name", "v")])]))
-  matches .error "unknown typeof result 'numbr'"
-#guard
-  (decodeExpr (Json.mkObj
-    [("kind", "jsval-eq"), ("semantics", "strict"),
-     ("left", Json.mkObj [("kind", "id"), ("name", "v")]),
-     ("right", Json.mkObj [("kind", "inject"), ("tag", "null")])]))
-  matches .ok (.jsvalEq false (.id "v") (.inject .null none))
-#guard
-  (decodeExpr (Json.mkObj
-    [("kind", "jsval-eq"), ("semantics", "same-value"),
-     ("left", Json.mkObj [("kind", "id"), ("name", "v")]),
-     ("right", Json.mkObj [("kind", "id"), ("name", "w")])]))
-  matches .ok (.jsvalEq true (.id "v") (.id "w"))
-#guard
-  (decodeExpr (Json.mkObj
-    [("kind", "jsval-eq"), ("semantics", "loose"),
-     ("left", Json.mkObj [("kind", "id"), ("name", "v")]),
-     ("right", Json.mkObj [("kind", "id"), ("name", "w")])]))
-  matches .error "unknown equality semantics 'loose'"
+-- Unary: minus negates, plus is the identity, bang is Bool.not.
+#guard rendersAs (v (.unop "-" (.id "x"))) `(-x)
+#guard rendersAs (v (.unop "+" (.id "x"))) `(x)
+#guard rendersAs (v (.unop "!" (.id "b"))) `(!b)
+#guard renderFails (v (.unop "~" (.id "x")))
 
--- A method missing its params is a field error, not a default.
-#guard
-  (decodeClass (Json.mkObj
-    [("kind", "class"), ("name", "Box"), ("source", "class Box {}"),
-     ("fields", Json.arr #[]), ("getters", Json.arr #[]),
-     ("ctor", Json.mkObj [("params", Json.arr #[]), ("body", Json.arr #[])]),
-     ("methods", Json.arr #[Json.mkObj [("name", "m")]])]))
-  matches .error "property not found: params"
--- A class without its constructor is a decode error, never a default.
-#guard
-  (decodeDecl (Json.mkObj
-    [("kind", "class"), ("name", "Box"), ("source", "class Box {}"),
-     ("fields", Json.arr #[]), ("getters", Json.arr #[])]))
-  matches .error _
+-- Arithmetic and comparison. `>`/`>=` flip into the IEEE predicates.
+#guard rendersAs (v (.binop "+" (.id "x") (.id "y"))) `(x + y)
+#guard rendersAs (v (.binop "-" (.id "x") (.id "y"))) `(x - y)
+#guard rendersAs (v (.binop "*" (.id "x") (.id "y"))) `(x * y)
+#guard rendersAs (v (.binop "/" (.id "x") (.id "y"))) `(x / y)
+#guard rendersAs (v (.binop "%" (.id "x") (.id "y"))) `(Number.FloatOps.tsRem x y)
+#guard rendersAs (v (.binop "<" (.id "x") (.id "y"))) `(Float.lt x y)
+#guard rendersAs (v (.binop "<=" (.id "x") (.id "y"))) `(Float.le x y)
+#guard rendersAs (v (.binop ">" (.id "x") (.id "y"))) `(Float.lt y x)
+#guard rendersAs (v (.binop ">=" (.id "x") (.id "y"))) `(Float.le y x)
+#guard rendersAs (v (.binop "===" (.id "x") (.id "y"))) `(Float.beq x y)
+#guard rendersAs (v (.binop "!==" (.id "x") (.id "y"))) `(!Float.beq x y)
+#guard renderFails (v (.binop "**" (.id "x") (.id "y")))
+-- A flip with one lift keeps the lift where it is; with two, a lambda
+-- keeps the lifts in JS evaluation order.
+#guard rendersLifted (v (.binop ">" (call1 "f" "x") (.id "y"))) true
+  `(Float.lt y (← TsModel.f x))
+#guard rendersLifted (v (.binop ">=" (call1 "f" "x") (call1 "g" "y"))) true
+  `((fun a b => Float.le b a) (← TsModel.f x) (← TsModel.g y))
+#guard rendersLifted (v (.binop "+" (call1 "f" "x") (.num "1"))) true
+  `((← TsModel.f x) + 1)
 
-#guard
-  (decodeBinder (Json.mkObj [("name", "x"), ("kind", "int")]))
-  matches .ok (.int "x")
-#guard
-  (decodeBinder (Json.mkObj [("name", "n"), ("kind", "nat")]))
-  matches .ok (.nat "n")
-#guard
-  (decodeBinder (Json.mkObj
-    [("name", "x"), ("kind", "range"), ("lo", "0"), ("hi", "10")]))
-  matches .ok (.range "x" 0 10)
-#guard
-  (decodeBinder (Json.mkObj
-    [("name", "a"), ("kind", "number"),
-     ("lower", Json.mkObj [("op", "<"), ("lit", "0")]),
-     ("upper", Json.mkObj [("op", "<="), ("lit", "1")])]))
-  matches .ok (.number "a" (some (.lt, "0")) (some (.le, "1")))
--- A bound's op is decoded into the schema enum, so an op outside it fails
--- at decode time naming the side, never in the renderer.
-#guard
-  (decodeBinder (Json.mkObj
-    [("name", "a"), ("kind", "number"),
-     ("lower", Json.mkObj [("op", ">"), ("lit", "0")])]))
-  matches .error "field 'lower' has op '>', not '<' or '<='"
-#guard
-  (decodeBinder (Json.mkObj
-    [("name", "a"), ("kind", "number"),
-     ("upper", Json.mkObj [("op", ">="), ("lit", "1")])]))
-  matches .error "field 'upper' has op '>=', not '<' or '<='"
--- An absent side is a missing field, so a rangeless binder decodes bare.
-#guard
-  (decodeBinder (Json.mkObj [("name", "a"), ("kind", "number")]))
-  matches .ok (.number "a" none none)
--- A class binder carries the class it ranges over and its constructor's
--- parameters; the module qualifier is absent for the entry's own.
-/-- A number constructor parameter as the binder wire spells it. -/
-def ctorParamJson (n : String) : Json :=
-  Json.mkObj [("name", n), ("kind", "number")]
+-- Logical: pure operands are the Bool operators; a lifted right operand
+-- renders behind the choice, ascribed, so its effects never hoist.
+#guard rendersLifted (v (.binop "||" (.id "a") (.id "b"))) false `(a || b)
+#guard rendersLifted (v (.binop "&&" (.id "a") (.id "b"))) false `(a && b)
+#guard rendersLifted (v (.binop "||" (.id "a") (call1 "f" "x"))) true
+  `((← if a then pure true else ((do return (← TsModel.f x)) : JsM Bool)))
+#guard rendersLifted (v (.binop "&&" (.id "a") (call1 "f" "x"))) true
+  `((← if a then ((do return (← TsModel.f x)) : JsM Bool) else pure false))
+#guard rendersLifted (v (.binop "||" (call1 "f" "x") (.id "b"))) true
+  `((← TsModel.f x) || b)
 
-#guard
-  (decodeBinder (Json.mkObj
-    [("name", "p"), ("kind", "class"), ("className", "Point"),
-     ("ctorParams", Json.arr #[ctorParamJson "x", ctorParamJson "y"])]))
-  matches .ok (.cls "p" "Point" none #[.number "x" false, .number "y" false])
-#guard
-  (decodeBinder (Json.mkObj
-    [("name", "p"), ("kind", "class"), ("className", "Point"),
-     ("module", "dep.ts"), ("ctorParams", Json.arr #[])]))
-  matches .ok (.cls "p" "Point" (some "dep.ts") #[])
--- A defaulted parameter carries its marker; its absence is not defaulted.
-#guard
-  (decodeCtorParam (Json.mkObj
-    [("name", "y"), ("kind", "number"), ("defaulted", true)]))
-  matches .ok (.number "y" true)
-#guard
-  (decodeCtorParam (Json.mkObj [("name", "x"), ("kind", "number")]))
-  matches .ok (.number "x" false)
--- A class-typed parameter carries its own parameters, so the tree bottoms
--- out in numbers.
-#guard
-  (decodeBinder (Json.mkObj
-    [("name", "s"), ("kind", "class"), ("className", "Span"),
-     ("ctorParams", Json.arr #[Json.mkObj
-       [("name", "p"), ("kind", "class"), ("className", "Point"),
-        ("ctorParams", Json.arr #[ctorParamJson "x"])]])]))
-  matches .ok (.cls "s" "Span" none #[.cls "p" "Point" none #[.number "x" false] false])
--- The parameters are objects with a known kind, and a missing list fails
--- the run.
-#guard
-  (decodeBinder (Json.mkObj
-    [("name", "p"), ("kind", "class"), ("className", "Point"),
-     ("ctorParams", Json.arr #[(1 : Nat)])]))
-  matches .error _
-#guard
-  (decodeBinder (Json.mkObj
-    [("name", "p"), ("kind", "class"), ("className", "Point"),
-     ("ctorParams", Json.arr #[Json.mkObj
-       [("name", "x"), ("kind", "bigint")]])]))
-  matches .error _
-#guard
-  (decodeBinder (Json.mkObj
-    [("name", "p"), ("kind", "class"), ("className", "Point")]))
-  matches .error _
-#guard (decodeBinder (Json.mkObj [("name", "x"), ("kind", "real")])) matches .error _
--- A bound is an op × literal pair; a bare string is not one.
-#guard
-  (decodeBinder (Json.mkObj
-    [("name", "a"), ("kind", "number"), ("lower", "0")]))
-  matches .error _
+-- SameValue, the conditional, and the builtin applications.
+#guard rendersAs (v (.sameValue (.id "x") (.num "-0"))) `(Number.FloatOps.sameValue x (-0))
+#guard rendersAs (vx (.sameValue (.id "x") (.num "1"))) `(Number.FloatOps.sameValue (Float.ofInt x) 1)
+#guard rendersLifted (v (.cond (.id "c") (.num "0") (.id "x"))) false `(if c then 0 else x)
+#guard rendersLifted (v (.cond (call1 "f" "c") (.num "0") (.id "x"))) true
+  `(if (← TsModel.f c) then 0 else x)
+#guard rendersLifted (v (.cond (.id "c") (call1 "f" "x") (.num "0"))) true
+  `((← if c then ((do return (← TsModel.f x)) : JsM _) else ((do return 0) : JsM _)))
+#guard rendersAs (v (.mathSqrt (.id "x"))) `(Float.sqrt x)
+#guard rendersAs (vx (.mathSqrt (.id "x"))) `(Float.sqrt (Float.ofInt x))
+#guard rendersAs (v (.mathAbs (.id "x"))) `(Float.abs x)
+#guard rendersAs (v (.numberIsFinite (.id "x"))) `(Float.isFinite x)
+#guard rendersAs (v (.numberIsNaN (.id "x"))) `(Float.isNaN x)
 
--- Module constants decode strictly, reads and declarations alike.
-#guard
-  (decodeExpr (Json.mkObj [("kind", "const-read"), ("name", "cap")]))
-  matches .ok (.constRead "cap" none)
-#guard
-  (decodeExpr (Json.mkObj
-    [("kind", "const-read"), ("name", "cap"), ("module", "constants.mts")]))
-  matches .ok (.constRead "cap" (some "constants.mts"))
-#guard (decodeExpr (Json.mkObj [("kind", "const-read")])) matches .error _
-#guard
-  (decodeDecl (Json.mkObj
-    [("kind", "constant"), ("name", "cap"), ("lit", "-10"),
-     ("source", "const cap = -10;")]))
-  matches .ok (.const { name := "cap", module := none, lit := "-10",
-                        source := "const cap = -10;" })
-#guard
-  (decodeDecl (Json.mkObj [("kind", "constant"), ("name", "cap")]))
-  matches .error _
+-- Calls lift, under the model namespace, a dependency's one component
+-- deeper; a binder named after the callee cannot capture it.
+#guard rendersLifted (v (.call "f" none #[])) true `((← TsModel.f))
+#guard rendersLifted (v (.call "f" none #[.id "x", .id "y"])) true `((← TsModel.f x y))
+#guard rendersLifted (v (.call "f" (some "helper.mts") #[.id "x"])) true
+  `((← TsModel.«helper.mts».f x))
+#guard rendersAs (v (.call "bump" none #[.id "bump"])) `((← TsModel.bump bump))
+#guard rendersAs (vx (.call "f" none #[.id "x"])) `((← TsModel.f (Float.ofInt x)))
+#guard renderFails (v (.call "helper.mts::double" none #[]))
 
--- Guards are optional, decode in order, and name their own field when
--- they break the schema.
-def payloadShell (guards : Json) : Json :=
-  Json.mkObj
-    [("kind", "structured"), ("binders", Json.arr #[]), ("guards", guards),
-     ("conclusion", Json.mkObj
-       [("kind", "istrue"), ("expr", Json.mkObj [("kind", "id"), ("name", "b")])])]
+-- Classes: construction, getter, field, method, receiver.
+#guard rendersLifted (v (.newObj "Box" none #[.id "x"])) true `((← TsModel.Box.construct x))
+#guard rendersLifted (v (.newObj "Box" none #[])) true `((← TsModel.Box.construct))
+#guard rendersLifted (v (.getterRead "Box" none "v" .selfRef)) true `((← TsModel.Box.v self))
+#guard rendersLifted (v (.fieldRead "Box" none "#v" .selfRef)) false `(TsModel.Box.«#v» self)
+#guard rendersLifted (v (.fieldRead "Box" none "v" (.newObj "Box" none #[.id "x"]))) true
+  `(TsModel.Box.v (← TsModel.Box.construct x))
+#guard rendersLifted (v (.methodCall "Box" none "m" (.id "b") #[.id "k"])) true
+  `((← TsModel.Box.m b k))
+#guard rendersLifted (v (.methodCall "Box" none "double" (.newObj "Box" none #[.id "x"]) #[])) true
+  `((← TsModel.Box.double (← TsModel.Box.construct x)))
+#guard rendersAs (v .selfRef) `(self)
+#guard rendersAs (v (.fieldRead "Box" (some "b.mts") "v" .selfRef)) `(TsModel.«b.mts».Box.v self)
 
-#guard
-  (decodePayload (payloadShell (Json.arr
-    #[Json.mkObj [("kind", "id"), ("name", "g")],
-      Json.mkObj [("kind", "id"), ("name", "h")]])))
-  matches .ok (.structured #[] #[.id "g", .id "h"] (.istrue (.id "b")))
-#guard (decodePayload (payloadShell "g")) matches .error "field 'guards' is not an array"
-#guard
-  (decodePayload (payloadShell (Json.arr #[Json.mkObj [("kind", "typeof")]])))
-  matches .error "field 'guards': unknown expression kind 'typeof'"
+-- Module constants read as qualified references.
+#guard rendersLifted (v (.constRead "cap" none)) false `(TsModel.cap)
+#guard rendersAs (v (.constRead "cap" (some "c.mts"))) `(TsModel.«c.mts».cap)
 
--- A parameter the body both rebinds at its top level and assigns is not
--- also rebound `let mut x := x`: the top-level binding is the one the
--- body reads, so a second shadow would only be noise.
-#eval show CoreM Unit from do
-  let f : EmitFn := {
-    name := "f", module := none, source := "",
-    params := #[{ name := "x", ty := .number },
-                { name := "y", ty := .union #[.number, .undefined] }],
-    body := #[
-      .letDecl "y" .number
-        (.cond (.jsvalEq false (.id "y") (.inject .undefined none))
-          (.num "1") (.project .number (.id "y"))),
-      .assign "y" (.binop "+" (.id "y") (.id "x")),
-      .ret (.id "y")] }
-  let cmd ← match RenderM.run (fnCommand f) with
-    | .error msg => throwError msg
-    | .ok cmd => pure cmd
-  let text := toString (← Lean.PrettyPrinter.ppCommand ⟨unscope cmd.raw⟩)
-  unless (text.splitOn "let mut y").length == 2 do
-    throwError "expected exactly one `let mut y` binding, got:\n{text}"
+-- The tagged domain: injection by constructor, the throwing projection
+-- behind a bind, typeof as a TypeofResult comparison, both equalities.
+#guard rendersLifted (v (.inject .number (some (.id "x")))) false `(JsVal.num x)
+#guard rendersAs (vx (.inject .number (some (.id "x")))) `(JsVal.num (Float.ofInt x))
+#guard rendersAs (v (.inject .boolean (some (.id "b")))) `(JsVal.bool b)
+#guard rendersAs (v (.inject .undefined none)) `(JsVal.undef)
+#guard rendersAs (v (.inject .null none)) `(JsVal.null)
+#guard renderFails (v (.inject .string (some (.id "s"))))
+#guard renderFails (v (.inject .number none))
+#guard rendersLifted (v (.project .number (.id "w"))) true `((← JsVal.toNumber w))
+#guard renderFails (v (.project .string (.id "w")))
+#guard rendersAs (v (.typeofTest (.id "w") "number")) `(JsVal.typeof w == TypeofResult.number)
+#guard renderFails (v (.typeofTest (.id "w") "numbr"))
+#guard rendersAs (v (.jsvalEq true (.id "w") (.inject .null none))) `(JsVal.sameValue w JsVal.null)
+#guard rendersAs (v (.jsvalEq false (.id "w") (.id "u"))) `(JsVal.strictEq w u)
 
--- The pinned emissions render to the golden artifacts — files a human
--- inspected and accepted. #eval runs CoreM inside this module's own
--- environment, which imports ThalesDsl transitively, so the printer has
--- its syntax tables. Paths are relative to engines/thales, where every
--- lake invocation runs.
-def goldenCheck (emissionPath expectedPath : String) : CoreM Unit := do
-  let text ← IO.FS.readFile emissionPath
-  let json ← IO.ofExcept (Json.parse text)
-  let e ← IO.ofExcept (decodeEmission json)
-  let rendered ← renderEmission e
-  let expected ← IO.FS.readFile expectedPath
-  unless rendered == expected do
-    throwError "rendered artifact drifted from the golden file:\n{rendered}"
+-- Options: injection, the two tests, the throwing get.
+#guard rendersLifted (v (.optionInject (some (.id "q")))) false `(some q)
+#guard rendersAs (v (.optionInject none)) `(none)
+#guard rendersAs (v (.optionTest (.id "p") true)) `(Option.isSome p)
+#guard rendersAs (v (.optionTest (.id "p") false)) `(Option.isNone p)
+#guard rendersLifted (v (.optionGet (.id "p"))) true `((← Js.optionGet p))
 
-#eval goldenCheck "tests/fixtures/tracer.emission.json"
-  "tests/fixtures/tracer.emitted.lean.expected"
+def m (e : JsExpr) : RenderM (Term × Bool) := monadicTerm (fun _ => false) e
 
-#eval goldenCheck "tests/fixtures/operators.emission.json"
-  "tests/fixtures/operators.emitted.lean.expected"
+-- A bare call pins the monad; anything else lifts with `pure` or a
+-- `do return` and pins nothing.
+#guard monadicAs (m (.call "f" none #[.id "x"])) true `(TsModel.f x)
+#guard monadicAs (m (.call "f" none #[call1 "g" "x"])) false
+  `(do return (← TsModel.f (← TsModel.g x)))
+#guard monadicAs (m (.binop "+" (call1 "f" "x") (.num "1"))) false
+  `(do return (← TsModel.f x) + 1)
+#guard monadicAs (m (.binop "+" (.id "x") (.num "1"))) false `(pure (x + 1))
 
-#eval goldenCheck "tests/fixtures/statements.emission.json"
-  "tests/fixtures/statements.emitted.lean.expected"
+-- A boolean island is `= pure true`, ascribed on the pure side too.
+#guard rendersSyntax (boolIsland (fun _ => false) (.binop "<" (.id "x") (.num "1")))
+  `((pure (Float.lt x 1) : JsM Bool) = pure true)
+#guard rendersSyntax (boolIsland (fun _ => false) (.binop "<" (call1 "f" "x") (.num "1")))
+  `(((do return Float.lt (← TsModel.f x) 1) : JsM Bool) = pure true)
 
-#eval goldenCheck "tests/fixtures/binders.emission.json"
-  "tests/fixtures/binders.emitted.lean.expected"
+-- The operand order of a bound hypothesis carries which side it is.
+#guard rendersSyntax (do boundHyp (← `(a)) (← `(b)) .lt (← `(P))) `(a < b → P)
+#guard rendersSyntax (do boundHyp (← `(a)) (← `(b)) .le (← `(P))) `(a ≤ b → P)
 
-#eval goldenCheck "tests/fixtures/degradations.emission.json"
-  "tests/fixtures/degradations.emitted.lean.expected"
+/-- One obligation over `f`, as the emitter sees it. -/
+def obl (binders : Array BinderIR) (guards : Array JsExpr) (c : Conclusion) :
+    RenderM (TSyntax `command) :=
+  obligationCommand { file := "t.ts", declarations := #[], obligations := #[] }
+    { function := "f", property := "p", formula := "",
+      payload := .structured binders guards c }
 
-#eval goldenCheck "tests/fixtures/classes.emission.json"
-  "tests/fixtures/classes.emitted.lean.expected"
+-- The bare payload is the stub form.
+#guard rendersSyntax
+  (obligationCommand { file := "t.ts", declarations := #[], obligations := #[] }
+    { function := "f", property := "p", formula := "", payload := .bare })
+  `(#thales_prove "t.ts" "f" "p")
 
-#eval goldenCheck "tests/fixtures/class-params.emission.json"
-  "tests/fixtures/class-params.emitted.lean.expected"
+-- Conclusions: a pinning side leaves the equation bare; neither pinning
+-- ascribes the left; a boolean island is the `= pure true` shape.
+#guard rendersSyntax (obl #[.number "x" none none] #[] (.eq (call1 "f" "x") (.id "x")))
+  `(#thales_prove "t.ts" "f" "p" := ∀ (x : JsNumber), TsModel.f x = pure x)
+#guard rendersSyntax (obl #[.number "x" none none] #[] (.eq (.id "x") (call1 "f" "x")))
+  `(#thales_prove "t.ts" "f" "p" := ∀ (x : JsNumber), pure x = TsModel.f x)
+#guard rendersSyntax
+  (obl #[.number "x" none none] #[]
+    (.eq (.binop "+" (.id "x") (.num "1")) (.binop "+" (.num "1") (.id "x"))))
+  `(#thales_prove "t.ts" "f" "p" :=
+      ∀ (x : JsNumber), (pure (x + 1) : JsM JsNumber) = pure (1 + x))
+#guard rendersSyntax (obl #[.number "x" none none] #[] (.istrue (.binop "<" (.id "x") (.num "1"))))
+  `(#thales_prove "t.ts" "f" "p" :=
+      ∀ (x : JsNumber), (pure (Float.lt x 1) : JsM Bool) = pure true)
 
-#eval goldenCheck "tests/fixtures/class-binder-equality-guards.emission.json"
-  "tests/fixtures/class-binder-equality-guards.emitted.lean.expected"
+-- Guards are hypotheses in front of the leaf, first guard outermost.
+#guard rendersSyntax
+  (obl #[.number "x" none none] #[.binop "<" (.num "0") (.id "x"), .binop "<" (.id "x") (.num "9")]
+    (.eq (call1 "f" "x") (.id "x")))
+  `(#thales_prove "t.ts" "f" "p" :=
+      ∀ (x : JsNumber),
+        (pure (Float.lt 0 x) : JsM Bool) = pure true →
+          (pure (Float.lt x 9) : JsM Bool) = pure true → TsModel.f x = pure x)
 
-#eval goldenCheck "tests/fixtures/nested-class-binder.emission.json"
-  "tests/fixtures/nested-class-binder.emitted.lean.expected"
+-- Binder folds, first binder outermost. Int-valued binders coerce at
+-- each use; a `number` binder never does.
+#guard rendersSyntax (obl #[.range "x" 0 10] #[] (.eq (call1 "f" "x") (.id "x")))
+  `(#thales_prove "t.ts" "f" "p" :=
+      ballIco 0 10 fun x => TsModel.f (Float.ofInt x) = pure (Float.ofInt x))
+#guard rendersSyntax (obl #[.range "x" (-5) 5] #[] (.eq (call1 "f" "x") (.id "x")))
+  `(#thales_prove "t.ts" "f" "p" :=
+      ballIco (-5) 5 fun x => TsModel.f (Float.ofInt x) = pure (Float.ofInt x))
+#guard rendersSyntax (obl #[.range "a" 0 2, .range "b" 0 3] #[] (.eq (.id "a") (.id "b")))
+  `(#thales_prove "t.ts" "f" "p" :=
+      ballIco 0 2 fun a => ballIco 0 3 fun b =>
+        (pure (Float.ofInt a) : JsM JsNumber) = pure (Float.ofInt b))
+#guard rendersSyntax (obl #[.int "x"] #[] (.eq (call1 "f" "x") (.id "x")))
+  `(#thales_prove "t.ts" "f" "p" :=
+      ∀ (x : Int), TsModel.f (Float.ofInt x) = pure (Float.ofInt x))
+#guard rendersSyntax (obl #[.nat "n"] #[] (.eq (call1 "f" "n") (.id "n")))
+  `(#thales_prove "t.ts" "f" "p" :=
+      ∀ (n : Int), 0 ≤ n → TsModel.f (Float.ofInt n) = pure (Float.ofInt n))
+#guard rendersSyntax
+  (obl #[.number "x" (some (.lt, "0")) (some (.lt, "Infinity"))] #[] (.eq (call1 "f" "x") (.id "x")))
+  `(#thales_prove "t.ts" "f" "p" :=
+      ∀ (x : JsNumber), 0 < x → x < floatInf → TsModel.f x = pure x)
+#guard rendersSyntax
+  (obl #[.number "y" (some (.le, "-Infinity")) none] #[] (.eq (call1 "f" "y") (.id "y")))
+  `(#thales_prove "t.ts" "f" "p" :=
+      ∀ (y : JsNumber), -floatInf ≤ y → TsModel.f y = pure y)
+#guard rendersSyntax
+  (obl #[.number "y" none (some (.le, "1"))] #[] (.eq (call1 "f" "y") (.id "y")))
+  `(#thales_prove "t.ts" "f" "p" := ∀ (y : JsNumber), y ≤ 1 → TsModel.f y = pure y)
+-- A reserved binder spelling is primed throughout.
+#guard rendersSyntax (obl #[.int "pure"] #[] (.eq (call1 "f" "pure") (.id "pure")))
+  `(#thales_prove "t.ts" "f" "p" :=
+      ∀ (pure' : Int), TsModel.f (Float.ofInt pure') = pure (Float.ofInt pure'))
 
-#eval goldenCheck "tests/fixtures/module-consts.emission.json"
-  "tests/fixtures/module-consts.emitted.lean.expected"
+-- A class binder: one ungrouped ∀ per constructor argument, then the
+-- instance, then the constructor-image hypothesis; a defaulted argument
+-- is quantified at its type and injected at the call; nested classes
+-- recurse with dotted paths.
+#guard rendersSyntax
+  (obl #[.cls "p" "Point" none #[.number "x" false, .number "y" false]] #[]
+    (.istrue (.binop "<=" (.num "0") (.methodCall "Point" none "gap" (.id "p") #[.num "1"]))))
+  `(#thales_prove "t.ts" "f" "p" :=
+      ∀ («p.x» : JsNumber), ∀ («p.y» : JsNumber), ∀ (p : TsModel.Point),
+        TsModel.Point.construct «p.x» «p.y» = .ok p →
+          ((do return Float.le 0 (← TsModel.Point.gap p 1)) : JsM Bool) = pure true)
+#guard rendersSyntax
+  (obl #[.cls "p" "Point" none #[.number "x" false, .number "y" true]] #[]
+    (.eq (.fieldRead "Point" none "x" (.id "p")) (.fieldRead "Point" none "x" (.id "p"))))
+  `(#thales_prove "t.ts" "f" "p" :=
+      ∀ («p.x» : JsNumber), ∀ («p.y» : JsNumber), ∀ (p : TsModel.Point),
+        TsModel.Point.construct «p.x» (JsVal.num «p.y») = .ok p →
+          (pure (TsModel.Point.x p) : JsM JsNumber) = pure (TsModel.Point.x p))
+#guard rendersSyntax
+  (obl #[.cls "s" "Span" none #[.cls "p" "Point" none #[.number "x" false] false]] #[]
+    (.eq (.fieldRead "Span" none "w" (.id "s")) (.fieldRead "Span" none "w" (.id "s"))))
+  `(#thales_prove "t.ts" "f" "p" :=
+      ∀ («s.p.x» : JsNumber), ∀ («s.p» : TsModel.Point),
+        TsModel.Point.construct «s.p.x» = .ok «s.p» →
+          ∀ (s : TsModel.Span), TsModel.Span.construct «s.p» = .ok s →
+            (pure (TsModel.Span.w s) : JsM JsNumber) = pure (TsModel.Span.w s))
+#guard rendersSyntax
+  (obl #[.cls "s" "Span" none #[.cls "p" "Point" none #[.number "x" false] true]] #[]
+    (.eq (.fieldRead "Span" none "w" (.id "s")) (.fieldRead "Span" none "w" (.id "s"))))
+  `(#thales_prove "t.ts" "f" "p" :=
+      ∀ («s.p.x» : JsNumber), ∀ («s.p» : TsModel.Point),
+        TsModel.Point.construct «s.p.x» = .ok «s.p» →
+          ∀ (s : TsModel.Span), TsModel.Span.construct (some «s.p») = .ok s →
+            (pure (TsModel.Span.w s) : JsM JsNumber) = pure (TsModel.Span.w s))
+-- A binder named after the callee still renders the qualified call.
+#guard rendersSyntax (obl #[.int "bump"] #[] (.eq (call1 "bump" "bump") (call1 "bump" "bump")))
+  `(#thales_prove "t.ts" "f" "p" :=
+      ∀ (bump : Int), TsModel.bump (Float.ofInt bump) = TsModel.bump (Float.ofInt bump))
 
-#eval goldenCheck "tests/fixtures/unions.emission.json"
-  "tests/fixtures/unions.emitted.lean.expected"
+def stmt (s : JsStmt) : RenderM (TSyntax `doElem) := stmtDoElem none s
+def ctorStmt (straight : List String) (s : JsStmt) : RenderM (TSyntax `doElem) :=
+  stmtDoElem (some straight) s
 
-#eval goldenCheck "tests/fixtures/optionals.emission.json"
-  "tests/fixtures/optionals.emitted.lean.expected"
+-- One do-element per statement; locals are ascribed.
+#guard rendersSyntax (stmt (.ret (.id "x"))) `(doElem| return x)
+#guard rendersSyntax (stmt (.throwErr "RangeError")) `(doElem| throw (JsError.error "RangeError"))
+#guard rendersSyntax (stmt (.constDecl "y" .number (.id "x"))) `(doElem| let y : JsNumber := x)
+#guard rendersSyntax (stmt (.constDecl "w" (.union #[.number, .string]) (.id "v")))
+  `(doElem| let w : JsVal := v)
+#guard rendersSyntax (stmt (.constDecl "p" (.cls "Pt" none) (.id "q"))) `(doElem| let p : TsModel.Pt := q)
+#guard rendersSyntax (stmt (.letDecl "y" .number (.id "x"))) `(doElem| let mut y : JsNumber := x)
+#guard rendersSyntax (stmt (.assign "y" (.binop "+" (.id "y") (.num "1")))) `(doElem| y := y + 1)
 
-#eval goldenCheck "tests/fixtures/defaults.emission.json"
-  "tests/fixtures/defaults.emitted.lean.expected"
+-- `if` chains: no else, an else, an else-if grafted onto the same node,
+-- an empty arm as `pure ()`.
+#guard rendersSyntax (stmt (.ite (.id "c") #[.ret (.num "0")] none))
+  `(doElem| if c then return 0)
+#guard rendersSyntax (stmt (.ite (.id "c") #[.ret (.num "0")] (some #[.ret (.num "1")])))
+  `(doElem| if c then return 0 else return 1)
+#guard rendersSyntax
+  (stmt (.ite (.id "c") #[.ret (.num "0")]
+    (some #[.ite (.id "d") #[.ret (.num "1")] (some #[.ret (.num "2")])])))
+  `(doElem| if c then return 0 else if d then return 1 else return 2)
+#guard rendersSyntax
+  (stmt (.ite (.id "c") #[.ret (.num "0")] (some #[.ite (.id "d") #[.ret (.num "1")] none])))
+  `(doElem| if c then return 0 else if d then return 1)
+#guard rendersSyntax (stmt (.ite (.id "c") #[] none)) `(doElem| if c then pure ())
 
-#eval goldenCheck "tests/fixtures/ctor-defaults.emission.json"
-  "tests/fixtures/ctor-defaults.emitted.lean.expected"
+-- Field assignment renders only inside a constructor: a straight field
+-- as a let, a branch-set field as a reassignment.
+#guard rendersSyntax (ctorStmt ["v"] (.fieldSet "v" (.id "v")))
+  `(doElem| let «this.v» : JsNumber := v)
+#guard rendersSyntax (ctorStmt [] (.fieldSet "#v" (.id "v"))) `(doElem| «this.#v» := v)
+#guard renderFails (stmt (.fieldSet "v" (.id "v")))
 
-#eval goldenCheck "tests/fixtures/instance-defaults.emission.json"
-  "tests/fixtures/instance-defaults.emitted.lean.expected"
+-- Parameter groups: a maximal run of one type shares a group.
+#guard rendersSyntax
+  (do let bs ← paramBinders #[{ name := "x", ty := .number }, { name := "y", ty := .number }]
+      `(def f $bs* : Nat := 0))
+  `(def f (x y : JsNumber) : Nat := 0)
+#guard rendersSyntax
+  (do let bs ← paramBinders
+        #[{ name := "x", ty := .number }, { name := "v", ty := .union #[.number, .string] },
+          { name := "p", ty := .cls "Pt" none }, { name := "q", ty := .option "Pt" none },
+          { name := "y", ty := .number }]
+      `(def f $bs* : Nat := 0))
+  `(def f (x : JsNumber) (v : JsVal) (p : TsModel.Pt) (q : Option TsModel.Pt) (y : JsNumber) : Nat := 0)
 
-#eval goldenCheck "tests/fixtures/object-is-tagged.emission.json"
-  "tests/fixtures/object-is-tagged.emitted.lean.expected"
+-- A function: dual-tagged, namespaced, an assigned parameter rebound
+-- ahead of the body, a parameter the body itself rebinds not rebound twice.
+#guard rendersSyntax
+  (fnCommand { name := "add", params := nums #["a", "b"], source := "",
+               body := #[.ret (.binop "+" (.id "a") (.id "b"))] })
+  `(@[js_norm, grind] def TsModel.add (a b : JsNumber) : JsM JsNumber := do
+      return a + b)
+#guard rendersSyntax
+  (fnCommand { name := "id", params := nums #["x"], source := "", body := #[.ret (.id "x")] })
+  `(@[js_norm, grind] def TsModel.id (x : JsNumber) : JsM JsNumber := do
+      return x)
+#guard rendersSyntax
+  (fnCommand { name := "clampUp", params := nums #["x"], source := "",
+               body := #[.ite (.binop "<" (.id "x") (.num "1")) #[.assign "x" (.num "1")] none,
+                         .ret (.id "x")] })
+  `(@[js_norm, grind] def TsModel.clampUp (x : JsNumber) : JsM JsNumber := do
+      let mut x := x
+      if Float.lt x 1 then x := 1
+      return x)
+#guard rendersSyntax
+  (fnCommand { name := "f", params := #[{ name := "x", ty := .number },
+                                        { name := "y", ty := .union #[.number, .undefined] }],
+               source := "",
+               body := #[.letDecl "y" .number
+                           (.cond (.jsvalEq false (.id "y") (.inject .undefined none))
+                             (.num "1") (.project .number (.id "y"))),
+                         .assign "y" (.binop "+" (.id "y") (.id "x")),
+                         .ret (.id "y")] })
+  `(@[js_norm, grind] def TsModel.f (x : JsNumber) (y : JsVal) : JsM JsNumber := do
+      let mut y : JsNumber :=
+        (← if JsVal.strictEq y JsVal.undef then ((do return 1) : JsM _)
+           else ((do return (← JsVal.toNumber y)) : JsM _))
+      y := y + x
+      return y)
+#guard rendersSyntax
+  (fnCommand { name := "double", module := some "helper.mts", params := nums #["x"], source := "",
+               body := #[.ret (.binop "*" (.id "x") (.num "2"))] })
+  `(@[js_norm, grind] def TsModel.«helper.mts».double (x : JsNumber) : JsM JsNumber := do
+      return x * 2)
+#guard renderFails
+  (fnCommand { name := "helper.mts::double", params := nums #["x"], source := "", body := #[.ret (.id "x")] })
+#guard renderFails
+  (fnCommand { name := "d", module := some "a«b", params := nums #["x"], source := "", body := #[.ret (.id "x")] })
+#guard renderFails
+  (fnCommand { name := "d", module := some "/abs.ts", params := nums #["x"], source := "", body := #[.ret (.id "x")] })
+#guard renderFails
+  (fnCommand { name := "d", module := some "", params := nums #["x"], source := "", body := #[.ret (.id "x")] })
 
--- A module constant renders as a dual-tagged JsNumber def, and a read of
--- it as a qualified reference, so no binder can capture it.
-#eval show CoreM Unit from do
-  let e : Emission := {
-    file := "t.ts"
-    declarations := #[
-      .const { name := "cap", lit := "1000", source := "const cap = 1000;" },
-      .fn { name := "scale", params := nums #["x"], source := "scale",
-            body := #[.ret (.binop "*" (.id "x") (.constRead "cap" none))] }]
-    obligations := #[] }
-  let rendered ← renderEmission e
-  unless (rendered.splitOn "def TsModel.cap : JsNumber :=").length == 2 do
-    throwError "the constant def did not render:\n{rendered}"
-  -- Both the constant and the function carry the dual tag.
-  unless (rendered.splitOn "@[js_norm, grind]").length == 3 do
-    throwError "the constant def is not dual-tagged:\n{rendered}"
-  unless (rendered.splitOn "x * TsModel.cap").length == 2 do
-    throwError "the constant read is not a qualified reference:\n{rendered}"
+-- A constant is a pure, dual-tagged def.
+#guard rendersSyntax (constCommand { name := "cap", lit := "1000", source := "" })
+  `(@[js_norm, grind] def TsModel.cap : JsNumber := 1000)
+#guard rendersSyntax (constCommand { name := "cap", module := some "constants.mts", lit := "-0.5", source := "" })
+  `(@[js_norm, grind] def TsModel.«constants.mts».cap : JsNumber := -0.5)
 
--- A dependency's constant sits one component deeper, like its functions.
-#eval show CoreM Unit from do
-  let e : Emission := {
-    file := "t.ts"
-    declarations := #[
-      .const { name := "cap", module := some "constants.mts",
-               lit := "-0.5", source := "export const cap = -0.5;" }]
-    obligations := #[] }
-  let rendered ← renderEmission e
-  unless (rendered.splitOn "def TsModel.«constants.mts».cap : JsNumber :=").length == 2 do
-    throwError "the dependency constant is not module-qualified:\n{rendered}"
-  -- Once in the source echo, once as the def's value.
-  unless (rendered.splitOn "-0.5").length == 3 do
-    throwError "the negated literal did not render:\n{rendered}"
+/-- A one-field class with a straight constructor. -/
+def box : EmitClass :=
+  { name := "Box", source := "", fields := #["#v"], ctorParams := nums #["v"],
+    ctorBody := #[.fieldSet "#v" (.id "v")],
+    getters := #[{ name := "v", body := #[.ret (.fieldRead "Box" none "#v" .selfRef)] }],
+    methods := #[{ name := "scale", params := nums #["k"],
+                   body := #[.ret (.binop "*" (.fieldRead "Box" none "#v" .selfRef) (.id "k"))] }] }
 
--- Emitted defs live under the model namespace: a TS function named
--- after a root-level Lean name (`id`) must still define.
-#eval show CoreM Unit from do
-  let e : Emission := {
-    file := "t.ts"
-    declarations := #[.fn { name := "id", params := nums #["x"], source := "id",
-                            body := #[.ret (.id "x")] }]
-    obligations := #[] }
-  let rendered ← renderEmission e
-  unless (rendered.splitOn "def TsModel.id ").length == 2 do
-    throwError "the emitted def is not namespaced:\n{rendered}"
+/-- A field the printer would not escape carries its guillemets inside the
+name component, a spelling no quotation can write, so it is spliced. -/
+def hashV : Ident := mkIdent (Name.mkSimple "«#v»")
 
--- The artifact is re-parsed plain text: a binder named after the
--- function it calls must not capture the call.
-#eval show CoreM Unit from do
-  let e : Emission := {
-    file := "t.ts"
-    declarations := #[.fn { name := "bump", params := nums #["x"], source := "bump",
-                            body := #[.ret (.binop "+" (.id "x") (.num "1"))] }]
-    obligations := #[{ function := "bump", property := "p", formula := "f",
-                       payload := .structured #[.int "bump"] #[]
-                         (.eq (.call "bump" none #[.id "bump"])
-                              (.call "bump" none #[.id "bump"])) }] }
-  let rendered ← renderEmission e
-  unless (rendered.splitOn "TsModel.bump (Float.ofInt bump)").length == 3 do
-    throwError "the call is exposed to binder capture:\n{rendered}"
+-- Structure, constructor, getter, method.
+#guard rendersSyntax (structCommand box) `(structure TsModel.Box where $hashV:ident : JsNumber)
+#guard rendersSyntax (structCommand { box with fields := #[], ctorParams := #[], ctorBody := #[] })
+  `(structure TsModel.Box)
+#guard rendersSyntax (ctorCommand box)
+  `(@[js_norm, grind] def TsModel.Box.construct (v : JsNumber) : JsM TsModel.Box := do
+      let «this.#v» : JsNumber := v
+      return TsModel.Box.mk «this.#v»)
+-- A field set inside a branch gets the mut prelude.
+#guard rendersSyntax
+  (ctorCommand { box with
+                 fields := #["v"],
+                 ctorBody := #[.ite (.binop "<" (.id "v") (.num "0"))
+                                 #[.fieldSet "v" (.num "0")] (some #[.fieldSet "v" (.id "v")])] })
+  `(@[js_norm, grind] def TsModel.Box.construct (v : JsNumber) : JsM TsModel.Box := do
+      let mut «this.v» : JsNumber := 0
+      if Float.lt v 0 then «this.v» := 0 else «this.v» := v
+      return TsModel.Box.mk «this.v»)
+#guard rendersSyntax (getterCommand box box.getters[0]!)
+  `(@[js_norm, grind] def TsModel.Box.v (self : TsModel.Box) : JsM JsNumber := do
+      return TsModel.Box.«#v» self)
+#guard rendersSyntax (methodCommand box box.methods[0]!)
+  `(@[js_norm, grind] def TsModel.Box.scale (self : TsModel.Box) (k : JsNumber) : JsM JsNumber := do
+      return TsModel.Box.«#v» self * k)
 
--- A binder named after the emitted vocabulary itself (`pure`) is primed,
--- keeping the annotation provable instead of capturing the leaf.
-#eval show CoreM Unit from do
-  let e : Emission := {
-    file := "t.ts"
-    declarations := #[.fn { name := "f", params := nums #["x"], source := "f",
-                            body := #[.ret (.id "x")] }]
-    obligations := #[{ function := "f", property := "p", formula := "f",
-                       payload := .structured #[.int "pure"] #[]
-                         (.istrue (.binop ">=" (.call "f" none #[.id "pure"])
-                                             (.num "0"))) }] }
-  let rendered ← renderEmission e
-  unless (rendered.splitOn "pure'").length == 3 do
-    throwError "the reserved binder name is not primed:\n{rendered}"
-
--- The statement decoding round-trips strictly, else arm optional.
-#guard
-  (decodeStmt (Json.mkObj [("kind", "throw"), ("error", "RangeError")]))
-  matches .ok (.throwErr "RangeError")
-#guard
-  (decodeStmt (Json.mkObj
-    [("kind", "let"), ("name", "y"),
-     ("init", Json.mkObj [("kind", "id"), ("name", "x")])]))
-  matches .ok (.letDecl "y" .number (.id "x"))
-#guard
-  (decodeStmt (Json.mkObj
-    [("kind", "const"), ("name", "w"),
-     ("type", Json.arr #[Json.str "number", Json.str "string"]),
-     ("init", Json.mkObj [("kind", "id"), ("name", "v")])]))
-  matches .ok (.constDecl "w" (.union #[.number, .string]) (.id "v"))
-#guard
-  (decodeStmt (Json.mkObj
-    [("kind", "const"), ("name", "w"),
-     ("type", Json.arr #[Json.str "number"]),
-     ("init", Json.mkObj [("kind", "id"), ("name", "v")])]))
-  matches .error _
-#guard
-  (decodeStmt (Json.mkObj
-    [("kind", "if"),
-     ("cond", Json.mkObj [("kind", "id"), ("name", "b")]),
-     ("then", Json.arr #[Json.mkObj [("kind", "throw"), ("error", "E")]])]))
-  matches .ok (.ite (.id "b") #[.throwErr "E"] none)
-#guard (decodeStmt (Json.mkObj [("kind", "while")])) matches .error _
-
--- A mutable local renders as `let mut`, a reassigned parameter is rebound
--- ahead of the body, and no join helper reaches the source text.
-#eval show CoreM Unit from do
-  let e : Emission := {
-    file := "t.ts"
-    declarations := #[.fn { name := "clampUp", params := nums #["x"], source := "clampUp",
-                            body := #[
-                              .ite (.binop "<" (.id "x") (.num "1"))
-                                #[.assign "x" (.num "1")] none,
-                              .ret (.id "x")] }]
-    obligations := #[] }
-  let rendered ← renderEmission e
-  unless (rendered.splitOn "let mut x := x").length == 2 do
-    throwError "the assigned parameter is not rebound:\n{rendered}"
-  unless (rendered.splitOn "fun").length == 1 do
-    throwError "a helper lambda leaked into the source text:\n{rendered}"
-
--- Pure arms render as one `if`, both in place: no lift barrier, since a
--- pure arm has nothing to fire.
-#eval show CoreM Unit from do
-  let e : Emission := {
-    file := "t.ts"
-    declarations := #[.fn { name := "canon", params := nums #["x"], source := "canon",
-                            body := #[.ret (.cond (.binop "<" (.id "x") (.num "1"))
-                                                  (.num "0") (.id "x"))] }]
-    obligations := #[] }
-  let rendered ← renderEmission e
-  unless (rendered.splitOn "if Float.lt x 1 then 0 else x").length == 2 do
-    throwError "the conditional did not render as a plain if:\n{rendered}"
-  unless (rendered.splitOn "JsM _").length == 1 do
-    throwError "pure arms took the lift barrier:\n{rendered}"
-
--- A lifting arm renders behind a nested `do`, so a throwing call in the
--- arm the condition did not take never fires.
-#eval show CoreM Unit from do
-  let e : Emission := {
-    file := "t.ts"
-    declarations := #[.fn { name := "g", params := nums #["x"], source := "g",
-                            body := #[.ret (.id "x")] },
-                      .fn { name := "pick", params := nums #["x"], source := "pick",
-                            body := #[.ret (.cond (.binop "<" (.id "x") (.num "1"))
-                                                  (.call "g" none #[.id "x"])
-                                                  (.num "0"))] }]
-    obligations := #[] }
-  let rendered ← renderEmission e
-  unless (rendered.splitOn "JsM _").length == 3 do
-    throwError "a lifting arm did not take the lift barrier:\n{rendered}"
-  -- Only the ascription's presence distinguishes the two renderings: drop
-  -- it and the text still reads as if the call sat in the arm, but the
-  -- `←` no longer elaborates there at all.
-
--- What that shape buys, written out by hand: the arm the condition passed
--- over does not run, so its throw does not escape.
+-- What the lift barrier buys, written out by hand: the arm the condition
+-- passed over does not run, so its throw does not escape.
 section
 open Js
 private def boom : JsM JsNumber := JsM.throw (JsError.error "E")
@@ -639,362 +420,3 @@ private def barrier (c : Bool) : JsM JsNumber := do
 #guard (barrier true) matches .ok _
 #guard (barrier false) matches .error _
 end
-
--- A number binder is a Float ∀ carrying its bounds as hypotheses, lower
--- outermost, with an infinite endpoint spelled `floatInf` — and no use of
--- it is coerced, since it is already a double. The wide conclusion also
--- pins the join: `return` never ends a line, which would read back as a
--- bare return.
-#eval show CoreM Unit from do
-  let call (x : String) : JsExpr :=
-    .call "applyConversionFactors" none #[.id x, .id x, .id x, .id x, .id x]
-  let e : Emission := {
-    file := "t.ts"
-    declarations := #[.fn { name := "applyConversionFactors",
-                            params := nums #["v", "sf", "so", "tf", "to"],
-                            source := "applyConversionFactors",
-                            body := #[.ret (.id "v")] }]
-    obligations := #[{ function := "applyConversionFactors", property := "p",
-                       formula := "f",
-                       payload := .structured
-                         #[.number "x" (some (.lt, "0")) (some (.lt, "Infinity")),
-                           .number "y" (some (.le, "-Infinity")) none]
-                         #[] (.istrue (.binop "<=" (call "x") (call "y"))) }] }
-  let rendered ← renderEmission e
-  unless (rendered.splitOn "∀ (x : JsNumber),").length == 2 do
-    throwError "the number binder is not a JsNumber ∀:\n{rendered}"
-  -- The printer breaks after every arrow, so order is pinned by nesting:
-  -- the upper bound must sit inside the lower.
-  let underLower := rendered.splitOn "0 < x →"
-  unless underLower.length == 2 do
-    throwError "the lower bound did not render:\n{rendered}"
-  unless ((underLower[1]!).splitOn "x < floatInf →").length == 2 do
-    throwError "the upper bound is not inside the lower:\n{rendered}"
-  unless (rendered.splitOn "-floatInf ≤ y →").length == 2 do
-    throwError "the half-bounded number binder did not render:\n{rendered}"
-  unless (rendered.splitOn "Float.ofInt").length == 1 do
-    throwError "a number binder was coerced from Int:\n{rendered}"
-  unless (rendered.splitOn "return\n").length == 1 do
-    throwError "a return was split from its argument:\n{rendered}"
-  -- The positive half of the same pin: the conclusion is wide enough that
-  -- the printer breaks it, so this is the rejoined line, not an unbroken one.
-  unless (rendered.splitOn "return Float.le").length == 2 do
-    throwError "the return and its argument are not on one line:\n{rendered}"
-
--- A shape outside the slice is refused with a message naming the gap.
--- Module qualification travels in the `module` field; a joined spelling
--- in `name` is not a second way in.
-#eval show CoreM Unit from do
-  let e : Emission := {
-    file := "t.ts"
-    declarations := #[.fn { name := "helper.mts::double", params := nums #["x"],
-                            source := "f", body := #[.ret (.id "x")] }]
-    obligations := #[] }
-  let refused ← try
-    let _ ← renderEmission e
-    pure false
-  catch _ => pure true
-  unless refused do
-    throwError "a joined module-qualified name was rendered instead of refused"
-
--- A dependency's models carry their module as a name component; the
--- entry's own stay bare.
-#eval show CoreM Unit from do
-  let e : Emission := {
-    file := "main.mts"
-    declarations := #[
-      .fn { name := "double", module := some "helper.mts", params := nums #["x"],
-            source := "double", body := #[.ret (.binop "*" (.id "x") (.num "2"))] },
-      .fn { name := "twice", params := nums #["x"], source := "twice",
-            body := #[.ret (.call "double" (some "helper.mts") #[.id "x"])] }]
-    obligations := #[] }
-  let rendered ← renderEmission e
-  unless (rendered.splitOn "def TsModel.«helper.mts».double").length == 2 do
-    throwError "the dependency's def is not module-qualified:\n{rendered}"
-  unless (rendered.splitOn "def TsModel.twice").length == 2 do
-    throwError "the entry's def did not stay bare:\n{rendered}"
-  unless (rendered.splitOn "TsModel.«helper.mts».double x").length == 2 do
-    throwError "the call site is not module-qualified:\n{rendered}"
-  -- The dependency's block is introduced once, ahead of its def; the
-  -- entry's declarations get no separator of their own.
-  unless (rendered.splitOn "-- module helper.mts\n").length == 2 do
-    throwError "the module separator is missing or repeated:\n{rendered}"
-  let afterSep := (rendered.splitOn "-- module helper.mts\n")[1]!
-  unless (afterSep.splitOn "def TsModel.«helper.mts».double").length == 2 do
-    throwError "the module separator does not precede its def:\n{rendered}"
-  unless (rendered.splitOn "-- module ").length == 2 do
-    throwError "the entry's declarations got a separator:\n{rendered}"
-
--- A module path that would break its own name component is refused, not
--- approximated: the artifact is re-parsed text.
-#eval show CoreM Unit from do
-  for bad in ["a«b", "/abs.ts", ""] do
-    let e : Emission := {
-      file := "t.ts"
-      declarations := #[.fn { name := "double", module := some bad, params := nums #["x"],
-                              source := "f", body := #[.ret (.id "x")] }]
-      obligations := #[] }
-    let refused ← try
-      let _ ← renderEmission e
-      pure false
-    catch _ => pure true
-    unless refused do
-      throwError s!"module path '{bad}' was rendered instead of refused"
-
--- `Object.is` is a pure Bool application: no `←` on the call itself,
--- and an Int-binder argument still crosses to Float.
-#eval show CoreM Unit from do
-  let e : Emission := {
-    file := "t.ts"
-    declarations := #[.fn { name := "canon", params := nums #["x"], source := "canon",
-                            body := #[
-                              .ite (.sameValue (.id "x") (.num "-0"))
-                                #[.ret (.num "0")] none,
-                              .ret (.id "x")] }]
-    obligations := #[{ function := "canon", property := "p", formula := "f",
-                       payload := .structured #[.range "n" 0 2]
-                         #[.sameValue (.id "n") (.num "1")]
-                         (.istrue (.binop "===" (.call "canon" none #[.id "n"]) (.num "1"))) }] }
-  let rendered ← renderEmission e
-  unless (rendered.splitOn "if Number.FloatOps.sameValue x (-0) then").length == 2 do
-    throwError "the branch condition did not render as sameValue:\n{rendered}"
-  unless (rendered.splitOn "Number.FloatOps.sameValue (Float.ofInt n) 1").length == 2 do
-    throwError "the guard argument was not coerced:\n{rendered}"
-
--- NaN is a num lit like Infinity already is: no decoder change, and the
--- renderer spells both as the Js library's kernel-reducible constants. A
--- parameter spelled like the NaN constant is primed out of its way.
-#guard (decodeExpr (Json.mkObj [("kind", "num"), ("lit", "NaN")])) matches .ok (.num "NaN")
-#eval show CoreM Unit from do
-  let e : Emission := {
-    file := "t.ts"
-    declarations := #[
-      .fn { name := "addNaN", params := nums #["x"], source := "addNaN",
-            body := #[.ret (.binop "+" (.id "x") (.num "NaN"))] },
-      .fn { name := "shadow", params := nums #["floatNaN"], source := "shadow",
-            body := #[.ret (.id "floatNaN")] }]
-    obligations := #[{ function := "addNaN", property := "p", formula := "f",
-                       payload := .structured #[.range "n" 0 2] #[]
-                         (.istrue (.binop "<" (.call "addNaN" none #[.id "n"])
-                           (.num "Infinity"))) }] }
-  let rendered ← renderEmission e
-  unless (rendered.splitOn "x + floatNaN").length == 2 do
-    throwError "NaN did not render as floatNaN:\n{rendered}"
-  unless (rendered.splitOn "floatNaN'").length == 3 do
-    throwError "the parameter spelled floatNaN was not primed:\n{rendered}"
-  unless (rendered.splitOn "floatInf").length == 2 do
-    throwError "Infinity did not render as floatInf in a comparison:\n{rendered}"
-
--- `Math.sqrt` is a pure application: no `←` of its own, and an
--- Int-binder argument still crosses to Float.
-#eval show CoreM Unit from do
-  let e : Emission := {
-    file := "t.ts"
-    declarations := #[.fn { name := "root", params := nums #["x"], source := "root",
-                            body := #[.ret (.mathSqrt (.id "x"))] }]
-    obligations := #[{ function := "root", property := "p", formula := "f",
-                       payload := .structured #[.range "n" 0 2] #[]
-                         (.istrue (.binop ">="
-                           (.mathSqrt (.id "n")) (.num "0"))) }] }
-  let rendered ← renderEmission e
-  unless (rendered.splitOn "Float.sqrt x").length == 2 do
-    throwError "the body did not render as Float.sqrt:\n{rendered}"
-  unless (rendered.splitOn "Float.sqrt (Float.ofInt n)").length == 2 do
-    throwError "the formula argument was not coerced:\n{rendered}"
-
--- Pure logical operands render as the Bool operators; a lifted right
--- operand renders behind the choice, so its effects never hoist past it.
-#eval show CoreM Unit from do
-  let cmp (n : String) (lit : String) : JsExpr := .binop "===" (.id n) (.num lit)
-  let e : Emission := {
-    file := "t.ts"
-    declarations := #[
-      .fn { name := "boom", params := nums #["x"], source := "boom",
-            body := #[.throwErr "RangeError"] },
-      .fn { name := "pick", params := nums #["x"], source := "pick",
-            body := #[
-              .ite (.binop "||" (cmp "x" "0") (cmp "x" "1")) #[.ret (.num "0")] none,
-              .ite (.binop "||" (cmp "x" "2")
-                     (.binop "===" (.call "boom" none #[.id "x"]) (.num "0")))
-                #[.ret (.num "0")] none,
-              .ite (.binop "&&" (cmp "x" "3")
-                     (.binop "===" (.call "boom" none #[.id "x"]) (.num "0")))
-                #[.ret (.num "0")] none,
-              .ite (.unop "!" (.sameValue (.id "x") (.num "NaN")))
-                #[.ret (.num "0")] none,
-              .ret (.num "1")] }]
-    obligations := #[] }
-  let rendered ← renderEmission e
-  -- Where the printer breaks a long term is its own business; where the
-  -- lift sits relative to the choice is not, so the checks read one line.
-  let flat := rendered.foldl
-    (fun acc c =>
-      if c.isWhitespace then (if acc.endsWith " " then acc else acc.push ' ')
-      else acc.push c) ""
-  unless (flat.splitOn "(Float.beq x 0 || Float.beq x 1)").length == 2 do
-    throwError "pure || did not render as Bool.or:\n{rendered}"
-  unless (flat.splitOn ("(← if Float.beq x 2 then pure true else " ++
-      "((do return Float.beq (← TsModel.boom x) 0) : JsM Bool))")).length == 2 do
-    throwError "a lifted right || operand did not render behind the choice:\n{rendered}"
-  unless (flat.splitOn ("(← if Float.beq x 3 then " ++
-      "((do return Float.beq (← TsModel.boom x) 0) : JsM Bool) else pure false)")).length == 2 do
-    throwError "a lifted right && operand did not render behind the choice:\n{rendered}"
-  unless (flat.splitOn "(!Number.FloatOps.sameValue x floatNaN)").length == 2 do
-    throwError "! did not render as Bool.not:\n{rendered}"
-
--- A method is a function of the instance and its parameters, rendered
--- after the getters so an earlier method resolves for a later body.
-#eval show CoreM Unit from do
-  let box : EmitClass := {
-    name := "Box", source := "class Box"
-    fields := #["#v"], ctorParams := nums #["v"]
-    ctorBody := #[.fieldSet "#v" (.id "v")]
-    getters := #[]
-    methods := #[
-      { name := "base", params := #[]
-        body := #[.ret (.fieldRead "Box" none "#v" .selfRef)] },
-      { name := "scale", params := nums #["k"]
-        body := #[.ret (.binop "*"
-          (.methodCall "Box" none "base" .selfRef #[]) (.id "k"))] }] }
-  let e : Emission := { file := "t.ts", declarations := #[.cls box], obligations := #[] }
-  let rendered ← renderEmission e
-  unless (rendered.splitOn "def TsModel.Box.base (self : TsModel.Box) : JsM JsNumber := do").length == 2 do
-    throwError "the zero-parameter method def is missing:\n{rendered}"
-  unless (rendered.splitOn "def TsModel.Box.scale (self : TsModel.Box) (k : JsNumber) : JsM JsNumber := do").length == 2 do
-    throwError "the parameterized method def is missing:\n{rendered}"
-  unless (rendered.splitOn "← TsModel.Box.base self").length == 2 do
-    throwError "the this-call is not applied to self:\n{rendered}"
-
--- A method call on a fresh instance lifts receiver-first.
-#eval show CoreM Unit from do
-  let box : EmitClass := {
-    name := "Box", source := "class Box"
-    fields := #["#v"], ctorParams := nums #["v"]
-    ctorBody := #[.fieldSet "#v" (.id "v")]
-    getters := #[]
-    methods := #[{ name := "double", params := #[]
-                   body := #[.ret (.binop "*"
-                     (.fieldRead "Box" none "#v" .selfRef) (.num "2"))] }] }
-  let e : Emission := {
-    file := "t.ts", declarations := #[.cls box]
-    obligations := #[{ function := "Box#double", property := "doubled"
-                       formula := "forall (x: number) { … }"
-                       payload := .structured #[.number "x" none none] #[]
-                         (.eq (.methodCall "Box" none "double"
-                             (.newObj "Box" none #[.id "x"]) #[])
-                           (.binop "*" (.id "x") (.num "2"))) }] }
-  let rendered ← renderEmission e
-  unless (rendered.splitOn "← TsModel.Box.double (← TsModel.Box.construct x)").length == 2 do
-    throwError "the instance method call did not render:\n{rendered}"
-
--- A class binder quantifies over the constructor's image: one ungrouped ∀
--- per synthesized argument, then the instance, then the hypothesis naming
--- it as the constructor's output. The `-0` normalization and every guard
--- are inside the domain by construction, since `p` is what `construct`
--- returned rather than a bare `mk` of the arguments.
-#eval show CoreM Unit from do
-  let point : EmitClass := {
-    name := "Point", source := "class Point"
-    fields := #["x"], ctorParams := nums #["x"]
-    ctorBody := #[.fieldSet "x" (.id "x")]
-    getters := #[]
-    methods := #[{ name := "gap", params := nums #["q"]
-                   body := #[.ret (.fieldRead "Point" none "x" .selfRef)] }] }
-  let e : Emission := {
-    file := "t.ts", declarations := #[.cls point]
-    obligations := #[{ function := "Point#gap", property := "nn"
-                       formula := "forall (p: Point) { … }"
-                       payload := .structured
-                         #[.cls "p" "Point" none #[.number "x" false]]
-                         #[] (.istrue (.binop "<="
-                           (.num "0")
-                           (.methodCall "Point" none "gap" (.id "p")
-                             #[.num "1"]))) }] }
-  let rendered ← renderEmission e
-  unless (rendered.splitOn "∀ («p.x» : JsNumber),").length == 2 do
-    throwError "the synthesized constructor argument is not its own ∀:\n{rendered}"
-  let underArg := rendered.splitOn "∀ («p.x» : JsNumber),"
-  unless ((underArg[1]!).splitOn "∀ (p : TsModel.Point),").length == 2 do
-    throwError "the instance ∀ is not inside its arguments:\n{rendered}"
-  unless (rendered.splitOn "TsModel.Point.construct «p.x» = .ok p →").length == 2 do
-    throwError "the constructor-image hypothesis did not render:\n{rendered}"
-  unless (rendered.splitOn "Float.ofInt").length == 1 do
-    throwError "a class binder was coerced from Int:\n{rendered}"
-
-/-- The union signature most union fixtures share. -/
-def unionParam (n : String) : Param :=
-  { name := n, ty := .union #[.number, .string] }
-
--- A union-typed parameter renders as `(v : JsVal)` — one Lean type for
--- every union spelling — with the typeof dispatch, the throwing
--- projection behind `←`, and the injected obligation argument.
-#eval show CoreM Unit from do
-  let e : Emission := {
-    file := "t.ts"
-    declarations := #[.fn
-      { name := "toNum", params := #[unionParam "v"], source := "toNum",
-        body := #[
-          .ite (.typeofTest (.id "v") "number")
-            #[.ret (.project .number (.id "v"))] none,
-          .ret (.num "0")] }]
-    obligations := #[
-      { function := "toNum", property := "numId", formula := "f",
-        payload := .structured #[.number "x" none none] #[]
-          (.eq (.call "toNum" none #[.inject .number (some (.id "x"))])
-               (.id "x")) }] }
-  let rendered ← renderEmission e
-  unless (rendered.splitOn "def TsModel.toNum (v : JsVal) : JsM JsNumber := do").length == 2 do
-    throwError "the union parameter is not a JsVal binder:\n{rendered}"
-  unless (rendered.splitOn "if JsVal.typeof v == TypeofResult.number then").length == 2 do
-    throwError "the typeof test did not render:\n{rendered}"
-  unless (rendered.splitOn "return (← JsVal.toNumber v)").length == 2 do
-    throwError "the projection is not behind ←:\n{rendered}"
-  unless (rendered.splitOn "TsModel.toNum (JsVal.num x)").length == 2 do
-    throwError "the obligation argument is not injected:\n{rendered}"
-
--- An Int-binder argument injects through its Float coercion, and both
--- JsVal equalities render as the pure Bool predicates.
-#eval show CoreM Unit from do
-  let e : Emission := {
-    file := "t.ts"
-    declarations := #[.fn
-      { name := "nullFlag",
-        params := #[{ name := "v", ty := .union #[.number, .null] }],
-        source := "nullFlag",
-        body := #[
-          .ite (.jsvalEq true (.id "v") (.inject .null none))
-            #[.ret (.num "1")] none,
-          .ret (.num "0")] }]
-    obligations := #[
-      { function := "nullFlag", property := "p", formula := "f",
-        payload := .structured #[.range "n" 0 4] #[]
-          (.eq (.call "nullFlag" none #[.inject .number (some (.id "n"))])
-               (.num "0")) }] }
-  let rendered ← renderEmission e
-  unless (rendered.splitOn "if JsVal.sameValue v JsVal.null then").length == 2 do
-    throwError "same-value over JsVal did not render:\n{rendered}"
-  unless (rendered.splitOn "JsVal.num (Float.ofInt n)").length == 2 do
-    throwError "the coerced binder argument is not injected:\n{rendered}"
-
--- strictEq spells `===` over unions; a parameter spelled like the new
--- vocabulary is primed out of its way.
-#eval show CoreM Unit from do
-  let e : Emission := {
-    file := "t.ts"
-    declarations := #[
-      .fn
-        { name := "eq", params := #[unionParam "v", unionParam "w"],
-          source := "eq",
-          body := #[
-            .ite (.jsvalEq false (.id "v") (.id "w"))
-              #[.ret (.num "1")] none,
-            .ret (.num "0")] },
-      .fn
-        { name := "shadow", params := #[{ name := "JsVal", ty := .number }],
-          source := "shadow", body := #[.ret (.id "JsVal")] }]
-    obligations := #[] }
-  let rendered ← renderEmission e
-  unless (rendered.splitOn "if JsVal.strictEq v w then").length == 2 do
-    throwError "strictEq over JsVal did not render:\n{rendered}"
-  unless (rendered.splitOn "JsVal'").length == 3 do
-    throwError "the JsVal-spelled parameter was not primed:\n{rendered}"
