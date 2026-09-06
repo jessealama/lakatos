@@ -164,6 +164,18 @@ describe("cli on an interrupted run", () => {
     expect(stderr.join("\n")).not.toContain("error:");
   });
 
+  it("refute: the signal lakatos saw names the run, whichever one the engine died of", async () => {
+    runTestsMock.mockImplementation(() => {
+      process.kill(process.pid, "SIGINT");
+      return { kind: "interrupted", signal: "SIGTERM" };
+    });
+    const { code, stderr } = await runMain(["refute", "lone.ts"]);
+    expect(code).toBe(2);
+    expect(stderr).toContain(
+      "lakatos: interrupted by SIGINT; reporting 1 annotation as User",
+    );
+  });
+
   it("prove: a signal that reached lakatos outranks a completed Lean run", async () => {
     runEmissionMock.mockImplementation(() => {
       process.kill(process.pid, "SIGTERM");

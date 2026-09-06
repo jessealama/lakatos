@@ -128,11 +128,12 @@ describe("runTests", () => {
   });
 
   it("surfaces the spawn error when vitest cannot be launched", () => {
+    // spawnSync's shape for a launch failure: no status, no streams.
     const unlaunchable = () => ({
       status: null,
       signal: null,
-      stdout: "",
-      stderr: "",
+      stdout: null,
+      stderr: null,
       error: Object.assign(new Error("spawnSync node ENOENT"), {
         code: "ENOENT",
       }),
