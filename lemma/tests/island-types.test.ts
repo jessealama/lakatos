@@ -86,6 +86,9 @@ describe("buildProbe", () => {
     ]);
     expect(probe.probes).toHaveLength(1);
     expect(
+      probe.atoms.every((s) => s.probeStart === probe.probes[0]!.start),
+    ).toBe(true);
+    expect(
       probe.text.slice(probe.probes[0]!.start, probe.probes[0]!.end),
     ).toMatch(/^void \(\(x: number, q: Point\): void => \{\n[\s\S]*\}\);\n$/);
   });
@@ -334,5 +337,83 @@ describe("typeFormulas: nothing to type", () => {
       ],
     };
     expect(() => typeFormulas([file], undefined)).toThrow(/gate's program/);
+  });
+});
+
+describe("typeFormulas: free identifiers are exports or standard globals", () => {
+  useTempProject("lemma-island-free-", {
+    "helper.ts": "export function g(x: number): number { return x; }\n",
+    "hidden.ts":
+      "function g(x: number): number { return x; }\n" +
+      "/** @ensures{p} forall (x: int ∈ [0, 5)) { g(x) > 0 } */\n" +
+      "export function f(x: number): number { return x; }\n",
+    "imported.ts":
+      'import { g } from "./helper.js";\n' +
+      "/** @ensures{p} forall (x: int ∈ [0, 5)) { g(x) > 0 } */\n" +
+      "export function f(x: number): number { return x + g(x); }\n",
+    "reexported.ts":
+      'import { g } from "./helper.js";\n' +
+      "export { g };\n" +
+      "/** @ensures{p} forall (x: int ∈ [0, 5)) { g(x) >= 0 } */\n" +
+      "export function f(x: number): number { return x; }\n",
+    "fine.ts":
+      "export const x = 3;\n" +
+      "/** @ensures{shadow} forall (x: int ∈ [0, 5)) { f(x) >= 0 } */\n" +
+      "/** @ensures{globals} forall (x: int ∈ [0, 5)) { Math.abs(f(x)) >= 0 ∧ Number.isFinite(f(x)) } */\n" +
+      "/** @ensures{callback} forall (x: int ∈ [0, 5)) { [f(x)].every((y) => y >= 0) } */\n" +
+      "/** @ensures{undef} forall (x: int ∈ [0, 5)) { f(x) !== undefined } */\n" +
+      "export function f(x: number): number { return x; }\n",
+    "twice.ts":
+      "function g(x: number): number { return x; }\n" +
+      "/** @ensures{p} forall (x: int ∈ [0, 5)) { g(x) > 0 ∧ g(x) + g(x) > 0 } */\n" +
+      "export function f(x: number): number { return x; }\n",
+  });
+
+  it("refuses a name declared in the module but not exported", () => {
+    const t = typing("hidden.ts");
+    expect(t.invalid).toEqual([
+      {
+        file: "hidden.ts",
+        invalid: [
+          {
+            propertyName: "p",
+            functionName: "f",
+            line: 2,
+            message:
+              "@ensures{p}: in atom `g(x) > 0`: 'g' is not exported from hidden.ts; " +
+              "a formula may name only the module's exports and the host's standard globals",
+          },
+        ],
+      },
+    ]);
+    expect(t.refused).toEqual(
+      new Set([
+        annotationKey("hidden.ts", { functionName: "f", propertyName: "p" }),
+      ]),
+    );
+  });
+
+  it("refuses an imported name the module does not re-export, and accepts one it does", () => {
+    expect(typing("imported.ts").invalid[0]!.invalid[0]!.message).toBe(
+      "@ensures{p}: in atom `g(x) > 0`: 'g' is not exported from imported.ts; " +
+        "a formula may name only the module's exports and the host's standard globals",
+    );
+    expect(typing("reexported.ts")).toEqual({
+      invalid: [],
+      refused: new Set(),
+    });
+  });
+
+  it("accepts binders, standard globals, a callback's own parameter, and undefined", () => {
+    expect(typing("fine.ts")).toEqual({ invalid: [], refused: new Set() });
+  });
+
+  it("names an offender once per atom", () => {
+    expect(typing("twice.ts").invalid[0]!.invalid[0]!.message).toBe(
+      "@ensures{p}: in atom `g(x) > 0`: 'g' is not exported from twice.ts; " +
+        "a formula may name only the module's exports and the host's standard globals; " +
+        "in atom `g(x) + g(x) > 0`: 'g' is not exported from twice.ts; " +
+        "a formula may name only the module's exports and the host's standard globals",
+    );
   });
 });

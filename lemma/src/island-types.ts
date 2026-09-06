@@ -49,6 +49,9 @@ export interface AtomSpan {
   start: number;
   end: number;
   statementEnd: number;
+  /** Where the enclosing probe begins, so a declaration at or after it is
+   * the probe's own. */
+  probeStart: number;
 }
 
 /** Where one annotation's whole probe sits in the probe text. */
@@ -98,6 +101,7 @@ export function buildProbe(
         start: s,
         end,
         statementEnd: text.length,
+        probeStart: start,
       });
     });
     text += "});\n";
@@ -187,6 +191,26 @@ export function typeFormulas(
         );
       note(span.annotation, rendered);
     }
+    const checker = program.getTypeChecker();
+    for (const span of probe.probes) {
+      if (faults.has(span.annotation)) continue;
+      for (const atom of probe.atoms) {
+        if (atom.annotation !== span.annotation) continue;
+        for (const name of unexportedReferences(
+          sf,
+          atom,
+          program,
+          checker,
+          parsed.exports,
+        )) {
+          note(
+            atom.annotation,
+            `in atom \`${atomText(parsed, atom)}\`: '${name}' is not exported from ${parsed.file}; ` +
+              "a formula may name only the module's exports and the host's standard globals",
+          );
+        }
+      }
+    }
     const invalid: InvalidAnnotation[] = [];
     for (const [i, messages] of [...faults].sort(([a], [b]) => a - b)) {
       const a = parsed.annotations[i]!.raw;
@@ -237,5 +261,64 @@ function probeProgram(
     options: checked.options,
     host,
     oldProgram: checked.program,
+  });
+}
+
+/** The identifiers in one atom that name neither something bound inside
+ * the probe (a binder, a callback's parameter), nor a standard-library
+ * global, nor an export of the module (spec, "Islands"). Each once. */
+function unexportedReferences(
+  sf: ts.SourceFile,
+  atom: AtomSpan,
+  program: ts.Program,
+  checker: ts.TypeChecker,
+  exports: Set<string>,
+): string[] {
+  const found: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if (node.end <= atom.start || node.getStart(sf) >= atom.end) return;
+    if (ts.isIdentifier(node)) {
+      const p = node.parent;
+      const isPropName = ts.isPropertyAccessExpression(p) && p.name === node;
+      const isQualified = ts.isQualifiedName(p) && p.right === node;
+      const isObjKey = ts.isPropertyAssignment(p) && p.name === node;
+      const isBinding = ts.isParameter(p) && p.name === node;
+      if (!isPropName && !isQualified && !isObjKey && !isBinding) {
+        const name = node.text;
+        if (
+          !found.includes(name) &&
+          !admitted(node, sf, atom, program, checker, exports)
+        )
+          found.push(name);
+      }
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return found;
+}
+
+function admitted(
+  node: ts.Identifier,
+  sf: ts.SourceFile,
+  atom: AtomSpan,
+  program: ts.Program,
+  checker: ts.TypeChecker,
+  exports: Set<string>,
+): boolean {
+  const symbol = checker.getSymbolAtLocation(node);
+  /* v8 ignore next -- an unresolved name is TS2304, reported before this rule runs */
+  if (symbol === undefined) return true;
+  // `undefined` and the like declare nothing: the host's own vocabulary.
+  return (symbol.declarations ?? []).every((d) => {
+    const home = d.getSourceFile();
+    if (program.isSourceFileDefaultLibrary(home)) return true;
+    if (home !== sf) return false;
+    // Bound inside the probe: a binder, or a parameter of the atom's own
+    // callback. Binders are declared between the probe's start and its
+    // first atom, so the probe's start is the line.
+    if (d.getStart(sf) >= atom.probeStart) return true;
+    return exports.has(node.text);
   });
 }
