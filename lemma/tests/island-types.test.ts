@@ -3,13 +3,19 @@ import {
   buildProbe,
   hostType,
   typable,
+  typeFormulas,
+  type IslandTyping,
   type ParsedAnnotation,
+  type ParsedFile,
 } from "../src/island-types.js";
-import { extractFromSource } from "../src/extract.js";
+import { extract, extractFromSource } from "../src/extract.js";
 import { parsePrefix } from "../src/prefix-parser.js";
 import { parseBody } from "../src/formula-parser.js";
 import { EmptyAfterClampError } from "../src/range.js";
+import { typecheckProject } from "../src/typecheck.js";
+import { annotationKey } from "../src/qualified-name.js";
 import type { ClassTable } from "../src/class-domain.js";
+import { useTempProject } from "../../tests/helpers/cli.js";
 
 /** Parse every annotation of a module the way the CLI does. */
 function annotationsOf(src: string, file = "m.ts") {
@@ -118,5 +124,215 @@ describe("typable", () => {
         classes,
       ),
     ).toBe(false);
+  });
+});
+
+/** A file of the current project, extracted and parsed like the CLI does. */
+function parsedFile(file: string): ParsedFile {
+  const r = extract(file);
+  return {
+    file,
+    exports: r.exports,
+    classes: r.classes,
+    annotations: r.annotations.map((raw) => {
+      try {
+        const { binders, body } = parsePrefix(raw.formula);
+        return { raw, parsed: { binders, formula: parseBody(body) } };
+      } catch (e) {
+        if (e instanceof EmptyAfterClampError) return { raw };
+        throw e;
+      }
+    }),
+  };
+}
+
+/** Gate the current project and type the named files' formulas. */
+function typing(...files: string[]): IslandTyping {
+  const check = typecheckProject(process.cwd());
+  if (check.kind !== "clean")
+    throw new Error(`fixture is not clean: ${check.kind}`);
+  return typeFormulas(files.map(parsedFile), check.checked);
+}
+
+const SCALE =
+  "export function scale(x: number, factor: number): number {\n" +
+  "  return x * factor;\n" +
+  "}\n";
+
+describe("typeFormulas: the issue's three repros", () => {
+  useTempProject("lemma-island-repros-", {
+    "j.ts":
+      SCALE +
+      "/** @ensures{p} forall (x: int ∈ [0, 5)) { scale(x) >= 0 } */\n" +
+      "export function id(x: number): number {\n  return x;\n}\n",
+    "q.ts":
+      "/** @ensures{p} forall (x: int ∈ [0, 5)) { f(x) + q >= 0 } */\n" +
+      "export function f(x: number): number {\n  return x;\n}\n",
+    "b.ts":
+      "/** @ensures{p} forall (x: int ∈ [0, 5)) { h(x) } */\n" +
+      "export function h(x: number): number {\n  return x;\n}\n",
+  });
+
+  it("names the atom and carries tsc's diagnostic", () => {
+    const t = typing("j.ts", "q.ts", "b.ts");
+    expect(t.invalid).toEqual([
+      {
+        file: "j.ts",
+        invalid: [
+          {
+            propertyName: "p",
+            functionName: "id",
+            line: 4,
+            message:
+              "@ensures{p}: in atom `scale(x) >= 0`: TS2554: Expected 2 arguments, but got 1.",
+          },
+        ],
+      },
+      {
+        file: "q.ts",
+        invalid: [
+          {
+            propertyName: "p",
+            functionName: "f",
+            line: 1,
+            message:
+              "@ensures{p}: in atom `f(x) + q >= 0`: TS2304: Cannot find name 'q'.",
+          },
+        ],
+      },
+      {
+        file: "b.ts",
+        invalid: [
+          {
+            propertyName: "p",
+            functionName: "h",
+            line: 1,
+            message:
+              "@ensures{p}: in atom `h(x)`: TS1360: Type 'number' does not satisfy the expected type 'boolean'.",
+          },
+        ],
+      },
+    ]);
+    expect([...t.refused].sort()).toEqual(
+      [
+        annotationKey("b.ts", { functionName: "h", propertyName: "p" }),
+        annotationKey("j.ts", { functionName: "id", propertyName: "p" }),
+        annotationKey("q.ts", { functionName: "f", propertyName: "p" }),
+      ].sort(),
+    );
+  });
+});
+
+describe("typeFormulas: attribution and skipping", () => {
+  useTempProject("lemma-island-attr-", {
+    "two.ts":
+      SCALE +
+      "export function h(x: number): number { return x; }\n" +
+      "/** @ensures{both} forall (x: int ∈ [0, 5)) { scale(x) >= 0 ∧ h(x) } */\n" +
+      "/** @ensures{fine} forall (x: int ∈ [0, 5)) { scale(x, 2) >= 0 } */\n" +
+      "/** @ensures{empty} forall (x: int ∈ [1000000000000000000000000000000, 10000000000000000000000000000000]) { h(x) > 0 } */\n" +
+      "/** @ensures{unknown} forall (q: Nope) { h(1) > 0 } */\n" +
+      "export function id(x: number): number { return x; }\n",
+    "pt.ts":
+      "export class Point {\n" +
+      "  constructor(readonly x: number) {}\n" +
+      "  get norm(): number { return Math.abs(this.x); }\n" +
+      "}\n" +
+      "/** @ensures{ok} forall (p: Point) { p.norm >= 0 } */\n" +
+      "/** @ensures{bad} forall (p: Point) { p.nope >= 0 } */\n" +
+      "export function f(p: Point): number { return p.norm; }\n",
+  });
+
+  it("joins every faulty atom of one annotation in source order, and leaves sound and untypable siblings alone", () => {
+    const t = typing("two.ts");
+    expect(t.invalid).toEqual([
+      {
+        file: "two.ts",
+        invalid: [
+          {
+            propertyName: "both",
+            functionName: "id",
+            line: 5,
+            message:
+              "@ensures{both}: in atom `scale(x) >= 0`: TS2554: Expected 2 arguments, but got 1.; " +
+              "in atom `h(x)`: TS1360: Type 'number' does not satisfy the expected type 'boolean'.",
+          },
+        ],
+      },
+    ]);
+    expect(t.refused).toEqual(
+      new Set([
+        annotationKey("two.ts", { functionName: "id", propertyName: "both" }),
+      ]),
+    );
+  });
+
+  it("types a class binder at its class", () => {
+    const t = typing("pt.ts");
+    expect(t.invalid).toEqual([
+      {
+        file: "pt.ts",
+        invalid: [
+          {
+            propertyName: "bad",
+            functionName: "f",
+            line: 6,
+            message:
+              "@ensures{bad}: in atom `p.nope >= 0`: TS2339: Property 'nope' does not exist on type 'Point'.",
+          },
+        ],
+      },
+    ]);
+  });
+});
+
+describe("typeFormulas: the project's own unused-declaration checks", () => {
+  useTempProject("lemma-island-unused-", {
+    "tsconfig.json": JSON.stringify({
+      compilerOptions: {
+        target: "es2022",
+        module: "nodenext",
+        types: [],
+        noUnusedLocals: true,
+        noUnusedParameters: true,
+      },
+      include: ["**/*.ts"],
+    }),
+    "u.ts":
+      "/** @ensures{p} forall (x: int ∈ [0, 5)) { one() > 0 } */\n" +
+      "export function one(): number { return 1; }\n",
+  });
+
+  it("do not fire against the probe's scaffolding", () => {
+    const t = typing("u.ts");
+    expect(t.invalid).toEqual([]);
+    expect(t.refused.size).toBe(0);
+  });
+});
+
+describe("typeFormulas: nothing to type", () => {
+  it("returns empty without a program", () => {
+    expect(typeFormulas([], undefined)).toEqual({
+      invalid: [],
+      refused: new Set(),
+    });
+  });
+
+  it("refuses to type without the gate's program", () => {
+    const file: ParsedFile = {
+      file: "x.ts",
+      exports: new Set(["f"]),
+      classes: new Map(),
+      annotations: [
+        {
+          raw: { propertyName: "p", functionName: "f", formula: "", line: 1 },
+          parsed: {
+            binders: bindersOf("forall (x: int)"),
+            formula: parseBody("f(x) > 0"),
+          },
+        },
+      ],
+    };
+    expect(() => typeFormulas([file], undefined)).toThrow(/gate's program/);
   });
 });

@@ -24,6 +24,13 @@ export { isClassCtorDomain } from "./binder.js";
 
 export { freeIdentifiers } from "./free-idents.js";
 
+export { typeFormulas } from "./island-types.js";
+export type {
+  IslandTyping,
+  ParsedAnnotation,
+  ParsedFile,
+} from "./island-types.js";
+
 export { collectAtoms } from "./formula-ast.js";
 export type { Formula } from "./formula-ast.js";
 
