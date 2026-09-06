@@ -22,13 +22,11 @@ unsafe def main (args : List String) : IO UInt32 := do
         return 1
       | .ok e => pure e
     initSearchPath (← findSysroot)
-    -- `withImportModules` leaves every environment extension at its
-    -- initial state, which is a `CoreM` with no parser tables: the
-    -- artifact's own syntax would not read back. Loading them runs the
-    -- imported initializers, so that is enabled first.
+    -- Extension state, the parser and printer tables among it, is loaded
+    -- only on demand, and loading it runs the imported initializers.
     enableInitializersExecution
-    let env ← importModules #[{ module := `ThalesDsl }] {} (trustLevel := 0)
-      (loadExts := true)
+    let env ← importModules #[{ module := `ThalesDsl }, { module := `ThalesEmit }] {}
+      (trustLevel := 0) (loadExts := true)
     let ctx : Core.Context := { fileName := "<thales-emit>", fileMap := default }
     let (out, _) ← (renderEmission emission).toIO ctx { env }
     IO.FS.writeFile outPath out
