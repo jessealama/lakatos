@@ -5,13 +5,13 @@ export function add(a: number, b: number): number {
   return a + b;
 }
 
-/** @ensures{nonNegative} forall (x: int ∈ [0, 10)) { fetchTotal(x) >= 0 } */
+/** @ensures{nonNegative} forall (x: int ∈ [0, 10)) { fetchTotal(x) instanceof Promise } */
 export async function fetchTotal(x: number): Promise<number> {
   return await remote(x);
 }
 
 export class Counter {
-  /** @ensures{bumps} forall (n: int ∈ [0, 10)) { bump(n) > n } */
+  /** @ensures{bumps} forall (n: int ∈ [0, 10)) { new Counter().bump(n) > n } */
   bump(n: number): number {
     return n + 1;
   }

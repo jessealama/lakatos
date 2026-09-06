@@ -1,6 +1,6 @@
 # Lemma conformance fixtures
 
-Three corpora, each with its own scope and its own harness. **Directory
+Four corpora, each with its own scope and its own harness. **Directory
 membership is the expectation** in all of them: every implementation must
 accept everything under `accept/` and reject everything under `reject/`.
 None has an `expect` field.
@@ -13,6 +13,9 @@ None has an `expect` field.
 - `binder/accept/`, `binder/reject/` — **class-valued binder domains**.
   Constrain binder validation: which classes a binder may range over, per
   *Class-valued binders* in `../semantics.md`.
+- `island/accept/`, `island/reject/` — **island typing**. Constrain the
+  type rule on atoms: which host expressions an `@ensures` may hold, per
+  *Islands* in `../semantics.md`.
 
 ## Property-body fixtures (`accept/`, `reject/`)
 
@@ -37,8 +40,9 @@ quantifier prefix or the formula body). Implementations must reject the
 whole annotation; they need not fail at the same stage.
 
 These are surface-syntax fixtures only: they constrain parsing, not typing
-or evaluation. Validation-stage rules that need the enclosing module (e.g.
-"free identifiers must be exported") are out of scope here.
+or evaluation. Validation-stage rules that need the enclosing module —
+island typing, free-identifier exports — live in the `island/` corpus
+below.
 
 Provenance: the seed corpus was verified against the reference
 implementation (pabst's shipped parser) before being committed.
@@ -88,3 +92,16 @@ class domain admits no `∈` constraint) stay in the property-body corpus.
 
 This corpus is committed ahead of the reference implementation of
 class-valued binders; its harness lands with that implementation.
+
+## Island fixtures (`island/accept/`, `island/reject/`)
+
+Each fixture is one TypeScript module carrying exactly one `@ensures`.
+Typing an island needs the whole module: its exports, its classes, and the
+host's standard library. Implementations type each fixture under the
+required compiler options (strict, `strictNullChecks`, `noImplicitAny`)
+and the host's default library, with no project configuration.
+
+An `island/accept/` module must yield no diagnostic. An `island/reject/`
+module must yield exactly one diagnostic, on the module's one annotation,
+naming the offending atom. A module under `island/lib/` is a helper other
+fixtures import and carries no `@ensures`.

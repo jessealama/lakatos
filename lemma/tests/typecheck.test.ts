@@ -45,10 +45,25 @@ describe("typecheckProject: clean project", () => {
   });
 
   it("reports clean and names the program's files", () => {
-    expect(typecheckProject(process.cwd())).toEqual({
+    expect(typecheckProject(process.cwd())).toMatchObject({
       kind: "clean",
       programFiles: ["src/a.ts"],
     });
+  });
+
+  it("keeps the program it built, for island typing to reuse", () => {
+    const r = typecheckProject(process.cwd());
+    if (r.kind !== "clean") throw new Error(r.kind);
+    expect(r.checked).toBeDefined();
+    expect(r.checked!.cwd).toBe(process.cwd());
+    expect(r.checked!.rootNames).toEqual([
+      path.join(process.cwd(), "src", "a.ts"),
+    ]);
+    expect(r.checked!.options).toMatchObject({ strict: true, noEmit: true });
+    expect(r.checked!.options.incremental).toBeUndefined();
+    expect(
+      r.checked!.program.getSourceFile(path.join(process.cwd(), "src", "a.ts")),
+    ).toBeDefined();
   });
 });
 

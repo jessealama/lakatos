@@ -26,3 +26,22 @@ export function qualifiedName(
  */
 export const QUALIFIED_NAME_PATTERN =
   /^[$A-Za-z_][$A-Za-z0-9_]*([#.][$A-Za-z_][$A-Za-z0-9_]*)?$/;
+
+/** The identity the envelope reports an annotation under, as one string:
+ * file, qualified function, property. The CLI and both engines key a
+ * refused annotation on it. */
+export function annotationKey(
+  file: string,
+  a: {
+    functionName: string;
+    className?: string;
+    isStatic?: boolean;
+    propertyName: string;
+  },
+): string {
+  return JSON.stringify([
+    file,
+    qualifiedName(a.functionName, a.className, a.isStatic),
+    a.propertyName,
+  ]);
+}

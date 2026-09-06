@@ -4,6 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { emitModule } from "../src/emission.js";
 import { writeEmissionArtifacts } from "../src/emission-artifacts.js";
+import { annotationKey } from "../../../../lemma/src/index.js";
 
 const OUT = "out";
 
@@ -29,6 +30,22 @@ describe("writeEmissionArtifacts", () => {
   afterAll(() => {
     process.chdir(prevCwd);
     fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  // Runs before the write tests: the assertion is that no artifact appears.
+  test("a file whose only annotation was refused writes no artifact", () => {
+    const source = path.join("sub", "a.ts");
+    const refused = new Set([
+      annotationKey(source, { functionName: "f", propertyName: "q" }),
+    ]);
+    const [a] = writeEmissionArtifacts([source], OUT, refused);
+    expect(a).toEqual({
+      sourceFile: source,
+      annotations: [],
+      invalid: [],
+      classified: [],
+    });
+    expect(fs.existsSync(path.join(OUT, "sub", "a.ts.json"))).toBe(false);
   });
 
   test("writes one emission JSON per annotated file, mirrored", () => {

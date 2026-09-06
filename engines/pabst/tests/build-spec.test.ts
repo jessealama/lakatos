@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { buildSpecs } from "../src/build-spec.js";
-import { LemmaError } from "../../../lemma/src/index.js";
+import { annotationKey, LemmaError } from "../../../lemma/src/index.js";
 
 const FIXTURE = new URL("./fixtures/e2e/readme-example.ts", import.meta.url)
   .pathname;
@@ -137,7 +140,7 @@ describe("buildSpecs — unrepresentable domains", () => {
 
   it("lets a second blocker keep its own diagnostic", () => {
     expect(() => buildSpecs(fixture("clamped-and-unresolvable.ts"))).toThrow(
-      /nowhere/,
+      /domain 'Nowhere' is neither a primitive domain/,
     );
   });
 });
@@ -207,5 +210,44 @@ describe("buildSpecs — class binders", () => {
     ]);
     expect(s.freeExports).toContain("Span");
     expect(s.freeExports).toContain("Point");
+  });
+});
+
+describe("buildSpecs — refused annotations", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pabst-refused-"));
+  const file = path.join(dir, "r.ts");
+  fs.writeFileSync(
+    file,
+    "/** @ensures{a} forall (n: nat) { f(n) >= 0 } */\n" +
+      "/** @ensures{b} forall (n: nat) { f(n) >= 0 } */\n" +
+      "export function f(n: number): number { return n; }\n",
+    "utf8",
+  );
+
+  it("builds nothing for a refused annotation and reports it nowhere: the CLI already did", () => {
+    const refused = new Set([
+      annotationKey(file, { functionName: "f", propertyName: "a" }),
+    ]);
+    const { specs, invalid, untried } = buildSpecs(file, refused);
+    expect(specs.map((s) => s.name)).toEqual(["b"]);
+    expect(invalid).toEqual([]);
+    expect(untried).toEqual([]);
+  });
+});
+
+describe("buildSpecs — generated imports", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pabst-imports-"));
+  const file = path.join(dir, "i.ts");
+  fs.writeFileSync(
+    file,
+    "export const x = 1;\n" +
+      "/** @ensures{p} forall (x: int ∈ [0, 5)) { Math.abs(f(x)) >= 0 } */\n" +
+      "export function f(x: number): number { return x; }\n",
+    "utf8",
+  );
+
+  it("are the atoms' exported references, binders and globals excluded", () => {
+    const { specs } = buildSpecs(file);
+    expect(specs[0]!.freeExports).toEqual(["f"]);
   });
 });

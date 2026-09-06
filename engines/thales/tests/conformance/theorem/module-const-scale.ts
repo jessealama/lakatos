@@ -1,4 +1,4 @@
-const millisecondsInSecond = 1000;
+export const millisecondsInSecond = 1000;
 
 /** @ensures{nonNegative} forall (s: int ∈ [0, 10)) { secondsToMilliseconds(s) >= 0 } */
 export function secondsToMilliseconds(seconds: number): number {

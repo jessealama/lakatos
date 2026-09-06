@@ -13,17 +13,21 @@ import { generate } from "../engines/pabst/src/codegen.js";
 import { runTests } from "../engines/pabst/src/run.js";
 import { parseSeed, randomSeed } from "../engines/pabst/src/seed.js";
 import {
+  annotationKey,
   clampedEndpoints,
   EmptyAfterClampError,
   extract,
   type InvalidAnnotation,
   LemmaError,
+  type ParsedAnnotation,
+  type ParsedFile,
   parseBody,
   parsePrefix,
   qualifiedName,
   resolveFiles,
   type TypecheckDiagnostic,
   typecheckProject,
+  typeFormulas,
   unsupportedRangeReason,
 } from "../lemma/src/index.js";
 import {
@@ -209,8 +213,9 @@ type Outcome =
 
 interface Spine {
   /** `runDir` is this invocation's artifact root; the engine joins its own
-   * name onto it and never learns where the root came from. */
-  plan(files: string[], runDir: string): Plan;
+   * name onto it and never learns where the root came from. `refused`
+   * keys the annotations the CLI already reported: the engine skips them. */
+  plan(files: string[], runDir: string, refused: ReadonlySet<string>): Plan;
   /** Absent for a command with no engine — its plan yields no artifacts.
    * `runDir` is the same root the plan was given. */
   run?(plan: Plan, runDir: string): Outcome;
@@ -261,12 +266,16 @@ async function runCommand(spine: Spine, patterns: string[]): Promise<number> {
     refusedResults([f], outsideProgram(f)),
   );
   const checked = files.filter((f) => program.has(f));
-  rejectUnreadableFormulas(checked);
+  const parsed = readFormulas(checked);
+  // Atoms are host code the gate never saw: type them before any engine
+  // does, and report a fault as the annotation's own InputError.
+  const typed = typeFormulas(parsed, check.checked);
+  const typeErrors = inputErrorResults(typed.invalid);
   const runDir = claimRunDir(base.startedAt);
-  const planned = spine.plan(checked, runDir);
+  const planned = spine.plan(checked, runDir, typed.refused);
   const plan: Plan = {
     ...planned,
-    inputErrors: [...gateErrors, ...planned.inputErrors],
+    inputErrors: [...gateErrors, ...typeErrors, ...planned.inputErrors],
   };
   noteUnsupportedRanges(plan.untried);
   const meta = { ...base, ...plan.meta };
@@ -435,26 +444,29 @@ function resolve(patterns: string[]): string[] {
   return files;
 }
 
-/** Reject a formula lemma's parsers cannot read before any engine runs: a
- * parse-level reject is a compile error whichever command asked, so every
- * command aborts on the same diagnostic. A clamp-emptied interval parses;
- * the engines contain it per annotation. */
-function rejectUnreadableFormulas(files: string[]): void {
-  for (const file of files) {
-    for (const a of extract(file).annotations) {
+/** Extract and parse every formula once, before any engine runs. A formula
+ * Lemma's parsers cannot read is a compile error whichever command asked,
+ * so the run aborts on that diagnostic; a clamp-emptied interval parses
+ * and stays for the engines to contain per annotation. */
+function readFormulas(files: string[]): ParsedFile[] {
+  return files.map((file) => {
+    const { exports, classes, annotations } = extract(file);
+    const parsed: ParsedAnnotation[] = annotations.map((raw) => {
       try {
-        parseBody(parsePrefix(a.formula).body);
+        const { binders, body } = parsePrefix(raw.formula);
+        return { raw, parsed: { binders, formula: parseBody(body) } };
       } catch (e) {
-        if (e instanceof EmptyAfterClampError) continue;
+        if (e instanceof EmptyAfterClampError) return { raw };
         if (e instanceof LemmaError)
           throw new LemmaError(
-            `${file}:${a.line}: @ensures{${a.propertyName}}: ${e.message}`,
+            `${file}:${raw.line}: @ensures{${raw.propertyName}}: ${e.message}`,
             { cause: e },
           );
         throw e;
       }
-    }
-  }
+    });
+    return { file, exports, classes, annotations: parsed };
+  });
 }
 
 /** The engine-independent enumeration: every annotation lemma can extract
@@ -463,7 +475,10 @@ function rejectUnreadableFormulas(files: string[]): void {
  * itself cannot read is a compile error whichever command asked; a domain
  * the safe-integer clamp empties is refused per annotation, as both
  * engines refuse it. */
-function enumerate(files: string[]): {
+function enumerate(
+  files: string[],
+  refused: ReadonlySet<string>,
+): {
   untried: AnnotationResult[];
   invalid: { file: string; invalid: InvalidAnnotation[] }[];
 } {
@@ -473,6 +488,7 @@ function enumerate(files: string[]): {
     const extracted = extract(file);
     invalid.push({ file, invalid: extracted.invalid });
     for (const a of extracted.annotations) {
+      if (refused.has(annotationKey(file, a))) continue;
       const identity = {
         file,
         function: qualifiedName(a.functionName, a.className, a.isStatic),
@@ -519,9 +535,9 @@ function enumerate(files: string[]): {
 
 function refuteSpine(seed: number): Spine {
   return {
-    plan(files, runDir) {
+    plan(files, runDir, refused) {
       const outRoot = path.join(runDir, "pabst");
-      const results = generate(files, outRoot, seed);
+      const results = generate(files, outRoot, seed, refused);
       const identities: PlannedProperty[] = results.flatMap((r) =>
         r.properties.map((p) => ({ file: r.sourceFile, ...p })),
       );
@@ -655,9 +671,9 @@ function plainProveSpine(): Spine {
   const sourceOf = new Map<string, string>();
   const jsonOf = new Map<string, string>();
   return {
-    plan(files, runDir) {
+    plan(files, runDir, refused) {
       const outRoot = path.join(runDir, "thales");
-      const artifacts = writeEmissionArtifacts(files, outRoot);
+      const artifacts = writeEmissionArtifacts(files, outRoot, refused);
       const inputErrors = inputErrorResults(
         artifacts.map((a) => ({ file: a.sourceFile, invalid: a.invalid })),
       );
@@ -734,8 +750,8 @@ function plainProveSpine(): Spine {
  * and reports every annotation NotTried. */
 function stubSpine(command: Command): Spine {
   return {
-    plan(files) {
-      const { untried, invalid } = enumerate(files);
+    plan(files, _runDir, refused) {
+      const { untried, invalid } = enumerate(files, refused);
       const inputErrors = inputErrorResults(invalid);
       console.error(`lakatos: ${command} is not implemented yet`);
       return {

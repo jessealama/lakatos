@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { qualifiedName } from "../src/qualified-name.js";
+import { annotationKey, qualifiedName } from "../src/qualified-name.js";
 
 describe("qualifiedName", () => {
   it("returns the bare name for a free function", () => {
@@ -12,5 +12,26 @@ describe("qualifiedName", () => {
 
   it("uses . for a static method", () => {
     expect(qualifiedName("of", "Counter", true)).toBe("Counter.of");
+  });
+});
+
+describe("annotationKey", () => {
+  it("is the envelope identity as one string: file, qualified function, property", () => {
+    expect(
+      annotationKey("a.ts", {
+        functionName: "m",
+        className: "C",
+        isStatic: false,
+        propertyName: "p",
+      }),
+    ).toBe(JSON.stringify(["a.ts", "C#m", "p"]));
+    expect(
+      annotationKey("a.ts", { functionName: "f", propertyName: "p" }),
+    ).toBe(JSON.stringify(["a.ts", "f", "p"]));
+  });
+
+  it("separates the same member in two files", () => {
+    const a = { functionName: "f", propertyName: "p" };
+    expect(annotationKey("a.ts", a)).not.toBe(annotationKey("b.ts", a));
   });
 });

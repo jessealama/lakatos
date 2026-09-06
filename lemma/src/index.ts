@@ -22,10 +22,23 @@ export type {
 } from "./binder.js";
 export { isClassCtorDomain } from "./binder.js";
 
+export { freeIdentifiers } from "./free-idents.js";
+
+export { typeFormulas } from "./island-types.js";
+export type {
+  IslandTyping,
+  ParsedAnnotation,
+  ParsedFile,
+} from "./island-types.js";
+
 export { collectAtoms } from "./formula-ast.js";
 export type { Formula } from "./formula-ast.js";
 
-export { QUALIFIED_NAME_PATTERN, qualifiedName } from "./qualified-name.js";
+export {
+  annotationKey,
+  QUALIFIED_NAME_PATTERN,
+  qualifiedName,
+} from "./qualified-name.js";
 
 export { mirrorPath } from "./mirror.js";
 
@@ -33,7 +46,11 @@ export { resolveFiles } from "./discover.js";
 export type { Discovery } from "./discover.js";
 
 export { REQUIRED_OPTIONS, typecheckProject } from "./typecheck.js";
-export type { TypecheckDiagnostic, TypecheckResult } from "./typecheck.js";
+export type {
+  CheckedProgram,
+  TypecheckDiagnostic,
+  TypecheckResult,
+} from "./typecheck.js";
 
 export { extract, extractFromSource } from "./extract.js";
 export type {
