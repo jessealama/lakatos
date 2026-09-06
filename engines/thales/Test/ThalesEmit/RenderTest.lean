@@ -268,74 +268,145 @@ def obl (binders : Array BinderIR) (guards : Array JsExpr) (c : Conclusion) :
   `(#thales_prove "t.ts" "f" "p" :=
       ∀ (bump : Int), TsModel.bump (Float.ofInt bump) = TsModel.bump (Float.ofInt bump))
 
--- A parameter the body both rebinds at its top level and assigns is not
--- also rebound `let mut x := x`: the top-level binding is the one the
--- body reads, so a second shadow would only be noise.
-#eval show CoreM Unit from do
-  let f : EmitFn := {
-    name := "f", module := none, source := "",
-    params := #[{ name := "x", ty := .number },
-                { name := "y", ty := .union #[.number, .undefined] }],
-    body := #[
-      .letDecl "y" .number
-        (.cond (.jsvalEq false (.id "y") (.inject .undefined none))
-          (.num "1") (.project .number (.id "y"))),
-      .assign "y" (.binop "+" (.id "y") (.id "x")),
-      .ret (.id "y")] }
-  let cmd ← match RenderM.run (fnCommand f) with
-    | .error msg => throwError msg
-    | .ok cmd => pure cmd
-  let text := toString (← Lean.PrettyPrinter.ppCommand ⟨unscope cmd.raw⟩)
-  unless (text.splitOn "let mut y").length == 2 do
-    throwError "expected exactly one `let mut y` binding, got:\n{text}"
+def stmt (s : JsStmt) : RenderM (TSyntax `doElem) := stmtDoElem none s
+def ctorStmt (straight : List String) (s : JsStmt) : RenderM (TSyntax `doElem) :=
+  stmtDoElem (some straight) s
 
--- A module constant renders as a dual-tagged JsNumber def, and a read of
--- it as a qualified reference, so no binder can capture it.
-#eval show CoreM Unit from do
-  let e : Emission := {
-    file := "t.ts"
-    declarations := #[
-      .const { name := "cap", lit := "1000", source := "const cap = 1000;" },
-      .fn { name := "scale", params := nums #["x"], source := "scale",
-            body := #[.ret (.binop "*" (.id "x") (.constRead "cap" none))] }]
-    obligations := #[] }
-  let rendered ← renderEmission e
-  unless (rendered.splitOn "def TsModel.cap : JsNumber :=").length == 2 do
-    throwError "the constant def did not render:\n{rendered}"
-  -- Both the constant and the function carry the dual tag.
-  unless (rendered.splitOn "@[js_norm, grind]").length == 3 do
-    throwError "the constant def is not dual-tagged:\n{rendered}"
-  unless (rendered.splitOn "x * TsModel.cap").length == 2 do
-    throwError "the constant read is not a qualified reference:\n{rendered}"
+-- One do-element per statement; locals are ascribed.
+#guard rendersSyntax (stmt (.ret (.id "x"))) `(doElem| return x)
+#guard rendersSyntax (stmt (.throwErr "RangeError")) `(doElem| throw (JsError.error "RangeError"))
+#guard rendersSyntax (stmt (.constDecl "y" .number (.id "x"))) `(doElem| let y : JsNumber := x)
+#guard rendersSyntax (stmt (.constDecl "w" (.union #[.number, .string]) (.id "v")))
+  `(doElem| let w : JsVal := v)
+#guard rendersSyntax (stmt (.constDecl "p" (.cls "Pt" none) (.id "q"))) `(doElem| let p : TsModel.Pt := q)
+#guard rendersSyntax (stmt (.letDecl "y" .number (.id "x"))) `(doElem| let mut y : JsNumber := x)
+#guard rendersSyntax (stmt (.assign "y" (.binop "+" (.id "y") (.num "1")))) `(doElem| y := y + 1)
 
--- Emitted defs live under the model namespace: a TS function named
--- after a root-level Lean name (`id`) must still define.
-#eval show CoreM Unit from do
-  let e : Emission := {
-    file := "t.ts"
-    declarations := #[.fn { name := "id", params := nums #["x"], source := "id",
-                            body := #[.ret (.id "x")] }]
-    obligations := #[] }
-  let rendered ← renderEmission e
-  unless (rendered.splitOn "def TsModel.id ").length == 2 do
-    throwError "the emitted def is not namespaced:\n{rendered}"
+-- `if` chains: no else, an else, an else-if grafted onto the same node,
+-- an empty arm as `pure ()`.
+#guard rendersSyntax (stmt (.ite (.id "c") #[.ret (.num "0")] none))
+  `(doElem| if c then return 0)
+#guard rendersSyntax (stmt (.ite (.id "c") #[.ret (.num "0")] (some #[.ret (.num "1")])))
+  `(doElem| if c then return 0 else return 1)
+#guard rendersSyntax
+  (stmt (.ite (.id "c") #[.ret (.num "0")]
+    (some #[.ite (.id "d") #[.ret (.num "1")] (some #[.ret (.num "2")])])))
+  `(doElem| if c then return 0 else if d then return 1 else return 2)
+#guard rendersSyntax
+  (stmt (.ite (.id "c") #[.ret (.num "0")] (some #[.ite (.id "d") #[.ret (.num "1")] none])))
+  `(doElem| if c then return 0 else if d then return 1)
+#guard rendersSyntax (stmt (.ite (.id "c") #[] none)) `(doElem| if c then pure ())
 
--- A mutable local renders as `let mut`, a reassigned parameter is rebound
--- ahead of the body, and no join helper reaches the source text.
-#eval show CoreM Unit from do
-  let e : Emission := {
-    file := "t.ts"
-    declarations := #[.fn { name := "clampUp", params := nums #["x"], source := "clampUp",
-                            body := #[
-                              .ite (.binop "<" (.id "x") (.num "1"))
-                                #[.assign "x" (.num "1")] none,
-                              .ret (.id "x")] }]
-    obligations := #[] }
-  let rendered ← renderEmission e
-  unless (rendered.splitOn "let mut x := x").length == 2 do
-    throwError "the assigned parameter is not rebound:\n{rendered}"
-  unless (rendered.splitOn "fun").length == 1 do
-    throwError "a helper lambda leaked into the source text:\n{rendered}"
+-- Field assignment renders only inside a constructor: a straight field
+-- as a let, a branch-set field as a reassignment.
+#guard rendersSyntax (ctorStmt ["v"] (.fieldSet "v" (.id "v")))
+  `(doElem| let «this.v» : JsNumber := v)
+#guard rendersSyntax (ctorStmt [] (.fieldSet "#v" (.id "v"))) `(doElem| «this.#v» := v)
+#guard renderFails (stmt (.fieldSet "v" (.id "v")))
+
+-- Parameter groups: a maximal run of one type shares a group.
+#guard rendersSyntax
+  (do let bs ← paramBinders #[{ name := "x", ty := .number }, { name := "y", ty := .number }]
+      `(def f $bs* : Nat := 0))
+  `(def f (x y : JsNumber) : Nat := 0)
+#guard rendersSyntax
+  (do let bs ← paramBinders
+        #[{ name := "x", ty := .number }, { name := "v", ty := .union #[.number, .string] },
+          { name := "p", ty := .cls "Pt" none }, { name := "q", ty := .option "Pt" none },
+          { name := "y", ty := .number }]
+      `(def f $bs* : Nat := 0))
+  `(def f (x : JsNumber) (v : JsVal) (p : TsModel.Pt) (q : Option TsModel.Pt) (y : JsNumber) : Nat := 0)
+
+-- A function: dual-tagged, namespaced, an assigned parameter rebound
+-- ahead of the body, a parameter the body itself rebinds not rebound twice.
+#guard rendersSyntax
+  (fnCommand { name := "add", params := nums #["a", "b"], source := "",
+               body := #[.ret (.binop "+" (.id "a") (.id "b"))] })
+  `(@[js_norm, grind] def TsModel.add (a b : JsNumber) : JsM JsNumber := do
+      return a + b)
+#guard rendersSyntax
+  (fnCommand { name := "id", params := nums #["x"], source := "", body := #[.ret (.id "x")] })
+  `(@[js_norm, grind] def TsModel.id (x : JsNumber) : JsM JsNumber := do
+      return x)
+#guard rendersSyntax
+  (fnCommand { name := "clampUp", params := nums #["x"], source := "",
+               body := #[.ite (.binop "<" (.id "x") (.num "1")) #[.assign "x" (.num "1")] none,
+                         .ret (.id "x")] })
+  `(@[js_norm, grind] def TsModel.clampUp (x : JsNumber) : JsM JsNumber := do
+      let mut x := x
+      if Float.lt x 1 then x := 1
+      return x)
+#guard rendersSyntax
+  (fnCommand { name := "f", params := #[{ name := "x", ty := .number },
+                                        { name := "y", ty := .union #[.number, .undefined] }],
+               source := "",
+               body := #[.letDecl "y" .number
+                           (.cond (.jsvalEq false (.id "y") (.inject .undefined none))
+                             (.num "1") (.project .number (.id "y"))),
+                         .assign "y" (.binop "+" (.id "y") (.id "x")),
+                         .ret (.id "y")] })
+  `(@[js_norm, grind] def TsModel.f (x : JsNumber) (y : JsVal) : JsM JsNumber := do
+      let mut y : JsNumber :=
+        (← if JsVal.strictEq y JsVal.undef then ((do return 1) : JsM _)
+           else ((do return (← JsVal.toNumber y)) : JsM _))
+      y := y + x
+      return y)
+#guard rendersSyntax
+  (fnCommand { name := "double", module := some "helper.mts", params := nums #["x"], source := "",
+               body := #[.ret (.binop "*" (.id "x") (.num "2"))] })
+  `(@[js_norm, grind] def TsModel.«helper.mts».double (x : JsNumber) : JsM JsNumber := do
+      return x * 2)
+#guard renderFails
+  (fnCommand { name := "helper.mts::double", params := nums #["x"], source := "", body := #[.ret (.id "x")] })
+#guard renderFails
+  (fnCommand { name := "d", module := some "a«b", params := nums #["x"], source := "", body := #[.ret (.id "x")] })
+#guard renderFails
+  (fnCommand { name := "d", module := some "/abs.ts", params := nums #["x"], source := "", body := #[.ret (.id "x")] })
+#guard renderFails
+  (fnCommand { name := "d", module := some "", params := nums #["x"], source := "", body := #[.ret (.id "x")] })
+
+-- A constant is a pure, dual-tagged def.
+#guard rendersSyntax (constCommand { name := "cap", lit := "1000", source := "" })
+  `(@[js_norm, grind] def TsModel.cap : JsNumber := 1000)
+#guard rendersSyntax (constCommand { name := "cap", module := some "constants.mts", lit := "-0.5", source := "" })
+  `(@[js_norm, grind] def TsModel.«constants.mts».cap : JsNumber := -0.5)
+
+/-- A one-field class with a straight constructor. -/
+def box : EmitClass :=
+  { name := "Box", source := "", fields := #["#v"], ctorParams := nums #["v"],
+    ctorBody := #[.fieldSet "#v" (.id "v")],
+    getters := #[{ name := "v", body := #[.ret (.fieldRead "Box" none "#v" .selfRef)] }],
+    methods := #[{ name := "scale", params := nums #["k"],
+                   body := #[.ret (.binop "*" (.fieldRead "Box" none "#v" .selfRef) (.id "k"))] }] }
+
+/-- A field the printer would not escape carries its guillemets inside the
+name component, a spelling no quotation can write, so it is spliced. -/
+def hashV : Ident := mkIdent (Name.mkSimple "«#v»")
+
+-- Structure, constructor, getter, method.
+#guard rendersSyntax (structCommand box) `(structure TsModel.Box where $hashV:ident : JsNumber)
+#guard rendersSyntax (structCommand { box with fields := #[], ctorParams := #[], ctorBody := #[] })
+  `(structure TsModel.Box)
+#guard rendersSyntax (ctorCommand box)
+  `(@[js_norm, grind] def TsModel.Box.construct (v : JsNumber) : JsM TsModel.Box := do
+      let «this.#v» : JsNumber := v
+      return TsModel.Box.mk «this.#v»)
+-- A field set inside a branch gets the mut prelude.
+#guard rendersSyntax
+  (ctorCommand { box with
+                 fields := #["v"],
+                 ctorBody := #[.ite (.binop "<" (.id "v") (.num "0"))
+                                 #[.fieldSet "v" (.num "0")] (some #[.fieldSet "v" (.id "v")])] })
+  `(@[js_norm, grind] def TsModel.Box.construct (v : JsNumber) : JsM TsModel.Box := do
+      let mut «this.v» : JsNumber := 0
+      if Float.lt v 0 then «this.v» := 0 else «this.v» := v
+      return TsModel.Box.mk «this.v»)
+#guard rendersSyntax (getterCommand box box.getters[0]!)
+  `(@[js_norm, grind] def TsModel.Box.v (self : TsModel.Box) : JsM JsNumber := do
+      return TsModel.Box.«#v» self)
+#guard rendersSyntax (methodCommand box box.methods[0]!)
+  `(@[js_norm, grind] def TsModel.Box.scale (self : TsModel.Box) (k : JsNumber) : JsM JsNumber := do
+      return TsModel.Box.«#v» self * k)
 
 -- What the lift barrier buys, written out by hand: the arm the condition
 -- passed over does not run, so its throw does not escape.
@@ -349,112 +420,3 @@ private def barrier (c : Bool) : JsM JsNumber := do
 #guard (barrier true) matches .ok _
 #guard (barrier false) matches .error _
 end
-
--- A shape outside the slice is refused with a message naming the gap.
--- Module qualification travels in the `module` field; a joined spelling
--- in `name` is not a second way in.
-#eval show CoreM Unit from do
-  let e : Emission := {
-    file := "t.ts"
-    declarations := #[.fn { name := "helper.mts::double", params := nums #["x"],
-                            source := "f", body := #[.ret (.id "x")] }]
-    obligations := #[] }
-  let refused ← try
-    let _ ← renderEmission e
-    pure false
-  catch _ => pure true
-  unless refused do
-    throwError "a joined module-qualified name was rendered instead of refused"
-
--- A module path that would break its own name component is refused, not
--- approximated: the artifact is re-parsed text.
-#eval show CoreM Unit from do
-  for bad in ["a«b", "/abs.ts", ""] do
-    let e : Emission := {
-      file := "t.ts"
-      declarations := #[.fn { name := "double", module := some bad, params := nums #["x"],
-                              source := "f", body := #[.ret (.id "x")] }]
-      obligations := #[] }
-    let refused ← try
-      let _ ← renderEmission e
-      pure false
-    catch _ => pure true
-    unless refused do
-      throwError s!"module path '{bad}' was rendered instead of refused"
-
--- A method is a function of the instance and its parameters, rendered
--- after the getters so an earlier method resolves for a later body.
-#eval show CoreM Unit from do
-  let box : EmitClass := {
-    name := "Box", source := "class Box"
-    fields := #["#v"], ctorParams := nums #["v"]
-    ctorBody := #[.fieldSet "#v" (.id "v")]
-    getters := #[]
-    methods := #[
-      { name := "base", params := #[]
-        body := #[.ret (.fieldRead "Box" none "#v" .selfRef)] },
-      { name := "scale", params := nums #["k"]
-        body := #[.ret (.binop "*"
-          (.methodCall "Box" none "base" .selfRef #[]) (.id "k"))] }] }
-  let e : Emission := { file := "t.ts", declarations := #[.cls box], obligations := #[] }
-  let rendered ← renderEmission e
-  unless (rendered.splitOn "def TsModel.Box.base (self : TsModel.Box) : JsM JsNumber := do").length == 2 do
-    throwError "the zero-parameter method def is missing:\n{rendered}"
-  unless (rendered.splitOn "def TsModel.Box.scale (self : TsModel.Box) (k : JsNumber) : JsM JsNumber := do").length == 2 do
-    throwError "the parameterized method def is missing:\n{rendered}"
-  unless (rendered.splitOn "← TsModel.Box.base self").length == 2 do
-    throwError "the this-call is not applied to self:\n{rendered}"
-
-/-- The union signature most union fixtures share. -/
-def unionParam (n : String) : Param :=
-  { name := n, ty := .union #[.number, .string] }
-
--- A union-typed parameter renders as `(v : JsVal)` — one Lean type for
--- every union spelling — with the typeof dispatch, the throwing
--- projection behind `←`, and the injected obligation argument.
-#eval show CoreM Unit from do
-  let e : Emission := {
-    file := "t.ts"
-    declarations := #[.fn
-      { name := "toNum", params := #[unionParam "v"], source := "toNum",
-        body := #[
-          .ite (.typeofTest (.id "v") "number")
-            #[.ret (.project .number (.id "v"))] none,
-          .ret (.num "0")] }]
-    obligations := #[
-      { function := "toNum", property := "numId", formula := "f",
-        payload := .structured #[.number "x" none none] #[]
-          (.eq (.call "toNum" none #[.inject .number (some (.id "x"))])
-               (.id "x")) }] }
-  let rendered ← renderEmission e
-  unless (rendered.splitOn "def TsModel.toNum (v : JsVal) : JsM JsNumber := do").length == 2 do
-    throwError "the union parameter is not a JsVal binder:\n{rendered}"
-  unless (rendered.splitOn "if JsVal.typeof v == TypeofResult.number then").length == 2 do
-    throwError "the typeof test did not render:\n{rendered}"
-  unless (rendered.splitOn "return (← JsVal.toNumber v)").length == 2 do
-    throwError "the projection is not behind ←:\n{rendered}"
-  unless (rendered.splitOn "TsModel.toNum (JsVal.num x)").length == 2 do
-    throwError "the obligation argument is not injected:\n{rendered}"
-
--- strictEq spells `===` over unions; a parameter spelled like the new
--- vocabulary is primed out of its way.
-#eval show CoreM Unit from do
-  let e : Emission := {
-    file := "t.ts"
-    declarations := #[
-      .fn
-        { name := "eq", params := #[unionParam "v", unionParam "w"],
-          source := "eq",
-          body := #[
-            .ite (.jsvalEq false (.id "v") (.id "w"))
-              #[.ret (.num "1")] none,
-            .ret (.num "0")] },
-      .fn
-        { name := "shadow", params := #[{ name := "JsVal", ty := .number }],
-          source := "shadow", body := #[.ret (.id "JsVal")] }]
-    obligations := #[] }
-  let rendered ← renderEmission e
-  unless (rendered.splitOn "if JsVal.strictEq v w then").length == 2 do
-    throwError "strictEq over JsVal did not render:\n{rendered}"
-  unless (rendered.splitOn "JsVal'").length == 3 do
-    throwError "the JsVal-spelled parameter was not primed:\n{rendered}"
