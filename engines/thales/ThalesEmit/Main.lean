@@ -22,11 +22,15 @@ unsafe def main (args : List String) : IO UInt32 := do
         return 1
       | .ok e => pure e
     initSearchPath (← findSysroot)
-    let out ← withImportModules #[{ module := `ThalesDsl }] {} (trustLevel := 0)
-      fun env => do
-        let ctx : Core.Context := { fileName := "<thales-emit>", fileMap := default }
-        let (out, _) ← (renderEmission emission).toIO ctx { env }
-        pure out
+    -- `withImportModules` leaves every environment extension at its
+    -- initial state, which is a `CoreM` with no parser tables: the
+    -- artifact's own syntax would not read back. Loading them runs the
+    -- imported initializers, so that is enabled first.
+    enableInitializersExecution
+    let env ← importModules #[{ module := `ThalesDsl }] {} (trustLevel := 0)
+      (loadExts := true)
+    let ctx : Core.Context := { fileName := "<thales-emit>", fileMap := default }
+    let (out, _) ← (renderEmission emission).toIO ctx { env }
     IO.FS.writeFile outPath out
     return 0
   catch ex =>
