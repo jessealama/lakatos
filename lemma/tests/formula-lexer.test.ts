@@ -97,11 +97,11 @@ describe("lexFormula — rejected quantifiers", () => {
   it("rejects ∃ / exists with a teaching error", () => {
     expectLemmaError(
       () => lexFormula("∃ x, p(x)"),
-      /existential quantifiers .* not supported/i,
+      /existential quantifiers .* not supported: .*cannot confirm ∃, and .*enumeration .* not yet wired/i,
     );
     expectLemmaError(
       () => lexFormula("exists x"),
-      /existential quantifiers .* not supported/i,
+      /existential quantifiers .* not supported: .*cannot confirm ∃, and .*enumeration .* not yet wired/i,
     );
   });
   it("rejects a nested ∀ / forall in the body", () => {

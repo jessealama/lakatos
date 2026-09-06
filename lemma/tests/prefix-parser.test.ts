@@ -123,11 +123,11 @@ describe("parsePrefix — existential", () => {
   it("rejects a leading ∃ / exists with a teaching error", () => {
     expectLemmaError(
       () => parsePrefix("∃ (x: int) { p(x) }"),
-      /existential quantifiers .* not supported/i,
+      /existential quantifiers .* not supported: .*cannot confirm ∃, and .*enumeration .* not yet wired/i,
     );
     expectLemmaError(
       () => parsePrefix("exists (x: int) { p(x) }"),
-      /existential quantifiers .* not supported/i,
+      /existential quantifiers .* not supported: .*cannot confirm ∃, and .*enumeration .* not yet wired/i,
     );
   });
 });
