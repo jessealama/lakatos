@@ -8,17 +8,11 @@ import {
   REPORT_EXPORT,
   RUNTIME_SPECIFIER,
 } from "./contract.js";
+import { ctorCall, ctorShape } from "./ctor.js";
 import { arbitraryFor } from "./domains.js";
 import { emitEnumerated } from "./enumerate.js";
-import {
-  type ClassCtorDomain,
-  type CtorParam,
-  isClassCtorDomain,
-  isClassDomain,
-  qualifiedName,
-} from "../../../lemma/src/index.js";
+import { isClassDomain, qualifiedName } from "../../../lemma/src/index.js";
 import type { PropertySpec } from "./ir.js";
-import type { CtorShape } from "./runtime.js";
 
 const SRC_EXT = /\.(ts|tsx|mts|cts|js|mjs|cjs)$/;
 
@@ -140,30 +134,4 @@ function emitProp(
   out.push(`${indent}  return __r;`);
   out.push(`${indent}});`);
   return out.join("\n");
-}
-
-/** The construction expression for one binder. JS evaluates arguments
- * left to right and innermost first, so a single try around this call
- * discards the tuple whichever level throws. */
-function ctorCall(cls: string, params: CtorParam[], tuple: string): string {
-  if (params.every((p) => !isClassCtorDomain(p.domain))) {
-    return `new ${cls}(...${tuple})`;
-  }
-  const args = params.map((p, i) =>
-    isClassCtorDomain(p.domain)
-      ? ctorCall(p.domain.className, p.domain.ctorParams!, `${tuple}[${i}]`)
-      : `${tuple}[${i}]`,
-  );
-  return `new ${cls}(${args.join(", ")})`;
-}
-
-/** The same tree, for the reporter: it renders the counterexample tuple
- * back as the construction that reproduces the instance. */
-function ctorShape(domain: ClassCtorDomain): CtorShape {
-  return {
-    className: domain.className,
-    params: domain.ctorParams!.map((p) =>
-      isClassCtorDomain(p.domain) ? ctorShape(p.domain) : null,
-    ),
-  };
 }
