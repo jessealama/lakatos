@@ -1248,7 +1248,10 @@ describe("formula classification", () => {
     ]);
   });
 
-  test("an unbound identifier fails property elaboration", () => {
+  // Behind the CLI these never fire: island typing refuses an ill-typed
+  // atom before emission. They pin the walk's own check, the engine-bug
+  // signal, which emitModule still reaches when called directly.
+  test("an unbound identifier is the walk's invariant Error", () => {
     expect(
       classifications(formulaWith("forall (x: int ∈ [0, 5)) { f(x) ≡ q }"))
         .classified,
@@ -1257,7 +1260,7 @@ describe("formula classification", () => {
     ]);
   });
 
-  test("a number-valued conclusion call fails property elaboration", () => {
+  test("a number-valued conclusion call is the walk's invariant Error", () => {
     expect(
       classifications(formulaWith("forall (x: int ∈ [0, 5)) { f(x) }"))
         .classified,
@@ -1269,7 +1272,7 @@ describe("formula classification", () => {
     ]);
   });
 
-  test("a numeric conclusion atom fails property elaboration", () => {
+  test("a numeric conclusion atom is the walk's invariant Error", () => {
     expect(
       classifications(formulaWith("forall (x: int ∈ [0, 5)) { x + 1 }"))
         .classified,
@@ -1286,7 +1289,7 @@ describe("formula classification", () => {
     ["an identifier", "x", "identifier 'x' is a number, not a boolean"],
     ["a unary minus", "-x", "operator '-' yields a number, not a boolean"],
   ])(
-    "%s as the whole conclusion fails property elaboration",
+    "%s as the whole conclusion is the walk's invariant Error",
     (_label, atom, message) => {
       expect(
         classifications(formulaWith(`forall (x: int ∈ [0, 5)) { ${atom} }`))

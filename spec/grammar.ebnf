@@ -147,4 +147,7 @@ island          ::= ?an opaque JavaScript/TypeScript expression?
      default initializers; ≠ is rejected with a hint to write ≢.
    - An equation may not sit beside a depth-0 ??, ?:, ===/!==, comma,
      or => — parenthesize the intended grouping.
-   - Every free identifier must be exported from the annotated module. *)
+   - Atoms type check as host expressions in the module's scope, binders
+     bound at their domains' host types, in a boolean position; free
+     identifiers are module exports or standard-library globals
+     (semantics.md, Islands). *)

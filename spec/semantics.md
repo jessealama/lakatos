@@ -253,16 +253,27 @@ A domain may be a class name: `∀ (p q : Point) { 0 <= p.distance(q) }`.
 - **Well-formedness**: an island is an opaque expression of the host
   language (TypeScript). This specification defers island *syntax*
   entirely to the host; it constrains what islands may *do*:
-  - must evaluate to a genuine boolean (in atom position);
+  - must type check as an expression of the host language, in the scope
+    of the annotated module, with every binder bound at the host type of
+    its domain: `int`, `nat`, and `number` at `number`; `boolean`,
+    `string`, and `bigint` at themselves (a string pattern is a guard, not
+    a type); a class domain at the class;
+  - must, in atom position, type check where a boolean is demanded, and
+    evaluate to a genuine boolean;
   - must be pure: no assignments, no observable side effects;
-  - free identifiers must be exported from the annotated module.
+  - may name, among free identifiers, only exports of the annotated
+    module and globals of the host's standard library. A name the module
+    declares or imports without exporting is a fault, as is any other
+    ambient name.
 - **Truth conditions**: the value of the expression under the host
   language's semantics, with binders bound to the assignment under test.
 - **Engine obligations**: the refuter evaluates islands natively; the
   prover translates islands into its logic and must state, in its verdict,
   any island it instead treated as opaque (an assumption, not a proof —
-  see trust reporting below). TODO: the admissible-island subset for
-  provers.
+  see trust reporting below). Neither engine sees an island that fails
+  these conditions: a frontend refuses it before either runs, reporting
+  the annotation as `InputError` (see `../spec/fixtures/README.md`, island
+  fixtures). TODO: the admissible-island subset for provers.
 
 ## `@throws`
 

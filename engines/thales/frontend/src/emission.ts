@@ -305,7 +305,8 @@ function exactSig(params: ValueTy[]): FnSig {
 
 /** The arity check every call shares. A call may omit arguments the
  * signature fills — trailing optionals and defaults — and nothing else;
- * tsc refuses the rest first, so a miss here is an invariant. */
+ * tsc refuses the rest first, in bodies through the gate and in atoms
+ * through island typing, so a miss here is an invariant. */
 function checkArity(name: string, sig: FnSig, got: number): void {
   const total = sig.params.length;
   if (got >= sig.minArgs && got <= total) return;
@@ -1268,11 +1269,13 @@ function describeTy(t: Expected): string {
 }
 
 /** The typed walk's refusal. Without a construct it is an invariant: the
- * gate guarantees a strict-clean program, so an arity, binding, or type
- * mismatch here means the walk's typing disagrees with tsc — an engine
- * fault, reported `Error`. A construct rides along when the failure is the
- * input's (a degraded declaration, an unmodeled operator), keeping the
- * classification `Inappropriate` through every catch that wraps the walk. */
+ * gate guarantees a strict-clean program and the CLI's island typing a
+ * tsc-clean formula, so an arity, binding, member, or type mismatch here
+ * — in a body or an atom — means the walk's typing disagrees with tsc: an
+ * engine fault, reported `Error`. A construct rides along when the failure
+ * is the input's (a degraded declaration, an unmodeled operator), keeping
+ * the classification `Inappropriate` through every catch that wraps the
+ * walk. */
 class ModelError extends Error {
   constructor(
     reason: string,
