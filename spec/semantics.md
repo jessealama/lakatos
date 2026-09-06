@@ -302,7 +302,9 @@ as `cases`. The claim is about the observed executions under the runtime
 that ran them: impure code invalidates it exactly as it invalidates a
 sampled counterexample. A refuter whose walk runs out of budget reports
 `Timeout` with kind `budget`, never `GaveUp`: it neither sampled nor
-finished, and its reason says how many tuples it evaluated.
+finished, and its reason says how many tuples it evaluated. The budget
+bounds where the walk starts its next tuple, not when it ends: a walk that
+finishes is a `Theorem` however long its last tuple took.
 
 TODO: the exact sub-status composition rules for frontends aggregating two
 engines' reports.

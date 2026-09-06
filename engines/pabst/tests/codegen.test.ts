@@ -78,7 +78,7 @@ export class Counter {
       { function: "square", property: "pos", cases: 10 },
     ]);
     const code = fs.readFileSync(r!.outFile!, "utf8");
-    expect(code).toContain('test("pos", { timeout: 8000 }');
+    expect(code).toContain('test("pos", { timeout: 0 }');
   });
 
   it("skips a file with no @ensures annotations", () => {

@@ -16,12 +16,11 @@ import type { PropertySpec } from "./ir.js";
 /** Largest domain the refuter walks in full instead of sampling. */
 export const ENUMERATION_CAP = 1000n;
 
-/** Wall clock an enumerated test may spend in its loop. */
+/** Wall clock an enumerated test may spend in its loop, checked before each
+ * tuple. It is the walk's only bound: vitest's own timer cannot interrupt a
+ * synchronous loop and would only fail a finished walk after the fact, so
+ * the emitted test disables it. */
 export const LOOP_BUDGET_MS = 4000;
-
-/** The per-test timeout the emitted test declares. vitest's timer cannot
- * interrupt a synchronous loop, so it must sit above the loop budget. */
-export const TEST_TIMEOUT_MS = 8000;
 
 /** The tuple count when the spec is walked in full, else undefined. */
 export function enumerationCases(binders: Binder[]): number | undefined {
@@ -135,7 +134,7 @@ export function emitEnumerated(
     ? `, [${shapes.map((c) => JSON.stringify(c)).join(", ")}]`
     : "";
   const out: string[] = [];
-  out.push(`${indent}test(${name}, { timeout: ${TEST_TIMEOUT_MS} }, () => {`);
+  out.push(`${indent}test(${name}, { timeout: 0 }, () => {`);
   out.push(
     `${indent}  const __fail = (__cx: unknown[], __e: { message?: string } | null) => ${REPORT_ALIAS}(${ident}, [${varNames}], { failed: true, counterexample: __cx, errorInstance: __e }${ctors});`,
   );

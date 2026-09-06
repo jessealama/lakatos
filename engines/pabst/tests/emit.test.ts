@@ -294,8 +294,8 @@ describe("emit — enumerated specs", () => {
     );
   });
 
-  it("emits a plain test with an explicit timeout above the loop budget", () => {
-    expect(out).toContain('    test("pos", { timeout: 8000 }, () => {');
+  it("emits a plain test with vitest's timeout disabled", () => {
+    expect(out).toContain('    test("pos", { timeout: 0 }, () => {');
     expect(out).not.toContain("test.prop(");
   });
 
@@ -334,7 +334,7 @@ describe("emit — enumerated specs", () => {
       42,
     );
     expect(both).toContain("test.prop([fc.integer(), fc.double()]");
-    expect(both).toContain('test("pos", { timeout: 8000 }');
+    expect(both).toContain('test("pos", { timeout: 0 }');
   });
 });
 
