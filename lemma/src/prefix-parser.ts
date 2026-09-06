@@ -254,6 +254,13 @@ function parseBinderGroup(
     if (!NAME.test(n)) {
       throw new LemmaError(`invalid binder variable name '${n}'`);
     }
+    // Generated tests declare their own scaffolding under this prefix; a
+    // binder spelling it would shadow that scaffolding and corrupt the run.
+    if (n.startsWith("__")) {
+      throw new LemmaError(
+        `binder variable name '${n}' is reserved: names beginning with two underscores belong to generated code`,
+      );
+    }
   }
   return names.map((varName) => {
     // A class domain is per-binder state: resolution attaches constructor

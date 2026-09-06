@@ -40,7 +40,11 @@ FORALL          ::= "forall" | "∀"
 binder-group    ::= "(" var-name+ ":" domain constraint? ")"
                     (* Lean-style grouping: (x y: int) binds x and y,
                        both with the same domain and constraint *)
-var-name        ::= IDENT                  (* /^[A-Za-z_][A-Za-z0-9_]*$/ *)
+var-name        ::= IDENT                  (* /^[A-Za-z_][A-Za-z0-9_]*$/;
+                       validation, not grammar: a name beginning with
+                       two underscores is reserved for generated code
+                       and rejected. See semantics.md, "The property
+                       as a whole". *)
 domain          ::= "int" | "nat" | "number" | "boolean" | "string" | "bigint"
                   | class-name
 class-name      ::= IDENT

@@ -1,0 +1,5 @@
+{
+  "annotation": "forall (__done: int ∈ [0, 3]) { __done !== 2 }",
+  "note": "binder names beginning with two underscores are reserved for generated code",
+  "stage": "prefix"
+}
