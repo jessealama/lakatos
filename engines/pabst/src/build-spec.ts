@@ -5,6 +5,7 @@ import {
   collectAtoms,
   EmptyAfterClampError,
   extract,
+  freeIdentifiers,
   type InvalidAnnotation,
   isClassCtorDomain,
   isClassDomain,
@@ -17,7 +18,7 @@ import {
 } from "../../../lemma/src/index.js";
 import { enumerationCases } from "./enumerate.js";
 import { lowerTop } from "./lower.js";
-import { freeIdentifiers, classify } from "./free-idents.js";
+import { classify } from "./free-idents.js";
 import type { PropertySpec } from "./ir.js";
 
 /** An annotation the refuter will not test: a binder's domain is not

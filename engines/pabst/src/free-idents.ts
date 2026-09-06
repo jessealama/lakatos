@@ -1,4 +1,3 @@
-import ts from "typescript";
 import { LemmaError } from "../../../lemma/src/index.js";
 
 export const GLOBALS = new Set<string>([
@@ -25,28 +24,6 @@ export const GLOBALS = new Set<string>([
   "Error",
   "console",
 ]);
-
-export function freeIdentifiers(expr: string): Set<string> {
-  const sf = ts.createSourceFile(
-    "__expr.ts",
-    `(${expr});`,
-    ts.ScriptTarget.Latest,
-    true,
-  );
-  const found = new Set<string>();
-  const visit = (node: ts.Node): void => {
-    if (ts.isIdentifier(node)) {
-      const p = node.parent;
-      const isPropName = ts.isPropertyAccessExpression(p) && p.name === node;
-      const isQualified = ts.isQualifiedName(p) && p.right === node;
-      const isObjKey = ts.isPropertyAssignment(p) && p.name === node;
-      if (!isPropName && !isQualified && !isObjKey) found.add(node.text);
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(sf);
-  return found;
-}
 
 export interface Classification {
   freeExports: string[];

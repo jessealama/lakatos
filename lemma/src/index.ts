@@ -22,6 +22,8 @@ export type {
 } from "./binder.js";
 export { isClassCtorDomain } from "./binder.js";
 
+export { freeIdentifiers } from "./free-idents.js";
+
 export { collectAtoms } from "./formula-ast.js";
 export type { Formula } from "./formula-ast.js";
 
