@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { generate } from "../src/codegen.js";
-import { LemmaError } from "../../../lemma/src/index.js";
+import { annotationKey, LemmaError } from "../../../lemma/src/index.js";
 
 // The out root is the caller's to choose; these tests pick an arbitrary
 // one, since what is under test is the mirroring, not the CLI's naming.
@@ -47,6 +47,13 @@ export class Counter {
   afterAll(() => {
     process.chdir(prevCwd);
     fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("yields no result for a file whose only annotation was refused", () => {
+    const refused = new Set([
+      annotationKey("bar.ts", { functionName: "bar", propertyName: "pos" }),
+    ]);
+    expect(generate(["bar.ts"], OUT, 1, refused)).toEqual([]);
   });
 
   it("writes one generated test file and reports the count", () => {

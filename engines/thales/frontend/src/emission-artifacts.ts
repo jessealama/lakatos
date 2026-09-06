@@ -27,11 +27,14 @@ export interface EmissionArtifact {
 export function writeEmissionArtifacts(
   files: string[],
   outRoot: string,
+  refused: ReadonlySet<string> = new Set(),
 ): EmissionArtifact[] {
   return files.map((file) => {
     const { emission, annotations, invalid, classified } = emitModule(
       fs.readFileSync(file, "utf8"),
       file,
+      undefined,
+      refused,
     );
     if (annotations.length === 0) {
       return { sourceFile: file, annotations, invalid, classified };

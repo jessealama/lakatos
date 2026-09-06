@@ -9,7 +9,7 @@ import {
   type EmitStmt,
   emitModule,
 } from "../src/emission.js";
-import { LemmaError } from "../../../../lemma/src/index.js";
+import { annotationKey, LemmaError } from "../../../../lemma/src/index.js";
 
 /** A function declaration's body, narrowed out of the declaration union. */
 function fnBody(d: EmitDecl): EmitStmt[] {
@@ -7720,5 +7720,27 @@ describe("optional parameters", () => {
     expect(classified[0]?.reason).toContain(
       "'C#m' expects 1 to 2 argument(s), got 0",
     );
+  });
+});
+
+describe("refused annotations", () => {
+  const src =
+    "/** @ensures{a} forall (x: int ∈ [0, 5)) { f(x) >= 0 } */\n" +
+    "/** @ensures{b} forall (x: int ∈ [0, 5)) { f(x) >= 0 } */\n" +
+    "export function f(x: number): number { return x; }\n";
+
+  test("a refused annotation is neither emitted nor classified, and its sibling still is", () => {
+    const refused = new Set([
+      annotationKey("t.ts", { functionName: "f", propertyName: "a" }),
+    ]);
+    const { emission, annotations, classified } = emitModule(
+      src,
+      "t.ts",
+      undefined,
+      refused,
+    );
+    expect(annotations.map((a) => a.propertyName)).toEqual(["b"]);
+    expect(classified).toEqual([]);
+    expect(emission.obligations.map((o) => o.property)).toEqual(["b"]);
   });
 });

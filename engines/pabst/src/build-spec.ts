@@ -1,4 +1,5 @@
 import {
+  annotationKey,
   type ClassCtorDomain,
   clampedEndpoints,
   type ClassTable,
@@ -40,8 +41,13 @@ export interface BuildResult {
   untried: UntriedProperty[];
 }
 
-export function buildSpecs(file: string): BuildResult {
-  const { exports, classes, annotations, invalid } = extract(file);
+export function buildSpecs(
+  file: string,
+  refused: ReadonlySet<string> = new Set(),
+): BuildResult {
+  const { exports, classes, annotations: all, invalid } = extract(file);
+  // A refused annotation is the CLI's InputError; nothing here mentions it.
+  const annotations = all.filter((a) => !refused.has(annotationKey(file, a)));
   const specs: PropertySpec[] = [];
   const untried: UntriedProperty[] = [];
   const refuse = (a: RawAnnotation, endpoints: string[]) =>

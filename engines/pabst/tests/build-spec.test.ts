@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { buildSpecs } from "../src/build-spec.js";
-import { LemmaError } from "../../../lemma/src/index.js";
+import { annotationKey, LemmaError } from "../../../lemma/src/index.js";
 
 const FIXTURE = new URL("./fixtures/e2e/readme-example.ts", import.meta.url)
   .pathname;
@@ -207,5 +210,27 @@ describe("buildSpecs — class binders", () => {
     ]);
     expect(s.freeExports).toContain("Span");
     expect(s.freeExports).toContain("Point");
+  });
+});
+
+describe("buildSpecs — refused annotations", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pabst-refused-"));
+  const file = path.join(dir, "r.ts");
+  fs.writeFileSync(
+    file,
+    "/** @ensures{a} forall (n: nat) { f(n) >= 0 } */\n" +
+      "/** @ensures{b} forall (n: nat) { f(n) >= 0 } */\n" +
+      "export function f(n: number): number { return n; }\n",
+    "utf8",
+  );
+
+  it("builds nothing for a refused annotation and reports it nowhere: the CLI already did", () => {
+    const refused = new Set([
+      annotationKey(file, { functionName: "f", propertyName: "a" }),
+    ]);
+    const { specs, invalid, untried } = buildSpecs(file, refused);
+    expect(specs.map((s) => s.name)).toEqual(["b"]);
+    expect(invalid).toEqual([]);
+    expect(untried).toEqual([]);
   });
 });

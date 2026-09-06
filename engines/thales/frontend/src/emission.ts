@@ -1,6 +1,7 @@
 import * as path from "node:path";
 import ts from "typescript";
 import {
+  annotationKey,
   type Binder,
   clampedEndpoints,
   EmptyAfterClampError,
@@ -4124,6 +4125,7 @@ export function emitModule(
   text: string,
   file: string,
   reader: ModuleReader = diskReader,
+  refused: ReadonlySet<string> = new Set(),
 ): PlainEmission {
   const entry = path.resolve(file);
   const closure: EmitClosure = {
@@ -4145,7 +4147,13 @@ export function emitModule(
   const module = "";
   const key = (name: string) => modelKey({ module, name });
 
-  const { annotations, invalid } = extractFromSource(text, file);
+  const extracted = extractFromSource(text, file);
+  // A refused annotation is the CLI's InputError; it is neither an
+  // obligation nor a classification here.
+  const annotations = extracted.annotations.filter(
+    (a) => !refused.has(annotationKey(file, a)),
+  );
+  const { invalid } = extracted;
   const obligations: EmitObligation[] = [];
   const classified: ClassifiedAnnotation[] = [];
   for (const a of annotations) {

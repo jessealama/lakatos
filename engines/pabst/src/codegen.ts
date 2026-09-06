@@ -37,19 +37,24 @@ export function generate(
   files: string[],
   outRoot: string,
   seed: number = randomSeed(),
+  refused: ReadonlySet<string> = new Set(),
 ): GenResult[] {
   const results: GenResult[] = [];
   for (const file of files) {
     // Mirroring shared with thales; the outside-cwd guard fires here even
     // for files that turn out to have nothing to generate.
     const outFile = mirrorPath(file, outRoot, ".pabst.test.ts");
-    const { specs, invalid, untried } = buildSpecs(file);
-    const refused = untried.map((u) => ({
+    const { specs, invalid, untried } = buildSpecs(file, refused);
+    const untriedReports = untried.map((u) => ({
       function: qualifiedName(u.functionName, u.className, u.isStatic),
       property: u.name,
       reason: u.reason,
     }));
-    if (specs.length === 0 && invalid.length === 0 && refused.length === 0)
+    if (
+      specs.length === 0 &&
+      invalid.length === 0 &&
+      untriedReports.length === 0
+    )
       continue;
     // Nothing runnable: the file still reports, but no artifact is written
     // and the run never touches it.
@@ -58,7 +63,7 @@ export function generate(
         sourceFile: file,
         properties: [],
         invalid,
-        untried: refused,
+        untried: untriedReports,
       });
       continue;
     }
@@ -73,7 +78,7 @@ export function generate(
         ...(s.cases !== undefined ? { cases: s.cases } : {}),
       })),
       invalid,
-      untried: refused,
+      untried: untriedReports,
     });
   }
   return results;
