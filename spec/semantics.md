@@ -36,7 +36,8 @@ Every construct is specified in three parts:
 
 - **Well-formedness**: attaches to one of the declaration forms listed
   under *Attachment points* below. Binder names are pairwise distinct and
-  scope over the formula body.
+  scope over the formula body. A name beginning with two underscores is
+  reserved for code the engines generate and is rejected.
 - **Truth conditions**: the formula holds for every assignment of values to
   the bound variables drawn from their (guarded) domains.
 - **Engine obligations**: the refuter samples assignments, or walks every

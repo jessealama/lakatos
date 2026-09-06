@@ -38,6 +38,18 @@ describe("parsePrefix — errors", () => {
     );
   });
 
+  it("throws on a binder name beginning with two underscores", () => {
+    expectLemmaError(
+      () => parsePrefix("forall (__done: int) { __done === __done }"),
+      /binder variable name '__done' is reserved/,
+    );
+  });
+
+  it("accepts a binder name with a single leading underscore", () => {
+    const { binders } = parsePrefix("forall (_x: int) { _x === _x }");
+    expect(binders[0]?.varName).toBe("_x");
+  });
+
   it("throws on a duplicate name within one binder group", () => {
     expectLemmaError(
       () => parsePrefix("forall (x x: int) { x === x }"),
