@@ -1,4 +1,5 @@
 import ThalesEmit.Render
+import ThalesEmit.RoundTrip
 
 /-! Syntax → text. The artifact is the rendered commands printed by Lean's
 pretty-printer, joined with the fixed header and the source echo comments. -/
@@ -96,8 +97,11 @@ def renderEmission (e : Emission) : CoreM String := do
           (prettyLines (← ppCommand (← rendered (methodCommand c m))))
   for o in e.obligations do
     let cmd ← rendered (obligationCommand e o)
-    blocks := blocks.push
-      (s!"-- @ensures\{{o.property}} {o.formula}\n" ++ prettyLines (← ppCommand cmd))
+    let text := prettyLines (← ppCommand cmd)
+    -- What is printed is what the prover parses: a spelling the spine
+    -- reader cannot recover fails here, not as a silent verdict degrade.
+    checkRoundTrip o text
+    blocks := blocks.push (s!"-- @ensures\{{o.property}} {o.formula}\n" ++ text)
   return String.intercalate "\n\n" blocks.toList ++ "\n"
 where
   rendered (x : RenderM (TSyntax `command)) : CoreM (TSyntax `command) := do
