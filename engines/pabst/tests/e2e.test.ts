@@ -128,6 +128,10 @@ const enumeratedBudgetSrc = path.join(
   root,
   "engines/pabst/tests/fixtures/e2e/enumerated-budget.ts",
 );
+const enumeratedSlowOneSrc = path.join(
+  root,
+  "engines/pabst/tests/fixtures/e2e/enumerated-slow-one.ts",
+);
 const enumeratedCapSrc = path.join(
   root,
   "engines/pabst/tests/fixtures/e2e/enumerated-cap.ts",
@@ -767,6 +771,24 @@ describe("end-to-end", () => {
   );
 
   it(
+    "a walk whose only tuple outruns the budget still finishes as a Theorem",
+    { timeout: 60000 },
+    () => {
+      const [r] = generate([enumeratedSlowOneSrc], OUT_ROOT);
+      const env = run(r!);
+      expect(env).toMatchObject({ passed: 1, failed: 0 });
+      expect(env.annotations).toHaveLength(1);
+      expect(env.annotations[0]).toMatchObject({
+        function: "crawl",
+        property: "slow",
+        szs: "Theorem",
+        kind: "enumerated",
+        cases: 1,
+      });
+    },
+  );
+
+  it(
     "the cap: 1000 tuples walk, 1001 sample exactly as before",
     { timeout: 30000 },
     () => {
@@ -776,7 +798,7 @@ describe("end-to-end", () => {
         { function: "hold", property: "aboveCap" },
       ]);
       const code = fs.readFileSync(r!.outFile!, "utf8");
-      expect(code).toContain('test("atCap", { timeout: 8000 }');
+      expect(code).toContain('test("atCap", { timeout: 0 }');
       expect(code).toContain("test.prop([fc.integer({ min: 0, max: 1000 })]");
       const env = run(r!);
       const by = new Map(env.annotations.map((a) => [a.property, a]));

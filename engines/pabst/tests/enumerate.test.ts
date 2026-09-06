@@ -3,10 +3,8 @@ import {
   argsTuple,
   ENUMERATION_CAP,
   enumerationCases,
-  LOOP_BUDGET_MS,
   loopHeader,
   loopHeaders,
-  TEST_TIMEOUT_MS,
 } from "../src/enumerate.js";
 import type { Binder } from "../src/ir.js";
 import type { ClassCtorDomain } from "../../../lemma/src/index.js";
@@ -189,13 +187,5 @@ describe("argsTuple", () => {
       "[[__p_0_0, __p_0_1], [__p_1_0, __p_1_1], __p_2]",
     );
     expect(argsTuple("u", { className: "Unit", ctorParams: [] })).toBe("[]");
-  });
-});
-
-describe("the budget constants", () => {
-  it("keep the vitest timeout above the loop budget", () => {
-    // vitest's timer cannot interrupt a synchronous loop; the loop must
-    // give up first so its budget issue, not a bare timeout, is reported.
-    expect(TEST_TIMEOUT_MS).toBeGreaterThan(LOOP_BUDGET_MS);
   });
 });
