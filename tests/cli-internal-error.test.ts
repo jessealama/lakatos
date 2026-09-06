@@ -16,7 +16,7 @@ describe("cli internal errors", () => {
     "fine.ts": `/** @ensures{pos} forall (n: nat) { fine(n) >= 0 } */\nexport function fine(n: number): number { return n; }\n`,
   });
 
-  it("a non-LemmaError from compilation escapes main() instead of exiting 2", () => {
-    expect(() => runMain(["refute", "fine.ts"])).toThrow(TypeError);
+  it("a non-LemmaError from compilation escapes main() instead of exiting 2", async () => {
+    await expect(runMain(["refute", "fine.ts"])).rejects.toThrow(TypeError);
   });
 });

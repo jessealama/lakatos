@@ -31,19 +31,33 @@ export function interruptedBy(r: SignalOutcome): InterruptSignal | undefined {
 /**
  * Run `body` with the default signal disposition disarmed, so a
  * termination signal kills the engine's child without killing this
- * process before it can report. The listeners deliberately do nothing:
- * lakatos runs synchronously, so their callbacks cannot run until the
- * event loop turns, which is after the run has already exited — what
- * the run reads instead is the child's death by signal. Outside this
- * window the default disposition stands, and lakatos dies where it
- * could not have reported anyway.
+ * process before it can report. The run is synchronous, so a signal that
+ * lands during it is delivered only once the event loop turns:
+ * `interrupted` lets it turn and answers with the first covered signal
+ * that reached this process. That, not the child's death, is what a run
+ * reads: an engine may catch the signal and exit by status (vitest exits
+ * 130) rather than die of it. Outside the guard the default disposition
+ * stands, and lakatos dies where it could not have reported anyway.
  */
-export function withInterruptGuard<T>(body: () => T): T {
-  const ignore = (): void => {};
-  for (const s of INTERRUPT_SIGNALS) process.on(s, ignore);
+export async function withInterruptGuard<T>(
+  body: (interrupted: () => Promise<InterruptSignal | undefined>) => Promise<T>,
+): Promise<T> {
+  let seen: InterruptSignal | undefined;
+  const record = (s: NodeJS.Signals): void => {
+    seen ??= s as InterruptSignal;
+  };
+  const interrupted = async (): Promise<InterruptSignal | undefined> => {
+    // A pending signal is read in the poll phase. An immediate scheduled
+    // from a poll callback runs in the same iteration's check phase, so a
+    // second one is what guarantees a fresh poll in between.
+    for (let i = 0; i < 2; i++)
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    return seen;
+  };
+  for (const s of INTERRUPT_SIGNALS) process.on(s, record);
   try {
-    return body();
+    return await body(interrupted);
   } finally {
-    for (const s of INTERRUPT_SIGNALS) process.off(s, ignore);
+    for (const s of INTERRUPT_SIGNALS) process.off(s, record);
   }
 }

@@ -18,43 +18,43 @@ describe("cli main", () => {
     "shadow.d.ts": `/** @ensures{pos2} forall (n: nat) { baz(n) >= 0 } */\nexport declare function baz(n: number): number;\n`,
   });
 
-  it("skips declaration files matched by a glob", () => {
-    const { code, stdout } = runMain(["check", "*.ts"]);
+  it("skips declaration files matched by a glob", async () => {
+    const { code, stdout } = await runMain(["check", "*.ts"]);
     expect(code).toBe(1);
     const env = JSON.parse(stdout[0]!);
     expect(env.annotations).toHaveLength(1);
     expect(env.annotations[0]).toMatchObject({ file: "baz.ts" });
   });
 
-  it("honors an explicitly named declaration file", () => {
-    const { code, stdout } = runMain(["check", "shadow.d.ts"]);
+  it("honors an explicitly named declaration file", async () => {
+    const { code, stdout } = await runMain(["check", "shadow.d.ts"]);
     expect(code).toBe(1);
     const env = JSON.parse(stdout[0]!);
     expect(env.annotations).toHaveLength(1);
     expect(env.annotations[0]).toMatchObject({ property: "pos2" });
   });
 
-  it("honors a glob that targets declaration files", () => {
-    const { code, stdout } = runMain(["check", "*.d.ts"]);
+  it("honors a glob that targets declaration files", async () => {
+    const { code, stdout } = await runMain(["check", "*.d.ts"]);
     expect(code).toBe(1);
     expect(JSON.parse(stdout[0]!).annotations).toHaveLength(1);
   });
 
-  it("returns 2 on unknown command", () => {
-    const { code, stderr } = runMain(["frobnicate", "baz.ts"]);
+  it("returns 2 on unknown command", async () => {
+    const { code, stderr } = await runMain(["frobnicate", "baz.ts"]);
     expect(code).toBe(2);
     expect(stderr[0]).toContain("usage: lakatos");
   });
 
-  it("returns 2 with usage on an unknown option", () => {
-    const { code, stderr } = runMain(["--halp"]);
+  it("returns 2 with usage on an unknown option", async () => {
+    const { code, stderr } = await runMain(["--halp"]);
     expect(code).toBe(2);
     expect(stderr).toHaveLength(1);
     expect(stderr[0]).toContain("usage: lakatos");
   });
 
-  it("prints help on --help and exits 0", () => {
-    const { code, stdout, stderr } = runMain(["--help"]);
+  it("prints help on --help and exits 0", async () => {
+    const { code, stdout, stderr } = await runMain(["--help"]);
     expect(code).toBe(0);
     expect(stderr).toEqual([]);
     const help = stdout.join("\n");
@@ -66,24 +66,24 @@ describe("cli main", () => {
     expect(help).toContain("--help");
   });
 
-  it("prints the same help on -h", () => {
-    const { code, stdout } = runMain(["-h"]);
+  it("prints the same help on -h", async () => {
+    const { code, stdout } = await runMain(["-h"]);
     expect(code).toBe(0);
-    expect(stdout).toEqual(runMain(["--help"]).stdout);
+    expect(stdout).toEqual((await runMain(["--help"])).stdout);
   });
 
-  it("returns 2 on a non-integer --seed", () => {
-    expect(runMain(["refute", "--seed", "4.2", "baz.ts"]).code).toBe(2);
+  it("returns 2 on a non-integer --seed", async () => {
+    expect((await runMain(["refute", "--seed", "4.2", "baz.ts"])).code).toBe(2);
   });
 
-  it("returns 2 on an out-of-range --seed", () => {
-    expect(runMain(["refute", "--seed", String(2 ** 32), "baz.ts"]).code).toBe(
-      2,
-    );
+  it("returns 2 on an out-of-range --seed", async () => {
+    expect(
+      (await runMain(["refute", "--seed", String(2 ** 32), "baz.ts"])).code,
+    ).toBe(2);
   });
 
-  it("returns 2 when no .ts files match the patterns", () => {
-    expect(runMain(["check", "*.nope"]).code).toBe(2);
+  it("returns 2 when no .ts files match the patterns", async () => {
+    expect((await runMain(["check", "*.nope"])).code).toBe(2);
   });
 });
 
@@ -96,8 +96,8 @@ describe("cli main without a tsconfig", () => {
     { tsconfig: false },
   );
 
-  it("returns 2 when no patterns are given and nothing is discoverable", () => {
-    const { code, stderr } = runMain(["check"]);
+  it("returns 2 when no patterns are given and nothing is discoverable", async () => {
+    const { code, stderr } = await runMain(["check"]);
     expect(code).toBe(2);
     expect(stderr).toHaveLength(1);
     expect(stderr[0]).toBe(
@@ -117,8 +117,8 @@ describe("check stub", () => {
     "clampwide.ts": `/** @ensures{big} forall (x: int ∈ [0, 1000000000000000000000000000000]) { wide(x) >= 0 } */\nexport function wide(x: number): number { return x; }\n`,
   });
 
-  it("lists every annotation as NotTried and exits 1", () => {
-    const { code, stdout, stderr } = runMain(["check", "annotated.ts"]);
+  it("lists every annotation as NotTried and exits 1", async () => {
+    const { code, stdout, stderr } = await runMain(["check", "annotated.ts"]);
     expect(code).toBe(1);
     const env = JSON.parse(stdout[0]!);
     expectValidEnvelope(env);
@@ -139,8 +139,8 @@ describe("check stub", () => {
   // The stub enumerates through lemma, so only lemma can condemn a formula.
   // A reference the refuter cannot lower is not a verdict on the annotation:
   // the prover has no such restriction, and check answers for both.
-  it("reports an annotation only the refuter rejects as NotTried", () => {
-    const { code, stdout } = runMain(["check", "unexported.ts"]);
+  it("reports an annotation only the refuter rejects as NotTried", async () => {
+    const { code, stdout } = await runMain(["check", "unexported.ts"]);
     expect(code).toBe(1);
     const env = JSON.parse(stdout[0]!);
     expectValidEnvelope(env);
@@ -154,8 +154,8 @@ describe("check stub", () => {
     ]);
   });
 
-  it("still exits 2 on a formula lemma itself cannot parse", () => {
-    const { code, stderr } = runMain(["check", "malformed.ts"]);
+  it("still exits 2 on a formula lemma itself cannot parse", async () => {
+    const { code, stderr } = await runMain(["check", "malformed.ts"]);
     expect(code).toBe(2);
     const diagnostics = stderr;
     expect(diagnostics).toHaveLength(1);
@@ -165,8 +165,8 @@ describe("check stub", () => {
 
   // A clamp-emptied interval parses, so it passes the shared gate; the
   // stub contains it per annotation exactly as both engines do.
-  it("reports an interval the safe-integer clamp empties as unsupported-range", () => {
-    const { code, stdout, stderr } = runMain(["check", "clampempty.ts"]);
+  it("reports an interval the safe-integer clamp empties as unsupported-range", async () => {
+    const { code, stdout, stderr } = await runMain(["check", "clampempty.ts"]);
     expect(code).toBe(1);
     const env = JSON.parse(stdout[0]!);
     expectValidEnvelope(env);
@@ -188,8 +188,8 @@ describe("check stub", () => {
     expect(stderr.join("\n")).not.toContain("empty interval");
   });
 
-  it("keeps the refused annotation beside the rest, in source order", () => {
-    const { code, stdout } = runMain(["check", "clampmixed.ts"]);
+  it("keeps the refused annotation beside the rest, in source order", async () => {
+    const { code, stdout } = await runMain(["check", "clampmixed.ts"]);
     expect(code).toBe(1);
     const env = JSON.parse(stdout[0]!);
     expectValidEnvelope(env);
@@ -215,8 +215,8 @@ describe("check stub", () => {
 
   // Nonempty after the clamp, but the clamped domain denotes a narrower
   // statement than the one written; both engines refuse it, so check does.
-  it("reports a merely clamped interval as unsupported-range too", () => {
-    const { code, stdout } = runMain(["check", "clampwide.ts"]);
+  it("reports a merely clamped interval as unsupported-range too", async () => {
+    const { code, stdout } = await runMain(["check", "clampwide.ts"]);
     expect(code).toBe(1);
     const env = JSON.parse(stdout[0]!);
     expectValidEnvelope(env);
@@ -234,8 +234,8 @@ describe("check stub", () => {
   });
 
   // Empty as written is bad input, not an unrepresentable domain.
-  it("still exits 2 on an interval that is empty as written", () => {
-    const { code, stdout, stderr } = runMain(["check", "inverted.ts"]);
+  it("still exits 2 on an interval that is empty as written", async () => {
+    const { code, stdout, stderr } = await runMain(["check", "inverted.ts"]);
     expect(code).toBe(2);
     expect(stdout).toHaveLength(0);
     const diagnostics = stderr;
@@ -263,8 +263,8 @@ export function f(x: number): number { return x; }
 `,
   });
 
-  it("check stub reports InputError entries beside NotTried and exits 2", () => {
-    const { code, stdout, stderr } = runMain(["check", "mixed.ts"]);
+  it("check stub reports InputError entries beside NotTried and exits 2", async () => {
+    const { code, stdout, stderr } = await runMain(["check", "mixed.ts"]);
     expect(code).toBe(2);
     const env = JSON.parse(stdout[0]!);
     expectValidEnvelope(env);
@@ -285,8 +285,8 @@ export function f(x: number): number { return x; }
     expect(stderr.join("\n")).toContain("not exported");
   });
 
-  it("refute with only input errors keeps the contract and exits 2", () => {
-    const { code, stdout, stderr } = runMain(["refute", "dup.ts"]);
+  it("refute with only input errors keeps the contract and exits 2", async () => {
+    const { code, stdout, stderr } = await runMain(["refute", "dup.ts"]);
     expect(code).toBe(2);
     const env = JSON.parse(stdout[0]!);
     expectValidEnvelope(env);
@@ -315,8 +315,8 @@ describe("cli zero-argument discovery", () => {
       { tsconfig: false },
     );
 
-    it("does not scan src/: discovery stops before any envelope", () => {
-      const { code, stdout, stderr } = runMain(["check"]);
+    it("does not scan src/: discovery stops before any envelope", async () => {
+      const { code, stdout, stderr } = await runMain(["check"]);
       expect(code).toBe(2);
       expect(stderr).toEqual([
         'error: no tsconfig.json to discover sources from; pass files or globs (e.g. lakatos refute "src/**/*.ts")',
@@ -332,8 +332,8 @@ describe("cli zero-argument discovery", () => {
       "src/decoy.ts": `export function decoy(): number { return 1; }\n`,
     });
 
-    it("discovers via tsconfig.json, ignoring src/", () => {
-      const { code, stdout, stderr } = runMain(["check"]);
+    it("discovers via tsconfig.json, ignoring src/", async () => {
+      const { code, stdout, stderr } = await runMain(["check"]);
       expect(code).toBe(1);
       expect(stderr[0]).toBe(
         "lakatos: no files given; discovered 1 file(s) via tsconfig.json",
@@ -348,8 +348,8 @@ describe("cli zero-argument discovery", () => {
       "src/a.ts": `export const a = 1;\n`,
     });
 
-    it("exits 2 with the tsconfig diagnostic, not falling through", () => {
-      const { code, stderr } = runMain(["check"]);
+    it("exits 2 with the tsconfig diagnostic, not falling through", async () => {
+      const { code, stderr } = await runMain(["check"]);
       expect(code).toBe(2);
       expect(stderr).toHaveLength(1);
       expect(stderr[0]).toContain("error: tsconfig.json:");
@@ -468,8 +468,8 @@ describe("cli compile errors (exit-code contract)", () => {
 
   it.each(COMPILE_ERROR_CASES)(
     "refute on $name exits 2 with a one-line diagnostic",
-    (c) => {
-      const { code, stderr } = runMain(["refute", c.file]);
+    async (c) => {
+      const { code, stderr } = await runMain(["refute", c.file]);
       expect(code).toBe(2);
       const diagnostics = stderr;
       expect(diagnostics).toHaveLength(1);
@@ -489,9 +489,9 @@ describe("cli compile errors (exit-code contract)", () => {
 
   it.each(PARSE_LEVEL_CASES)(
     "prove on $name exits 2 with the same diagnostic as refute",
-    (c) => {
-      const refute = runMain(["refute", c.file]);
-      const prove = runMain(["prove", c.file]);
+    async (c) => {
+      const refute = await runMain(["refute", c.file]);
+      const prove = await runMain(["prove", c.file]);
       expect(prove.code).toBe(2);
       expect(prove.stdout).toEqual(refute.stdout);
       expect(prove.stderr).toEqual(refute.stderr);
@@ -586,8 +586,8 @@ export function keep(n: number): number {
   it(
     "refute still evaluates sound annotations beside InputError entries",
     { timeout: 60000 },
-    () => {
-      const { code, stdout } = runMain(["refute", "inputerr/mixed.ts"]);
+    async () => {
+      const { code, stdout } = await runMain(["refute", "inputerr/mixed.ts"]);
       expect(code).toBe(2);
       const env = JSON.parse(stdout[0]!);
       expectValidEnvelope(env);
@@ -605,8 +605,8 @@ export function keep(n: number): number {
   it(
     "refute runs an @ensures from every stacked JSDoc block",
     { timeout: 60000 },
-    () => {
-      const { code, stdout } = runMain(["refute", "stacked/keep.ts"]);
+    async () => {
+      const { code, stdout } = await runMain(["refute", "stacked/keep.ts"]);
       expect(code).toBe(1);
       const env = JSON.parse(stdout[0]!);
       expectValidEnvelope(env);
@@ -627,8 +627,8 @@ export function keep(n: number): number {
   it(
     "refute runs an @ensures attached to a getter under Class#getter",
     { timeout: 60000 },
-    () => {
-      const { code, stdout } = runMain(["refute", "klass/box.ts"]);
+    async () => {
+      const { code, stdout } = await runMain(["refute", "klass/box.ts"]);
       expect(code).toBe(0);
       const env = JSON.parse(stdout[0]!);
       expectValidEnvelope(env);
@@ -651,8 +651,8 @@ export function keep(n: number): number {
   it(
     "refute on a clean file prints one JSON envelope to stdout and exits 0",
     { timeout: 60000 },
-    () => {
-      const { code, stdout } = runMain(["refute", "good.ts"]);
+    async () => {
+      const { code, stdout } = await runMain(["refute", "good.ts"]);
       expect(code).toBe(0);
       expect(stdout).toHaveLength(1);
       const env = JSON.parse(stdout[0]!);
@@ -688,8 +688,8 @@ export function keep(n: number): number {
   it(
     "refute on a failing file exits 1 with a flagged annotation in the envelope",
     { timeout: 60000 },
-    () => {
-      const { code, stdout } = runMain(["refute", "bad.ts"]);
+    async () => {
+      const { code, stdout } = await runMain(["refute", "bad.ts"]);
       expect(code).toBe(1);
       const env = JSON.parse(stdout[0]!);
       expectValidEnvelope(env);
@@ -707,8 +707,8 @@ export function keep(n: number): number {
   it(
     "refute lets an input error take exit-code precedence over a refutation",
     { timeout: 60000 },
-    () => {
-      const { code, stdout } = runMain([
+    async () => {
+      const { code, stdout } = await runMain([
         "refute",
         "inputerr/mixed.ts",
         "bad.ts",
@@ -733,8 +733,13 @@ export function keep(n: number): number {
   it(
     "refute --seed echoes the given seed in the envelope",
     { timeout: 60000 },
-    () => {
-      const { code, stdout } = runMain(["refute", "--seed", "123", "good.ts"]);
+    async () => {
+      const { code, stdout } = await runMain([
+        "refute",
+        "--seed",
+        "123",
+        "good.ts",
+      ]);
       expect(code).toBe(0);
       expect(JSON.parse(stdout[0]!).seed).toBe(123);
     },
@@ -743,8 +748,10 @@ export function keep(n: number): number {
   it(
     "passing a prior run's seed back reproduces that run",
     { timeout: 120000 },
-    () => {
-      const first = JSON.parse(runMain(["refute", "bad.ts"]).stdout[0]!);
+    async () => {
+      const first = JSON.parse(
+        (await runMain(["refute", "bad.ts"])).stdout[0]!,
+      );
       // Two degenerate runs would agree; pin that the baseline refuted before
       // comparing, so a degenerate baseline names itself instead of reading
       // like a seed bug.
@@ -753,7 +760,8 @@ export function keep(n: number): number {
       ]);
       fs.rmSync(path.join(workDir, RUN_ROOT), { recursive: true, force: true });
       const second = JSON.parse(
-        runMain(["refute", "--seed", String(first.seed), "bad.ts"]).stdout[0]!,
+        (await runMain(["refute", "--seed", String(first.seed), "bad.ts"]))
+          .stdout[0]!,
       );
       expect(second.seed).toBe(first.seed);
       expect(second.annotations).toEqual(first.annotations);
@@ -765,8 +773,8 @@ export function keep(n: number): number {
   it(
     "refute's generated tests land under the run directory the envelope names",
     { timeout: 120000 },
-    () => {
-      const { code, stderr } = runMain(["refute", "good.ts"]);
+    async () => {
+      const { code, stderr } = await runMain(["refute", "good.ts"]);
       expect(code).toBe(0);
       const runDir = announcedRunDir(stderr);
       expect(
@@ -784,10 +792,10 @@ export function keep(n: number): number {
   it(
     "back-to-back invocations do not leak issues from earlier runs",
     { timeout: 120000 },
-    () => {
-      expect(runMain(["refute", "bad.ts"]).code).toBe(1);
+    async () => {
+      expect((await runMain(["refute", "bad.ts"])).code).toBe(1);
       // No wipe in between: bad.ts's own run directory is still there.
-      const { code, stdout } = runMain(["refute", "good.ts"]);
+      const { code, stdout } = await runMain(["refute", "good.ts"]);
       expect(code).toBe(0);
       const env = JSON.parse(stdout[0]!);
       expect(env).toMatchObject({
@@ -802,9 +810,9 @@ export function keep(n: number): number {
   it(
     "a run that generates nothing reports a zero envelope, never stale mirrors",
     { timeout: 120000 },
-    () => {
-      expect(runMain(["refute", "bad.ts"]).code).toBe(1);
-      const { code, stdout } = runMain(["refute", "plain.ts"]);
+    async () => {
+      expect((await runMain(["refute", "bad.ts"])).code).toBe(1);
+      const { code, stdout } = await runMain(["refute", "plain.ts"]);
       expect(code).toBe(0);
       const env = JSON.parse(stdout[0]!);
       expectValidEnvelope(env);
@@ -823,7 +831,7 @@ export function keep(n: number): number {
   it(
     "refute on a module that explodes at load prints a NotTried envelope and exits 2",
     { timeout: 60000 },
-    () => {
+    async () => {
       const explosive = path.join(workDir, "explosive.ts");
       fs.writeFileSync(
         explosive,
@@ -831,7 +839,10 @@ export function keep(n: number): number {
         "utf8",
       );
       try {
-        const { code, stdout, stderr } = runMain(["refute", "explosive.ts"]);
+        const { code, stdout, stderr } = await runMain([
+          "refute",
+          "explosive.ts",
+        ]);
         expect(code).toBe(2);
         expect(stdout).toHaveLength(1);
         const env = JSON.parse(stdout[0]!);
@@ -855,8 +866,8 @@ export function keep(n: number): number {
   it(
     "refute accepts globs and reports across all matched files",
     { timeout: 60000 },
-    () => {
-      const { code, stdout } = runMain(["refute", "*.ts"]);
+    async () => {
+      const { code, stdout } = await runMain(["refute", "*.ts"]);
       expect(code).toBe(1);
       const env = JSON.parse(stdout[0]!);
       expectValidEnvelope(env);

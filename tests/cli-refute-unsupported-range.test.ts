@@ -43,9 +43,9 @@ describe("cli refute on unrepresentable domains", () => {
     fs.rmSync(RUN_ROOT, { recursive: true, force: true });
   });
 
-  it("ships NotTried with kind and reason; the rest still run", () => {
+  it("ships NotTried with kind and reason; the rest still run", async () => {
     runTestsMock.mockReturnValue(allPassed(1));
-    const { code, stdout, stderr } = runMain(["refute", "mixed.ts"]);
+    const { code, stdout, stderr } = await runMain(["refute", "mixed.ts"]);
     expect(code).toBe(0);
     const env = JSON.parse(stdout[0]!);
     expectValidEnvelope(env);
@@ -74,8 +74,8 @@ describe("cli refute on unrepresentable domains", () => {
     expect(stderr.join("\n")).not.toContain("clamped to");
   });
 
-  it("never runs vitest when every annotation is refused", () => {
-    const { code, stdout } = runMain(["refute", "allhuge.ts"]);
+  it("never runs vitest when every annotation is refused", async () => {
+    const { code, stdout } = await runMain(["refute", "allhuge.ts"]);
     expect(code).toBe(0);
     expect(runTestsMock).not.toHaveBeenCalled();
     const env = JSON.parse(stdout[0]!);
@@ -94,8 +94,8 @@ describe("cli refute on unrepresentable domains", () => {
     expect(env.failed).toBe(0);
   });
 
-  it("refuses a clamp-emptied interval instead of aborting the run", () => {
-    const { code, stdout } = runMain(["refute", "emptied.ts"]);
+  it("refuses a clamp-emptied interval instead of aborting the run", async () => {
+    const { code, stdout } = await runMain(["refute", "emptied.ts"]);
     expect(code).toBe(0);
     const env = JSON.parse(stdout[0]!);
     expectValidEnvelope(env);
@@ -113,13 +113,13 @@ describe("cli refute on unrepresentable domains", () => {
     ]);
   });
 
-  it("keeps the metadata through an unhealthy run", () => {
+  it("keeps the metadata through an unhealthy run", async () => {
     runTestsMock.mockReturnValue({
       kind: "broken-run",
       status: 1,
       messages: ["the suite failed to load"],
     });
-    const { code, stdout } = runMain(["refute", "mixed.ts"]);
+    const { code, stdout } = await runMain(["refute", "mixed.ts"]);
     expect(code).toBe(2);
     const env = JSON.parse(stdout[0]!);
     expectValidEnvelope(env);

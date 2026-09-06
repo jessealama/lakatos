@@ -19,9 +19,9 @@ describe("build-spec internal errors", () => {
     "fine.ts": `/** @ensures{pos} forall (n: nat) { fine(n) >= 0 } */\nexport function fine(n: number): number { return n; }\n`,
   });
 
-  it("a non-LemmaError thrown mid-annotation escapes main() unwrapped", () => {
-    expect(() => runMain(["refute", "fine.ts"])).toThrow(TypeError);
-    expect(() => runMain(["refute", "fine.ts"])).toThrow(
+  it("a non-LemmaError thrown mid-annotation escapes main() unwrapped", async () => {
+    await expect(runMain(["refute", "fine.ts"])).rejects.toThrow(TypeError);
+    await expect(runMain(["refute", "fine.ts"])).rejects.toThrow(
       /internal invariant violated in lowering/,
     );
   });

@@ -39,8 +39,8 @@ describe("cli prove: a frontend Error is an engine failure", () => {
       "export function f(n: number): number {\n  return n;\n}\n",
   });
 
-  it("ships the verdict in `error` and exits 2", () => {
-    const { code, stdout } = runMain(["prove", "a.ts"]);
+  it("ships the verdict in `error` and exits 2", async () => {
+    const { code, stdout } = await runMain(["prove", "a.ts"]);
     expect(code).toBe(2);
     const env = JSON.parse(stdout[0]!);
     expectValidEnvelope(env);

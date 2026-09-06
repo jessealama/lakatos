@@ -16,8 +16,8 @@ const ILL_TYPED = {
 describe("refute refuses an ill-typed program", () => {
   useTempProject("lakatos-gate-refute-", ILL_TYPED);
 
-  it("reports InputError per annotation and exits 2", () => {
-    const run = runMain(["refute"]);
+  it("reports InputError per annotation and exits 2", async () => {
+    const run = await runMain(["refute"]);
     expect(run.code).toBe(2);
     const joined = run.stderr.join("\n");
     expect(joined).toContain(
@@ -47,8 +47,8 @@ describe("refute refuses an ill-typed program", () => {
 describe("prove refuses the same program the same way", () => {
   useTempProject("lakatos-gate-prove-", ILL_TYPED);
 
-  it("never reaches the emitter: no arity checks, no Inappropriate", () => {
-    const run = runMain(["prove"]);
+  it("never reaches the emitter: no arity checks, no Inappropriate", async () => {
+    const run = await runMain(["prove"]);
     expect(run.code).toBe(2);
     const env = JSON.parse(run.stdout[0]!);
     expect(env.annotations).toHaveLength(1);
@@ -66,8 +66,8 @@ describe("the gate is whole-project", () => {
     "src/broken.ts": 'export const n: number = "nope";\n',
   });
 
-  it("refuses annotations in clean files when any file is broken", () => {
-    const run = runMain(["refute"]);
+  it("refuses annotations in clean files when any file is broken", async () => {
+    const run = await runMain(["refute"]);
     expect(run.code).toBe(2);
     const env = JSON.parse(run.stdout[0]!);
     expect(env.annotations).toEqual([
@@ -96,8 +96,8 @@ describe("several diagnostics over several annotations", () => {
       'export const bad2: number = "two";\n',
   });
 
-  it("names the first diagnostic and counts the rest", () => {
-    const run = runMain(["refute"]);
+  it("names the first diagnostic and counts the rest", async () => {
+    const run = await runMain(["refute"]);
     expect(run.code).toBe(2);
     const joined = run.stderr.join("\n");
     expect(joined).toContain(
@@ -128,8 +128,8 @@ describe("a diagnostic with no file of its own", () => {
       "export function id(n: number): number {\n  return n;\n}\n",
   });
 
-  it("formats without a file:line prefix", () => {
-    const run = runMain(["refute"]);
+  it("formats without a file:line prefix", async () => {
+    const run = await runMain(["refute"]);
     expect(run.code).toBe(2);
     expect(run.stderr.join("\n")).toContain("error: TS5069: Option");
     const env = JSON.parse(run.stdout[0]!);
@@ -147,8 +147,8 @@ describe("a tsconfig that names no files", () => {
       "export function id(n: number): number {\n  return n;\n}\n",
   });
 
-  it("stops at discovery without scanning src/", () => {
-    const run = runMain(["check"]);
+  it("stops at discovery without scanning src/", async () => {
+    const run = await runMain(["check"]);
     expect(run.code).toBe(2);
     expect(run.stderr).toEqual([
       'error: tsconfig.json names no files; pass files or globs (e.g. lakatos refute "src/**/*.ts")',
@@ -156,8 +156,8 @@ describe("a tsconfig that names no files", () => {
     expect(run.stdout).toHaveLength(0);
   });
 
-  it("still refuses a named file the program leaves out", () => {
-    const run = runMain(["check", "src/a.ts"]);
+  it("still refuses a named file the program leaves out", async () => {
+    const run = await runMain(["check", "src/a.ts"]);
     expect(run.code).toBe(2);
     expect(run.stderr.join("\n")).toContain(
       "error: src/a.ts is not part of the program tsconfig.json describes",
@@ -188,8 +188,8 @@ describe("no tsconfig: the run is refused", () => {
     { tsconfig: false },
   );
 
-  it("reports every annotation InputError and exits 2", () => {
-    const run = runMain(["check", "src/a.ts", "src/b.ts"]);
+  it("reports every annotation InputError and exits 2", async () => {
+    const run = await runMain(["check", "src/a.ts", "src/b.ts"]);
     expect(run.code).toBe(2);
     expect(run.stderr.join("\n")).toContain(
       "lakatos: no tsconfig.json; reporting 2 annotations as InputError",
@@ -229,8 +229,8 @@ describe("a named file outside the program", () => {
       "export function other(n: number): number {\n  return n;\n}\n",
   });
 
-  it("refuses only that file's annotations and still runs the rest", () => {
-    const run = runMain(["check", "src/a.ts", "extra/b.ts"]);
+  it("refuses only that file's annotations and still runs the rest", async () => {
+    const run = await runMain(["check", "src/a.ts", "extra/b.ts"]);
     expect(run.code).toBe(2);
     const env = JSON.parse(run.stdout[0]!);
     const byFile = Object.fromEntries(
@@ -259,8 +259,8 @@ describe("the project switches strict off", () => {
       "  return x + y;\n}\n",
   });
 
-  it("is checked under lakatos's required options regardless", () => {
-    const run = runMain(["prove"]);
+  it("is checked under lakatos's required options regardless", async () => {
+    const run = await runMain(["prove"]);
     expect(run.code).toBe(2);
     expect(run.stderr.join("\n")).toContain(
       "error: src/a.ts:3: TS2322: Type 'undefined' is not assignable to type 'number'.",
@@ -282,8 +282,8 @@ describe("clean project under a tsconfig: no warning, no refusal", () => {
       "export function id(n: number): number {\n  return n;\n}\n",
   });
 
-  it("says nothing about it, and leaves its build info for the next run", () => {
-    const run = runMain(["check"]);
+  it("says nothing about it, and leaves its build info for the next run", async () => {
+    const run = await runMain(["check"]);
     expect(run.code).toBe(1);
     expect(run.stderr.join("\n")).not.toContain("type check");
     expect(fs.existsSync(path.join(".lakatos", "typecheck.tsbuildinfo"))).toBe(

@@ -129,8 +129,8 @@ describe.runIf(enabled)("lakatos prove end-to-end (tracer)", () => {
   it(
     "one healthy run: Theorem and Inappropriate per annotation",
     { timeout: proveTimeoutMs(1) },
-    () => {
-      const env = runForEnvelope(["prove", "tracer.ts"]);
+    async () => {
+      const env = await runForEnvelope(["prove", "tracer.ts"]);
 
       const by = new Map(
         env.annotations.map((a) => [`${a.function}/${a.property}`, a]),
@@ -153,9 +153,9 @@ describe.runIf(enabled)("lakatos prove end-to-end (tracer)", () => {
   it(
     "false bounded claims ship witnesses that round-trip against the source",
     { timeout: proveTimeoutMs(2) },
-    () => {
+    async () => {
       // Counterexamples found: the documented exit 1.
-      const env = runForEnvelope(["prove", "unique.ts", "comm.ts"], 1);
+      const env = await runForEnvelope(["prove", "unique.ts", "comm.ts"], 1);
       const by = new Map(
         env.annotations.map((a) => [`${a.function}/${a.property}`, a]),
       );
@@ -190,8 +190,8 @@ describe.runIf(enabled)("lakatos prove end-to-end (tracer)", () => {
   it(
     "guarded monotonicity of the conversion proves without axioms",
     { timeout: proveTimeoutMs(1) },
-    () => {
-      const env = runForEnvelope(["prove", "conversion.ts"]);
+    async () => {
+      const env = await runForEnvelope(["prove", "conversion.ts"]);
       expect(env.annotations).toHaveLength(1);
       expect(env.annotations[0]).toMatchObject({
         function: "applyConversionFactors",
@@ -205,8 +205,8 @@ describe.runIf(enabled)("lakatos prove end-to-end (tracer)", () => {
   it(
     "the non-negativity chain proves without axioms",
     { timeout: proveTimeoutMs(1) },
-    () => {
-      const env = runForEnvelope(["prove", "sq.ts"]);
+    async () => {
+      const env = await runForEnvelope(["prove", "sq.ts"]);
       expect(env.annotations).toHaveLength(1);
       expect(env.annotations[0]).toMatchObject({
         function: "root",
@@ -220,8 +220,8 @@ describe.runIf(enabled)("lakatos prove end-to-end (tracer)", () => {
   it(
     "bounds refute the guards' throwing arms without axioms",
     { timeout: proveTimeoutMs(2) },
-    () => {
-      const env = runForEnvelope(["prove", "guards.ts"]);
+    async () => {
+      const env = await runForEnvelope(["prove", "guards.ts"]);
       expect(env.annotations).toHaveLength(2);
       for (const a of env.annotations) {
         expect(a).toMatchObject({ szs: "Theorem", axioms: [] });
@@ -232,8 +232,8 @@ describe.runIf(enabled)("lakatos prove end-to-end (tracer)", () => {
   it(
     "the class-valued Point binder proves over the constructor's image",
     { timeout: proveTimeoutMs(1) },
-    () => {
-      const env = runForEnvelope(["prove", "point.ts"]);
+    async () => {
+      const env = await runForEnvelope(["prove", "point.ts"]);
       expect(env.annotations).toHaveLength(1);
       expect(env.annotations[0]).toMatchObject({
         function: "Point#distance",
@@ -247,11 +247,11 @@ describe.runIf(enabled)("lakatos prove end-to-end (tracer)", () => {
   it(
     "prove and refute report identical identity keys for the same file",
     { timeout: proveTimeoutMs(1) },
-    () => {
-      const proveEnv = runForEnvelope(["prove", "parity.ts"]);
+    async () => {
+      const proveEnv = await runForEnvelope(["prove", "parity.ts"]);
       expect(proveEnv.annotations[0]).toMatchObject({ szs: "Theorem" });
 
-      const refuteEnv = runForEnvelope(["refute", "parity.ts"]);
+      const refuteEnv = await runForEnvelope(["refute", "parity.ts"]);
 
       const ids = (e: Envelope) =>
         e.annotations.map((a) => [a.file, a.function, a.property]).sort();
@@ -263,9 +263,9 @@ describe.runIf(enabled)("lakatos prove end-to-end (tracer)", () => {
   it(
     "prove and refute both report Theorem on a small finite domain",
     { timeout: proveTimeoutMs(1) },
-    () => {
-      const proveEnv = runForEnvelope(["prove", "small.ts"]);
-      const refuteEnv = runForEnvelope(["refute", "small.ts"]);
+    async () => {
+      const proveEnv = await runForEnvelope(["prove", "small.ts"]);
+      const refuteEnv = await runForEnvelope(["refute", "small.ts"]);
       const by = (e: Envelope) =>
         new Map(e.annotations.map((a) => [`${a.function}/${a.property}`, a]));
       const proved = by(proveEnv);

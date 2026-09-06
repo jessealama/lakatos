@@ -20,7 +20,7 @@ export interface MainRun {
  * Run the CLI's main() with both console streams captured, so tests can
  * assert on diagnostics regardless of which stream they land on.
  */
-export function runMain(argv: string[]): MainRun {
+export async function runMain(argv: string[]): Promise<MainRun> {
   const stdout: string[] = [];
   const stderr: string[] = [];
   const logSpy = vi.spyOn(console, "log").mockImplementation((s) => {
@@ -30,7 +30,7 @@ export function runMain(argv: string[]): MainRun {
     stderr.push(String(s));
   });
   try {
-    return { code: main(argv), stdout, stderr };
+    return { code: await main(argv), stdout, stderr };
   } finally {
     logSpy.mockRestore();
     errSpy.mockRestore();
@@ -68,8 +68,11 @@ export function announcedRunDir(stderr: string[]): string {
  * code (0 unless the run is meant to find counterexamples), exactly one
  * stdout line, and that line a schema-valid envelope.
  */
-export function runForEnvelope(argv: string[], expectedCode = 0): Envelope {
-  const run = runMain(argv);
+export async function runForEnvelope(
+  argv: string[],
+  expectedCode = 0,
+): Promise<Envelope> {
+  const run = await runMain(argv);
   expect(run.code, run.stderr.join("\n")).toBe(expectedCode);
   expect(run.stdout).toHaveLength(1);
   const env = JSON.parse(run.stdout[0]!) as Envelope;

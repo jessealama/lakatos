@@ -42,12 +42,12 @@ describe("run directory naming is UTC", () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it("stamps the instant in UTC under a machine that is not", () => {
+  it("stamps the instant in UTC under a machine that is not", async () => {
     fs.writeFileSync(path.join(dir, "plain.ts"), "export const x = 1;\n");
     fs.writeFileSync(path.join(dir, "tsconfig.json"), DEFAULT_TSCONFIG);
     process.env.TZ = "Asia/Kolkata";
     process.chdir(dir);
-    const { stdout } = runMain(["check", "plain.ts"]);
+    const { stdout } = await runMain(["check", "plain.ts"]);
     const startedAt = JSON.parse(stdout[0]!).startedAt as string;
     // Zulu, not a local offset: no +05:30 may reach either the report or
     // the directory name derived from it.
@@ -71,7 +71,7 @@ describe("a run directory whose name is taken", () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it("takes the next free name, leaving the occupant untouched", () => {
+  it("takes the next free name, leaving the occupant untouched", async () => {
     fs.writeFileSync(path.join(dir, "plain.ts"), "export const x = 1;\n");
     fs.writeFileSync(path.join(dir, "tsconfig.json"), DEFAULT_TSCONFIG);
     process.chdir(dir);
@@ -83,7 +83,7 @@ describe("a run directory whose name is taken", () => {
     fs.mkdirSync(taken, { recursive: true });
     fs.writeFileSync(path.join(taken, "keep.txt"), "earlier run\n");
 
-    const { stderr } = runMain(["check", "plain.ts"]);
+    const { stderr } = await runMain(["check", "plain.ts"]);
     expect(fs.existsSync(`${taken}-2`)).toBe(true);
     // The occupant is exactly as it was, and nothing was reported as wrong.
     expect(fs.readFileSync(path.join(taken, "keep.txt"), "utf8")).toBe(
@@ -92,7 +92,7 @@ describe("a run directory whose name is taken", () => {
     expect(stderr.join("\n")).not.toContain("error:");
 
     // And again: the counter walks on rather than settling on one alias.
-    runMain(["check", "plain.ts"]);
+    await runMain(["check", "plain.ts"]);
     expect(fs.existsSync(`${taken}-3`)).toBe(true);
   });
 });
@@ -110,11 +110,11 @@ describe("claiming a run directory reserves the name", () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it("creates the directory before the engine writes anything", () => {
+  it("creates the directory before the engine writes anything", async () => {
     fs.writeFileSync(path.join(dir, "plain.ts"), "export const x = 1;\n");
     fs.writeFileSync(path.join(dir, "tsconfig.json"), DEFAULT_TSCONFIG);
     process.chdir(dir);
-    const { stdout } = runMain(["check", "plain.ts"]);
+    const { stdout } = await runMain(["check", "plain.ts"]);
     const startedAt = JSON.parse(stdout[0]!).startedAt as string;
     expect(fs.existsSync(runDirFor(startedAt))).toBe(true);
   });
