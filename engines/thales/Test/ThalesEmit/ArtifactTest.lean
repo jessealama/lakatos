@@ -116,3 +116,28 @@ def rendersOk (emissionPath : String) : CoreM Unit := do
   -- the printer breaks it, so this is the rejoined line, not an unbroken one.
   unless (rendered.splitOn "return Float.le").length == 2 do
     throwError "the return and its argument are not on one line:\n{rendered}"
+
+-- The printer alone keeps `return` and its argument on one line: no text
+-- repair runs between the formatter and the artifact.
+#eval show CoreM Unit from do
+  let call (x : String) : JsExpr :=
+    .call "applyConversionFactors" none #[.id x, .id x, .id x, .id x, .id x]
+  let o : Obligation :=
+    { function := "applyConversionFactors", property := "p", formula := "",
+      payload := .structured #[.number "x" none none, .number "y" none none] #[]
+        (.istrue (.binop "<=" (call "x") (call "y"))) }
+  let cmd ← match RenderM.run
+      (obligationCommand { file := "t.ts", declarations := #[], obligations := #[] } o) with
+    | .error msg => throwError msg
+    | .ok c => pure c
+  let raw := (← PrettyPrinter.ppCommand ⟨unscope cmd.raw⟩).pretty 100
+  unless (raw.splitOn "return\n").length == 1 do
+    throwError "the raw print broke after return:\n{raw}"
+  unless (raw.splitOn "return Float.le").length == 2 do
+    throwError "the raw print does not carry the argument on the return line:\n{raw}"
+  -- Wide enough to break: the second operand sits on a later line, so
+  -- this is a print the formatter held together, not one that just fit.
+  let some returnLine := (raw.splitOn "\n").find? fun l => (l.splitOn "return Float.le").length == 2
+    | throwError "the conclusion carries no return line:\n{raw}"
+  unless (returnLine.splitOn "applyConversionFactors y").length == 1 do
+    throwError "the conclusion did not break at all, so the pin proves nothing:\n{raw}"
