@@ -19,7 +19,6 @@ import {
 } from "../../../lemma/src/index.js";
 import { enumerationCases } from "./enumerate.js";
 import { lowerTop } from "./lower.js";
-import { classify } from "./free-idents.js";
 import type { PropertySpec } from "./ir.js";
 
 /** An annotation the refuter will not test: a binder's domain is not
@@ -100,7 +99,12 @@ function buildSpec(
   for (const atom of collectAtoms(ast)) {
     for (const id of freeIdentifiers(atom)) idents.add(id);
   }
-  const { freeExports } = classify(idents, boundVars, exports);
+  // The generated spec imports what the atoms name from the module. The
+  // CLI's island typing already refused any other unbound name, so what
+  // is neither bound nor exported here is a standard global.
+  const freeExports = [...idents].filter(
+    (id) => !boundVars.has(id) && exports.has(id),
+  );
   // Binder classes may never appear in the formula text, but the generated
   // spec must import them to construct instances — every class the nested
   // construction names, not just the binder's own.

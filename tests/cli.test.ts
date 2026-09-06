@@ -109,7 +109,6 @@ describe("cli main without a tsconfig", () => {
 describe("check stub", () => {
   useTempProject("lakatos-cli-stub-", {
     "annotated.ts": `/** @ensures{pos} forall (n: nat) { annotated(n) >= 0 } */\nexport function annotated(n: number): number { return n; }\n`,
-    "unexported.ts": `/** @ensures{agrees} forall (n: nat) { unexported(n) === helper(n) } */\nexport function unexported(n: number): number { return n; }\nfunction helper(n: number): number { return n; }\n`,
     "malformed.ts": `/** @ensures{shapely} for every (n: nat), malformed(n) >= 0 */\nexport function malformed(n: number): number { return n; }\n`,
     "clampempty.ts": `/** @ensures{narrow} forall (x: int ∈ [1000000000000000000000000000000, 10000000000000000000000000000000]) { clampempty(x) >= 0 } */\nexport function clampempty(x: number): number { return x; }\n`,
     "inverted.ts": `/** @ensures{backwards} forall (x: int ∈ [5, 3]) { inverted(x) >= 0 } */\nexport function inverted(x: number): number { return x; }\n`,
@@ -134,24 +133,6 @@ describe("check stub", () => {
     expect(env.passed).toBeUndefined();
     expect(env.failed).toBeUndefined();
     expect(stderr.join("\n")).toContain("check is not implemented yet");
-  });
-
-  // The stub enumerates through lemma, so only lemma can condemn a formula.
-  // A reference the refuter cannot lower is not a verdict on the annotation:
-  // the prover has no such restriction, and check answers for both.
-  it("reports an annotation only the refuter rejects as NotTried", async () => {
-    const { code, stdout } = await runMain(["check", "unexported.ts"]);
-    expect(code).toBe(1);
-    const env = JSON.parse(stdout[0]!);
-    expectValidEnvelope(env);
-    expect(env.annotations).toEqual([
-      {
-        file: "unexported.ts",
-        function: "unexported",
-        property: "agrees",
-        szs: "NotTried",
-      },
-    ]);
   });
 
   it("still exits 2 on a formula lemma itself cannot parse", async () => {
@@ -391,15 +372,6 @@ const COMPILE_ERROR_CASES: CompileErrorCase[] = [
     property: "shapely",
     parseLevel: true,
     expected: ["expected 'forall'"],
-  },
-  {
-    name: "an unexported-symbol reference (free-idents)",
-    file: "unexported.ts",
-    source: `/** @ensures{agrees} forall (n: nat) { unexported(n) === helper(n) } */\nexport function unexported(n: number): number { return n; }\nfunction helper(n: number): number { return n; }\n`,
-    wrapped: true,
-    property: "agrees",
-    parseLevel: false,
-    expected: ["'helper'", "not exported"],
   },
   {
     name: "a leading existential quantifier (prefix-parser)",

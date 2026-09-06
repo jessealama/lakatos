@@ -140,7 +140,7 @@ describe("buildSpecs — unrepresentable domains", () => {
 
   it("lets a second blocker keep its own diagnostic", () => {
     expect(() => buildSpecs(fixture("clamped-and-unresolvable.ts"))).toThrow(
-      /nowhere/,
+      /domain 'Nowhere' is neither a primitive domain/,
     );
   });
 });
@@ -232,5 +232,22 @@ describe("buildSpecs — refused annotations", () => {
     expect(specs.map((s) => s.name)).toEqual(["b"]);
     expect(invalid).toEqual([]);
     expect(untried).toEqual([]);
+  });
+});
+
+describe("buildSpecs — generated imports", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pabst-imports-"));
+  const file = path.join(dir, "i.ts");
+  fs.writeFileSync(
+    file,
+    "export const x = 1;\n" +
+      "/** @ensures{p} forall (x: int ∈ [0, 5)) { Math.abs(f(x)) >= 0 } */\n" +
+      "export function f(x: number): number { return x; }\n",
+    "utf8",
+  );
+
+  it("are the atoms' exported references, binders and globals excluded", () => {
+    const { specs } = buildSpecs(file);
+    expect(specs[0]!.freeExports).toEqual(["f"]);
   });
 });

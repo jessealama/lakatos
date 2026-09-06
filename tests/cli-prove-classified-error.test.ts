@@ -18,8 +18,12 @@ vi.mock(
       >();
     return {
       ...actual,
-      writeEmissionArtifacts: (files: string[], outRoot: string) =>
-        actual.writeEmissionArtifacts(files, outRoot).map((a) => ({
+      writeEmissionArtifacts: (
+        files: string[],
+        outRoot: string,
+        refused?: ReadonlySet<string>,
+      ) =>
+        actual.writeEmissionArtifacts(files, outRoot, refused).map((a) => ({
           ...a,
           leanFile: undefined,
           classified: a.annotations.map((annotation) => ({
