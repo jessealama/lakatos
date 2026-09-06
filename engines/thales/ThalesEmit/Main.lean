@@ -22,11 +22,13 @@ unsafe def main (args : List String) : IO UInt32 := do
         return 1
       | .ok e => pure e
     initSearchPath (← findSysroot)
-    let out ← withImportModules #[{ module := `ThalesDsl }] {} (trustLevel := 0)
-      fun env => do
-        let ctx : Core.Context := { fileName := "<thales-emit>", fileMap := default }
-        let (out, _) ← (renderEmission emission).toIO ctx { env }
-        pure out
+    -- Extension state, the parser and printer tables among it, is loaded
+    -- only on demand, and loading it runs the imported initializers.
+    enableInitializersExecution
+    let env ← importModules #[{ module := `ThalesDsl }, { module := `ThalesEmit }] {}
+      (trustLevel := 0) (loadExts := true)
+    let ctx : Core.Context := { fileName := "<thales-emit>", fileMap := default }
+    let (out, _) ← (renderEmission emission).toIO ctx { env }
     IO.FS.writeFile outPath out
     return 0
   catch ex =>

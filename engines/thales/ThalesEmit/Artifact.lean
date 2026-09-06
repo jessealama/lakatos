@@ -1,4 +1,6 @@
 import ThalesEmit.Render
+import ThalesEmit.Format
+import ThalesEmit.RoundTrip
 
 /-! Syntax → text. The artifact is the rendered commands printed by Lean's
 pretty-printer, joined with the fixed header and the source echo comments. -/
@@ -30,32 +32,12 @@ partial def unscope : Syntax → Syntax
   | .node info kind args => .node info kind (args.map unscope)
   | s => s
 
-def indentWidth (line : String) : Nat := (line.takeWhile (· == ' ')).toString.length
-
-/-- `return`'s argument is optional, so a line break between the two parses
-back as a bare `return`; the printer breaks there whenever the argument is
-too wide for the line. Rejoining them is what keeps the artifact
-re-parsable. A broken argument is always indented past its `return`, which
-is what tells it apart from a genuinely bare `return` followed by a
-sibling statement. -/
-partial def joinReturns : List String → List String
-  | line :: rest =>
-    match joinReturns rest with
-    | next :: tail =>
-      if (line == "return" || line.endsWith " return") &&
-          indentWidth next > indentWidth line then
-        (line ++ " " ++ next.dropWhile (· == ' ')) :: tail
-      else line :: next :: tail
-    | [] => [line]
-  | [] => []
-
 /-- Formatted command text, without trailing whitespace: the printer
 leaves a dangling space after `then` when the arm breaks to its own line,
 and the artifact is plain text a person's editor would flag it in. -/
 def prettyLines (fmt : Format) : String :=
   String.intercalate "\n"
-    (joinReturns
-      (((fmt.pretty 100).splitOn "\n").map (·.dropEndWhile (· == ' ') |>.toString)))
+    (((fmt.pretty 100).splitOn "\n").map (·.dropEndWhile (· == ' ') |>.toString))
 
 /-- The full artifact text. Pretty-printing runs in `CoreM` against an
 environment that imports `ThalesDsl`, which carries every syntax the
@@ -96,8 +78,11 @@ def renderEmission (e : Emission) : CoreM String := do
           (prettyLines (← ppCommand (← rendered (methodCommand c m))))
   for o in e.obligations do
     let cmd ← rendered (obligationCommand e o)
-    blocks := blocks.push
-      (s!"-- @ensures\{{o.property}} {o.formula}\n" ++ prettyLines (← ppCommand cmd))
+    let text := prettyLines (← ppCommand cmd)
+    -- What is printed is what the prover parses: a spelling the spine
+    -- reader cannot recover fails here, not as a silent verdict degrade.
+    checkRoundTrip o text
+    blocks := blocks.push (s!"-- @ensures\{{o.property}} {o.formula}\n" ++ text)
   return String.intercalate "\n\n" blocks.toList ++ "\n"
 where
   rendered (x : RenderM (TSyntax `command)) : CoreM (TSyntax `command) := do
