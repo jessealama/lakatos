@@ -417,3 +417,95 @@ describe("typeFormulas: free identifiers are exports or standard globals", () =>
     );
   });
 });
+
+describe("typeFormulas: faults outside the atoms, and several at once", () => {
+  useTempProject("lemma-island-more-", {
+    "gen.ts":
+      "export class Box<T> {\n" +
+      "  constructor(readonly x: number) {}\n" +
+      "}\n" +
+      "/** @ensures{p} forall (b: Box) { f(1) >= 0 } */\n" +
+      "export function f(x: number): number { return x; }\n",
+    "two-bad.ts":
+      "/** @ensures{first} forall (x: int ∈ [0, 5)) { f(x) } */\n" +
+      "/** @ensures{second} forall (x: int ∈ [0, 5)) { f(x) + q >= 0 } */\n" +
+      "export function f(x: number): number { return x; }\n",
+    "member.ts":
+      "export class Counter {\n" +
+      "  constructor(readonly n: number) {}\n" +
+      "  /** @ensures{p} forall (c: Counter) { c.twice() } */\n" +
+      "  twice(): number {\n    return this.n * 2;\n  }\n" +
+      "}\n",
+    "objkey.ts":
+      "/** @ensures{p} forall (x: int ∈ [0, 5)) { ({ a: f(x) }).a >= 0 } */\n" +
+      "export function f(x: number): number { return x; }\n",
+    "qual.ts":
+      "export namespace Q {\n" +
+      "  export type R = number;\n" +
+      "}\n" +
+      "/** @ensures{p} forall (x: int ∈ [0, 5)) { (f(x) as Q.R) >= 0 } */\n" +
+      "export function f(x: number): number { return x; }\n",
+    "ambient.d.ts": "declare const AMBIENT: number;\n",
+    "amb.ts":
+      "/** @ensures{p} forall (x: int ∈ [0, 5)) { f(x) + AMBIENT >= 0 } */\n" +
+      "export function f(x: number): number { return x; }\n",
+  });
+
+  it("reports a binder the probe's own parameter list cannot type, with no atom to name", () => {
+    expect(typing("gen.ts").invalid).toEqual([
+      {
+        file: "gen.ts",
+        invalid: [
+          {
+            propertyName: "p",
+            functionName: "f",
+            line: 4,
+            message:
+              "@ensures{p}: TS2314: Generic type 'Box<T>' requires 1 type argument(s).",
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("keeps two faulty annotations of one file in source order", () => {
+    const t = typing("two-bad.ts");
+    expect(t.invalid[0]!.invalid.map((i) => i.propertyName)).toEqual([
+      "first",
+      "second",
+    ]);
+    expect(t.refused.size).toBe(2);
+  });
+
+  it("carries a member annotation's class and staticness onto the fault", () => {
+    expect(typing("member.ts").invalid[0]!.invalid).toEqual([
+      {
+        propertyName: "p",
+        functionName: "twice",
+        className: "Counter",
+        isStatic: false,
+        line: 3,
+        message:
+          "@ensures{p}: in atom `c.twice()`: TS1360: Type 'number' does not satisfy the expected type 'boolean'.",
+      },
+    ]);
+  });
+
+  it("does not mistake an object-literal key for a reference", () => {
+    expect(typing("objkey.ts")).toEqual({ invalid: [], refused: new Set() });
+  });
+
+  it("reads the left of a qualified type name and not its right", () => {
+    expect(typing("qual.ts").invalid[0]!.invalid[0]!.message).toBe(
+      "@ensures{p}: in atom `(f(x) as Q.R) >= 0`: 'Q' is not exported from qual.ts; " +
+        "a formula may name only the module's exports and the host's standard globals",
+    );
+  });
+
+  it("refuses an ambient global the project itself declares", () => {
+    expect(typing("amb.ts").invalid[0]!.invalid[0]!.message).toBe(
+      "@ensures{p}: in atom `f(x) + AMBIENT >= 0`: 'AMBIENT' is not exported from amb.ts; " +
+        "a formula may name only the module's exports and the host's standard globals",
+    );
+  });
+});

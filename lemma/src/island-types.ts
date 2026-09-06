@@ -143,6 +143,7 @@ export function typeFormulas(
   const probes = new Map<string, { parsed: ParsedFile; probe: Probe }>();
   for (const f of work) {
     const sf = checked.program.getSourceFile(path.resolve(checked.cwd, f.file));
+    /* v8 ignore next 3 -- the caller's files came from the gate's own programFiles */
     if (sf === undefined)
       throw new Error(`${f.file} is not in the program the gate checked`);
     probes.set(sf.fileName, {
@@ -250,6 +251,7 @@ function probeProgram(
       return ts.createSourceFile(fileName, p.probe.text, languageVersion, true);
     return (
       checked.program.getSourceFile(fileName) ??
+      /* v8 ignore next -- both programs have the same roots, so the gate's has every file this one asks for */
       fallback(fileName, languageVersion, onError, shouldCreate)
     );
   };
@@ -310,7 +312,7 @@ function admitted(
   const symbol = checker.getSymbolAtLocation(node);
   /* v8 ignore next -- an unresolved name is TS2304, reported before this rule runs */
   if (symbol === undefined) return true;
-  // `undefined` and the like declare nothing: the host's own vocabulary.
+  /* v8 ignore next -- a name the checker resolves has a declaration to resolve to */
   return (symbol.declarations ?? []).every((d) => {
     const home = d.getSourceFile();
     if (program.isSourceFileDefaultLibrary(home)) return true;
