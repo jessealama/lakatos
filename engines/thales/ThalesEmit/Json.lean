@@ -128,14 +128,15 @@ structure EmitClass where
   methods : Array EmitMethod := #[]
 deriving Repr, Inhabited
 
-/-- A module-level `const` with a literal number initializer, rendered as
-a `JsNumber` def the reads reference. -/
+/-- A module-level `const` whose initializer is a constant expression,
+rendered as a `JsNumber` def the reads reference. -/
 structure EmitConstant where
   name : String
   /-- The defining module's entry-relative path; none for the entry. -/
   module : Option String := none
-  /-- The literal's source text, unary minus included. -/
-  lit : String
+  /-- The initializer as written — literals, reads of earlier constants,
+  arithmetic — so the def preserves the source's derivation. -/
+  init : JsExpr
   source : String
 deriving Repr, Inhabited
 
@@ -469,7 +470,7 @@ def decodeClass (j : Json) : Except String EmitClass := do
 def decodeConstant (j : Json) : Except String EmitConstant := do
   pure { name := ← getStr j "name"
          module := ← getStrOpt j "module"
-         lit := ← getStr j "lit"
+         init := ← decodeExpr (← j.getObjVal? "init")
          source := ← getStr j "source" }
 
 def decodeDecl (j : Json) : Except String Decl := do

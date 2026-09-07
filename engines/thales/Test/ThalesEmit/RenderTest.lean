@@ -365,11 +365,22 @@ def ctorStmt (straight : List String) (s : JsStmt) : RenderM (TSyntax `doElem) :
 #guard renderFails
   (fnCommand { name := "d", module := some "", params := nums #["x"], source := "", body := #[.ret (.id "x")] })
 
--- A constant is a pure, dual-tagged def.
-#guard rendersSyntax (constCommand { name := "cap", lit := "1000", source := "" })
+-- A constant is a pure, dual-tagged def whose body is the initializer as
+-- written: a derived constant reads the earlier def, never its value.
+#guard rendersSyntax (constCommand { name := "cap", init := .num "1000", source := "" })
   `(@[js_norm, grind] def TsModel.cap : JsNumber := 1000)
-#guard rendersSyntax (constCommand { name := "cap", module := some "constants.mts", lit := "-0.5", source := "" })
+#guard rendersSyntax (constCommand { name := "cap", module := some "constants.mts", init := .num "-0.5", source := "" })
   `(@[js_norm, grind] def TsModel.«constants.mts».cap : JsNumber := -0.5)
+#guard rendersSyntax (constCommand { name := "m", init := .binop "*" (.constRead "s" none) (.num "60"), source := "" })
+  `(@[js_norm, grind] def TsModel.m : JsNumber := TsModel.s * 60)
+#guard rendersSyntax (constCommand
+    { name := "h", module := some "units.mts",
+      init := .binop "+" (.binop "*" (.constRead "m" (some "units.mts")) (.num "60")) (.unop "-" (.constRead "s" (some "units.mts"))),
+      source := "" })
+  `(@[js_norm, grind] def TsModel.«units.mts».h : JsNumber := TsModel.«units.mts».m * 60 + -TsModel.«units.mts».s)
+-- The frontend never emits a lift in an initializer; one arriving is a
+-- contract violation, refused rather than rendered into a pure def.
+#guard renderFails (constCommand { name := "bad", init := .call "f" none #[.num "1"], source := "" })
 
 /-- A one-field class with a straight constructor. -/
 def box : EmitClass :=
