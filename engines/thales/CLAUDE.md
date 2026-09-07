@@ -11,7 +11,7 @@ This is a ground-up rewrite; the previous whole-file subset-checking compiler (i
 The engine has two halves in two languages:
 
 - **`frontend/` (TypeScript)** — the emitter. Part of the root npm package: compiled by the root `tsconfig.json` and tested by the root vitest suite. `emission.ts` walks tsc's AST into per-declaration JSON and classifies what it cannot map, `emission-artifacts.ts` writes those JSON files under the run directory the CLI hands it, `readings.ts` holds the source readings the emitter and its tests share, `module-graph.ts` resolves the import closure, `run.ts` shells out to lake/lean and parses verdict lines.
-- **`ThalesDsl/` + `Js/` (Lean 4)** — the prover and the JS-semantics library it draws on, two lake libraries plus the `thales-emit` executable; artifacts are run with `lake env lean`. Pinned toolchain: `leanprover/lean4:v4.33.0` (`lean-toolchain`). The boundary rule: nothing under `Js/` may mention `ThalesDsl` or any emission concern — lakatos owns syntax and search, the library owns meaning.
+- **`ThalesDsl/` + `Js/` (Lean 4)** — the prover and the JS-semantics library it draws on, two lake libraries plus the `thales-emit` executable; artifacts are run with `lake env lean`. Pinned toolchain: `leanprover/lean4:v4.34.0-rc2` (`lean-toolchain`). The boundary rule: nothing under `Js/` may mention `ThalesDsl` or any emission concern — lakatos owns syntax and search, the library owns meaning.
 
 Annotation parsing is NOT here: file discovery, `@ensures` extraction, and prefix/formula parsing all live in `lemma/` at the repo root. The frontend consumes lemma's parsed output; the Lean side never sees Lemma syntax.
 
