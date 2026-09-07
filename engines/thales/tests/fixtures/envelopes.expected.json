@@ -634,6 +634,56 @@
       "reason": "'**' is implementation-approximated in JavaScript, so any model would certify results a conforming engine may disagree with"
     }
   ],
+  "engines/thales/tests/conformance/theorem/or-guard.ts": [
+    {
+      "function": "double",
+      "property": "small",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_17631080360179164762",
+      "axioms": []
+    },
+    {
+      "function": "doubleAgain",
+      "property": "leftSettles",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_16546460546159714494",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/countersatisfiable/or-guard-witness.ts": [
+    {
+      "function": "bit",
+      "property": "picksOne",
+      "szs": "CounterSatisfiable",
+      "reason": "the property is false on its bounded domain",
+      "counterexample": {
+        "x": 1
+      }
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/connective-conclusions.ts": [
+    {
+      "function": "bump",
+      "property": "notBig",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_6343960661573991365",
+      "axioms": []
+    },
+    {
+      "function": "bump",
+      "property": "both",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_13647109309346508795",
+      "axioms": []
+    },
+    {
+      "function": "bump",
+      "property": "nested",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_13347271691872646076",
+      "axioms": []
+    }
+  ],
   "engines/thales/tests/fixtures/classes.ts": [
     {
       "function": "Box#v",
