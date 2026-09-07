@@ -3,6 +3,9 @@ export function double(x: number): number {
   return x + x;
 }
 
+// Theorem only because the left disjunct settles x = 0 before the right
+// side runs; a lowering that evaluated both sides would refute it there.
+/** @ensures{leftSettles} forall (x: int in [0, 4)) { x === 0 ∨ reciprocal(x) > 0 } */
 export function reciprocal(x: number): number {
   if (x === 0) {
     throw new RangeError("cannot invert zero");
@@ -10,10 +13,9 @@ export function reciprocal(x: number): number {
   return 1 / x;
 }
 
-// At x = 0 the left disjunct is true, so the throwing right side never runs;
-// everywhere else the right side settles it. The guard holds on the whole
-// domain and the claim must too.
-/** @ensures{leftSettles} forall (x: int in [0, 4)) { x === 0 ∨ reciprocal(x) > 0 → double(x) >= 0 } */
+// The same disjunction as a guard: it holds on the whole domain, so the
+// claim under it must too.
+/** @ensures{guardSettles} forall (x: int in [0, 4)) { x === 0 ∨ reciprocal(x) > 0 → double(x) >= 0 } */
 export function doubleAgain(x: number): number {
   return double(x);
 }

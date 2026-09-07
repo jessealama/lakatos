@@ -643,10 +643,17 @@
       "axioms": []
     },
     {
-      "function": "doubleAgain",
+      "function": "reciprocal",
       "property": "leftSettles",
       "szs": "Theorem",
-      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_16546460546159714494",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_8585586875603265533",
+      "axioms": []
+    },
+    {
+      "function": "doubleAgain",
+      "property": "guardSettles",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_17868934625839480227",
       "axioms": []
     }
   ],
