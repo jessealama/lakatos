@@ -1064,6 +1064,13 @@
       "szs": "Theorem",
       "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_11719682040379937164",
       "axioms": []
+    },
+    {
+      "function": "hoursToMilliseconds",
+      "property": "nonNegative",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_4672349895282863036",
+      "axioms": []
     }
   ],
   "engines/thales/tests/conformance/theorem/module-const-scale.ts": [
@@ -1079,6 +1086,15 @@
       "property": "bounded",
       "szs": "Theorem",
       "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_18300619214628618275",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/module-const-ladder.ts": [
+    {
+      "function": "toMinutes",
+      "property": "nonNegative",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_16378892712142621961",
       "axioms": []
     }
   ],

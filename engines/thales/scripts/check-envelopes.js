@@ -166,11 +166,13 @@ const IMPORT_FIXTURES = [
 ];
 
 /** The module-constant slice: literal consts read from bodies and
- * formulas, builtin aliases, a cross-module constant, and the read of a
- * module binding the model still refuses. */
+ * formulas, a const derived from earlier ones, builtin aliases, a
+ * cross-module constant, and the read of a module binding the model
+ * still refuses. */
 const CONST_FIXTURES = [
   "engines/thales/tests/fixtures/module-consts.ts",
   `${CONFORMANCE}/theorem/module-const-scale.ts`,
+  `${CONFORMANCE}/theorem/module-const-ladder.ts`,
   `${CONFORMANCE}/theorem/builtin-alias-magnitude.ts`,
   `${CONFORMANCE}/theorem/imported-constants/main.ts`,
   `${CONFORMANCE}/inappropriate/module-let-read.ts`,
