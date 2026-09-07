@@ -95,6 +95,9 @@ const BINDER_FIXTURES = [
   `${CONFORMANCE}/theorem/guarded-monotone-conversion.ts`,
   `${CONFORMANCE}/gaveup/scale-identity.ts`,
   `${CONFORMANCE}/inappropriate/guarded-power.ts`,
+  `${CONFORMANCE}/theorem/or-guard.ts`,
+  `${CONFORMANCE}/countersatisfiable/or-guard-witness.ts`,
+  `${CONFORMANCE}/theorem/connective-conclusions.ts`,
 ];
 
 /** The class slice (#129): structures, single-assignment constructors,

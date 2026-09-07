@@ -41,8 +41,9 @@ no bucket here.
   could not read back, which ships the falsity without the illustration.
 - `nottried/` — the pipeline degrades the property (`NotTried`): it has
   no structured reading (a half-bounded range the DSL has no binder shape
-  for, a connective other than a top-level implication chain of atoms), or
-  a range endpoint exceeds the safe integer range.
+  for, a connective the reading has no text for: `↔`, or a `→` nested
+  under another connective), or a range endpoint exceeds the safe integer
+  range.
 - `inappropriate/` — the annotation is outside the model: the function uses
   a construct the pipeline cannot map, an operator the model does not cover
   (`&`, `??`, ...), an operator the model refuses on the merits (`**`), or a
