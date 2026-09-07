@@ -6657,7 +6657,11 @@ describe("module-level const bindings", () => {
     ].join("\n");
     const { emission, classified } = emitModule(src, "annotated.ts");
     expect(emission.declarations[0]).toEqual(
-      expect.objectContaining({ kind: "constant", name: "wide", lit: "3" }),
+      expect.objectContaining({
+        kind: "constant",
+        name: "wide",
+        init: { kind: "num", lit: "3" },
+      }),
     );
     expect(classified[0]!.szs).toBe("Inappropriate");
     expect(classified[0]!.reason).toContain("'narrow' could not be modeled");
@@ -6675,7 +6679,11 @@ describe("module-level const bindings", () => {
     const { emission, classified } = emitModule(src, "negated.ts");
     expect(classified).toEqual([]);
     expect(emission.declarations[0]).toEqual(
-      expect.objectContaining({ kind: "constant", name: "floor", lit: "-5" }),
+      expect.objectContaining({
+        kind: "constant",
+        name: "floor",
+        init: { kind: "num", lit: "-5" },
+      }),
     );
   });
 
@@ -6694,7 +6702,11 @@ describe("module-level const bindings", () => {
     ].join("\n");
     const { emission, classified } = emitModule(src, "mixed.ts");
     expect(emission.declarations[0]).toEqual(
-      expect.objectContaining({ kind: "constant", name: "s", lit: "1000" }),
+      expect.objectContaining({
+        kind: "constant",
+        name: "s",
+        init: { kind: "num", lit: "1000" },
+      }),
     );
     expect(classified).toEqual([
       expect.objectContaining({
@@ -6873,7 +6885,7 @@ describe("module-level const bindings", () => {
       {
         kind: "constant",
         name: "millisecondsInSecond",
-        lit: "1000",
+        init: { kind: "num", lit: "1000" },
         source: "const millisecondsInSecond = 1000;",
       },
       {
@@ -6898,6 +6910,191 @@ describe("module-level const bindings", () => {
     ]);
     expect(emission.obligations).toHaveLength(1);
     expectValidEmission(emission);
+  });
+
+  test("a constant derived from earlier constants models with its derivation", () => {
+    const src = [
+      "const s = 1000;",
+      "const m = s * 60;",
+      "const h = m * 60 + -s;",
+      "/** @ensures{nonNegative} forall (x: int ∈ [0, 10)) { toMinutes(x) >= 0 } */",
+      "export function toMinutes(x: number): number {",
+      "  return x * m;",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, "ladder.ts");
+    expect(classified).toEqual([]);
+    expect(emission.declarations.slice(0, 3)).toEqual([
+      {
+        kind: "constant",
+        name: "s",
+        init: { kind: "num", lit: "1000" },
+        source: "const s = 1000;",
+      },
+      {
+        kind: "constant",
+        name: "m",
+        init: {
+          kind: "binop",
+          op: "*",
+          left: { kind: "const-read", name: "s" },
+          right: { kind: "num", lit: "60" },
+        },
+        source: "const m = s * 60;",
+      },
+      {
+        kind: "constant",
+        name: "h",
+        init: {
+          kind: "binop",
+          op: "+",
+          left: {
+            kind: "binop",
+            op: "*",
+            left: { kind: "const-read", name: "m" },
+            right: { kind: "num", lit: "60" },
+          },
+          right: {
+            kind: "unop",
+            op: "-",
+            operand: { kind: "const-read", name: "s" },
+          },
+        },
+        source: "const h = m * 60 + -s;",
+      },
+    ]);
+    expect(fnBody(emission.declarations[3]!)[0]).toEqual({
+      kind: "return",
+      expr: {
+        kind: "binop",
+        op: "*",
+        left: { kind: "id", name: "x" },
+        right: { kind: "const-read", name: "m" },
+      },
+    });
+    expectValidEmission(emission);
+  });
+
+  test("an initializer admits division, remainder, unary plus, and parentheses", () => {
+    const src = [
+      "const m = 60000;",
+      "const q = +(m / 7) % 2;",
+      "/** @ensures{p} forall (n: int ∈ [0, 4)) { f(n) >= 0 } */",
+      "export function f(n: number): number {",
+      "  return n + q;",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, "ops.ts");
+    expect(classified).toEqual([]);
+    expect(emission.declarations[1]).toEqual({
+      kind: "constant",
+      name: "q",
+      init: {
+        kind: "binop",
+        op: "%",
+        left: {
+          kind: "unop",
+          op: "+",
+          operand: {
+            kind: "binop",
+            op: "/",
+            left: { kind: "const-read", name: "m" },
+            right: { kind: "num", lit: "7" },
+          },
+        },
+        right: { kind: "num", lit: "2" },
+      },
+      source: "const q = +(m / 7) % 2;",
+    });
+    expectValidEmission(emission);
+  });
+
+  test("declarators in one statement admit in order", () => {
+    const src = [
+      "const s = 1000, m = s * 60;",
+      "/** @ensures{p} forall (n: int ∈ [0, 4)) { f(n) >= 0 } */",
+      "export function f(n: number): number {",
+      "  return n * m;",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, "list.ts");
+    expect(classified).toEqual([]);
+    expect(emission.declarations[1]).toEqual(
+      expect.objectContaining({
+        kind: "constant",
+        name: "m",
+        init: {
+          kind: "binop",
+          op: "*",
+          left: { kind: "const-read", name: "s" },
+          right: { kind: "num", lit: "60" },
+        },
+      }),
+    );
+  });
+
+  test("a forward or self reference is not yet admitted and degrades", () => {
+    const src = [
+      "const m = s * 60;",
+      "const s = 1000;",
+      "const t = t + 1;",
+      "/** @ensures{p} forall (n: int ∈ [0, 4)) { f(n) >= 0 } */",
+      "export function f(n: number): number {",
+      "  return n * m;",
+      "}",
+      "/** @ensures{q} forall (n: int ∈ [0, 4)) { g(n) >= 0 } */",
+      "export function g(n: number): number {",
+      "  return n * t;",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, "forward.ts");
+    expect(emission.declarations[0]).toEqual(
+      expect.objectContaining({ kind: "constant", name: "s" }),
+    );
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason:
+          "'f' could not be modeled: 'm' could not be modeled: " +
+          "unmapped TypeScript construct 'VariableStatement' at 1:7",
+      }),
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason:
+          "'g' could not be modeled: 't' could not be modeled: " +
+          "unmapped TypeScript construct 'VariableStatement' at 3:7",
+      }),
+    ]);
+  });
+
+  test("a call, a builtin, a refused operator, or a mutable read keeps the degradation", () => {
+    const src = [
+      "let base = 2;",
+      "const a = base * 3;",
+      "const b = Math.abs(-3);",
+      "const c = 2 ** 3;",
+      "const d = minutes();",
+      "const e = 1 < 2;",
+      "function minutes(): number { return 1; }",
+      "/** @ensures{p} forall (n: int ∈ [0, 4)) { f(n) >= 0 } */",
+      "export function f(n: number): number {",
+      "  return n + a + b + c + d + e;",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, "declines.ts");
+    expect(emission.declarations.filter((d) => d.kind === "constant")).toEqual(
+      [],
+    );
+    expect(classified[0]!.szs).toBe("Inappropriate");
+    expect(classified[0]!.reason).toContain(
+      "'a' could not be modeled: unmapped TypeScript construct " +
+        "'VariableStatement' at 2:7",
+    );
   });
 });
 

@@ -529,16 +529,16 @@
     },
     "constant": {
       "type": "object",
-      "description": "A module-level const with a literal number initializer: a named value rendered as a JsNumber def.",
+      "description": "A module-level const whose initializer is a constant expression: a named value rendered as a JsNumber def that preserves the source's derivation.",
       "additionalProperties": false,
-      "required": ["kind", "name", "lit", "source"],
+      "required": ["kind", "name", "init", "source"],
       "properties": {
         "kind": { "const": "constant" },
         "name": { "$ref": "#/definitions/identifier" },
         "module": { "$ref": "#/definitions/modulePath" },
-        "lit": {
-          "type": "string",
-          "description": "The literal as JavaScript prints the double it denotes; a leading '-' folds a negation in."
+        "init": {
+          "$ref": "#/definitions/expr",
+          "description": "The initializer as written: numeric literals and reads of constants admitted above it, under the arithmetic operators and unary sign."
         },
         "source": {
           "type": "string",

@@ -4,7 +4,10 @@
     {
       "kind": "constant",
       "name": "millisecondsInSecond",
-      "lit": "1000",
+      "init": {
+        "kind": "num",
+        "lit": "1000"
+      },
       "source": "const millisecondsInSecond = 1000;"
     },
     {

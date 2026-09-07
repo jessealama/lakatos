@@ -179,12 +179,12 @@ export interface EmitClass {
   methods: EmitMethod[];
 }
 
-/** A module-level `const` with a literal number initializer: a named
- * value the model admits, read wherever a number is expected. Soundness
- * needs two immutabilities at once: `const` pins the binding (a `let` or
- * `var` is reassignable from any function, so its reads have no one
- * value to model), and the numeric value pins itself — a primitive has
- * no mutable state, so no code can change what a read denotes. A
+/** A module-level `const` whose initializer is a constant expression: a
+ * named value the model admits, read wherever a number is expected.
+ * Soundness needs two immutabilities at once: `const` pins the binding (a
+ * `let` or `var` is reassignable from any function, so its reads have no
+ * one value to model), and the numeric value pins itself — a primitive
+ * has no mutable state, so no code can change what a read denotes. A
  * `const` over an object value would satisfy only the first, which is
  * why object initializers stay degraded. */
 export interface EmitConstant {
@@ -192,8 +192,10 @@ export interface EmitConstant {
   name: string;
   /** The defining module's entry-relative path; absent for the entry. */
   module?: string;
-  /** The literal's source text, unary minus included. */
-  lit: string;
+  /** The initializer as written — literals, reads of constants admitted
+   * above it, arithmetic and unary sign — so the def preserves the
+   * source's derivation rather than a value the reader must re-derive. */
+  init: EmitExpr;
   source: string;
 }
 
@@ -3869,20 +3871,59 @@ interface EmitClosure {
   aliases: Map<string, BuiltinEntry>;
 }
 
-/** The literal a module-scope declarator pins, when the model admits it:
- * a `const` with an identifier name, a numeric-literal initializer (unary
- * minus included), and no type annotation other than `number`. */
-function constantLiteral(d: ts.VariableDeclaration): string | undefined {
+/** The initializer a module-scope declarator pins, when the model admits
+ * it: a `const` with an identifier name, no type annotation other than
+ * `number`, and a constant expression as initializer. */
+function constantInit(
+  d: ts.VariableDeclaration,
+  admitted: (name: string) => ModelRef | undefined,
+): EmitExpr | undefined {
   if (!ts.isIdentifier(d.name)) return undefined;
   if (d.type !== undefined && d.type.kind !== ts.SyntaxKind.NumberKeyword)
     return undefined;
   /* v8 ignore next -- an uninitialized `const` does not typecheck, and the
      run is gated on the project typechecking; `declare` is not admissible. */
   if (d.initializer === undefined) return undefined;
-  const init = unwrapParens(d.initializer);
-  if (ts.isNumericLiteral(init)) return numberToken(init);
-  const negated = negatedLiteral(init);
-  if (negated !== undefined) return `-${numberToken(negated)}`;
+  return constantExpr(d.initializer, admitted);
+}
+
+/** A constant expression: numeric literals and reads of constants
+ * already admitted, under the arithmetic operators and unary sign.
+ * Source order bounds the reads, so a forward or self reference is
+ * simply not yet admitted; every other shape declines. */
+function constantExpr(
+  e: ts.Expression,
+  admitted: (name: string) => ModelRef | undefined,
+): EmitExpr | undefined {
+  const u = unwrapParens(e);
+  if (ts.isNumericLiteral(u)) return { kind: "num", lit: numberToken(u) };
+  const negated = negatedLiteral(u);
+  if (negated !== undefined) {
+    return { kind: "num", lit: `-${numberToken(negated)}` };
+  }
+  if (ts.isIdentifier(u)) {
+    const ref = admitted(u.text);
+    if (ref === undefined) return undefined;
+    return {
+      kind: "const-read",
+      name: ref.name,
+      ...(ref.module !== "" ? { module: ref.module } : {}),
+    };
+  }
+  if (isUnaryArith(u)) {
+    const operand = constantExpr(u.operand, admitted);
+    if (operand === undefined) return undefined;
+    const op = u.operator === ts.SyntaxKind.MinusToken ? "-" : "+";
+    return { kind: "unop", op, operand };
+  }
+  if (ts.isBinaryExpression(u)) {
+    const op = u.operatorToken.getText();
+    if (!ARITH_OPERATORS.has(op)) return undefined;
+    const left = constantExpr(u.left, admitted);
+    const right = constantExpr(u.right, admitted);
+    if (left === undefined || right === undefined) return undefined;
+    return { kind: "binop", op, left, right };
+  }
   return undefined;
 }
 
@@ -3896,7 +3937,7 @@ function builtinAlias(
   binds: (name: string) => boolean,
 ): BuiltinEntry | undefined {
   if (!ts.isIdentifier(d.name) || d.type !== undefined) return undefined;
-  /* v8 ignore next -- as in `constantLiteral`: the declarator reaching here
+  /* v8 ignore next -- as in `constantInit`: the declarator reaching here
      is a `const` a typechecked project admits, so it has an initializer. */
   if (d.initializer === undefined) return undefined;
   const init = unwrapParens(d.initializer);
@@ -4078,15 +4119,21 @@ function walkEmitModule(
         );
       const binds = (name: string) =>
         names.has(name) || c.failed.has(key(name));
+      // An initializer's read resolves as a body's does: an import to its
+      // exporting module, anything else to this module's own.
+      const admitted = (name: string): ModelRef | undefined => {
+        const ref = names.get(name) ?? { module: qualifier, name };
+        return c.constants.has(modelKey(ref)) ? ref : undefined;
+      };
       for (const d of stmt.declarationList.declarations) {
-        const lit = admissible ? constantLiteral(d) : undefined;
-        if (lit !== undefined) {
+        const init = admissible ? constantInit(d, admitted) : undefined;
+        if (init !== undefined) {
           const name = (d.name as ts.Identifier).text;
           c.declarations.push({
             kind: "constant",
             name,
             ...(qualifier !== "" ? { module: qualifier } : {}),
-            lit,
+            init,
             source: stmt.getText(sf),
           });
           c.constants.add(key(name));

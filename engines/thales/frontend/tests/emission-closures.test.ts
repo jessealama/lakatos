@@ -638,7 +638,7 @@ describe("imported module constants", () => {
       kind: "constant",
       name: "daysInWeek",
       module: "constants.mts",
-      lit: "7",
+      init: { kind: "num", lit: "7" },
       source: "export const daysInWeek = 7;",
     });
     const fn = emission.declarations[1]!;
@@ -721,6 +721,73 @@ describe("imported module constants", () => {
         name: "daysInWeek",
         module: "constants.mts",
       },
+    });
+  });
+
+  test("a constant derived from an imported one reads it under its module", () => {
+    const main = [
+      'import { daysInWeek } from "./constants.mjs";',
+      "const hoursInWeek = daysInWeek * 24;",
+      "/** @ensures{p} forall (h: int ∈ [0, 200)) { weeks(h) >= 0 } */",
+      "export function weeks(h: number): number {",
+      "  return h / hoursInWeek;",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(
+      main,
+      "main.mts",
+      reader({ "constants.mts": CONSTANTS }),
+    );
+    expect(classified).toEqual([]);
+    expect(emission.declarations[1]).toEqual({
+      kind: "constant",
+      name: "hoursInWeek",
+      init: {
+        kind: "binop",
+        op: "*",
+        left: {
+          kind: "const-read",
+          name: "daysInWeek",
+          module: "constants.mts",
+        },
+        right: { kind: "num", lit: "24" },
+      },
+      source: "const hoursInWeek = daysInWeek * 24;",
+    });
+  });
+
+  test("a dependency's derived constant reads its sibling under the dependency's module", () => {
+    const units = [
+      "export const s = 1000;",
+      "export const m = s * 60;",
+      "",
+    ].join("\n");
+    const main = [
+      'import { m } from "./units.mjs";',
+      "/** @ensures{p} forall (x: int ∈ [0, 10)) { toMinutes(x) >= 0 } */",
+      "export function toMinutes(x: number): number {",
+      "  return x * m;",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(
+      main,
+      "main.mts",
+      reader({ "units.mts": units }),
+    );
+    expect(classified).toEqual([]);
+    expect(emission.declarations[1]).toEqual({
+      kind: "constant",
+      name: "m",
+      module: "units.mts",
+      init: {
+        kind: "binop",
+        op: "*",
+        left: { kind: "const-read", name: "s", module: "units.mts" },
+        right: { kind: "num", lit: "60" },
+      },
+      source: "export const m = s * 60;",
     });
   });
 });
