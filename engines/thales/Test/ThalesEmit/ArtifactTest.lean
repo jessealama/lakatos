@@ -63,7 +63,7 @@ def rendersOk (emissionPath : String) : CoreM Unit := do
     file := "t.ts"
     declarations := #[
       .const { name := "cap", module := some "constants.mts",
-               lit := "-0.5", source := "export const cap = -0.5;" }]
+               init := .num "-0.5", source := "export const cap = -0.5;" }]
     obligations := #[] }
   let rendered ← renderEmission e
   unless (rendered.splitOn "def TsModel.«constants.mts».cap : JsNumber :=").length == 2 do

@@ -453,11 +453,16 @@ def fnCommand (f : EmitFn) : RenderM (TSyntax `command) := do
   `(@[js_norm, grind] def $name $binders* : JsM JsNumber := do
       $[$elems:doElem]*)
 
-/-- A module constant: a pure `JsNumber` def, dual-tagged like the
-models so the closers and the grind rung can unfold it to its literal. -/
+/-- A module constant: a pure `JsNumber` def, dual-tagged like the models
+so the closers and the grind rung can unfold it — through the earlier
+constants it reads, down to the literals. -/
 def constCommand (c : EmitConstant) : RenderM (TSyntax `command) := do
   let name ← modelIdent c.module c.name
-  `(@[js_norm, grind] def $name : JsNumber := $(← numTerm c.lit))
+  let ⟨init, lifted⟩ ← valueTerm (fun _ => false) c.init
+  -- A pure def has no monad to lift into; the frontend's initializer
+  -- slice never produces one, so a lift here is an emission bug.
+  if lifted then throw s!"constant '{c.name}' has an initializer with effects"
+  `(@[js_norm, grind] def $name : JsNumber := $init)
 
 /-- Whether a statement tree assigns F anywhere. -/
 partial def hasSetOf (f : String) : JsStmt → Bool

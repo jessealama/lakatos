@@ -361,10 +361,28 @@ def ctorParamJson (n : String) : Json :=
 #guard (decodeExpr (Json.mkObj [("kind", "const-read")])) matches .error _
 #guard
   (decodeDecl (Json.mkObj
-    [("kind", "constant"), ("name", "cap"), ("lit", "-10"),
+    [("kind", "constant"), ("name", "cap"),
+     ("init", Json.mkObj [("kind", "num"), ("lit", "-10")]),
      ("source", "const cap = -10;")]))
-  matches .ok (.const { name := "cap", module := none, lit := "-10",
+  matches .ok (.const { name := "cap", module := none, init := .num "-10",
                         source := "const cap = -10;" })
+#guard
+  (decodeDecl (Json.mkObj
+    [("kind", "constant"), ("name", "m"),
+     ("init", Json.mkObj
+       [("kind", "binop"), ("op", "*"),
+        ("left", Json.mkObj [("kind", "const-read"), ("name", "s")]),
+        ("right", Json.mkObj [("kind", "num"), ("lit", "60")])]),
+     ("source", "const m = s * 60;")]))
+  matches .ok (.const { name := "m", module := none,
+                        init := .binop "*" (.constRead "s" none) (.num "60"),
+                        source := "const m = s * 60;" })
+-- The literal field is gone from the wire: a constant with no initializer
+-- expression is a decode error, not a literal.
+#guard
+  (decodeDecl (Json.mkObj
+    [("kind", "constant"), ("name", "cap"), ("lit", "1000"), ("source", "")]))
+  matches .error _
 #guard
   (decodeDecl (Json.mkObj [("kind", "constant"), ("name", "cap")]))
   matches .error _

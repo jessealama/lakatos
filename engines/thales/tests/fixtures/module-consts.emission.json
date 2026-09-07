@@ -4,8 +4,45 @@
     {
       "kind": "constant",
       "name": "millisecondsInSecond",
-      "lit": "1000",
+      "init": {
+        "kind": "num",
+        "lit": "1000"
+      },
       "source": "const millisecondsInSecond = 1000;"
+    },
+    {
+      "kind": "constant",
+      "name": "millisecondsInMinute",
+      "init": {
+        "kind": "binop",
+        "op": "*",
+        "left": {
+          "kind": "const-read",
+          "name": "millisecondsInSecond"
+        },
+        "right": {
+          "kind": "num",
+          "lit": "60"
+        }
+      },
+      "source": "const millisecondsInMinute = millisecondsInSecond * 60;"
+    },
+    {
+      "kind": "constant",
+      "name": "millisecondsInHour",
+      "init": {
+        "kind": "binop",
+        "op": "*",
+        "left": {
+          "kind": "const-read",
+          "name": "millisecondsInMinute"
+        },
+        "right": {
+          "kind": "num",
+          "lit": "60"
+        }
+      },
+      "source": "const millisecondsInHour = millisecondsInMinute * 60;"
     },
     {
       "kind": "function",
@@ -74,6 +111,34 @@
           "expr": {
             "kind": "id",
             "name": "s"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "function",
+      "name": "hoursToMilliseconds",
+      "params": [
+        {
+          "name": "hours",
+          "type": "number"
+        }
+      ],
+      "source": "export function hoursToMilliseconds(hours: number): number {\n  return hours * millisecondsInHour;\n}",
+      "body": [
+        {
+          "kind": "return",
+          "expr": {
+            "kind": "binop",
+            "op": "*",
+            "left": {
+              "kind": "id",
+              "name": "hours"
+            },
+            "right": {
+              "kind": "const-read",
+              "name": "millisecondsInHour"
+            }
           }
         }
       ]
@@ -186,6 +251,43 @@
             "right": {
               "kind": "const-read",
               "name": "millisecondsInSecond"
+            }
+          }
+        }
+      }
+    },
+    {
+      "function": "hoursToMilliseconds",
+      "property": "nonNegative",
+      "formula": "forall (h: int ∈ [0, 10)) { hoursToMilliseconds(h) >= 0 }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "h",
+            "kind": "range",
+            "lo": "0",
+            "hi": "10"
+          }
+        ],
+        "conclusion": {
+          "kind": "istrue",
+          "expr": {
+            "kind": "binop",
+            "op": ">=",
+            "left": {
+              "kind": "call",
+              "callee": "hoursToMilliseconds",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "h"
+                }
+              ]
+            },
+            "right": {
+              "kind": "num",
+              "lit": "0"
             }
           }
         }
