@@ -37,9 +37,6 @@ theorem sign_apply_neg (s : Sign) (n : Int) : (-s).apply n = -(s.apply n) := by
 theorem sign_neg_neg (s : Sign) : - -s = s := by
   cases s <;> rfl
 
-theorem sign_beq_neg_neg (s t : Sign) : (s == - -t) = (s == t) := by
-  cases s <;> cases t <;> rfl
-
 theorem sign_mul_comm (s t : Sign) : s * t = t * s := by
   cases s <;> cases t <;> rfl
 
@@ -57,7 +54,7 @@ theorem sub_eq_add_neg (spec : Format) (a b : UnpackedFloat) :
     UnpackedFloat.sub spec a b = UnpackedFloat.add spec a b.neg := by
   cases a <;> cases b <;>
     grind [UnpackedFloat.sub, UnpackedFloat.add, UnpackedFloat.neg,
-           sign_apply_neg, sign_neg_neg, sign_beq_neg_neg]
+           sign_apply_neg, sign_neg_neg]
 
 /-! ## Commutativity
 
@@ -124,8 +121,8 @@ theorem repeat_shiftRightOne_eq (m n : Nat) :
       simp [shiftedForm, ExtendedMantissa.shiftRightOne]
       grind
     | succ j =>
-      simp only [shiftedForm, ExtendedMantissa.shiftRightOne, if_neg (by omega : ¬j + 1 = 0),
-        if_neg (by omega : ¬j + 1 + 1 = 0)]
+      simp only [shiftedForm, ExtendedMantissa.shiftRightOne, ite_eq_right (by omega : ¬j + 1 = 0),
+        ite_eq_right (by omega : ¬j + 1 + 1 = 0)]
       refine ExtendedMantissa.mk.injEq .. ▸ ⟨?_, ?_, ?_⟩
       · show m / 2 ^ (j + 1) / 2 = m / 2 ^ (j + 1 + 1)
         rw [Nat.div_div_eq_div_mul, ← Nat.pow_succ]
@@ -158,7 +155,7 @@ theorem roundedMantissa_shiftedForm (m n : Nat) :
       rw [Nat.pow_succ, Nat.mod_mul]; omega
     have hk : 0 < 2 ^ k := Nat.two_pow_pos k
     have hmk : m % 2 ^ k < 2 ^ k := Nat.mod_lt _ hk
-    simp only [shiftedForm, if_neg (by omega : ¬k + 1 = 0), Nat.add_sub_cancel]
+    simp only [shiftedForm, ite_eq_right (by omega : ¬k + 1 = 0), Nat.add_sub_cancel]
     rw [ExtendedMantissa.roundedMantissa]
     have h2' : m / 2 ^ k % 2 = 0 ∨ m / 2 ^ k % 2 = 1 := by omega
     rcases h2' with h2 | h2 <;>
@@ -259,7 +256,7 @@ not the sign, so that one is here too. -/
 
 theorem unpackSign_packComponents64 {sign : Sign} {ev : BitVec 11} {mv : BitVec 52} :
     Sign.ofBitVec (unpackSign (packComponents .binary64 sign ev mv)) = sign := by
-  simp only [unpackSign, packComponents, BitVec.extractLsb]
+  simp only [unpackSign, packComponents]
   rw [BitVec.extractLsb'_append_eq_of_le (by omega),
     BitVec.extractLsb'_append_eq_of_le (by omega)]
   cases sign <;> rfl
@@ -282,7 +279,7 @@ theorem unpack_pack_of_normal64 (s : Sign) (m : Nat) (e : Int) (hm : 0 < m)
     omega
   rw [UnpackedFloat.pack]
   simp only [hlog, hbias]
-  rw [if_neg (by omega), if_pos (by simp [Format.mantissaBits])]
+  rw [ite_eq_right (by omega), ite_eq_left (by simp [Format.mantissaBits])]
   rw [UnpackedFloat.unpack]
   simp only [unpackMantissa_packComponents, unpackExponent_packComponents,
     unpackSign_packComponents64]
@@ -296,7 +293,7 @@ theorem unpack_pack_of_normal64 (s : Sign) (m : Nat) (e : Int) (hm : 0 < m)
     have := congrArg BitVec.toNat heq
     simp [BitVec.toNat_ofNat] at this
     omega
-  rw [if_neg hne1, if_neg hne0]
+  rw [ite_eq_right hne1, ite_eq_right hne0]
   have hmant : (1#1 ++ BitVec.ofNat 52 m).toNat = m := by
     rw [BitVec.toNat_append, ← Nat.shiftLeft_add_eq_or_of_lt (BitVec.ofNat 52 m).isLt,
       BitVec.toNat_ofNat, Nat.shiftLeft_eq]
@@ -396,7 +393,7 @@ theorem unpack_pack_of_canonical {u : UnpackedFloat} (h : Canonical u) :
       have hmb : Format.binary64.mantissaBits = 53 := by decide
       rw [UnpackedFloat.pack]
       simp only [hbias, hmb]
-      rw [if_neg (by decide), if_neg (by omega), UnpackedFloat.unpack]
+      rw [ite_eq_right (by decide), ite_eq_right (by omega), UnpackedFloat.unpack]
       simp only [unpackMantissa_packComponents, unpackExponent_packComponents,
         unpackSign_packComponents64]
       have hmant : (BitVec.ofNat 52 m).toNat = m := by
@@ -407,7 +404,7 @@ theorem unpack_pack_of_canonical {u : UnpackedFloat} (h : Canonical u) :
         rw [hmant] at this
         simp at this
         omega
-      rw [if_neg (by decide), if_pos trivial, dif_neg hne]
+      rw [ite_eq_right (by decide), ite_eq_left trivial, dite_eq_right hne]
       have hb1023 : ((Format.binary64.exponentBias : Nat) : Int) = 1023 := rfl
       simp [hmant, hb1023]
   | normal s m e h hlo hhi helo hehi =>
@@ -443,7 +440,7 @@ theorem packComponents_unpack (b : BitVec Format.binary64.numBits) :
     packComponents .binary64 (Sign.ofBitVec (unpackSign b)) (unpackExponent b)
       (unpackMantissa b) = b := by
   simp only [packComponents, sign_toBitVec_ofBitVec, unpackSign, unpackExponent,
-    unpackMantissa, BitVec.extractLsb]
+    unpackMantissa]
   ext i hi
   grind
 
@@ -498,7 +495,7 @@ theorem pack_unpack_of_valid {b : BitVec Format.binary64.numBits}
           omega
         rw [UnpackedFloat.pack]
         simp only [hbe]
-        rw [if_neg (by decide), if_neg hlog]
+        rw [ite_eq_right (by decide), ite_eq_right hlog]
         refine packComponents_eq_self hexp0 ?_
         rw [BitVec.ofNat_toNat, BitVec.setWidth_eq]
     · rename_i hexpnz
@@ -526,7 +523,7 @@ theorem pack_unpack_of_valid {b : BitVec Format.binary64.numBits}
         omega
       rw [UnpackedFloat.pack]
       simp only [hbe]
-      rw [if_neg (by simp only [Format.binary64]; omega), if_pos hlog]
+      rw [ite_eq_right (by simp only [Format.binary64]; omega), ite_eq_left hlog]
       refine packComponents_eq_self ?_ ?_
       · rw [BitVec.ofNat_toNat, BitVec.setWidth_eq]
       · rw [← BitVec.toNat_inj, BitVec.toNat_ofNat, happ,
@@ -658,14 +655,14 @@ theorem accuracyOfFraction_cases (num den : Nat) (_hden : 0 < den) (hnum : num <
     ∨ (accuracyOfFraction num den = .inexact .gt ∧ 0 < num ∧ den < 2 * num) := by
   rcases Nat.eq_zero_or_pos num with h0 | h0
   · subst h0
-    exact Or.inl ⟨by rw [accuracyOfFraction, if_pos rfl], rfl⟩
+    exact Or.inl ⟨by rw [accuracyOfFraction, ite_eq_left rfl], rfl⟩
   · rcases Nat.lt_trichotomy (2 * num) den with hc | hc | hc
     · exact Or.inr (Or.inl ⟨by
-        rw [accuracyOfFraction, if_neg (by omega), Nat.compare_eq_lt.mpr hc], h0, hc⟩)
+        rw [accuracyOfFraction, ite_eq_right (by omega), Nat.compare_eq_lt.mpr hc], h0, hc⟩)
     · exact Or.inr (Or.inr (Or.inl ⟨by
-        rw [accuracyOfFraction, if_neg (by omega), Nat.compare_eq_eq.mpr hc], h0, hc⟩))
+        rw [accuracyOfFraction, ite_eq_right (by omega), Nat.compare_eq_eq.mpr hc], h0, hc⟩))
     · exact Or.inr (Or.inr (Or.inr ⟨by
-        rw [accuracyOfFraction, if_neg (by omega), Nat.compare_eq_gt.mpr hc], h0, hc⟩))
+        rw [accuracyOfFraction, ite_eq_right (by omega), Nat.compare_eq_gt.mpr hc], h0, hc⟩))
 
 /-- Which `rnShiftF` branch fires at a successor shift, characterized
 den-free by the round bit, the low bits, and the initial fraction. -/
@@ -824,7 +821,7 @@ theorem roundWA_eq (s : Sign) (m : Nat) (e : Int) (num den : Nat)
       simp only [ExtendedMantissa.ofMantissaAndAccuracy, Nat.repeat,
         ExtendedMantissa.shiftRightOne]
     simp only [htgt₂, hn₂, hshift, Int.natCast_one]
-    rw [dif_neg (Nat.pos_iff_ne_zero.mp (Nat.two_pow_pos 52)), if_pos trivial]
+    rw [dite_eq_right (Nat.pos_iff_ne_zero.mp (Nat.two_pow_pos 52)), ite_eq_left trivial]
   · -- No overflow: the second shift is the identity.
     have hlog : (rnShiftF m ((grid m e - e).toNat) num den).log2 ≤ 52 := by
       rcases Nat.eq_zero_or_pos (rnShiftF m ((grid m e - e).toNat) num den) with h0 | h0
@@ -841,7 +838,7 @@ theorem roundWA_eq (s : Sign) (m : Nat) (e : Int) (num den : Nat)
         - grid m e).toNat = 0 := by omega
     simp only [hn₂, Nat.repeat, ExtendedMantissa.ofMantissaAndAccuracy,
       Int.natCast_zero, Int.add_zero]
-    rw [if_neg (by omega : ¬rnShiftF m ((grid m e - e).toNat) num den = 2 ^ 53)]
+    rw [ite_eq_right (by omega : ¬rnShiftF m ((grid m e - e).toNat) num den = 2 ^ 53)]
 
 /-! ## Value semantics -/
 
@@ -867,7 +864,7 @@ theorem key_roundWA_pos (m : Nat) (e : Int) (num den : Nat)
   have hG := grid_ge m e
   rw [roundWA_eq .positive m e num den hw hden hnum]
   by_cases hovf : rnShiftF m ((grid m e - e).toNat) num den = 2 ^ 53
-  · rw [if_pos hovf, hovf]
+  · rw [ite_eq_left hovf, hovf]
     simp only [key, Sign.apply]
     have ha : (grid m e + 1 + 1074).toNat = (grid m e + 1074).toNat + 1 := by omega
     rw [ha]
@@ -878,11 +875,11 @@ theorem key_roundWA_pos (m : Nat) (e : Int) (num den : Nat)
     have hcast2 : (2 : Int) = ((2 : Nat) : Int) := rfl
     rw [hcast2, ← Int.natCast_pow, ← Int.natCast_pow, ← Int.natCast_mul, ← Int.natCast_mul]
     omega
-  · rw [if_neg hovf]
+  · rw [ite_eq_right hovf]
     rcases Nat.eq_zero_or_pos (rnShiftF m ((grid m e - e).toNat) num den) with h0 | h0
-    · rw [dif_pos h0, h0]
+    · rw [dite_eq_left h0, h0]
       simp [key]
-    · rw [dif_neg (Nat.pos_iff_ne_zero.mp h0)]
+    · rw [dite_eq_right (Nat.pos_iff_ne_zero.mp h0)]
       simp [key, Sign.apply]
 
 /-- Rounding only threads the sign through, so the negative key mirrors the
@@ -894,13 +891,13 @@ theorem key_roundWA_neg (m : Nat) (e : Int) (num den : Nat)
   rw [roundWA_eq .negative m e num den hw hden hnum,
     roundWA_eq .positive m e num den hw hden hnum]
   by_cases hovf : rnShiftF m ((grid m e - e).toNat) num den = 2 ^ 53
-  · rw [if_pos hovf, if_pos hovf]
+  · rw [ite_eq_left hovf, ite_eq_left hovf]
     simp [key, Sign.apply]
-  · rw [if_neg hovf, if_neg hovf]
+  · rw [ite_eq_right hovf, ite_eq_right hovf]
     rcases Nat.eq_zero_or_pos (rnShiftF m ((grid m e - e).toNat) num den) with h0 | h0
-    · rw [dif_pos h0, dif_pos h0]
+    · rw [dite_eq_left h0, dite_eq_left h0]
       simp [key]
-    · rw [dif_neg (Nat.pos_iff_ne_zero.mp h0), dif_neg (Nat.pos_iff_ne_zero.mp h0)]
+    · rw [dite_eq_right (Nat.pos_iff_ne_zero.mp h0), dite_eq_right (Nat.pos_iff_ne_zero.mp h0)]
       simp [key, Sign.apply]
 
 /-! ## The master monotonicity theorem
@@ -1412,15 +1409,15 @@ theorem roundShape_roundWA (s : Sign) (m : Nat) (e : Int) (num den : Nat)
   have hle := rnShiftF_le m e num den hw
   rw [roundWA_eq s m e num den hw hden hnum]
   by_cases hovf : rnShiftF m ((grid m e - e).toNat) num den = 2 ^ 53
-  · rw [if_pos hovf]
+  · rw [ite_eq_left hovf]
     by_cases hbig : grid m e + 1 ≤ 971
     · exact .canonical (.normal s _ _ _ (Nat.le_refl _) pow52_lt_53 (by omega) hbig)
     · exact .overflow s _ _ _ (Nat.le_refl _) pow52_lt_53 (by omega) (by omega)
-  · rw [if_neg hovf]
+  · rw [ite_eq_right hovf]
     rcases Nat.eq_zero_or_pos (rnShiftF m ((grid m e - e).toNat) num den) with h0 | h0
-    · rw [dif_pos h0]
+    · rw [dite_eq_left h0]
       exact .canonical (.zero s)
-    · rw [dif_neg (Nat.pos_iff_ne_zero.mp h0)]
+    · rw [dite_eq_right (Nat.pos_iff_ne_zero.mp h0)]
       have hr53 : rnShiftF m ((grid m e - e).toNat) num den < 2 ^ 53 := by omega
       by_cases hsub : grid m e = -1074
       · rcases Nat.lt_or_ge (rnShiftF m ((grid m e - e).toNat) num den) (2 ^ 52) with hlt | hge
@@ -1462,7 +1459,7 @@ theorem unpack_pack_overflow (s : Sign) (m : Nat) (e : Int) (h : 0 < m)
     omega
   rw [UnpackedFloat.pack]
   simp only [hbias]
-  rw [if_pos (by
+  rw [ite_eq_left (by
     rw [show (2 : Nat) ^ Format.binary64.exponentBits = 2048 from rfl]
     omega : 2 ^ Format.binary64.exponentBits ≤ (e + 1075).toNat + 1)]
   cases s <;> rfl
@@ -1824,13 +1821,13 @@ theorem roundWA_ne_nan (s : Sign) (m : Nat) (e : Int) (num den : Nat)
     roundWithAccuracy .binary64 s m e (accuracyOfFraction num den) ≠ .notANumber := by
   rw [roundWA_eq s m e num den hw hden hnum]
   by_cases hovf : rnShiftF m ((grid m e - e).toNat) num den = 2 ^ 53
-  · rw [if_pos hovf]
+  · rw [ite_eq_left hovf]
     exact fun hc => UnpackedFloat.noConfusion hc
-  · rw [if_neg hovf]
+  · rw [ite_eq_right hovf]
     rcases Nat.eq_zero_or_pos (rnShiftF m ((grid m e - e).toNat) num den) with h0 | h0
-    · rw [dif_pos h0]
+    · rw [dite_eq_left h0]
       exact fun hc => UnpackedFloat.noConfusion hc
-    · rw [dif_neg (Nat.pos_iff_ne_zero.mp h0)]
+    · rw [dite_eq_right (Nat.pos_iff_ne_zero.mp h0)]
       exact fun hc => UnpackedFloat.noConfusion hc
 
 theorem round_shape (s : Sign) {m : Nat} (hm : 0 < m) (E : Int)
@@ -2649,7 +2646,7 @@ theorem round_canonical_self {s : Sign} {m : Nat} {e : Int} {h : 0 < m}
     rw [h0']
     exact hr
   simp only [hr']
-  rw [if_neg (by omega), dif_neg (by omega)]
+  rw [ite_eq_right (by omega), dite_eq_right (by omega)]
   simp only [hg]
 
 /-- `normalize` applied to a canonical value's own aligned form returns it. -/

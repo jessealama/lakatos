@@ -43,7 +43,7 @@ vocabulary (`pure` → `pure'`); no TS identifier contains a prime, so a
 trailing one is always the renderer's, and the witness must report the
 source spelling the annotation wrote. -/
 def SpineBinder.sourceName (b : SpineBinder) : String :=
-  if b.name.endsWith "'" then b.name.dropRight 1 else b.name
+  if b.name.endsWith "'" then (b.name.dropEnd 1).copy else b.name
 
 structure PropSpine where
   binders : List SpineBinder
