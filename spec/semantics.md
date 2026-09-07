@@ -234,6 +234,12 @@ A domain may be a class name: `∀ (p q : Point) { 0 <= p.distance(q) }`.
   root but differ in what an engine reports about vacuity; TODO: state
   the vacuity-reporting obligation (e.g. a refuter should report when
   all samples were discarded).
+- **Engine obligations**: each engine evaluates `¬`, `∧`, and `∨` as the
+  host's `!`, `&&`, and `||` over its operands. On atoms that evaluate to
+  genuine booleans, which is all this specification admits, that is the
+  classical connective. An operand that throws is outside this
+  specification's domain (see Islands); what an engine reports for one is
+  its own business, not a claim about the formula.
 
 ### Equations (`≡` / `≢`)
 

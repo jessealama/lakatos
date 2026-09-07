@@ -1,6 +1,7 @@
 // How both the emitter and its tests read source shapes: SyntaxKind
 // names, numeric-literal tokens, binding names, number-binder bounds,
-// and the guard-chain shape of a Lemma formula.
+// and the guard-chain shape of a Lemma formula, with its connectives
+// composed as JS.
 
 import ts from "typescript";
 import type { Binder, Formula } from "../../../../lemma/src/index.js";
@@ -122,20 +123,50 @@ export function numberGuard(range: Binder["range"]): {
   };
 }
 
-/** The body shapes this slice can structure, as guard atoms around a
- * conclusion atom: a bare atom, or a top-level implication chain whose
- * antecedents and conclusion are all atoms — exactly the shape the refuter
- * lowers to fc.pre discards. Any other connective is undefined (bare). */
+/** The JS text a formula's own connectives compose to — the refuter's
+ * reading, so both engines evaluate `∧ ∨ ¬` as the host's short-circuit
+ * operators over the atoms. Every operand is parenthesized, so grouping
+ * is the tree's. `↔` and a nested `→` have no reading. */
+export function connectiveJs(f: Formula): string | undefined {
+  switch (f.kind) {
+    case "atom":
+      return f.js;
+    case "not": {
+      const arg = connectiveJs(f.arg);
+      return arg === undefined ? undefined : `!(${arg})`;
+    }
+    case "and":
+    case "or": {
+      const left = connectiveJs(f.left);
+      const right = connectiveJs(f.right);
+      if (left === undefined || right === undefined) return undefined;
+      return `(${left}) ${f.kind === "and" ? "&&" : "||"} (${right})`;
+    }
+    case "iff":
+    case "implication":
+      return undefined;
+  }
+}
+
+/** The body shapes the emitter structures, as guard text around one
+ * conclusion text: a connective tree over atoms, or a root implication
+ * chain whose antecedents and consequent are each such a tree — one guard
+ * per antecedent, whatever its shape, so the guard count is the chain's.
+ * A `↔` or a nested `→` anywhere makes the reading undefined (bare). */
 export function chainReading(
   ast: Formula,
 ): { guards: string[]; conclusion: string } | undefined {
-  if (ast.kind === "atom") return { guards: [], conclusion: ast.js };
-  if (ast.kind !== "implication") return undefined;
-  if (ast.consequent.kind !== "atom") return undefined;
+  if (ast.kind !== "implication") {
+    const conclusion = connectiveJs(ast);
+    return conclusion === undefined ? undefined : { guards: [], conclusion };
+  }
+  const conclusion = connectiveJs(ast.consequent);
+  if (conclusion === undefined) return undefined;
   const guards: string[] = [];
   for (const a of ast.antecedents) {
-    if (a.kind !== "atom") return undefined;
-    guards.push(a.js);
+    const g = connectiveJs(a);
+    if (g === undefined) return undefined;
+    guards.push(g);
   }
-  return { guards, conclusion: ast.consequent.js };
+  return { guards, conclusion };
 }
