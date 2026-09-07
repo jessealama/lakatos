@@ -1200,9 +1200,8 @@ describe("formula classification", () => {
   });
 
   test("a number-valued atom under ∨ refuses at the operator", () => {
-    // Island typing refuses this atom before the emitter in the CLI; here
-    // the construct pre-scan answers first, ahead of the typed walk that
-    // would report the mismatch as an Error.
+    // Island typing refuses this atom before the emitter in the CLI; here the
+    // emitter's own operand pre-scan answers.
     expect(
       classifications(
         formulaWith("forall (x: int ∈ [0, 5)) { f(x) ∨ x === 0 -> f(x) >= 0 }"),
@@ -1769,6 +1768,21 @@ describe("unsupported ranges classify NotTried before emission", () => {
     expect(emission.obligations[0]!.payload).toEqual({ kind: "bare" });
   });
 
+  test("a clamp under a connective body is the sole blocker and reports unsupported-range", () => {
+    const src =
+      "/** @ensures{p} forall (x: int ∈ [0, 1000000000000000000000000000000]) { keep(x) >= 0 ∨ keep(x) <= x } */\n" +
+      "export function keep(x: number): number {\n  return x;\n}\n";
+    const { classified } = emitModule(src, "huge-or.ts");
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "NotTried",
+        kind: "unsupported-range",
+        reason:
+          "endpoint 1000000000000000000000000000000 exceeds the safe integer range (±9007199254740991)",
+      }),
+    ]);
+  });
+
   test("an interval the clamp empties is unsupported-range whatever the body", () => {
     const src =
       "/** @ensures{p} forall (x: int ∈ [1000000000000000000000000000000, 10000000000000000000000000000000]) { keep(x) >= 0 && keep(x) <= x } */\n" +
@@ -2164,6 +2178,7 @@ describe("equation guards", () => {
       FILE,
     ).emission;
     expectValidEmission(negated);
+    assert(negated.obligations[0]!.payload.kind === "structured");
     expect(negated.obligations[0]!.payload).toEqual(
       glyph.obligations[0]!.payload,
     );

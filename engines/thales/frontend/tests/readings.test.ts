@@ -25,6 +25,8 @@ describe("connectiveJs", () => {
   test.each([
     ["a biconditional", "f(x) > 0 ↔ x > 0"],
     ["a nested implication", "(x > 0 → f(x) > 0) ∨ x === 0"],
+    ["a negated biconditional", "¬(f(x) > 0 ↔ x > 0)"],
+    ["a nested implication on the right", "x === 0 ∨ (x > 0 → f(x) > 0)"],
   ])("%s has no reading", (_label, body) => {
     expect(connectiveJs(parseBody(body))).toBeUndefined();
   });
