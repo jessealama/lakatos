@@ -340,9 +340,10 @@ describe("obligation payload degradations", () => {
       "a half-bounded floor above zero",
       "forall (x: int ∈ [3, ∞)) { f(x) ≡ x }",
     ],
+    ["a biconditional", "forall (x: int ∈ [0, 5)) { f(x) >= 0 ↔ x >= 0 }"],
     [
-      "a connective outside the chain shape",
-      "forall (x: int ∈ [0, 5)) { f(x) >= 0 ∨ f(x) <= 9 }",
+      "a nested implication under a connective",
+      "forall (x: int ∈ [0, 5)) { (x > 0 → f(x) > 0) ∨ x === 0 }",
     ],
     [
       "an unparseable guard atom",
@@ -1198,6 +1199,26 @@ describe("formula classification", () => {
     });
   });
 
+  test("a number-valued atom under ∨ refuses at the operator", () => {
+    // Island typing refuses this atom before the emitter in the CLI; here
+    // the construct pre-scan answers first, ahead of the typed walk that
+    // would report the mismatch as an Error.
+    expect(
+      classifications(
+        formulaWith("forall (x: int ∈ [0, 5)) { f(x) ∨ x === 0 -> f(x) >= 0 }"),
+      ),
+    ).toEqual({
+      classified: [
+        [
+          "Inappropriate",
+          "'||' models boolean operands only; the left operand is not a " +
+            "boolean (CallExpression at 1:3)",
+        ],
+      ],
+      obligations: 0,
+    });
+  });
+
   // Guards precede the conclusion in the scan, so the two refusals must be
   // distinguishable: the reported one is the guard's.
   test("a refused guard is reported before a refused conclusion", () => {
@@ -1739,9 +1760,9 @@ describe("unsupported ranges classify NotTried before emission", () => {
   });
 
   test("a clamp that is not the sole blocker degrades to bare", () => {
-    // The disjunction keeps the body unstructurable, so the clamp never wins.
+    // The biconditional keeps the body unstructurable, so the clamp never wins.
     const src =
-      "/** @ensures{p} forall (x: int ∈ [0, 1000000000000000000000000000000]) { keep(x) >= 0 ∨ keep(x) <= x } */\n" +
+      "/** @ensures{p} forall (x: int ∈ [0, 1000000000000000000000000000000]) { keep(x) >= 0 ↔ keep(x) <= x } */\n" +
       "export function keep(x: number): number {\n  return x;\n}\n";
     const { classified, emission } = emitModule(src, "huge-bare.ts");
     expect(classified).toEqual([]);
@@ -2026,6 +2047,126 @@ describe("equation guards", () => {
         }),
       }),
     ]);
+  });
+
+  test("a ∨ guard walks to one || hypothesis", () => {
+    const { emission } = emitModule(
+      src("forall (n: int ∈ [0, 4)) { n === 0 ∨ n === 1 -> pick(n) <= 1 }"),
+      FILE,
+    );
+    expectValidEmission(emission);
+    const payload = emission.obligations[0]!.payload;
+    assert(payload.kind === "structured");
+    expect(payload.guards).toEqual([
+      {
+        kind: "binop",
+        op: "||",
+        left: {
+          kind: "binop",
+          op: "===",
+          left: { kind: "id", name: "n" },
+          right: { kind: "num", lit: "0" },
+        },
+        right: {
+          kind: "binop",
+          op: "===",
+          left: { kind: "id", name: "n" },
+          right: { kind: "num", lit: "1" },
+        },
+      },
+    ]);
+    expect(payload.conclusion).toEqual({
+      kind: "istrue",
+      expr: {
+        kind: "binop",
+        op: "<=",
+        left: {
+          kind: "call",
+          callee: "pick",
+          args: [{ kind: "id", name: "n" }],
+        },
+        right: { kind: "num", lit: "1" },
+      },
+    });
+  });
+
+  test("an ∧ conclusion is one && island, never an equation", () => {
+    const { emission } = emitModule(
+      src("forall (n: int ∈ [0, 4)) { pick(n) >= 0 ∧ pick(n) ≡ n }"),
+      FILE,
+    );
+    expectValidEmission(emission);
+    const payload = emission.obligations[0]!.payload;
+    assert(payload.kind === "structured");
+    expect(payload.guards).toBeUndefined();
+    expect(payload.conclusion).toEqual({
+      kind: "istrue",
+      expr: {
+        kind: "binop",
+        op: "&&",
+        left: {
+          kind: "binop",
+          op: ">=",
+          left: {
+            kind: "call",
+            callee: "pick",
+            args: [{ kind: "id", name: "n" }],
+          },
+          right: { kind: "num", lit: "0" },
+        },
+        right: {
+          kind: "same-value",
+          left: {
+            kind: "call",
+            callee: "pick",
+            args: [{ kind: "id", name: "n" }],
+          },
+          right: { kind: "id", name: "n" },
+        },
+      },
+    });
+  });
+
+  test("a ¬ conclusion is a ! island", () => {
+    const { emission } = emitModule(
+      src("forall (n: int ∈ [0, 4)) { ¬(pick(n) > 100) }"),
+      FILE,
+    );
+    expectValidEmission(emission);
+    const payload = emission.obligations[0]!.payload;
+    assert(payload.kind === "structured");
+    expect(payload.conclusion).toEqual({
+      kind: "istrue",
+      expr: {
+        kind: "unop",
+        op: "!",
+        operand: {
+          kind: "binop",
+          op: ">",
+          left: {
+            kind: "call",
+            callee: "pick",
+            args: [{ kind: "id", name: "n" }],
+          },
+          right: { kind: "num", lit: "100" },
+        },
+      },
+    });
+  });
+
+  test("¬(A ≡ B) and A ≢ B walk to the same guard", () => {
+    const negated = emitModule(
+      src("forall (n: int ∈ [0, 2)) { ¬(n ≡ 1) -> pick(n) === 1 }"),
+      FILE,
+    ).emission;
+    const glyph = emitModule(
+      src("forall (n: int ∈ [0, 2)) { n ≢ 1 -> pick(n) === 1 }"),
+      FILE,
+    ).emission;
+    expectValidEmission(negated);
+    expect(negated.obligations[0]!.payload).toEqual(
+      glyph.obligations[0]!.payload,
+    );
   });
 
   test("a top-level equation conclusion still maps to eq, not same-value", () => {
