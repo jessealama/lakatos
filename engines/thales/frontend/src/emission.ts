@@ -3561,6 +3561,8 @@ const BUILTIN_MEMBER_CALLS: ReadonlyMap<string, BuiltinEntry> = new Map(
       ["Math", "trunc", "num"],
       ["Math", "floor", "num"],
       ["Math", "ceil", "num"],
+      ["Math", "round", "num"],
+      ["Math", "sign", "num"],
       ["Number", "isFinite", "bool"],
       ["Number", "isNaN", "bool"],
     ] as const

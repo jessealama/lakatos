@@ -1,8 +1,8 @@
 import Init.Data.Float.Model.Float
 
 /-!
-Binary64 operations JavaScript has and Lean does not: `%`, and the three
-integral roundings Lean ships only as opaque externs.
+Binary64 operations JavaScript has and Lean does not: `%`, the integral
+roundings Lean ships only as opaque externs, and the sign unit.
 
 Lean ships no float remainder at all — no `Float.mod`, no `Mod Float`
 instance — so `%` has nothing to map to. It is built here from
@@ -48,14 +48,21 @@ def tsRem (a b : Float) : Float :=
 
 /-- The integral neighbour a fractional magnitude rounds to. -/
 inductive RoundDir where
-  | towardZero | towardNegInf | towardPosInf
+  | towardZero | towardNegInf | towardPosInf | nearestHalfUp
 
 /-- Round to an integral value in the given direction. A finite value
 with a non-negative exponent is already integral; otherwise the mantissa
 loses its fraction bits, and floor/ceil bump the magnitude when the
 dropped bits were nonzero and the sign matches the direction. `normalize`
 repacks; its `zeroSign` carries the input's sign, so a magnitude that
-rounds to zero keeps it (`Math.ceil(-0.5)` is `-0`). -/
+rounds to zero keeps it (`Math.ceil(-0.5)` is `-0`).
+
+`nearestHalfUp` compares the dropped bits against half of their place
+value rather than testing them for zero, which is what keeps it exact:
+`Math.round` is not `Math.floor(x + 0.5)`, since that sum rounds before
+the floor does. Ties go toward `+∞`, so the positive side bumps on a
+half and the negative side does not. The match names every direction:
+a new one must state its own rule rather than inherit a catch-all. -/
 def roundIntegral (spec : Format) (dir : RoundDir) : UnpackedFloat → UnpackedFloat
   | .notANumber => .notANumber
   | .infinity s => .infinity s
@@ -65,12 +72,19 @@ def roundIntegral (spec : Format) (dir : RoundDir) : UnpackedFloat → UnpackedF
     else
       let k := (-e).toNat
       let q := m >>> k
-      let inexact := m % 2 ^ k != 0
+      let frac := m % 2 ^ k
+      let inexact := frac != 0
+      -- `e < 0` here, so `k ≥ 1` and the half below is a place value.
+      let half := 2 ^ (k - 1)
       let bump :=
         match dir, s with
+        | .towardZero, _ => false
         | .towardNegInf, .negative => inexact
+        | .towardNegInf, .positive => false
         | .towardPosInf, .positive => inexact
-        | _, _ => false
+        | .towardPosInf, .negative => false
+        | .nearestHalfUp, .positive => decide (half ≤ frac)
+        | .nearestHalfUp, .negative => decide (half < frac)
       normalize spec (s.apply (if bump then q + 1 else q)) 0 s
 
 /-- `Math.trunc`: toward zero. -/
@@ -84,6 +98,22 @@ def tsFloor (a : Float) : Float :=
 /-- `Math.ceil`: toward positive infinity. -/
 def tsCeil (a : Float) : Float :=
   .ofModel (.pack (roundIntegral Format.binary64 .towardPosInf a.toModel.unpack))
+
+/-- `Math.round`: to nearest, ties toward positive infinity. -/
+def tsRound (a : Float) : Float :=
+  .ofModel (.pack (roundIntegral Format.binary64 .nearestHalfUp a.toModel.unpack))
+
+/-- `Math.sign`: the unit of the input's sign. NaN and the zeros come back
+unchanged — `Math.sign(-0)` is `-0` — and every other value, subnormals
+and infinities included, is `±1`. -/
+def tsSign (a : Float) : Float :=
+  match a.toModel.unpack with
+  | .notANumber => a
+  | .zero _ => a
+  | .infinity .negative => -1.0
+  | .infinity .positive => 1.0
+  | .finite .negative _ _ _ => -1.0
+  | .finite .positive _ _ _ => 1.0
 
 /-- `Number::sameValue`, the meaning of `Object.is` on numbers.
 Propositional equality on `Float` is exactly SameValue — every NaN is

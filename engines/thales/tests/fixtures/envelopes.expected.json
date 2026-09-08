@@ -1463,12 +1463,37 @@
       "axioms": []
     }
   ],
-  "engines/thales/tests/conformance/inappropriate/math-sign.ts": [
+  "engines/thales/tests/conformance/theorem/round-half-up.ts": [
+    {
+      "function": "roundHalf",
+      "property": "tieRoundsUp",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_8526578319619232967",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/sign-unit.ts": [
     {
       "function": "signOf",
-      "property": "bounded",
+      "property": "atMostOne",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_12946874305285994899",
+      "axioms": []
+    },
+    {
+      "function": "signOf",
+      "property": "atLeastMinusOne",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_15154428010620234034",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/inappropriate/math-log.ts": [
+    {
+      "function": "integerLog",
+      "property": "nonNegative",
       "szs": "Inappropriate",
-      "reason": "'signOf' could not be modeled: 'Math.sign' is not supported"
+      "reason": "'integerLog' could not be modeled: 'Math.log' is not supported"
     }
   ]
 }
