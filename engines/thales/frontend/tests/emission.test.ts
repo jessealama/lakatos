@@ -2472,11 +2472,35 @@ describe("Math.sqrt models as Float.sqrt", () => {
     ]);
   });
 
-  test("Math.pow keeps the unmapped-construct refusal", () => {
+  test("Math.pow reports itself as unsupported", () => {
     const src = [
       "/** @ensures{p} forall (n: int ∈ [0, 3)) { square(n) >= 0 } */",
       "export function square(x: number): number {",
       "  return Math.pow(x, 2);",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: "'square' could not be modeled: 'Math.pow' is not supported",
+      }),
+    ]);
+  });
+
+  test("an unlisted member in a formula atom reports itself from the walk", () => {
+    expect(
+      classifications(
+        formulaWith("forall (x: int ∈ [0, 5)) { Math.log(x) >= 0 }"),
+      ).classified,
+    ).toEqual([["Inappropriate", "'Math.log' is not supported"]]);
+  });
+
+  test("a shadowed object is not a builtin, so its member stays a construct", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 3)) { lg(n) >= 0 } */",
+      "export function lg(x: number, Math: number): number {",
+      "  return Math.log(x);",
       "}",
     ].join("\n");
     const { classified } = emitModule(src, FILE);
@@ -2842,7 +2866,7 @@ describe("builtin member calls model as Float primitives", () => {
     );
   });
 
-  test("Number.parseFloat keeps the unmapped-construct refusal", () => {
+  test("Number.parseFloat reports itself as unsupported", () => {
     const src = [
       "/** @ensures{p} forall (n: int ∈ [0, 3)) { conv(n) >= 0 } */",
       "export function conv(x: number): number {",
@@ -2853,9 +2877,7 @@ describe("builtin member calls model as Float primitives", () => {
     expect(classified).toEqual([
       expect.objectContaining({
         szs: "Inappropriate",
-        reason: expect.stringContaining(
-          "unmapped TypeScript construct 'CallExpression'",
-        ),
+        reason: expect.stringContaining("'Number.parseFloat' is not supported"),
       }),
     ]);
   });

@@ -468,8 +468,7 @@ interface FailedDecl {
   reason: string;
 }
 
-/** Operators deliberately left without a model, and why — the mirror of
- * `unmodeledOperator?` in Model.lean, byte for byte. */
+/** Operators deliberately left without a model, and why. */
 const REFUSED_OPERATORS = new Map<string, string>([
   [
     "**",
@@ -836,6 +835,8 @@ function findConstruct(
     }
     return undefined;
   }
+  const unsupported = unsupportedBuiltin(e, scope);
+  if (unsupported !== undefined) return unsupported;
   if (ts.isCallExpression(e) && ts.isIdentifier(e.expression)) {
     for (const a of e.arguments) {
       const found = findConstruct(a, sf, scope);
@@ -1845,7 +1846,16 @@ function walkTyped(
     const failed = constructAt(e, e.kind, sf);
     throw new ModelError(failed.reason, failed.construct);
   }
-  // Unreachable after the construct scan; degrade like an opaque node.
+  // An unlisted standard-library member the pre-scans did not reach still
+  // names itself; anything else is outside the model and degrades like an
+  // opaque node.
+  /* v8 ignore start -- the construct scan reaches every call before the
+     walk does; kept so the walk's refusal cannot drift from the scan's. */
+  const unsupported = unsupportedBuiltin(e, scope);
+  if (unsupported !== undefined) {
+    throw new ModelError(unsupported.reason, unsupported.construct);
+  }
+  /* v8 ignore stop */
   throw new ModelError(constructAt(e, e.kind, sf).reason);
 }
 
@@ -3580,6 +3590,22 @@ function builtinSpelling(
   if (!BUILTIN_OBJECTS.has(object)) return undefined;
   if (scope.vars.has(object) || moduleBinds(scope, object)) return undefined;
   return `${object}.${callee.name.text}`;
+}
+
+/** A standard-library member call the whitelist does not cover. The
+ * failure names the member: the source wrote a real API, not an
+ * arbitrary construct, and the object's other members are the reason
+ * the whitelist exists. */
+function unsupportedBuiltin(
+  e: ts.Expression,
+  scope: WalkScope,
+): FailedDecl | undefined {
+  if (!ts.isCallExpression(e)) return undefined;
+  const spelled = builtinSpelling(e.expression, scope);
+  if (spelled === undefined || BUILTIN_MEMBER_CALLS.has(spelled)) {
+    return undefined;
+  }
+  return { construct: spelled, reason: `'${spelled}' is not supported` };
 }
 
 /** The whitelisted builtin member call an expression is, if any, with
