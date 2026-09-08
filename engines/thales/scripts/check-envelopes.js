@@ -216,14 +216,17 @@ const SAMEVALUE_FIXTURES = [
   `${CONFORMANCE}/inappropriate/object-is-string.ts`,
 ];
 
-/** The integral-rounding slice: Math.trunc, Math.floor, and Math.ceil
- * over bounded int binders, the signed zero ceil keeps below one, and a
- * member of the same objects the whitelist does not cover. */
+/** The integral-rounding slice: Math.trunc, Math.floor, Math.ceil,
+ * Math.round, and Math.sign over bounded int binders, the signed zero
+ * ceil keeps below one, the tie direction round carries, and a member of
+ * the same objects the whitelist does not cover. */
 const ROUNDING_FIXTURES = [
   `${CONFORMANCE}/theorem/days-to-weeks.ts`,
   `${CONFORMANCE}/theorem/halve-integers.ts`,
   `${CONFORMANCE}/theorem/ceil-keeps-sign.ts`,
-  `${CONFORMANCE}/inappropriate/math-sign.ts`,
+  `${CONFORMANCE}/theorem/round-half-up.ts`,
+  `${CONFORMANCE}/theorem/sign-unit.ts`,
+  `${CONFORMANCE}/inappropriate/math-log.ts`,
 ];
 
 const fixtures =
