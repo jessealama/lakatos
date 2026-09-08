@@ -159,11 +159,15 @@
         {
           "kind": "return",
           "expr": {
-            "kind": "math-abs",
-            "arg": {
-              "kind": "id",
-              "name": "x"
-            }
+            "kind": "builtin",
+            "object": "Math",
+            "member": "abs",
+            "args": [
+              {
+                "kind": "id",
+                "name": "x"
+              }
+            ]
           }
         }
       ]
@@ -565,17 +569,21 @@
         "conclusion": {
           "kind": "istrue",
           "expr": {
-            "kind": "number-is-finite",
-            "arg": {
-              "kind": "call",
-              "callee": "halveSafe",
-              "args": [
-                {
-                  "kind": "id",
-                  "name": "n"
-                }
-              ]
-            }
+            "kind": "builtin",
+            "object": "Number",
+            "member": "isFinite",
+            "args": [
+              {
+                "kind": "call",
+                "callee": "halveSafe",
+                "args": [
+                  {
+                    "kind": "id",
+                    "name": "n"
+                  }
+                ]
+              }
+            ]
           }
         }
       }
@@ -597,17 +605,21 @@
         "conclusion": {
           "kind": "istrue",
           "expr": {
-            "kind": "number-is-nan",
-            "arg": {
-              "kind": "call",
-              "callee": "zeroOverZero",
-              "args": [
-                {
-                  "kind": "id",
-                  "name": "n"
-                }
-              ]
-            }
+            "kind": "builtin",
+            "object": "Number",
+            "member": "isNaN",
+            "args": [
+              {
+                "kind": "call",
+                "callee": "zeroOverZero",
+                "args": [
+                  {
+                    "kind": "id",
+                    "name": "n"
+                  }
+                ]
+              }
+            ]
           }
         }
       }

@@ -21,11 +21,15 @@
               "kind": "inject",
               "tag": "boolean",
               "expr": {
-                "kind": "number-is-finite",
-                "arg": {
-                  "kind": "id",
-                  "name": "x"
-                }
+                "kind": "builtin",
+                "object": "Number",
+                "member": "isFinite",
+                "args": [
+                  {
+                    "kind": "id",
+                    "name": "x"
+                  }
+                ]
               }
             },
             "right": {
@@ -188,11 +192,15 @@
               "kind": "inject",
               "tag": "boolean",
               "expr": {
-                "kind": "number-is-nan",
-                "arg": {
-                  "kind": "num",
-                  "lit": "0"
-                }
+                "kind": "builtin",
+                "object": "Number",
+                "member": "isNaN",
+                "args": [
+                  {
+                    "kind": "num",
+                    "lit": "0"
+                  }
+                ]
               }
             }
           },
@@ -310,22 +318,30 @@
               "kind": "inject",
               "tag": "boolean",
               "expr": {
-                "kind": "number-is-finite",
-                "arg": {
-                  "kind": "id",
-                  "name": "n"
-                }
+                "kind": "builtin",
+                "object": "Number",
+                "member": "isFinite",
+                "args": [
+                  {
+                    "kind": "id",
+                    "name": "n"
+                  }
+                ]
               }
             },
             "right": {
               "kind": "inject",
               "tag": "boolean",
               "expr": {
-                "kind": "number-is-finite",
-                "arg": {
-                  "kind": "id",
-                  "name": "n"
-                }
+                "kind": "builtin",
+                "object": "Number",
+                "member": "isFinite",
+                "args": [
+                  {
+                    "kind": "id",
+                    "name": "n"
+                  }
+                ]
               }
             }
           }
@@ -355,11 +371,15 @@
               "kind": "inject",
               "tag": "boolean",
               "expr": {
-                "kind": "number-is-finite",
-                "arg": {
-                  "kind": "id",
-                  "name": "n"
-                }
+                "kind": "builtin",
+                "object": "Number",
+                "member": "isFinite",
+                "args": [
+                  {
+                    "kind": "id",
+                    "name": "n"
+                  }
+                ]
               }
             },
             "right": {
@@ -396,11 +416,15 @@
               "kind": "inject",
               "tag": "boolean",
               "expr": {
-                "kind": "number-is-finite",
-                "arg": {
-                  "kind": "id",
-                  "name": "n"
-                }
+                "kind": "builtin",
+                "object": "Number",
+                "member": "isFinite",
+                "args": [
+                  {
+                    "kind": "id",
+                    "name": "n"
+                  }
+                ]
               }
             },
             "right": {

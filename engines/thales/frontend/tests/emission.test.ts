@@ -2390,7 +2390,7 @@ describe("NaN and Infinity resolve as expression atoms", () => {
 describe("Math.sqrt models as Float.sqrt", () => {
   const FILE = "engines/thales/tests/fixtures/tracer.ts"; // any resolvable path; no imports are followed
 
-  test("a returned Math.sqrt walks to a math-sqrt node", () => {
+  test("a returned Math.sqrt walks to a builtin node", () => {
     const src = [
       "/** @ensures{p} forall (n: int ∈ [0, 3)) { root(n) >= 0 } */",
       "export function root(x: number): number {",
@@ -2405,7 +2405,12 @@ describe("Math.sqrt models as Float.sqrt", () => {
         body: [
           {
             kind: "return",
-            expr: { kind: "math-sqrt", arg: { kind: "id", name: "x" } },
+            expr: {
+              kind: "builtin",
+              object: "Math",
+              member: "sqrt",
+              args: [{ kind: "id", name: "x" }],
+            },
           },
         ],
       }),
@@ -2425,7 +2430,12 @@ describe("Math.sqrt models as Float.sqrt", () => {
       expect.objectContaining({
         conclusion: expect.objectContaining({
           expr: expect.objectContaining({
-            left: { kind: "math-sqrt", arg: { kind: "id", name: "n" } },
+            left: {
+              kind: "builtin",
+              object: "Math",
+              member: "sqrt",
+              args: [{ kind: "id", name: "n" }],
+            },
           }),
         }),
       }),
@@ -2513,12 +2523,68 @@ describe("Math.sqrt models as Float.sqrt", () => {
       }),
     ]);
   });
+
+  test.each([
+    ["trunc", "Math.trunc(x)"],
+    ["floor", "Math.floor(x)"],
+    ["ceil", "Math.ceil(x)"],
+  ])("Math.%s walks to a builtin node", (member, call) => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 3)) { r(n) >= 0 } */",
+      "export function r(x: number): number {",
+      `  return ${call};`,
+      "}",
+    ].join("\n");
+    const { emission } = emitModule(src, FILE);
+    expectValidEmission(emission);
+    expect(emission.declarations).toEqual([
+      expect.objectContaining({
+        name: "r",
+        body: [
+          {
+            kind: "return",
+            expr: {
+              kind: "builtin",
+              object: "Math",
+              member,
+              args: [{ kind: "id", name: "x" }],
+            },
+          },
+        ],
+      }),
+    ]);
+  });
+
+  test("a formula atom calls Math.trunc directly", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 3)) { Math.trunc(n) >= 0 } */",
+      "export function r(x: number): number {",
+      "  return x;",
+      "}",
+    ].join("\n");
+    const { emission } = emitModule(src, FILE);
+    expectValidEmission(emission);
+    expect(emission.obligations[0]!.payload).toEqual(
+      expect.objectContaining({
+        conclusion: expect.objectContaining({
+          expr: expect.objectContaining({
+            left: {
+              kind: "builtin",
+              object: "Math",
+              member: "trunc",
+              args: [{ kind: "id", name: "n" }],
+            },
+          }),
+        }),
+      }),
+    );
+  });
 });
 
 describe("builtin member calls model as Float primitives", () => {
   const FILE = "engines/thales/tests/fixtures/tracer.ts"; // any resolvable path; no imports are followed
 
-  test("a returned Math.abs walks to a math-abs node", () => {
+  test("a returned Math.abs walks to a builtin node", () => {
     const src = [
       "/** @ensures{p} forall (n: int ∈ [-5, 5)) { mag(n) >= 0 } */",
       "export function mag(x: number): number {",
@@ -2533,7 +2599,12 @@ describe("builtin member calls model as Float primitives", () => {
         body: [
           {
             kind: "return",
-            expr: { kind: "math-abs", arg: { kind: "id", name: "x" } },
+            expr: {
+              kind: "builtin",
+              object: "Math",
+              member: "abs",
+              args: [{ kind: "id", name: "x" }],
+            },
           },
         ],
       }),
@@ -2554,12 +2625,16 @@ describe("builtin member calls model as Float primitives", () => {
         conclusion: {
           kind: "istrue",
           expr: {
-            kind: "number-is-finite",
-            arg: {
-              kind: "call",
-              callee: "bump",
-              args: [{ kind: "id", name: "n" }],
-            },
+            kind: "builtin",
+            object: "Number",
+            member: "isFinite",
+            args: [
+              {
+                kind: "call",
+                callee: "bump",
+                args: [{ kind: "id", name: "n" }],
+              },
+            ],
           },
         },
       }),
@@ -2577,7 +2652,14 @@ describe("builtin member calls model as Float primitives", () => {
     expectValidEmission(emission);
     expect(emission.obligations[0]!.payload).toEqual(
       expect.objectContaining({
-        guards: [{ kind: "number-is-finite", arg: { kind: "id", name: "n" } }],
+        guards: [
+          {
+            kind: "builtin",
+            object: "Number",
+            member: "isFinite",
+            args: [{ kind: "id", name: "n" }],
+          },
+        ],
       }),
     );
   });
@@ -2599,7 +2681,12 @@ describe("builtin member calls model as Float primitives", () => {
         cond: {
           kind: "unop",
           op: "!",
-          operand: { kind: "number-is-nan", arg: { kind: "id", name: "x" } },
+          operand: {
+            kind: "builtin",
+            object: "Number",
+            member: "isNaN",
+            args: [{ kind: "id", name: "x" }],
+          },
         },
       }),
     );
@@ -2619,7 +2706,12 @@ describe("builtin member calls model as Float primitives", () => {
     expectValidEmission(emission);
     expect(fnBody(emission.declarations[0]!)[0]).toEqual({
       kind: "if",
-      cond: { kind: "number-is-nan", arg: { kind: "id", name: "x" } },
+      cond: {
+        kind: "builtin",
+        object: "Number",
+        member: "isNaN",
+        args: [{ kind: "id", name: "x" }],
+      },
       then: [{ kind: "return", expr: { kind: "num", lit: "0" } }],
     });
   });
@@ -2641,7 +2733,12 @@ describe("builtin member calls model as Float primitives", () => {
         cond: {
           kind: "binop",
           op: "&&",
-          left: { kind: "number-is-finite", arg: { kind: "id", name: "x" } },
+          left: {
+            kind: "builtin",
+            object: "Number",
+            member: "isFinite",
+            args: [{ kind: "id", name: "x" }],
+          },
           right: expect.objectContaining({ op: ">" }),
         },
       }),
@@ -2704,7 +2801,12 @@ describe("builtin member calls model as Float primitives", () => {
         left: {
           kind: "inject",
           tag: "boolean",
-          expr: { kind: "number-is-finite", arg: { kind: "id", name: "n" } },
+          expr: {
+            kind: "builtin",
+            object: "Number",
+            member: "isFinite",
+            args: [{ kind: "id", name: "n" }],
+          },
         },
         right: {
           kind: "inject",
@@ -6738,7 +6840,12 @@ describe("module-level const bindings", () => {
         body: [
           {
             kind: "return",
-            expr: { kind: "math-abs", arg: { kind: "id", name: "n" } },
+            expr: {
+              kind: "builtin",
+              object: "Math",
+              member: "abs",
+              args: [{ kind: "id", name: "n" }],
+            },
           },
         ],
       }),
@@ -6760,7 +6867,12 @@ describe("module-level const bindings", () => {
     const payload = emission.obligations[0]!.payload;
     assert(payload.kind === "structured");
     expect(payload.guards).toEqual([
-      { kind: "number-is-finite", arg: { kind: "id", name: "x" } },
+      {
+        kind: "builtin",
+        object: "Number",
+        member: "isFinite",
+        args: [{ kind: "id", name: "x" }],
+      },
     ]);
   });
 
@@ -7548,7 +7660,12 @@ describe("union-typed parameters", () => {
       right: {
         kind: "inject",
         tag: "boolean",
-        expr: { kind: "number-is-finite", arg: { kind: "id", name: "x" } },
+        expr: {
+          kind: "builtin",
+          object: "Number",
+          member: "isFinite",
+          args: [{ kind: "id", name: "x" }],
+        },
       },
     });
   });

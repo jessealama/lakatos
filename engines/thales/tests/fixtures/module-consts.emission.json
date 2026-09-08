@@ -86,11 +86,15 @@
         {
           "kind": "return",
           "expr": {
-            "kind": "math-abs",
-            "arg": {
-              "kind": "id",
-              "name": "n"
-            }
+            "kind": "builtin",
+            "object": "Math",
+            "member": "abs",
+            "args": [
+              {
+                "kind": "id",
+                "name": "n"
+              }
+            ]
           }
         }
       ]
