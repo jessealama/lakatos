@@ -21,6 +21,9 @@ inductive JsVal where
   | null
 deriving Repr
 
+/-- The value a not-yet-assigned field local carries; never read. -/
+instance : Inhabited JsVal := ⟨.undef⟩
+
 /-- What `typeof` can say: the full eight-result universe, closed, even
 though three results are unreachable from `JsVal` — the enum models the
 operator, not the domain. -/

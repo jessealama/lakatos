@@ -17,6 +17,7 @@ set_option autoImplicit false
 -- }
 structure TsModel.Box where
   «#v» : JsNumber
+  deriving Inhabited
 
 @[js_norm, grind]
 def TsModel.Box.construct (v : JsNumber) : JsM TsModel.Box := do
@@ -43,6 +44,7 @@ def TsModel.Box.v (self : TsModel.Box) : JsM JsNumber := do
 -- }
 structure TsModel.Gate where
   «#lo» : JsNumber
+  deriving Inhabited
 
 @[js_norm, grind]
 def TsModel.Gate.construct (a : JsNumber) : JsM TsModel.Gate := do
@@ -76,6 +78,7 @@ def TsModel.Gate.lo (self : TsModel.Gate) : JsM JsNumber := do
 -- }
 structure TsModel.Doubler where
   «#v» : JsNumber
+  deriving Inhabited
 
 @[js_norm, grind]
 def TsModel.Doubler.construct (v : JsNumber) : JsM TsModel.Doubler := do

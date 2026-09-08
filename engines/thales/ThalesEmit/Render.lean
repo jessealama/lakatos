@@ -366,7 +366,8 @@ mutual
 
 /-- An arm's statement sequence. An arm the source left empty still needs
 a do-element, so it renders as `pure ()`. -/
-partial def stmtsDoSeq (straight : Option (List String)) (stmts : Array JsStmt) :
+partial def stmtsDoSeq (straight : Option (List (String × BindingTy)))
+    (stmts : Array JsStmt) :
     RenderM (TSyntax ``Lean.Parser.Term.doSeqIndent) := do
   let elems ←
     if stmts.isEmpty then pure #[← `(doElem| pure ())]
@@ -376,7 +377,7 @@ partial def stmtsDoSeq (straight : Option (List String)) (stmts : Array JsStmt) 
 /-- One statement. `straight` is set only inside a constructor body,
 where it names the fields whose single assignment sits at the top level:
 those render as plain `let`s, the rest as reassignments of a prelude. -/
-partial def stmtDoElem (straight : Option (List String)) :
+partial def stmtDoElem (straight : Option (List (String × BindingTy))) :
     JsStmt → RenderM (TSyntax `doElem)
   | .ret e => do `(doElem| return $(← bodyTerm e))
   | .throwErr kind =>
@@ -396,16 +397,15 @@ partial def stmtDoElem (straight : Option (List String)) :
     let some fields := straight
       | throw "a field assignment outside a constructor is not renderable"
     let x ← ctorLocal f
-    if fields.contains f then
-      `(doElem| let $x:ident : JsNumber := $(← bodyTerm e))
-    else
-      `(doElem| $x:ident := $(← bodyTerm e))
+    match fields.lookup f with
+    | some ty => `(doElem| let $x:ident : $(← bindingTyTerm ty) := $(← bodyTerm e))
+    | none => `(doElem| $x:ident := $(← bodyTerm e))
 
 /-- An `if` statement. An else arm that is itself exactly one `if` joins
 the chain as `else if`, the way the source spells it: the nested doIf's
 condition and arms are grafted onto the outer node's else-if groups,
 which is syntax the quotations built — only rearranged. -/
-partial def iteElem (straight : Option (List String)) (c : JsExpr)
+partial def iteElem (straight : Option (List (String × BindingTy))) (c : JsExpr)
     (thn : Array JsStmt) (els : Option (Array JsStmt)) :
     RenderM (TSyntax `doElem) := do
   let ct ← bodyTerm c
@@ -514,11 +514,15 @@ def straightSet (body : Array JsStmt) (f : String) : Bool :=
     | .ite _ thn els => !(thn ++ els.getD #[]).any (hasSetOf f)
     | _ => true)
 
+/-- The structure over a class's fields. Every structure derives
+`Inhabited`: a branch-set union or class field's mut prelude needs a
+`default`, and an outer class's derivation needs its inner classes'. -/
 def structCommand (c : EmitClass) : RenderM (TSyntax `command) := do
   let cls ← classIdent c.module c.name
-  let fields ← c.fields.mapM (fieldIdent ·.name)
-  if fields.isEmpty then `(structure $cls)
-  else `(structure $cls where $[$fields:ident : JsNumber]*)
+  let ids ← c.fields.mapM (fieldIdent ·.name)
+  let tys ← c.fields.mapM (bindingTyTerm ·.ty)
+  if ids.isEmpty then `(structure $cls deriving Inhabited)
+  else `(structure $cls where $[$ids:ident : $tys:term]* deriving Inhabited)
 
 /-- The constructor as a `JsM`-returning function over the structure. A
 field the body assigns inside a branch needs a mut prelude; the dummy `0`
@@ -527,11 +531,16 @@ def ctorCommand (c : EmitClass) : RenderM (TSyntax `command) := do
   let name ← classMember c.module c.name "construct"
   let cls ← classIdent c.module c.name
   let binders ← paramBinders c.ctorParams
-  let straight := (c.fields.map (·.name)).toList.filter (straightSet c.ctorBody)
+  let straight := c.fields.toList.filter (fun f => straightSet c.ctorBody f.name)
+  let straightTys := straight.map fun f => (f.name, f.ty)
   let rebound ← reboundParams c.ctorParams c.ctorBody
-  let prelude ← (c.fields.filter (fun f => !straight.contains f.name)).mapM fun f => do
-    `(doElem| let mut $(← ctorLocal f.name):ident : JsNumber := 0)
-  let body ← c.ctorBody.mapM (stmtDoElem (some straight))
+  let prelude ← (c.fields.filter (fun f => !(straight.any (·.name == f.name)))).mapM fun f => do
+    let x ← ctorLocal f.name
+    let t ← bindingTyTerm f.ty
+    match f.ty with
+    | .number => `(doElem| let mut $x:ident : $t := 0)
+    | _ => `(doElem| let mut $x:ident : $t := default)
+  let body ← c.ctorBody.mapM (stmtDoElem (some straightTys))
   let mk := mkIdent (cls.getId ++ `mk)
   let mkArgs ← c.fields.mapM (ctorLocal ·.name)
   let ret ←

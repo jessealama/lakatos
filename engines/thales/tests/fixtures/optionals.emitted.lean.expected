@@ -46,6 +46,7 @@ def TsModel.step (x : JsNumber) («by» : JsVal) : JsM JsNumber := do
 -- }
 structure TsModel.Counter where
   n : JsNumber
+  deriving Inhabited
 
 @[js_norm, grind]
 def TsModel.Counter.construct (n : JsNumber) : JsM TsModel.Counter := do
