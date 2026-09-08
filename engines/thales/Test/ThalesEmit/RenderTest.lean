@@ -97,6 +97,32 @@ def b1 (object member x : String) : JsExpr := .builtin object member #[.id x]
 #guard renderFails (v (b1 "Math" "log" "x"))
 #guard renderFails (v (.builtin "Math" "trunc" #[.id "x", .id "y"]))
 
+-- The variadic members fold at the call site's arity: the identity for
+-- the empty call, the argument itself for one, and a right-nested chain
+-- beyond. The nesting direction is unobservable — both models are
+-- associative — so it is pinned here rather than left to drift.
+#guard rendersAs (v (.builtin "Math" "min" #[])) `(floatInf)
+#guard rendersAs (v (.builtin "Math" "max" #[])) `(-floatInf)
+#guard rendersAs (v (.builtin "Math" "min" #[.id "x"])) `(x)
+#guard rendersAs (v (.builtin "Math" "max" #[.id "x"])) `(x)
+#guard rendersAs (v (.builtin "Math" "min" #[.id "x", .id "y"]))
+  `(Number.FloatOps.tsMin x y)
+#guard rendersAs (v (.builtin "Math" "max" #[.id "x", .id "y"]))
+  `(Number.FloatOps.tsMax x y)
+#guard rendersAs (v (.builtin "Math" "min" #[.id "x", .id "y", .id "z"]))
+  `(Number.FloatOps.tsMin x (Number.FloatOps.tsMin y z))
+#guard rendersAs (v (.builtin "Math" "max" #[.id "x", .id "y", .id "z"]))
+  `(Number.FloatOps.tsMax x (Number.FloatOps.tsMax y z))
+#guard rendersAs (vx (.builtin "Math" "min" #[.id "x", .num "1"]))
+  `(Number.FloatOps.tsMin (Float.ofInt x) 1)
+-- A lift among the arguments hoists in JS evaluation order.
+#guard rendersLifted (v (.builtin "Math" "max" #[.id "x", call1 "f" "y"])) true
+  `(Number.FloatOps.tsMax x (← TsModel.f y))
+-- The clamp shape: a fold nested inside another member's argument.
+#guard rendersAs
+    (v (.builtin "Math" "min" #[.builtin "Math" "max" #[.id "x", .id "lo"], .id "hi"]))
+  `(Number.FloatOps.tsMin (Number.FloatOps.tsMax x lo) hi)
+
 -- Calls lift, under the model namespace, a dependency's one component
 -- deeper; a binder named after the callee cannot capture it.
 #guard rendersLifted (v (.call "f" none #[])) true `((← TsModel.f))
