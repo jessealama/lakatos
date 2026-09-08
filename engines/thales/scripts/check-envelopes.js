@@ -102,8 +102,9 @@ const BINDER_FIXTURES = [
 
 /** The class slice (#129): structures, single-assignment constructors,
  * getters, and new in atoms — the theorem path and each degrade path —
- * plus a class-valued binder over a guarding constructor's image, and one
- * whose class is itself built from classes. */
+ * plus a class-valued binder over a guarding constructor's image, one
+ * whose class is itself built from classes, and fields at a union and at
+ * an earlier class, read through the tagged sites and as receivers. */
 const CLASS_FIXTURES = [
   "engines/thales/tests/fixtures/classes.ts",
   `${CONFORMANCE}/theorem/class-box-roundtrip.ts`,
@@ -128,6 +129,9 @@ const CLASS_FIXTURES = [
   `${CONFORMANCE}/theorem/fn-default-leading.ts`,
   `${CONFORMANCE}/theorem/fn-default-calls.ts`,
   `${CONFORMANCE}/inappropriate/fn-default-outside-slice.ts`,
+  `${CONFORMANCE}/theorem/field-union-undefined.ts`,
+  `${CONFORMANCE}/theorem/field-class-nested.ts`,
+  `${CONFORMANCE}/inappropriate/field-later-class.ts`,
 ];
 
 /** The method slice (#130): instance methods, this-chains, method atoms,

@@ -914,6 +914,39 @@
       "reason": "'g' could not be modeled: 'pow' could not be modeled: parameter 'y' has a default the model cannot evaluate: '**' is implementation-approximated in JavaScript, so any model would certify results a conforming engine may disagree with"
     }
   ],
+  "engines/thales/tests/conformance/theorem/field-union-undefined.ts": [
+    {
+      "function": "Reading#get",
+      "property": "readsBack",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_13694330090191089826",
+      "axioms": []
+    },
+    {
+      "function": "peek",
+      "property": "selfSame",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_14698904216264393717",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/field-class-nested.ts": [
+    {
+      "function": "Outer#twice",
+      "property": "delegates",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_3257935330303602336",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/inappropriate/field-later-class.ts": [
+    {
+      "function": "Holder#peek",
+      "property": "peeks",
+      "szs": "Inappropriate",
+      "reason": "'Holder#peek' could not be modeled: unmapped TypeScript construct 'TypeReference' at 4:18"
+    }
+  ],
   "engines/thales/tests/conformance/theorem/method-double.ts": [
     {
       "function": "Box#double",
@@ -1277,7 +1310,7 @@
       "function": "narrow",
       "property": "p",
       "szs": "Inappropriate",
-      "reason": "'narrow' could not be modeled: identifier 'v' is a 'number | string' value, not a 'number | string | boolean' value; unions flow only between identical spellings"
+      "reason": "'narrow' could not be modeled: 'v' is a 'number | string' value, not a 'number | string | boolean' value; unions flow only between identical spellings"
     }
   ],
   "engines/thales/tests/fixtures/optionals.ts": [
