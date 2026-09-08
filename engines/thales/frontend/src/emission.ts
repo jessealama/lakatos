@@ -46,10 +46,7 @@ export type EmitExpr =
   | { kind: "binop"; op: string; left: EmitExpr; right: EmitExpr }
   | { kind: "same-value"; left: EmitExpr; right: EmitExpr }
   | { kind: "cond"; cond: EmitExpr; then: EmitExpr; else: EmitExpr }
-  | { kind: "math-sqrt"; arg: EmitExpr }
-  | { kind: "math-abs"; arg: EmitExpr }
-  | { kind: "number-is-finite"; arg: EmitExpr }
-  | { kind: "number-is-nan"; arg: EmitExpr }
+  | { kind: "builtin"; object: string; member: string; args: EmitExpr[] }
   | { kind: "call"; callee: string; module?: string; args: EmitExpr[] }
   | { kind: "const-read"; name: string; module?: string }
   | { kind: "new"; className: string; module?: string; args: EmitExpr[] }
@@ -471,8 +468,7 @@ interface FailedDecl {
   reason: string;
 }
 
-/** Operators deliberately left without a model, and why — the mirror of
- * `unmodeledOperator?` in Model.lean, byte for byte. */
+/** Operators deliberately left without a model, and why. */
 const REFUSED_OPERATORS = new Map<string, string>([
   [
     "**",
@@ -832,7 +828,15 @@ function findConstruct(
     );
   }
   const builtin = builtinCall(e, scope);
-  if (builtin !== undefined) return findConstruct(builtin.arg, sf, scope);
+  if (builtin !== undefined) {
+    for (const a of builtin.args) {
+      const found = findConstruct(a, sf, scope);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  }
+  const unsupported = unsupportedBuiltin(e, scope);
+  if (unsupported !== undefined) return unsupported;
   if (ts.isCallExpression(e) && ts.isIdentifier(e.expression)) {
     for (const a of e.arguments) {
       const found = findConstruct(a, sf, scope);
@@ -966,8 +970,11 @@ function callNames(
     return callNames(sides[1], scope, into);
   }
   const builtin = builtinCall(e, scope);
-  // A builtin member call has no user callee; its argument carries them.
-  if (builtin !== undefined) return callNames(builtin.arg, scope, into);
+  // A builtin member call has no user callee; its arguments carry them.
+  if (builtin !== undefined) {
+    for (const a of builtin.args) callNames(a, scope, into);
+    return into;
+  }
   const icall = instanceCall(e);
   if (icall !== undefined) {
     callNames(icall.object, scope, into);
@@ -1147,7 +1154,13 @@ function findFailedMemberUse(
     );
   }
   const builtin = builtinCall(e, scope);
-  if (builtin !== undefined) return findFailedMemberUse(builtin.arg, scope);
+  if (builtin !== undefined) {
+    for (const a of builtin.args) {
+      const found = findFailedMemberUse(a, scope);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  }
   const selfCall = thisCall(e);
   if (selfCall !== undefined && scope.self !== undefined) {
     // The live registry holds only already-walked siblings, so a forward
@@ -1537,15 +1550,20 @@ function walkTyped(
   }
   const builtin = builtinCall(e, scope);
   if (builtin !== undefined) {
-    // The argument is typed before the position is, mirroring the binops.
-    const arg = walkTyped(builtin.arg, "num", scope, sf);
+    // The arguments are typed before the position is, mirroring the binops.
+    const args = builtin.args.map((a) => walkTyped(a, "num", scope, sf));
     if (expected !== builtin.ty) {
       throw new ModelError(
         `a call to '${builtin.name}' yields ${describeTy(builtin.ty)}, ` +
           `not ${describeTy(expected)}`,
       );
     }
-    return { kind: builtin.kind, arg };
+    return {
+      kind: "builtin",
+      object: builtin.object,
+      member: builtin.member,
+      args,
+    };
   }
   // Outside a member the construct scan already made `this` opaque, so
   // the receiver is here whenever the walk reaches a field read.
@@ -1828,7 +1846,16 @@ function walkTyped(
     const failed = constructAt(e, e.kind, sf);
     throw new ModelError(failed.reason, failed.construct);
   }
-  // Unreachable after the construct scan; degrade like an opaque node.
+  // An unlisted standard-library member the pre-scans did not reach still
+  // names itself; anything else is outside the model and degrades like an
+  // opaque node.
+  /* v8 ignore start -- the construct scan reaches every call before the
+     walk does; kept so the walk's refusal cannot drift from the scan's. */
+  const unsupported = unsupportedBuiltin(e, scope);
+  if (unsupported !== undefined) {
+    throw new ModelError(unsupported.reason, unsupported.construct);
+  }
+  /* v8 ignore stop */
   throw new ModelError(constructAt(e, e.kind, sf).reason);
 }
 
@@ -3509,63 +3536,100 @@ function equationSides(
   return [e.arguments[0]!, e.arguments[1]!];
 }
 
-type BuiltinKind =
-  "math-sqrt" | "math-abs" | "number-is-finite" | "number-is-nan";
-
 /** A whitelisted builtin as a use site needs it: the source spelling
- * (for messages), the IR kind, and the value type it yields. */
+ * (for messages), the standard-library object and member it names, the
+ * arity the model admits, and the value type it yields. */
 interface BuiltinEntry {
   name: string;
-  kind: BuiltinKind;
+  object: string;
+  member: string;
+  arity: number;
   ty: Expected;
 }
 
-/** The builtin member calls with models, keyed by source spelling. The
- * namespaces are immutable objects of the standard library, so each entry
- * is a fixed unary primitive — `Math.pow` and every other member stays an
- * unmapped construct. */
-const BUILTIN_MEMBER_CALLS: ReadonlyMap<
-  string,
-  { kind: BuiltinKind; ty: Expected }
-> = new Map([
-  ["Math.sqrt", { kind: "math-sqrt", ty: "num" }],
-  ["Math.abs", { kind: "math-abs", ty: "num" }],
-  ["Number.isFinite", { kind: "number-is-finite", ty: "bool" }],
-  ["Number.isNaN", { kind: "number-is-nan", ty: "bool" }],
-]);
+/** The standard-library objects whose member calls the model reads. */
+const BUILTIN_OBJECTS: ReadonlySet<string> = new Set(["Math", "Number"]);
 
-/** The whitelisted builtin member call an expression is, if any. A
- * binding of the namespace spelling — parameter, local, module-level
- * declaration, or import, degraded ones included — wins over the builtin,
- * the way one wins over the `NaN`/`Infinity` atoms: the model would
- * otherwise state a claim about the standard library the source does not
- * make. */
-function builtinCall(
-  e: ts.Expression,
+/** The builtin member calls with models, keyed by source spelling. The
+ * objects are immutable in the standard library, so each entry is a fixed
+ * primitive; any other member of these objects is unsupported. */
+const BUILTIN_MEMBER_CALLS: ReadonlyMap<string, BuiltinEntry> = new Map(
+  (
+    [
+      ["Math", "sqrt", "num"],
+      ["Math", "abs", "num"],
+      ["Math", "trunc", "num"],
+      ["Math", "floor", "num"],
+      ["Math", "ceil", "num"],
+      ["Number", "isFinite", "bool"],
+      ["Number", "isNaN", "bool"],
+    ] as const
+  ).map(([object, member, ty]) => [
+    `${object}.${member}`,
+    { name: `${object}.${member}`, object, member, arity: 1, ty },
+  ]),
+);
+
+/** The `Math.m`/`Number.m` spelling a callee reads from the standard
+ * library, if it is one: a binding of the object's name — parameter,
+ * local, module-level declaration, or import, degraded ones included —
+ * wins over the builtin, the way one wins over the `NaN`/`Infinity`
+ * atoms, so the model never states a claim about the standard library
+ * the source does not make. */
+function builtinSpelling(
+  callee: ts.Expression,
   scope: WalkScope,
-): (BuiltinEntry & { arg: ts.Expression }) | undefined {
-  if (!ts.isCallExpression(e) || e.arguments.length !== 1) return undefined;
-  const callee = e.expression;
-  // A call through a module-level alias of a builtin lowers as the
-  // builtin itself; a local binding of the spelling shadows the alias.
-  if (ts.isIdentifier(callee) && !scope.vars.has(callee.text)) {
-    const alias = scope.aliases.get(modelKey(refOf(scope, callee.text)));
-    if (alias !== undefined) return { ...alias, arg: e.arguments[0]! };
-  }
+): string | undefined {
   if (
     !ts.isPropertyAccessExpression(callee) ||
     !ts.isIdentifier(callee.expression)
   ) {
     return undefined;
   }
-  const namespace = callee.expression.text;
-  if (scope.vars.has(namespace) || moduleBinds(scope, namespace)) {
+  const object = callee.expression.text;
+  if (!BUILTIN_OBJECTS.has(object)) return undefined;
+  if (scope.vars.has(object) || moduleBinds(scope, object)) return undefined;
+  return `${object}.${callee.name.text}`;
+}
+
+/** A standard-library member call the whitelist does not cover. The
+ * failure names the member: the source wrote a real API, not an
+ * arbitrary construct, and the object's other members are the reason
+ * the whitelist exists. */
+function unsupportedBuiltin(
+  e: ts.Expression,
+  scope: WalkScope,
+): FailedDecl | undefined {
+  if (!ts.isCallExpression(e)) return undefined;
+  const spelled = builtinSpelling(e.expression, scope);
+  if (spelled === undefined || BUILTIN_MEMBER_CALLS.has(spelled)) {
     return undefined;
   }
-  const name = `${namespace}.${callee.name.text}`;
-  const entry = BUILTIN_MEMBER_CALLS.get(name);
-  if (entry === undefined) return undefined;
-  return { name, ...entry, arg: e.arguments[0]! };
+  return { construct: spelled, reason: `'${spelled}' is not supported` };
+}
+
+/** The whitelisted builtin member call an expression is, if any, with
+ * its arguments. A call through a module-level alias lowers as the
+ * builtin itself; a local binding of the alias's spelling shadows it. */
+function builtinCall(
+  e: ts.Expression,
+  scope: WalkScope,
+): (BuiltinEntry & { args: readonly ts.Expression[] }) | undefined {
+  if (!ts.isCallExpression(e)) return undefined;
+  const callee = e.expression;
+  if (ts.isIdentifier(callee) && !scope.vars.has(callee.text)) {
+    const alias = scope.aliases.get(modelKey(refOf(scope, callee.text)));
+    if (alias !== undefined && e.arguments.length === alias.arity) {
+      return { ...alias, args: e.arguments };
+    }
+  }
+  const spelled = builtinSpelling(callee, scope);
+  if (spelled === undefined) return undefined;
+  const entry = BUILTIN_MEMBER_CALLS.get(spelled);
+  if (entry === undefined || e.arguments.length !== entry.arity) {
+    return undefined;
+  }
+  return { ...entry, args: e.arguments };
 }
 
 /** A binder's emitted domain: a finite half-open range, the whole int
@@ -3945,10 +4009,7 @@ function builtinAlias(
     return undefined;
   const namespace = init.expression.text;
   if (binds(namespace)) return undefined;
-  const name = `${namespace}.${init.name.text}`;
-  const entry = BUILTIN_MEMBER_CALLS.get(name);
-  if (entry === undefined) return undefined;
-  return { name, ...entry };
+  return BUILTIN_MEMBER_CALLS.get(`${namespace}.${init.name.text}`);
 }
 
 /** The top-level names a non-import declaration binds — what a reference

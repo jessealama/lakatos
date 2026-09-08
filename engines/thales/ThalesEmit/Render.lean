@@ -193,18 +193,22 @@ partial def valueTerm (coerced : String → Bool) : JsExpr → RenderM Rendered
       return ⟨← `((← if $ct then ((do return $tt) : JsM _)
         else ((do return $et) : JsM _))), true⟩
     return ⟨← `(if $ct then $tt else $et), cl⟩
-  | .mathSqrt a => do
-    let ⟨t, lifted⟩ ← valueTerm coerced a
-    return ⟨← `(Float.sqrt $t), lifted⟩
-  | .mathAbs a => do
-    let ⟨t, lifted⟩ ← valueTerm coerced a
-    return ⟨← `(Float.abs $t), lifted⟩
-  | .numberIsFinite a => do
-    let ⟨t, lifted⟩ ← valueTerm coerced a
-    return ⟨← `(Float.isFinite $t), lifted⟩
-  | .numberIsNaN a => do
-    let ⟨t, lifted⟩ ← valueTerm coerced a
-    return ⟨← `(Float.isNaN $t), lifted⟩
+  | .builtin object member args => do
+    let rendered ← args.mapM (valueTerm coerced)
+    let ⟨a, lifted⟩ ← match rendered.toList with
+      | [r] => pure r
+      | _ =>
+        throw s!"builtin '{object}.{member}' takes one argument, not {rendered.size}"
+    let t ← match object, member with
+      | "Math", "sqrt" => `(Float.sqrt $a)
+      | "Math", "abs" => `(Float.abs $a)
+      | "Math", "trunc" => `(Number.FloatOps.tsTrunc $a)
+      | "Math", "floor" => `(Number.FloatOps.tsFloor $a)
+      | "Math", "ceil" => `(Number.FloatOps.tsCeil $a)
+      | "Number", "isFinite" => `(Float.isFinite $a)
+      | "Number", "isNaN" => `(Float.isNaN $a)
+      | _, _ => throw s!"no rendering for builtin '{object}.{member}'"
+    return ⟨t, lifted⟩
   | .call callee module args => do
     let c ← callTerm coerced callee module args
     return ⟨← `((← $c:term)), true⟩

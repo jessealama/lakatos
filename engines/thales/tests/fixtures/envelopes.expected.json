@@ -1428,5 +1428,47 @@
       "szs": "Inappropriate",
       "reason": "'pick' could not be modeled: 'Object.is' admits numbers, booleans, union values, 'undefined', and 'null'; argument 2 is not one (StringLiteral at 3:20)"
     }
+  ],
+  "engines/thales/tests/conformance/theorem/days-to-weeks.ts": [
+    {
+      "function": "daysToWeeks",
+      "property": "nonNegative",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_8750556374411461032",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/halve-integers.ts": [
+    {
+      "function": "halvePosInteger",
+      "property": "nonNegative",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_12059275396407027861",
+      "axioms": []
+    },
+    {
+      "function": "halveNegInteger",
+      "property": "nonPositive",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_10314310469809355140",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/ceil-keeps-sign.ts": [
+    {
+      "function": "dampen",
+      "property": "negativeZero",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_8180984359024383290",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/inappropriate/math-sign.ts": [
+    {
+      "function": "signOf",
+      "property": "bounded",
+      "szs": "Inappropriate",
+      "reason": "'signOf' could not be modeled: 'Math.sign' is not supported"
+    }
   ]
 }

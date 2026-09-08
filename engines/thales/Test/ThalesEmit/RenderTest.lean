@@ -80,11 +80,20 @@ def call1 (f x : String) : JsExpr := .call f none #[.id x]
   `(if (← TsModel.f c) then 0 else x)
 #guard rendersLifted (v (.cond (.id "c") (call1 "f" "x") (.num "0"))) true
   `((← if c then ((do return (← TsModel.f x)) : JsM _) else ((do return 0) : JsM _)))
-#guard rendersAs (v (.mathSqrt (.id "x"))) `(Float.sqrt x)
-#guard rendersAs (vx (.mathSqrt (.id "x"))) `(Float.sqrt (Float.ofInt x))
-#guard rendersAs (v (.mathAbs (.id "x"))) `(Float.abs x)
-#guard rendersAs (v (.numberIsFinite (.id "x"))) `(Float.isFinite x)
-#guard rendersAs (v (.numberIsNaN (.id "x"))) `(Float.isNaN x)
+-- Builtin member calls render through the (object, member) table; an
+-- Int binder still crosses to Float at the argument; an unknown pair or
+-- a wrong argument count is a render failure, never a verdict.
+def b1 (object member x : String) : JsExpr := .builtin object member #[.id x]
+#guard rendersAs (v (b1 "Math" "sqrt" "x")) `(Float.sqrt x)
+#guard rendersAs (vx (b1 "Math" "sqrt" "x")) `(Float.sqrt (Float.ofInt x))
+#guard rendersAs (v (b1 "Math" "abs" "x")) `(Float.abs x)
+#guard rendersAs (v (b1 "Math" "trunc" "x")) `(Number.FloatOps.tsTrunc x)
+#guard rendersAs (v (b1 "Math" "floor" "x")) `(Number.FloatOps.tsFloor x)
+#guard rendersAs (v (b1 "Math" "ceil" "x")) `(Number.FloatOps.tsCeil x)
+#guard rendersAs (v (b1 "Number" "isFinite" "x")) `(Float.isFinite x)
+#guard rendersAs (v (b1 "Number" "isNaN" "x")) `(Float.isNaN x)
+#guard renderFails (v (b1 "Math" "sign" "x"))
+#guard renderFails (v (.builtin "Math" "trunc" #[.id "x", .id "y"]))
 
 -- Calls lift, under the model namespace, a dependency's one component
 -- deeper; a binder named after the callee cannot capture it.

@@ -43,26 +43,22 @@ def numParamJson (name : String) : Json :=
      ("then", Json.mkObj [("kind", "num"), ("lit", "0")]),
      ("else", Json.mkObj [("kind", "id"), ("name", "x")])]))
   matches .ok (.cond (.id "b") (.num "0") (.id "x"))
+-- A builtin member call decodes by the object and member it names; the
+-- renderer decides what the pair means.
 #guard
   (decodeExpr (Json.mkObj
-    [("kind", "math-sqrt"),
-     ("arg", Json.mkObj [("kind", "id"), ("name", "x")])]))
-  matches .ok (.mathSqrt (.id "x"))
+    [("kind", "builtin"), ("object", "Math"), ("member", "trunc"),
+     ("args", Json.arr #[Json.mkObj [("kind", "id"), ("name", "x")]])]))
+  matches .ok (.builtin "Math" "trunc" #[.id "x"])
 #guard
   (decodeExpr (Json.mkObj
-    [("kind", "math-abs"),
-     ("arg", Json.mkObj [("kind", "id"), ("name", "x")])]))
-  matches .ok (.mathAbs (.id "x"))
+    [("kind", "builtin"), ("object", "Number"), ("member", "isNaN"),
+     ("args", Json.arr #[Json.mkObj [("kind", "id"), ("name", "x")]])]))
+  matches .ok (.builtin "Number" "isNaN" #[.id "x"])
 #guard
   (decodeExpr (Json.mkObj
-    [("kind", "number-is-finite"),
-     ("arg", Json.mkObj [("kind", "id"), ("name", "x")])]))
-  matches .ok (.numberIsFinite (.id "x"))
-#guard
-  (decodeExpr (Json.mkObj
-    [("kind", "number-is-nan"),
-     ("arg", Json.mkObj [("kind", "id"), ("name", "x")])]))
-  matches .ok (.numberIsNaN (.id "x"))
+    [("kind", "builtin"), ("object", "Math"), ("member", "trunc")]))
+  matches .error _
 -- The class IR: instance construction, member reads, the receiver, and
 -- a constructor's field assignment.
 #guard

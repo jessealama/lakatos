@@ -262,35 +262,39 @@
             {
               "kind": "return",
               "expr": {
-                "kind": "math-sqrt",
-                "arg": {
-                  "kind": "binop",
-                  "op": "+",
-                  "left": {
+                "kind": "builtin",
+                "object": "Math",
+                "member": "sqrt",
+                "args": [
+                  {
                     "kind": "binop",
-                    "op": "*",
+                    "op": "+",
                     "left": {
-                      "kind": "id",
-                      "name": "dx"
+                      "kind": "binop",
+                      "op": "*",
+                      "left": {
+                        "kind": "id",
+                        "name": "dx"
+                      },
+                      "right": {
+                        "kind": "id",
+                        "name": "dx"
+                      }
                     },
                     "right": {
-                      "kind": "id",
-                      "name": "dx"
-                    }
-                  },
-                  "right": {
-                    "kind": "binop",
-                    "op": "*",
-                    "left": {
-                      "kind": "id",
-                      "name": "dy"
-                    },
-                    "right": {
-                      "kind": "id",
-                      "name": "dy"
+                      "kind": "binop",
+                      "op": "*",
+                      "left": {
+                        "kind": "id",
+                        "name": "dy"
+                      },
+                      "right": {
+                        "kind": "id",
+                        "name": "dy"
+                      }
                     }
                   }
-                }
+                ]
               }
             }
           ]

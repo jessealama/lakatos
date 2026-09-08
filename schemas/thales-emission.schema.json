@@ -209,42 +209,17 @@
         },
         {
           "type": "object",
-          "description": "Math.sqrt: ECMA-262's correctly rounded square root.",
+          "description": "A whitelisted standard-library member call, by the object and member the source names: Math.sqrt, Math.abs, Math.trunc, Math.floor, Math.ceil, Number.isFinite, Number.isNaN. The renderer owns what each pair means.",
           "additionalProperties": false,
-          "required": ["kind", "arg"],
+          "required": ["kind", "object", "member", "args"],
           "properties": {
-            "kind": { "const": "math-sqrt" },
-            "arg": { "$ref": "#/definitions/expr" }
-          }
-        },
-        {
-          "type": "object",
-          "description": "Math.abs: ECMA-262 abs — the sign bit cleared, so -0 becomes +0 and NaN stays NaN.",
-          "additionalProperties": false,
-          "required": ["kind", "arg"],
-          "properties": {
-            "kind": { "const": "math-abs" },
-            "arg": { "$ref": "#/definitions/expr" }
-          }
-        },
-        {
-          "type": "object",
-          "description": "Number.isFinite on a number: true exactly for non-NaN, non-infinite doubles.",
-          "additionalProperties": false,
-          "required": ["kind", "arg"],
-          "properties": {
-            "kind": { "const": "number-is-finite" },
-            "arg": { "$ref": "#/definitions/expr" }
-          }
-        },
-        {
-          "type": "object",
-          "description": "Number.isNaN on a number: true exactly for NaN.",
-          "additionalProperties": false,
-          "required": ["kind", "arg"],
-          "properties": {
-            "kind": { "const": "number-is-nan" },
-            "arg": { "$ref": "#/definitions/expr" }
+            "kind": { "const": "builtin" },
+            "object": { "enum": ["Math", "Number"] },
+            "member": { "$ref": "#/definitions/identifier" },
+            "args": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/expr" }
+            }
           }
         },
         {
