@@ -5,7 +5,14 @@
       "kind": "class",
       "name": "Point",
       "source": "export class Point {\n  public readonly x: number;\n  public readonly y: number;\n\n  constructor(x: number, y: number) {\n    if (\n      x === -Infinity ||\n      x === Infinity ||\n      y === -Infinity ||\n      y === Infinity\n    ) {\n      throw new RangeError(\"Cannot accept infinite coordinates\");\n    }\n    if (Object.is(x, NaN) || Object.is(y, NaN)) {\n      throw new RangeError(\"Coordinates cannot be NaN\");\n    }\n    if (Object.is(x, -0)) {\n      x = 0;\n    }\n    if (Object.is(y, -0)) {\n      y = 0;\n    }\n    this.x = x;\n    this.y = y;\n  }\n\n  /**\n   * @ensures{nonNegative} ∀ (p q : Point) { 0 <= p.distance(q) }\n   */\n  distance(p: Point): number {\n    const dx = p.x - this.x;\n    const dy = p.y - this.y;\n    return Math.sqrt(dx * dx + dy * dy);\n  }\n}",
-      "fields": ["x", "y"],
+      "fields": [
+        {
+          "name": "x"
+        },
+        {
+          "name": "y"
+        }
+      ],
       "ctor": {
         "params": [
           {

@@ -5,7 +5,11 @@
       "kind": "class",
       "name": "Pt",
       "source": "export class Pt {\n  readonly x: number;\n  constructor(x: number) {\n    this.x = x;\n  }\n}",
-      "fields": ["x"],
+      "fields": [
+        {
+          "name": "x"
+        }
+      ],
       "ctor": {
         "params": [
           {
@@ -107,7 +111,14 @@
       "kind": "class",
       "name": "Seg",
       "source": "export class Seg {\n  readonly a: number;\n  readonly b: number;\n  constructor(a: Pt, b: Pt = new Pt(0)) {\n    this.a = a.x;\n    this.b = b.x;\n  }\n\n  /** @ensures{ctorDefault} forall (x: int ∈ [0, 4)) { Object.is(new Seg(new Pt(x)).len(), 0 - x) } */\n  len(): number {\n    return this.b - this.a;\n  }\n}",
-      "fields": ["a", "b"],
+      "fields": [
+        {
+          "name": "a"
+        },
+        {
+          "name": "b"
+        }
+      ],
       "ctor": {
         "params": [
           {

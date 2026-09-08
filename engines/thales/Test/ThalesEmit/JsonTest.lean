@@ -90,7 +90,7 @@ def numParamJson (name : String) : Json :=
 #guard
   (decodeDecl (Json.mkObj
     [("kind", "class"), ("name", "Box"), ("source", "class Box {}"),
-     ("fields", Json.arr #["#v"]),
+     ("fields", Json.arr #[Json.mkObj [("name", "#v")]]),
      ("ctor", Json.mkObj
        [("params", Json.arr #[numParamJson "v"]),
         ("body", Json.arr #[Json.mkObj
@@ -181,6 +181,30 @@ def numParamJson (name : String) : Json :=
   (decodeParam (Json.mkObj
     [("name", "v"), ("type", Json.arr #["number", "object"])]))
   matches .error "unknown union tag 'object'"
+
+-- A field's type follows a local's rule: absent is number, an array is a
+-- union, an object is a class.
+#guard (decodeField (Json.mkObj [("name", "#v")])) matches .ok { name := "#v", ty := .number }
+#guard
+  (decodeField (Json.mkObj [("name", "x"), ("type", Json.arr #["number", "undefined"])]))
+  matches .ok { name := "x", ty := .union #[.number, .undefined] }
+#guard
+  (decodeField (Json.mkObj [("name", "inner"), ("type", Json.mkObj [("class", "Inner")])]))
+  matches .ok { name := "inner", ty := .cls "Inner" none }
+#guard
+  (decodeField (Json.mkObj
+    [("name", "inner"), ("type", Json.mkObj [("class", "Inner"), ("module", "dep.mts")])]))
+  matches .ok { name := "inner", ty := .cls "Inner" (some "dep.mts") }
+#guard (decodeField (Json.mkObj [("type", Json.arr #["number", "undefined"])]))
+  matches .error "property not found: name"
+-- A bare string in `fields` is the old wire, refused.
+#guard
+  (decodeClass (Json.mkObj
+    [("kind", "class"), ("name", "Box"), ("source", "class Box {}"),
+     ("fields", Json.arr #["#v"]), ("getters", Json.arr #[]),
+     ("ctor", Json.mkObj [("params", Json.arr #[]), ("body", Json.arr #[])]),
+     ("methods", Json.arr #[])]))
+  matches .error _
 
 -- The four union expression kinds decode strictly.
 #guard

@@ -56,6 +56,7 @@ def rendersOk (emissionPath : String) : CoreM Unit := do
 #eval rendersOk "tests/fixtures/ctor-defaults.emission.json"
 #eval rendersOk "tests/fixtures/instance-defaults.emission.json"
 #eval rendersOk "tests/fixtures/object-is-tagged.emission.json"
+#eval rendersOk "tests/fixtures/fields.emission.json"
 
 -- A dependency's constant sits one component deeper, like its functions.
 #eval show CoreM Unit from do

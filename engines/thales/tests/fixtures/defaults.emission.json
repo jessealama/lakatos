@@ -353,7 +353,11 @@
       "kind": "class",
       "name": "Counter",
       "source": "export class Counter {\n  readonly n: number;\n\n  constructor(n: number) {\n    this.n = n;\n  }\n\n  /** @ensures{methodDefault} forall (x: int ∈ [0, 4)) { Object.is(new Counter(x).step(), x + 1) } */\n  step(by: number = 1): number {\n    return this.n + by;\n  }\n\n  /** @ensures{thisDefault} forall (x: int ∈ [0, 4)) { Object.is(new Counter(x).twice(), x + x) } */\n  twice(by: number = this.n): number {\n    return this.n + by;\n  }\n}",
-      "fields": ["n"],
+      "fields": [
+        {
+          "name": "n"
+        }
+      ],
       "ctor": {
         "params": [
           {

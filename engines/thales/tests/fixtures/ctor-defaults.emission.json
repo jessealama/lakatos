@@ -5,7 +5,14 @@
       "kind": "class",
       "name": "P",
       "source": "export class P {\n  readonly x: number;\n  readonly y: number;\n  constructor(x: number, y: number = 0) {\n    this.x = x;\n    this.y = y;\n  }\n\n  /** @ensures{omitted} forall (a: int ∈ [0, 4)) { Object.is(new P(a).span(), a * a) } */\n  span(): number {\n    return this.x * this.x + this.y * this.y;\n  }\n}",
-      "fields": ["x", "y"],
+      "fields": [
+        {
+          "name": "x"
+        },
+        {
+          "name": "y"
+        }
+      ],
       "ctor": {
         "params": [
           {

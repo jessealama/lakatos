@@ -306,7 +306,8 @@ def obl (binders : Array BinderIR) (guards : Array JsExpr) (c : Conclusion) :
       ∀ (bump : Int), TsModel.bump (Float.ofInt bump) = TsModel.bump (Float.ofInt bump))
 
 def stmt (s : JsStmt) : RenderM (TSyntax `doElem) := stmtDoElem none s
-def ctorStmt (straight : List String) (s : JsStmt) : RenderM (TSyntax `doElem) :=
+def ctorStmt (straight : List (String × BindingTy)) (s : JsStmt) :
+    RenderM (TSyntax `doElem) :=
   stmtDoElem (some straight) s
 
 -- One do-element per statement; locals are ascribed.
@@ -336,9 +337,16 @@ def ctorStmt (straight : List String) (s : JsStmt) : RenderM (TSyntax `doElem) :
 
 -- Field assignment renders only inside a constructor: a straight field
 -- as a let, a branch-set field as a reassignment.
-#guard rendersSyntax (ctorStmt ["v"] (.fieldSet "v" (.id "v")))
+#guard rendersSyntax (ctorStmt [("v", .number)] (.fieldSet "v" (.id "v")))
   `(doElem| let «this.v» : JsNumber := v)
 #guard rendersSyntax (ctorStmt [] (.fieldSet "#v" (.id "v"))) `(doElem| «this.#v» := v)
+-- A union or class field is ascribed at its type.
+#guard rendersSyntax
+  (ctorStmt [("x", .union #[.number, .undefined])]
+    (.fieldSet "x" (.inject .number (some (.id "v")))))
+  `(doElem| let «this.x» : JsVal := JsVal.num v)
+#guard rendersSyntax (ctorStmt [("inner", .cls "Inner" none)] (.fieldSet "inner" (.id "i")))
+  `(doElem| let «this.inner» : TsModel.Inner := i)
 #guard renderFails (stmt (.fieldSet "v" (.id "v")))
 
 -- Parameter groups: a maximal run of one type shares a group.
@@ -421,7 +429,7 @@ def ctorStmt (straight : List String) (s : JsStmt) : RenderM (TSyntax `doElem) :
 
 /-- A one-field class with a straight constructor. -/
 def box : EmitClass :=
-  { name := "Box", source := "", fields := #["#v"], ctorParams := nums #["v"],
+  { name := "Box", source := "", fields := #[{ name := "#v", ty := .number }], ctorParams := nums #["v"],
     ctorBody := #[.fieldSet "#v" (.id "v")],
     getters := #[{ name := "v", body := #[.ret (.fieldRead "Box" none "#v" .selfRef)] }],
     methods := #[{ name := "scale", params := nums #["k"],
@@ -432,9 +440,10 @@ name component, a spelling no quotation can write, so it is spliced. -/
 def hashV : Ident := mkIdent (Name.mkSimple "«#v»")
 
 -- Structure, constructor, getter, method.
-#guard rendersSyntax (structCommand box) `(structure TsModel.Box where $hashV:ident : JsNumber)
+#guard rendersSyntax (structCommand box)
+  `(structure TsModel.Box where $hashV:ident : JsNumber deriving Inhabited)
 #guard rendersSyntax (structCommand { box with fields := #[], ctorParams := #[], ctorBody := #[] })
-  `(structure TsModel.Box)
+  `(structure TsModel.Box deriving Inhabited)
 #guard rendersSyntax (ctorCommand box)
   `(@[js_norm, grind] def TsModel.Box.construct (v : JsNumber) : JsM TsModel.Box := do
       let «this.#v» : JsNumber := v
@@ -442,7 +451,7 @@ def hashV : Ident := mkIdent (Name.mkSimple "«#v»")
 -- A field set inside a branch gets the mut prelude.
 #guard rendersSyntax
   (ctorCommand { box with
-                 fields := #["v"],
+                 fields := #[{ name := "v", ty := .number }],
                  ctorBody := #[.ite (.binop "<" (.id "v") (.num "0"))
                                  #[.fieldSet "v" (.num "0")] (some #[.fieldSet "v" (.id "v")])] })
   `(@[js_norm, grind] def TsModel.Box.construct (v : JsNumber) : JsM TsModel.Box := do
@@ -455,6 +464,32 @@ def hashV : Ident := mkIdent (Name.mkSimple "«#v»")
 #guard rendersSyntax (methodCommand box box.methods[0]!)
   `(@[js_norm, grind] def TsModel.Box.scale (self : TsModel.Box) (k : JsNumber) : JsM JsNumber := do
       return TsModel.Box.«#v» self * k)
+
+/-- A class over a union field and a class field. -/
+def outer : EmitClass :=
+  { name := "Outer", source := "",
+    fields := #[{ name := "x", ty := .union #[.number, .undefined] },
+                { name := "inner", ty := .cls "Inner" none }],
+    ctorParams := #[{ name := "v", ty := .number }, { name := "i", ty := .cls "Inner" none }],
+    ctorBody := #[.ite (.binop "<" (.id "v") (.num "0"))
+                    #[.fieldSet "x" (.inject .undefined none)]
+                    (some #[.fieldSet "x" (.inject .number (some (.id "v")))]),
+                  .fieldSet "inner" (.id "i")],
+    getters := #[], methods := #[] }
+
+#guard rendersSyntax (structCommand outer)
+  `(structure TsModel.Outer where
+      x : JsVal
+      inner : TsModel.Inner
+      deriving Inhabited)
+-- A branch-set union or class field's prelude is `default`; a number's stays `0`.
+#guard rendersSyntax (ctorCommand outer)
+  `(@[js_norm, grind] def TsModel.Outer.construct (v : JsNumber) (i : TsModel.Inner) :
+      JsM TsModel.Outer := do
+      let mut «this.x» : JsVal := default
+      if Float.lt v 0 then «this.x» := JsVal.undef else «this.x» := JsVal.num v
+      let «this.inner» : TsModel.Inner := i
+      return TsModel.Outer.mk «this.x» «this.inner»)
 
 -- What the lift barrier buys, written out by hand: the arm the condition
 -- passed over does not run, so its throw does not escape.

@@ -54,11 +54,11 @@ inductive JsExpr where
   | optionGet (operand : JsExpr)
 deriving Repr, Inhabited
 
-/-- A local's declared type: the numeric slice, or a keyword union riding
-the one tagged domain. As with a parameter's union, the tags are the
-frontend's record of what may be injected — the local's Lean type is
-`JsVal` regardless of them. -/
-inductive LocalTy where
+/-- A binding's declared type — a local's or a field's: a number, a
+keyword union, or an instance of a modeled class. As with a parameter's
+union, the tags are the frontend's record of what may be injected — the
+binding's Lean type is `JsVal` regardless of them. -/
+inductive BindingTy where
   | number
   | union (tags : Array JsTag)
   | cls (name : String) (module : Option String)
@@ -67,8 +67,8 @@ deriving Repr, Inhabited, BEq
 inductive JsStmt where
   | ret (expr : JsExpr)
   | throwErr (error : String)
-  | constDecl (name : String) (ty : LocalTy) (init : JsExpr)
-  | letDecl (name : String) (ty : LocalTy) (init : JsExpr)
+  | constDecl (name : String) (ty : BindingTy) (init : JsExpr)
+  | letDecl (name : String) (ty : BindingTy) (init : JsExpr)
   | assign (name : String) (expr : JsExpr)
   | ite (cond : JsExpr) (thn : Array JsStmt) (els : Option (Array JsStmt))
   | fieldSet (field : String) (expr : JsExpr)
@@ -111,6 +111,12 @@ structure EmitMethod where
   body : Array JsStmt
 deriving Repr, Inhabited
 
+/-- A structure field: its source spelling and its declared type. -/
+structure Field where
+  name : String
+  ty : BindingTy
+deriving Repr, Inhabited
+
 /-- A class: the structure its fields make, the constructor that assigns
 each exactly once on every path, and one function per modeled getter or
 method. -/
@@ -119,8 +125,8 @@ structure EmitClass where
   /-- The defining module's entry-relative path; none for the entry. -/
   module : Option String := none
   source : String
-  /-- Field spellings in declaration order — the structure's fields. -/
-  fields : Array String
+  /-- Fields in declaration order — the structure's fields. -/
+  fields : Array Field
   ctorParams : Array Param
   ctorBody : Array JsStmt
   getters : Array EmitGetter
@@ -362,15 +368,14 @@ partial def decodeExpr (j : Json) : Except String JsExpr := do
     pure (.optionGet (← decodeExpr (← j.getObjVal? "expr")))
   | k => throw s!"unknown expression kind '{k}'"
 
-/-- A local's optional `type` field: absent is the numeric slice the
-statement always had; present it is the union-tag array a parameter's
-type carries. -/
-def decodeLocalTy (j : Json) : Except String LocalTy :=
+/-- A binding's optional `type` field: absent is number; an array is a
+union's tags; an object is a class reference. -/
+def decodeBindingTy (j : Json) : Except String BindingTy :=
   match j.getObjVal? "type" with
   | .error _ => pure .number
   | .ok v =>
     match v.getArr? with
-    | .ok tags => LocalTy.union <$> decodeUnionTags tags "local"
+    | .ok tags => BindingTy.union <$> decodeUnionTags tags "binding"
     | .error _ => do pure (.cls (← getStr v "class") (← getStrOpt v "module"))
 
 partial def decodeStmt (j : Json) : Except String JsStmt := do
@@ -378,10 +383,10 @@ partial def decodeStmt (j : Json) : Except String JsStmt := do
   | "return" => pure (.ret (← decodeExpr (← j.getObjVal? "expr")))
   | "throw" => pure (.throwErr (← getStr j "error"))
   | "const" =>
-    pure (.constDecl (← getStr j "name") (← decodeLocalTy j)
+    pure (.constDecl (← getStr j "name") (← decodeBindingTy j)
       (← decodeExpr (← j.getObjVal? "init")))
   | "let" =>
-    pure (.letDecl (← getStr j "name") (← decodeLocalTy j)
+    pure (.letDecl (← getStr j "name") (← decodeBindingTy j)
       (← decodeExpr (← j.getObjVal? "init")))
   | "assign" =>
     pure (.assign (← getStr j "name")
@@ -402,13 +407,6 @@ partial def decodeStmt (j : Json) : Except String JsStmt := do
       (← decodeExpr (← j.getObjVal? "expr")))
   | k => throw s!"unknown statement kind '{k}'"
 
-/-- An array field of plain strings — names, which the schema constrains
-and the renderer checks again before it emits them. -/
-def decodeNames (j : Json) (field what : String) :
-    Except String (Array String) := do
-  (← getArr j field).mapM fun n =>
-    n.getStr?.mapError fun _ => s!"a {what} is not a string"
-
 /-- A parameter's type: the string "number", an array of union tags, or a
 class object. -/
 def decodeParamTy (j : Json) : Except String ParamTy :=
@@ -426,6 +424,9 @@ def decodeParamTy (j : Json) : Except String ParamTy :=
 def decodeParam (j : Json) : Except String Param := do
   pure { name := ← getStr j "name"
          ty := ← decodeParamTy (← j.getObjVal? "type") }
+
+def decodeField (j : Json) : Except String Field := do
+  pure { name := ← getStr j "name", ty := ← decodeBindingTy j }
 
 def decodeParams (j : Json) (field : String) : Except String (Array Param) := do
   (← getArr j field).mapM fun p =>
@@ -453,7 +454,7 @@ def decodeClass (j : Json) : Except String EmitClass := do
   let name ← getStr j "name"
   let module ← getStrOpt j "module"
   let source ← getStr j "source"
-  let fields ← decodeNames j "fields" "field name"
+  let fields ← (← getArr j "fields").mapM decodeField
   let ctor ← j.getObjVal? "ctor"
   pure { name, module, source, fields
          ctorParams := ← decodeParams ctor "params"

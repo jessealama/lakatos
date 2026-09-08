@@ -1,0 +1,493 @@
+{
+  "file": "engines/thales/tests/fixtures/fields.ts",
+  "declarations": [
+    {
+      "kind": "class",
+      "name": "Inner",
+      "source": "export class Inner {\n  readonly v: number;\n  constructor(v: number) {\n    this.v = v;\n  }\n}",
+      "fields": [
+        {
+          "name": "v"
+        }
+      ],
+      "ctor": {
+        "params": [
+          {
+            "name": "v",
+            "type": "number"
+          }
+        ],
+        "body": [
+          {
+            "kind": "field-set",
+            "field": "v",
+            "expr": {
+              "kind": "id",
+              "name": "v"
+            }
+          }
+        ]
+      },
+      "getters": [],
+      "methods": []
+    },
+    {
+      "kind": "class",
+      "name": "Cell",
+      "source": "export class Cell {\n  readonly value: number | undefined;\n  readonly inner: Inner;\n  readonly n: number;\n  constructor(n: number, i: Inner) {\n    if (n < 0) {\n      this.value = undefined;\n    } else {\n      this.value = n;\n    }\n    this.inner = i;\n    this.n = n;\n  }\n  /** @ensures{keepsN} forall (a: number) { Object.is(new Cell(a, new Inner(a)).n, a) } */\n  get plain(): number {\n    return this.n;\n  }\n}",
+      "fields": [
+        {
+          "name": "value",
+          "type": ["number", "undefined"]
+        },
+        {
+          "name": "inner",
+          "type": {
+            "class": "Inner"
+          }
+        },
+        {
+          "name": "n"
+        }
+      ],
+      "ctor": {
+        "params": [
+          {
+            "name": "n",
+            "type": "number"
+          },
+          {
+            "name": "i",
+            "type": {
+              "class": "Inner"
+            }
+          }
+        ],
+        "body": [
+          {
+            "kind": "if",
+            "cond": {
+              "kind": "binop",
+              "op": "<",
+              "left": {
+                "kind": "id",
+                "name": "n"
+              },
+              "right": {
+                "kind": "num",
+                "lit": "0"
+              }
+            },
+            "then": [
+              {
+                "kind": "field-set",
+                "field": "value",
+                "expr": {
+                  "kind": "inject",
+                  "tag": "undefined"
+                }
+              }
+            ],
+            "else": [
+              {
+                "kind": "field-set",
+                "field": "value",
+                "expr": {
+                  "kind": "inject",
+                  "tag": "number",
+                  "expr": {
+                    "kind": "id",
+                    "name": "n"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "kind": "field-set",
+            "field": "inner",
+            "expr": {
+              "kind": "id",
+              "name": "i"
+            }
+          },
+          {
+            "kind": "field-set",
+            "field": "n",
+            "expr": {
+              "kind": "id",
+              "name": "n"
+            }
+          }
+        ]
+      },
+      "getters": [
+        {
+          "name": "plain",
+          "body": [
+            {
+              "kind": "return",
+              "expr": {
+                "kind": "field-read",
+                "className": "Cell",
+                "field": "n",
+                "object": {
+                  "kind": "self"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "methods": []
+    },
+    {
+      "kind": "class",
+      "name": "Reading",
+      "source": "export class Reading {\n  readonly value: number | undefined;\n  constructor(value: number) {\n    this.value = value;\n  }\n  /** @ensures{readsBack} forall (a: number) { Object.is(new Reading(a).get(), a) } */\n  get(): number {\n    return this.value === undefined ? 0 : this.value;\n  }\n  /** @ensures{typeofNarrows} forall (a: number) { Object.is(new Reading(a).narrow(), a) } */\n  narrow(): number {\n    if (typeof this.value === \"number\") {\n      return this.value;\n    }\n    return 0;\n  }\n}",
+      "fields": [
+        {
+          "name": "value",
+          "type": ["number", "undefined"]
+        }
+      ],
+      "ctor": {
+        "params": [
+          {
+            "name": "value",
+            "type": "number"
+          }
+        ],
+        "body": [
+          {
+            "kind": "field-set",
+            "field": "value",
+            "expr": {
+              "kind": "inject",
+              "tag": "number",
+              "expr": {
+                "kind": "id",
+                "name": "value"
+              }
+            }
+          }
+        ]
+      },
+      "getters": [],
+      "methods": [
+        {
+          "name": "get",
+          "params": [],
+          "body": [
+            {
+              "kind": "return",
+              "expr": {
+                "kind": "cond",
+                "cond": {
+                  "kind": "jsval-eq",
+                  "semantics": "strict",
+                  "left": {
+                    "kind": "field-read",
+                    "className": "Reading",
+                    "field": "value",
+                    "object": {
+                      "kind": "self"
+                    }
+                  },
+                  "right": {
+                    "kind": "inject",
+                    "tag": "undefined"
+                  }
+                },
+                "then": {
+                  "kind": "num",
+                  "lit": "0"
+                },
+                "else": {
+                  "kind": "project",
+                  "tag": "number",
+                  "expr": {
+                    "kind": "field-read",
+                    "className": "Reading",
+                    "field": "value",
+                    "object": {
+                      "kind": "self"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "narrow",
+          "params": [],
+          "body": [
+            {
+              "kind": "if",
+              "cond": {
+                "kind": "typeof-test",
+                "expr": {
+                  "kind": "field-read",
+                  "className": "Reading",
+                  "field": "value",
+                  "object": {
+                    "kind": "self"
+                  }
+                },
+                "result": "number"
+              },
+              "then": [
+                {
+                  "kind": "return",
+                  "expr": {
+                    "kind": "project",
+                    "tag": "number",
+                    "expr": {
+                      "kind": "field-read",
+                      "className": "Reading",
+                      "field": "value",
+                      "object": {
+                        "kind": "self"
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "return",
+              "expr": {
+                "kind": "num",
+                "lit": "0"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "class",
+      "name": "Pair",
+      "source": "export class Pair {\n  readonly inner: Inner;\n  constructor(i: Inner) {\n    this.inner = i;\n  }\n  /** @ensures{delegates} forall (a: number) { Object.is(new Pair(new Inner(a)).peek(), a) } */\n  peek(): number {\n    return this.inner.v;\n  }\n}",
+      "fields": [
+        {
+          "name": "inner",
+          "type": {
+            "class": "Inner"
+          }
+        }
+      ],
+      "ctor": {
+        "params": [
+          {
+            "name": "i",
+            "type": {
+              "class": "Inner"
+            }
+          }
+        ],
+        "body": [
+          {
+            "kind": "field-set",
+            "field": "inner",
+            "expr": {
+              "kind": "id",
+              "name": "i"
+            }
+          }
+        ]
+      },
+      "getters": [],
+      "methods": [
+        {
+          "name": "peek",
+          "params": [],
+          "body": [
+            {
+              "kind": "return",
+              "expr": {
+                "kind": "field-read",
+                "className": "Inner",
+                "field": "v",
+                "object": {
+                  "kind": "field-read",
+                  "className": "Pair",
+                  "field": "inner",
+                  "object": {
+                    "kind": "self"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "obligations": [
+    {
+      "function": "Cell#plain",
+      "property": "keepsN",
+      "formula": "forall (a: number) { Object.is(new Cell(a, new Inner(a)).n, a) }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "a",
+            "kind": "number"
+          }
+        ],
+        "conclusion": {
+          "kind": "eq",
+          "left": {
+            "kind": "field-read",
+            "className": "Cell",
+            "field": "n",
+            "object": {
+              "kind": "new",
+              "className": "Cell",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "a"
+                },
+                {
+                  "kind": "new",
+                  "className": "Inner",
+                  "args": [
+                    {
+                      "kind": "id",
+                      "name": "a"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "right": {
+            "kind": "id",
+            "name": "a"
+          }
+        }
+      }
+    },
+    {
+      "function": "Reading#get",
+      "property": "readsBack",
+      "formula": "forall (a: number) { Object.is(new Reading(a).get(), a) }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "a",
+            "kind": "number"
+          }
+        ],
+        "conclusion": {
+          "kind": "eq",
+          "left": {
+            "kind": "method-call",
+            "className": "Reading",
+            "name": "get",
+            "object": {
+              "kind": "new",
+              "className": "Reading",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "a"
+                }
+              ]
+            },
+            "args": []
+          },
+          "right": {
+            "kind": "id",
+            "name": "a"
+          }
+        }
+      }
+    },
+    {
+      "function": "Reading#narrow",
+      "property": "typeofNarrows",
+      "formula": "forall (a: number) { Object.is(new Reading(a).narrow(), a) }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "a",
+            "kind": "number"
+          }
+        ],
+        "conclusion": {
+          "kind": "eq",
+          "left": {
+            "kind": "method-call",
+            "className": "Reading",
+            "name": "narrow",
+            "object": {
+              "kind": "new",
+              "className": "Reading",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "a"
+                }
+              ]
+            },
+            "args": []
+          },
+          "right": {
+            "kind": "id",
+            "name": "a"
+          }
+        }
+      }
+    },
+    {
+      "function": "Pair#peek",
+      "property": "delegates",
+      "formula": "forall (a: number) { Object.is(new Pair(new Inner(a)).peek(), a) }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "a",
+            "kind": "number"
+          }
+        ],
+        "conclusion": {
+          "kind": "eq",
+          "left": {
+            "kind": "method-call",
+            "className": "Pair",
+            "name": "peek",
+            "object": {
+              "kind": "new",
+              "className": "Pair",
+              "args": [
+                {
+                  "kind": "new",
+                  "className": "Inner",
+                  "args": [
+                    {
+                      "kind": "id",
+                      "name": "a"
+                    }
+                  ]
+                }
+              ]
+            },
+            "args": []
+          },
+          "right": {
+            "kind": "id",
+            "name": "a"
+          }
+        }
+      }
+    }
+  ]
+}

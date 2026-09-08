@@ -5,7 +5,11 @@
       "kind": "class",
       "name": "Point",
       "source": "export class Point {\n  public readonly x: number;\n\n  constructor(x: number) {\n    if (x === -Infinity || x === Infinity) {\n      throw new RangeError(\"Cannot accept an infinite coordinate\");\n    }\n    this.x = x;\n  }\n}",
-      "fields": ["x"],
+      "fields": [
+        {
+          "name": "x"
+        }
+      ],
       "ctor": {
         "params": [
           {
@@ -72,7 +76,11 @@
       "kind": "class",
       "name": "Span",
       "source": "export class Span {\n  public readonly d: number;\n\n  constructor(p: Point, q: Point) {\n    this.d = q.x - p.x;\n  }\n\n  /**\n   * @ensures{selfSame} ∀ (s : Span) { s.width() ≡ s.width() }\n   */\n  width(): number {\n    return this.d;\n  }\n}",
-      "fields": ["d"],
+      "fields": [
+        {
+          "name": "d"
+        }
+      ],
       "ctor": {
         "params": [
           {
