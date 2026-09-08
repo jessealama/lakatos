@@ -36,6 +36,21 @@
       "description": "A class field's source spelling; a '#'-private keeps its sigil, which the artifact renders as one guillemeted name component.",
       "pattern": "^#?[$A-Za-z_][$A-Za-z0-9_]*$"
     },
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "$ref": "#/definitions/fieldName" },
+        "type": {
+          "description": "Present exactly for a union-typed or class-typed field; absent means number, the rule a local statement follows.",
+          "oneOf": [
+            { "$ref": "#/definitions/unionTags" },
+            { "$ref": "#/definitions/classRef" }
+          ]
+        }
+      }
+    },
     "modulePath": {
       "type": "string",
       "description": "A dependency's path relative to the entry file, posix-spelled. Absent on a declaration or call means the entry file itself. Guillemets and control characters are excluded: the path is rendered as one Lean name component between guillemets, and either would break it.",
@@ -426,7 +441,7 @@
     },
     "class": {
       "type": "object",
-      "description": "A number-typed class: a structure over its fields, a constructor assigning each exactly once on every path, and one function per modeled getter or method.",
+      "description": "A class: a structure over its fields, each a number, a keyword union, or an instance of an earlier class, a constructor assigning each exactly once on every path, and one function per modeled getter or method.",
       "additionalProperties": false,
       "required": [
         "kind",
@@ -447,8 +462,8 @@
         },
         "fields": {
           "type": "array",
-          "description": "Field spellings in declaration order — the structure's fields, and the constructor's arguments in order.",
-          "items": { "$ref": "#/definitions/fieldName" }
+          "description": "Fields in declaration order — the structure's fields, and the constructor's arguments in order.",
+          "items": { "$ref": "#/definitions/field" }
         },
         "ctor": {
           "type": "object",

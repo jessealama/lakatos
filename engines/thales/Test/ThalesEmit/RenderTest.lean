@@ -421,7 +421,7 @@ def ctorStmt (straight : List String) (s : JsStmt) : RenderM (TSyntax `doElem) :
 
 /-- A one-field class with a straight constructor. -/
 def box : EmitClass :=
-  { name := "Box", source := "", fields := #["#v"], ctorParams := nums #["v"],
+  { name := "Box", source := "", fields := #[{ name := "#v", ty := .number }], ctorParams := nums #["v"],
     ctorBody := #[.fieldSet "#v" (.id "v")],
     getters := #[{ name := "v", body := #[.ret (.fieldRead "Box" none "#v" .selfRef)] }],
     methods := #[{ name := "scale", params := nums #["k"],
@@ -442,7 +442,7 @@ def hashV : Ident := mkIdent (Name.mkSimple "«#v»")
 -- A field set inside a branch gets the mut prelude.
 #guard rendersSyntax
   (ctorCommand { box with
-                 fields := #["v"],
+                 fields := #[{ name := "v", ty := .number }],
                  ctorBody := #[.ite (.binop "<" (.id "v") (.num "0"))
                                  #[.fieldSet "v" (.num "0")] (some #[.fieldSet "v" (.id "v")])] })
   `(@[js_norm, grind] def TsModel.Box.construct (v : JsNumber) : JsM TsModel.Box := do

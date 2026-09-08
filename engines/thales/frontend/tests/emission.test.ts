@@ -3824,7 +3824,7 @@ describe("class declarations (#129)", () => {
         kind: "class",
         name: "Box",
         source: expect.stringContaining("export class Box"),
-        fields: ["#v"],
+        fields: [{ name: "#v" }],
         ctor: {
           params: [{ name: "v", type: "number" }],
           body: [
@@ -3850,6 +3850,13 @@ describe("class declarations (#129)", () => {
         methods: [],
       },
     ]);
+  });
+
+  test("a number field rides the wire as a name alone", () => {
+    const { emission } = emitModule(BOX, "t.ts");
+    const cls = emission.declarations[0] as EmitClass;
+    expect(cls.fields).toEqual([{ name: "#v" }]);
+    expectValidEmission(emission);
   });
 
   test.each([
@@ -4068,7 +4075,7 @@ describe("class declarations (#129)", () => {
     expect(classified).toEqual([]);
     const cls = emission.declarations[0]!;
     assert(cls.kind === "class");
-    expect(cls.fields).toEqual(["#v"]);
+    expect(cls.fields).toEqual([{ name: "#v" }]);
   });
 
   test("a throwing guard with a branch assignment models", () => {

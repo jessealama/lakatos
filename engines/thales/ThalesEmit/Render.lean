@@ -355,9 +355,9 @@ body, where every name is already a `JsNumber`. -/
 def bodyTerm (e : JsExpr) : RenderM (TSyntax `term) :=
   return (← valueTerm (fun _ => false) e).term
 
-/-- The type a local is ascribed: every union spelling is the one tagged
-domain, exactly as `paramBinders` renders a union parameter's. -/
-def localTyTerm : LocalTy → RenderM (TSyntax `term)
+/-- The type a binding is ascribed: every union spelling is the one
+tagged domain, exactly as `paramBinders` renders a union parameter's. -/
+def bindingTyTerm : BindingTy → RenderM (TSyntax `term)
   | .number => `(JsNumber)
   | .union _ => `(JsVal)
   | .cls n m => do let c ← classIdent m n; `($c)
@@ -386,9 +386,9 @@ partial def stmtDoElem (straight : Option (List String)) :
   | .constDecl x ty e => do
     -- Locals are ascribed: a bare literal initializer would otherwise
     -- elaborate at `Nat`, and a union local is where its `JsVal` shows.
-    `(doElem| let $(← scopedIdent x) : $(← localTyTerm ty) := $(← bodyTerm e))
+    `(doElem| let $(← scopedIdent x) : $(← bindingTyTerm ty) := $(← bodyTerm e))
   | .letDecl x ty e => do
-    `(doElem| let mut $(← scopedIdent x) : $(← localTyTerm ty) := $(← bodyTerm e))
+    `(doElem| let mut $(← scopedIdent x) : $(← bindingTyTerm ty) := $(← bodyTerm e))
   | .assign x e => do
     `(doElem| $(← scopedIdent x):ident := $(← bodyTerm e))
   | .ite c thn els => iteElem straight c thn els
@@ -516,7 +516,7 @@ def straightSet (body : Array JsStmt) (f : String) : Bool :=
 
 def structCommand (c : EmitClass) : RenderM (TSyntax `command) := do
   let cls ← classIdent c.module c.name
-  let fields ← c.fields.mapM fieldIdent
+  let fields ← c.fields.mapM (fieldIdent ·.name)
   if fields.isEmpty then `(structure $cls)
   else `(structure $cls where $[$fields:ident : JsNumber]*)
 
@@ -527,13 +527,13 @@ def ctorCommand (c : EmitClass) : RenderM (TSyntax `command) := do
   let name ← classMember c.module c.name "construct"
   let cls ← classIdent c.module c.name
   let binders ← paramBinders c.ctorParams
-  let straight := c.fields.toList.filter (straightSet c.ctorBody)
+  let straight := (c.fields.map (·.name)).toList.filter (straightSet c.ctorBody)
   let rebound ← reboundParams c.ctorParams c.ctorBody
-  let prelude ← (c.fields.filter (fun f => !straight.contains f)).mapM fun f => do
-    `(doElem| let mut $(← ctorLocal f):ident : JsNumber := 0)
+  let prelude ← (c.fields.filter (fun f => !straight.contains f.name)).mapM fun f => do
+    `(doElem| let mut $(← ctorLocal f.name):ident : JsNumber := 0)
   let body ← c.ctorBody.mapM (stmtDoElem (some straight))
   let mk := mkIdent (cls.getId ++ `mk)
-  let mkArgs ← c.fields.mapM ctorLocal
+  let mkArgs ← c.fields.mapM (ctorLocal ·.name)
   let ret ←
     if mkArgs.isEmpty then `(doElem| return $mk)
     else `(doElem| return $mk $mkArgs*)

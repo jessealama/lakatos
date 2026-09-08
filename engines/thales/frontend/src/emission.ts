@@ -160,6 +160,13 @@ export interface EmitMethod {
   body: EmitStmt[];
 }
 
+/** A field on the wire: its spelling and, for a union or class field,
+ * its type — absent means number, the rule a local statement follows. */
+export interface EmitField {
+  name: string;
+  type?: UnionTag[] | { class: string; module?: string };
+}
+
 /** A class as the emitter renders it: a structure over its fields, a
  * constructor that assigns each exactly once, and one function per
  * modeled getter or method. */
@@ -168,8 +175,8 @@ export interface EmitClass {
   name: string;
   /** The defining module's entry-relative path; absent for the entry. */
   module?: string;
-  /** Field spellings in declaration order; a private one keeps its '#'. */
-  fields: string[];
+  /** Fields in declaration order; a private one keeps its '#'. */
+  fields: EmitField[];
   source: string;
   ctor: { params: EmitParam[]; body: EmitStmt[] };
   getters: EmitGetter[];
@@ -3366,7 +3373,7 @@ function walkClass(
       name: className,
       ...(qualifier !== "" ? { module: qualifier } : {}),
       source: cls.getText(sf),
-      fields,
+      fields: fields.map((name) => ({ name })),
       ctor: {
         params: ctorParams.map((p) => wireParam(p.name, p.slot)),
         body: ctorBody,

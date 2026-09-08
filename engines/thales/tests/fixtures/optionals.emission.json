@@ -121,7 +121,11 @@
       "kind": "class",
       "name": "Counter",
       "source": "export class Counter {\n  readonly n: number;\n\n  constructor(n: number) {\n    this.n = n;\n  }\n\n  /** @ensures{bumpDefaults} forall (x: int ∈ [0, 4)) { Object.is(new Counter(x).bump(), x + 1) } */\n  bump(by?: number): number {\n    if (by === undefined) {\n      return this.n + 1;\n    }\n    return this.n + by;\n  }\n}",
-      "fields": ["n"],
+      "fields": [
+        {
+          "name": "n"
+        }
+      ],
       "ctor": {
         "params": [
           {
