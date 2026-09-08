@@ -50,10 +50,10 @@ export default defineConfig({
         // lost its src/ fallback, whose branches were all covered, so the
         // denominator shrank while the unreachable set did not.
         autoUpdate: true,
-        statements: 99.42,
-        branches: 98.39,
+        statements: 99.52,
+        branches: 98.4,
         functions: 100,
-        lines: 99.62,
+        lines: 99.65,
       },
     },
   },

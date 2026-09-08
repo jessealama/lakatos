@@ -3565,6 +3565,8 @@ const BUILTIN_MEMBER_CALLS: ReadonlyMap<string, BuiltinEntry> = new Map(
       ["Math", "max", "num", VARIADIC],
       ["Number", "isFinite", "bool", UNARY],
       ["Number", "isNaN", "bool", UNARY],
+      ["Number", "isInteger", "bool", UNARY],
+      ["Number", "isSafeInteger", "bool", UNARY],
     ] as const
   ).map(([object, member, ty, arity]) => [
     `${object}.${member}`,
