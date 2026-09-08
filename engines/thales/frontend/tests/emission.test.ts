@@ -8862,4 +8862,269 @@ export class R {
       "unmapped TypeScript construct 'TypeOfExpression'",
     );
   });
+
+  const NESTED = `export class Inner {
+  readonly v: number;
+  readonly u: number | undefined;
+  constructor(v: number) {
+    this.v = v;
+    this.u = v;
+  }
+  get twice(): number {
+    return this.v * 2;
+  }
+  double(): number {
+    return this.v * 2;
+  }
+}
+export function takeInner(i: Inner): number {
+  return i.v;
+}
+export class Outer {
+  readonly inner: Inner;
+  constructor(i: Inner) {
+    this.inner = i;
+  }
+  /** @ensures{m} forall (a: number) { Object.is(new Outer(new Inner(a)).m(), new Outer(new Inner(a)).m()) } */
+  m(): number {
+    BODY
+  }
+}
+/** @ensures{f} forall (a: number) { Object.is(f(new Outer(new Inner(a))), f(new Outer(new Inner(a)))) } */
+export function f(o: Outer): number {
+  return o.inner.v;
+}
+`;
+  const SELF_INNER: EmitExpr = {
+    kind: "field-read",
+    className: "Outer",
+    field: "inner",
+    object: { kind: "self" },
+  };
+  function nestedBody(body: string): EmitStmt[] {
+    const src = NESTED.replace("BODY", body);
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    return (emission.declarations[2] as EmitClass).methods[0]!.body;
+  }
+
+  test("a field read on an instance field is a nested field read", () => {
+    expect(nestedBody("return this.inner.v;")[0]).toEqual({
+      kind: "return",
+      expr: {
+        kind: "field-read",
+        className: "Inner",
+        field: "v",
+        object: SELF_INNER,
+      },
+    });
+  });
+
+  test("a getter and a method dispatch on an instance field", () => {
+    expect(nestedBody("return this.inner.twice;")[0]).toEqual({
+      kind: "return",
+      expr: {
+        kind: "getter-read",
+        className: "Inner",
+        name: "twice",
+        object: SELF_INNER,
+      },
+    });
+    expect(nestedBody("return this.inner.double();")[0]).toEqual({
+      kind: "return",
+      expr: {
+        kind: "method-call",
+        className: "Inner",
+        name: "double",
+        object: SELF_INNER,
+        args: [],
+      },
+    });
+  });
+
+  test("a union field two levels down projects and narrows", () => {
+    expect(nestedBody("return this.inner.u;")[0]).toEqual({
+      kind: "return",
+      expr: {
+        kind: "project",
+        tag: "number",
+        expr: {
+          kind: "field-read",
+          className: "Inner",
+          field: "u",
+          object: SELF_INNER,
+        },
+      },
+    });
+  });
+
+  test("an instance field flows to a class-typed parameter", () => {
+    expect(nestedBody("return takeInner(this.inner);")[0]).toEqual({
+      kind: "return",
+      expr: { kind: "call", callee: "takeInner", args: [SELF_INNER] },
+    });
+  });
+
+  test("a class-typed parameter's instance field is a receiver, and a fresh instance's too", () => {
+    const src = NESTED.replace("BODY", "return 0;");
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    expect(fnBody(emission.declarations[3]!)[0]).toEqual({
+      kind: "return",
+      expr: {
+        kind: "field-read",
+        className: "Inner",
+        field: "v",
+        object: {
+          kind: "field-read",
+          className: "Outer",
+          field: "inner",
+          object: { kind: "id", name: "o" },
+        },
+      },
+    });
+    const atom = `export class Inner {
+  readonly v: number;
+  constructor(v: number) {
+    this.v = v;
+  }
+}
+export class Outer {
+  readonly inner: Inner;
+  constructor(i: Inner) {
+    this.inner = i;
+  }
+}
+/** @ensures{p} forall (a: number) { Object.is(new Outer(new Inner(a)).inner.v, a) } */
+export function g(a: number): number {
+  return a;
+}
+`;
+    const r = emitModule(atom, "t.ts");
+    expect(r.classified).toEqual([]);
+    expect(JSON.stringify(r.emission.obligations[0])).toContain(
+      '"field":"inner"',
+    );
+  });
+
+  test.each([
+    [
+      "an instance field at a number position",
+      "return this.inner;",
+      "field 'inner' is an instance of 'Inner', not a number",
+    ],
+    [
+      "a member the model lacks",
+      "return this.inner.nope;",
+      "'Inner' has no member 'nope' in the model",
+    ],
+    [
+      "a method the model lacks",
+      "return this.inner.nope();",
+      "'Inner' has no method 'nope' in the model",
+    ],
+    [
+      "a getter on this",
+      "return this.twice;",
+      "'this.twice' does not name a field of 'Outer'",
+    ],
+  ])("%s refuses", (_what, body, reason) => {
+    const src = NESTED.replace("BODY", body).replace(
+      "  /** @ensures{m}",
+      "  get twice(): number {\n    return 1;\n  }\n  /** @ensures{m}",
+    );
+    const { classified } = emitModule(src, "t.ts");
+    expect(classified.map((c) => c.reason).join("\n")).toContain(reason);
+  });
+
+  test("the scan reports a construct inside a nested receiver's arguments", () => {
+    const src = NESTED.replace(
+      "BODY",
+      "return new Outer(new Inner(this.inner.v!)).inner.v;",
+    );
+    const { classified } = emitModule(src, "t.ts");
+    expect(classified[0]!.reason).toContain(
+      "unmapped TypeScript construct 'NonNullExpression'",
+    );
+  });
+
+  test("a degraded member reached through a field travels its reason", () => {
+    const src = `export class Inner {
+  readonly v: number;
+  constructor(v: number) {
+    this.v = v;
+  }
+  broken(): number {
+    return this.v ** 2;
+  }
+}
+export class Outer {
+  readonly inner: Inner;
+  constructor(i: Inner) {
+    this.inner = i;
+  }
+  /** @ensures{m} forall (a: number) { Object.is(new Outer(new Inner(a)).m(), 0) } */
+  m(): number {
+    return this.inner.broken();
+  }
+}
+`;
+    const { classified } = emitModule(src, "t.ts");
+    expect(classified[0]!.reason).toContain("Inner#broken");
+  });
+
+  test.each([
+    [
+      "a call as a receiver",
+      "return takeInner(this.inner).nope;",
+      "unmapped TypeScript construct 'PropertyAccessExpression'",
+    ],
+    [
+      "a chain through a member the class lacks",
+      "return this.nope.v;",
+      "unmapped TypeScript construct 'PropertyAccessExpression'",
+    ],
+  ])("%s is outside the model", (_what, body, reason) => {
+    const { classified } = emitModule(NESTED.replace("BODY", body), "t.ts");
+    expect(classified[0]!.reason).toContain(reason);
+  });
+
+  test("the scan reaches a construct in a nested method call's argument", () => {
+    const src = NESTED.replace(
+      "BODY",
+      "return this.inner.double() + this.inner.scaled(await h());",
+    );
+    const { classified } = emitModule(src, "t.ts");
+    expect(classified[0]!.reason).toContain(
+      "unmapped TypeScript construct 'AwaitExpression'",
+    );
+  });
+
+  test("a builtin member call is still numeric-shaped beside the place rule", () => {
+    const src = `/** @ensures{p} forall (a: number) { Object.is(Math.abs(a), g(a)) } */
+export function g(a: number): number {
+  return Math.abs(a);
+}
+`;
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    expect(JSON.stringify(emission.obligations[0])).toContain(
+      '"kind":"builtin","object":"Math","member":"abs"',
+    );
+  });
+
+  test("a refused operator inside a plain call's argument still names it", () => {
+    const src = `export function h(a: number): number {
+  return a;
+}
+/** @ensures{p} forall (a: number) { Object.is(h(a ** 2), a) } */
+export function g(a: number): number {
+  return a;
+}
+`;
+    const { classified } = emitModule(src, "t.ts");
+    expect(classified[0]!.reason).toContain(
+      "'**' is implementation-approximated",
+    );
+  });
 });

@@ -532,79 +532,6 @@ function newCall(e: ts.Expression): ts.NewExpression | undefined {
   return ts.isIdentifier(u.expression) ? u : undefined;
 }
 
-/** A member access on a freshly built instance. */
-function instanceAccess(
-  e: ts.Expression,
-): { object: ts.NewExpression; name: string } | undefined {
-  if (!ts.isPropertyAccessExpression(e)) return undefined;
-  const object = newCall(e.expression);
-  if (object === undefined) return undefined;
-  if (!ts.isIdentifier(e.name)) return undefined;
-  return { object, name: e.name.text };
-}
-
-/** A member call on a freshly built instance. */
-function instanceCall(
-  e: ts.Expression,
-):
-  | { object: ts.NewExpression; name: string; args: readonly ts.Expression[] }
-  | undefined {
-  if (!ts.isCallExpression(e)) return undefined;
-  const callee = e.expression;
-  if (!ts.isPropertyAccessExpression(callee)) return undefined;
-  const object = newCall(callee.expression);
-  if (object === undefined) return undefined;
-  if (!ts.isIdentifier(callee.name)) return undefined;
-  return { object, name: callee.name.text, args: e.arguments };
-}
-
-/** A member access on a class-typed identifier: `p.x`, `p.g`. */
-function varAccess(
-  e: ts.Expression,
-  scope: WalkScope,
-): { ref: ModelRef; object: string; name: string } | undefined {
-  if (!ts.isPropertyAccessExpression(e)) return undefined;
-  const obj = unwrapParens(e.expression);
-  if (!ts.isIdentifier(obj)) return undefined;
-  const ty = scope.vars.get(obj.text);
-  // A union-typed identifier has no members: the domain holds values, not
-  // shapes, so a member read of one is not this access. A body binds at
-  // the declared type, never at an option, so that case cannot arise.
-  if (ty === undefined || ty === "num" || "union" in ty || "option" in ty)
-    return undefined;
-  if (!ts.isIdentifier(e.name)) return undefined;
-  return { ref: ty.instance, object: obj.text, name: e.name.text };
-}
-
-/** A method call on a class-typed identifier: `p.m(args)`. */
-function varCall(
-  e: ts.Expression,
-  scope: WalkScope,
-):
-  | {
-      ref: ModelRef;
-      object: string;
-      name: string;
-      args: readonly ts.Expression[];
-    }
-  | undefined {
-  if (!ts.isCallExpression(e)) return undefined;
-  const callee = e.expression;
-  if (!ts.isPropertyAccessExpression(callee)) return undefined;
-  const access = varAccess(callee, scope);
-  return access === undefined ? undefined : { ...access, args: e.arguments };
-}
-
-/** A `this.m(...)` call: the only method call a member body can make. */
-function thisCall(
-  e: ts.Expression,
-): { name: string; args: readonly ts.Expression[] } | undefined {
-  if (!ts.isCallExpression(e)) return undefined;
-  const callee = e.expression;
-  if (!isThisAccess(callee)) return undefined;
-  return { name: callee.name.text, args: e.arguments };
-}
-
 /** The class a `new` names, in the registries. */
 function newRef(scope: WalkScope, built: ts.NewExpression): ModelRef {
   return refOf(scope, (built.expression as ts.Identifier).text);
@@ -638,6 +565,22 @@ function isPrefixNot(e: ts.Expression): e is ts.PrefixUnaryExpression {
   );
 }
 
+/** Whether a member chain's root is one the typed walk will type: `this`
+ * inside a member, a class-typed identifier, or a construction — one of
+ * an unregistered or degraded name included, so that failure travels to
+ * the walk rather than being reported as a shape. */
+function receiverShaped(e: ts.Expression, scope: WalkScope): boolean {
+  const u = unwrapParens(e);
+  if (u.kind === ts.SyntaxKind.ThisKeyword) return scope.self !== undefined;
+  if (ts.isIdentifier(u)) {
+    const ty = scope.vars.get(u.text);
+    return ty !== undefined && typeof ty !== "string" && "instance" in ty;
+  }
+  if (newCall(u) !== undefined) return true;
+  const inner = memberAccess(u);
+  return inner !== undefined && receiverShaped(inner.receiver, scope);
+}
+
 /** Whether an expression's own shape can denote a number in this slice —
  * the shapes the typed walk accepts at `num`. Top-level shape only:
  * deeper offenders keep their own refusals. */
@@ -658,12 +601,12 @@ function numericShaped(e: ts.Expression, scope: WalkScope): boolean {
     );
   if (ts.isBinaryExpression(u))
     return ARITH_OPERATORS.has(u.operatorToken.getText());
-  if (isThisAccess(u) || instanceAccess(u) !== undefined) return true;
-  if (instanceCall(u) !== undefined || thisCall(u) !== undefined) return true;
-  if (varAccess(u, scope) !== undefined || varCall(u, scope) !== undefined)
-    return true;
+  // A whitelisted builtin is a member call too, and answers first: its
+  // receiver is a namespace, not an instance place.
   const builtin = builtinCall(u, scope);
   if (builtin !== undefined) return builtin.ty === "num";
+  const member = memberCall(u) ?? memberAccess(u);
+  if (member !== undefined) return receiverShaped(member.receiver, scope);
   return ts.isCallExpression(u) && ts.isIdentifier(u.expression);
 }
 
@@ -750,6 +693,35 @@ function nonBooleanOperand(
       `'${op}' models boolean operands only; ${which} is not a boolean ` +
       `(${kindName(inner.kind)} at ${line + 1}:${character + 1})`,
   };
+}
+
+/** A member access chain is shaped when its root is: `this` inside a
+ * member, an identifier bound at a class, or a construction (whose
+ * arguments are scanned). Which members exist is the walk's question,
+ * as it always was for `this.x`. An unshaped root is reported at `at`,
+ * the whole member expression, which is where the scan always reported
+ * a member read or call it could not map. */
+function receiverConstruct(
+  e: ts.Expression,
+  at: ts.Expression,
+  sf: ts.SourceFile,
+  scope: WalkScope,
+): FailedDecl | undefined {
+  const u = unwrapParens(e);
+  if (u.kind === ts.SyntaxKind.ThisKeyword)
+    return scope.self !== undefined ? undefined : constructAt(at, at.kind, sf);
+  if (ts.isIdentifier(u)) {
+    const ty = scope.vars.get(u.text);
+    return ty !== undefined && typeof ty !== "string" && "instance" in ty
+      ? undefined
+      : constructAt(at, at.kind, sf);
+  }
+  const built = newCall(u);
+  if (built !== undefined) return findConstruct(built, sf, scope);
+  const inner = memberAccess(u);
+  if (inner !== undefined)
+    return receiverConstruct(inner.receiver, at, sf, scope);
+  return constructAt(at, at.kind, sf);
 }
 
 /** The first construct in tree order this slice cannot map: anything
@@ -845,42 +817,18 @@ function findConstruct(
     }
     return undefined;
   }
-  // A field read is shaped only where `this` denotes something.
-  if (isThisAccess(e) && scope.self !== undefined) return undefined;
-  // A this-call is shaped on the same condition as the field read above.
-  if (scope.self !== undefined) {
-    const selfCall = thisCall(e);
-    if (selfCall !== undefined) {
-      for (const a of selfCall.args) {
-        const found = findConstruct(a, sf, scope);
-        if (found !== undefined) return found;
-      }
-      return undefined;
-    }
-  }
-  const icall = instanceCall(e);
-  if (icall !== undefined) {
-    const found = findConstruct(icall.object, sf, scope);
+  const mc = memberCall(e);
+  if (mc !== undefined) {
+    const found = receiverConstruct(mc.receiver, e, sf, scope);
     if (found !== undefined) return found;
-    for (const a of icall.args) {
+    for (const a of mc.args) {
       const inner = findConstruct(a, sf, scope);
       if (inner !== undefined) return inner;
     }
     return undefined;
   }
-  const access = instanceAccess(e);
-  if (access !== undefined) return findConstruct(access.object, sf, scope);
-  // A class-typed identifier's member read or call is shaped; its object
-  // is an identifier, so only the arguments carry constructs.
-  const vcall = varCall(e, scope);
-  if (vcall !== undefined) {
-    for (const a of vcall.args) {
-      const found = findConstruct(a, sf, scope);
-      if (found !== undefined) return found;
-    }
-    return undefined;
-  }
-  if (varAccess(e, scope) !== undefined) return undefined;
+  const ma = memberAccess(e);
+  if (ma !== undefined) return receiverConstruct(ma.receiver, e, sf, scope);
   const built = newCall(e);
   if (built !== undefined) {
     const targ = built.typeArguments?.[0];
@@ -916,18 +864,18 @@ function findRefusedOp(e: ts.Expression): FailedDecl | undefined {
     if (reason !== undefined) return { construct: op, reason };
     return findRefusedOp(e.left) ?? findRefusedOp(e.right);
   }
-  const icall = instanceCall(e);
-  if (icall !== undefined) {
-    const found = findRefusedOp(icall.object);
+  const mc = memberCall(e);
+  if (mc !== undefined) {
+    const found = findRefusedOp(mc.receiver);
     if (found !== undefined) return found;
-    for (const a of icall.args) {
+    for (const a of mc.args) {
       const inner = findRefusedOp(a);
       if (inner !== undefined) return inner;
     }
     return undefined;
   }
-  const access = instanceAccess(e);
-  if (access !== undefined) return findRefusedOp(access.object);
+  const ma = memberAccess(e);
+  if (ma !== undefined) return findRefusedOp(ma.receiver);
   const built = newCall(e);
   if (built !== undefined) {
     for (const a of built.arguments ?? []) {
@@ -976,26 +924,16 @@ function callNames(
     for (const a of builtin.args) callNames(a, scope, into);
     return into;
   }
-  const icall = instanceCall(e);
-  if (icall !== undefined) {
-    callNames(icall.object, scope, into);
-    for (const a of icall.args) callNames(a, scope, into);
+  const mc = memberCall(e);
+  if (mc !== undefined) {
+    // A member is not a callee of its own; the receiver chain and the
+    // arguments carry them.
+    callNames(mc.receiver, scope, into);
+    for (const a of mc.args) callNames(a, scope, into);
     return into;
   }
-  const selfCall = thisCall(e);
-  if (selfCall !== undefined) {
-    for (const a of selfCall.args) callNames(a, scope, into);
-    return into;
-  }
-  const access = instanceAccess(e);
-  if (access !== undefined) return callNames(access.object, scope, into);
-  const vcall = varCall(e, scope);
-  if (vcall !== undefined) {
-    // The receiver is a bound name, not a callee; the arguments carry them.
-    for (const a of vcall.args) callNames(a, scope, into);
-    return into;
-  }
-  if (varAccess(e, scope) !== undefined) return into;
+  const ma = memberAccess(e);
+  if (ma !== undefined) return callNames(ma.receiver, scope, into);
   const built = newCall(e);
   if (built !== undefined) {
     // A class is not a callee, but its arguments carry them.
@@ -1134,6 +1072,8 @@ function findFailedMemberUse(
   e: ts.Expression,
   scope: WalkScope,
 ): FailedDecl | undefined {
+  // A bare `this` names no declaration this function classifies.
+  if (e.kind === ts.SyntaxKind.ThisKeyword) return undefined;
   if (ts.isParenthesizedExpression(e))
     return findFailedMemberUse(e.expression, scope);
   if (isUnaryArith(e) || isPrefixNot(e))
@@ -1165,91 +1105,35 @@ function findFailedMemberUse(
     }
     return undefined;
   }
-  const selfCall = thisCall(e);
-  if (selfCall !== undefined && scope.self !== undefined) {
-    // The live registry holds only already-walked siblings, so a forward
-    // call still falls to the typed walk, as source order demands.
-    if (
-      scope.selfFailed !== undefined &&
-      !scope.self.shape.methods.has(selfCall.name)
-    ) {
-      const travelled = travelFrom(scope.selfFailed, {
-        module: scope.self.ref.module,
-        name: qualifiedName(selfCall.name, scope.self.ref.name),
-      });
-      if (travelled !== undefined) return travelled;
-    }
-    for (const a of selfCall.args) {
-      const found = findFailedMemberUse(a, scope);
-      if (found !== undefined) return found;
-    }
-    return undefined;
-  }
-  const icall = instanceCall(e);
-  if (icall !== undefined) {
-    const found = findFailedMemberUse(icall.object, scope);
+  const call = memberCall(e);
+  const mc = call ?? memberAccess(e);
+  if (mc !== undefined) {
+    const found = findFailedMemberUse(mc.receiver, scope);
     if (found !== undefined) return found;
-    const ref = newRef(scope, icall.object);
-    const shape = scope.classes.get(modelKey(ref));
-    // An unmodeled class already travelled through its own `new`.
-    if (shape !== undefined && !shape.methods.has(icall.name)) {
-      const travelled = travelFailure(scope, {
-        module: ref.module,
-        name: qualifiedName(icall.name, ref.name),
-      });
-      if (travelled !== undefined) return travelled;
+    const ty = receiverTy(mc.receiver, scope);
+    if (ty !== undefined && typeof ty !== "string" && "instance" in ty) {
+      const view = classView(scope, ty.instance);
+      // The live registry holds only already-walked siblings, so a
+      // forward call still falls to the typed walk, as source order demands.
+      if (view !== undefined) {
+        const known =
+          call !== undefined
+            ? view.shape.methods.has(mc.name)
+            : view.shape.getters.has(mc.name) || view.shape.fields.has(mc.name);
+        if (!known) {
+          const travelled = travelFrom(view.failed, {
+            module: ty.instance.module,
+            name: qualifiedName(mc.name, ty.instance.name),
+          });
+          if (travelled !== undefined) return travelled;
+        }
+      }
     }
-    for (const a of icall.args) {
+    for (const a of call?.args ?? []) {
       const inner = findFailedMemberUse(a, scope);
       if (inner !== undefined) return inner;
     }
     return undefined;
-  }
-  const access = instanceAccess(e);
-  if (access !== undefined) {
-    const found = findFailedMemberUse(access.object, scope);
-    if (found !== undefined) return found;
-    const ref = newRef(scope, access.object);
-    const shape = scope.classes.get(modelKey(ref));
-    // An unmodeled class already travelled through its own `new`.
-    if (shape === undefined) return undefined;
-    if (shape.getters.has(access.name) || shape.fields.has(access.name))
-      return undefined;
-    return travelFailure(scope, {
-      module: ref.module,
-      name: qualifiedName(access.name, ref.name),
-    });
-  }
-  const vcall = varCall(e, scope);
-  if (vcall !== undefined) {
-    const view = classView(scope, vcall.ref);
-    if (view !== undefined && !view.shape.methods.has(vcall.name)) {
-      const travelled = travelFrom(view.failed, {
-        module: vcall.ref.module,
-        name: qualifiedName(vcall.name, vcall.ref.name),
-      });
-      if (travelled !== undefined) return travelled;
-    }
-    for (const a of vcall.args) {
-      const inner = findFailedMemberUse(a, scope);
-      if (inner !== undefined) return inner;
-    }
-    return undefined;
-  }
-  const vaccess = varAccess(e, scope);
-  if (vaccess !== undefined) {
-    const view = classView(scope, vaccess.ref);
-    if (view === undefined) return undefined;
-    if (
-      view.shape.getters.has(vaccess.name) ||
-      view.shape.fields.has(vaccess.name)
-    ) {
-      return undefined;
-    }
-    return travelFrom(view.failed, {
-      module: vaccess.ref.module,
-      name: qualifiedName(vaccess.name, vaccess.ref.name),
-    });
   }
   const built = newCall(e);
   if (built !== undefined) {
@@ -1570,58 +1454,28 @@ function walkTyped(
       args,
     };
   }
-  // Outside a member the construct scan already made `this` opaque, so
-  // the receiver is here whenever the walk reaches a field read.
-  if (scope.self !== undefined && isThisAccess(e)) {
-    const field = e.name.text;
-    if (!scope.self.shape.fields.has(field)) {
-      throw new ModelError(
-        `'this.${field}' does not name a field of '${scope.self.ref.name}'`,
-      );
-    }
-    const fty = scope.self.shape.fields.get(field)!;
-    if (fty !== "num" && !("union" in fty)) {
-      throw new ModelError(
-        `field '${field}' is ${describeTy(fty)}, not a number`,
-      );
-    }
-    /* v8 ignore start -- no boolean position admits a field read: every
-       one of them is gated on `booleanShaped`, which a `this` access is
-       not. The throw mirrors the call case's, kept for the same defense. */
-    if (expected !== "num") {
-      throw new ModelError(
-        `field '${field}' is a number, not ${describeTy(expected)}`,
-      );
-    }
-    /* v8 ignore stop */
-    return {
-      kind: "field-read",
-      className: scope.self.ref.name,
-      ...(scope.self.ref.module !== ""
-        ? { module: scope.self.ref.module }
-        : {}),
-      field,
-      object: { kind: "self" },
-    };
-  }
-  if (scope.self !== undefined) {
-    const selfCall = thisCall(e);
-    if (selfCall !== undefined) {
-      const sig = scope.self.shape.methods.get(selfCall.name);
+  const mcall = memberCall(e);
+  if (mcall !== undefined) {
+    const recv = resolveReceiver(mcall.receiver, scope, sf);
+    if (
+      recv !== undefined &&
+      typeof recv.ty !== "string" &&
+      "instance" in recv.ty
+    ) {
+      const ref = recv.ty.instance;
+      const shape = shapeOfRef(scope, ref);
+      const sig = shape.methods.get(mcall.name);
       if (sig === undefined) {
         throw new ModelError(
-          `'this.${selfCall.name}' does not name a modeled method of ` +
-            `'${scope.self.ref.name}'`,
+          recv.expr.kind === "self"
+            ? `'this.${mcall.name}' does not name a modeled method of ` +
+                `'${ref.name}'`
+            : `'${displayName(ref)}' has no method '${mcall.name}' in the model`,
         );
       }
-      checkArity(
-        qualifiedName(selfCall.name, scope.self.ref.name),
-        sig,
-        selfCall.args.length,
-      );
-      /* v8 ignore start -- no boolean position admits a method call:
-         every one of them is gated on `booleanShaped`, which a call on
-         `this` is not. The throw mirrors the field read's. */
+      checkArity(qualifiedName(mcall.name, ref.name), sig, mcall.args.length);
+      /* v8 ignore start -- no boolean position admits a method call: every
+         one of them is gated on `booleanShaped`. The throw is a defense. */
       if (expected !== "num") {
         throw new ModelError(
           `a method call yields a number, not ${describeTy(expected)}`,
@@ -1630,173 +1484,73 @@ function walkTyped(
       /* v8 ignore stop */
       return {
         kind: "method-call",
-        className: scope.self.ref.name,
-        ...(scope.self.ref.module !== ""
-          ? { module: scope.self.ref.module }
-          : {}),
-        name: selfCall.name,
-        object: { kind: "self" },
-        args: walkArgs(selfCall.args, sig, scope, sf),
-      };
-    }
-  }
-  const icall = instanceCall(e);
-  if (icall !== undefined) {
-    const ref = newRef(scope, icall.object);
-    const shape = classShapeOf(scope, ref);
-    const rawCtorArgs = icall.object.arguments ?? [];
-    checkCtorArity(ref, shape, rawCtorArgs.length);
-    const sig = shape.methods.get(icall.name);
-    if (sig === undefined) {
-      throw new ModelError(
-        `'${displayName(ref)}' has no method '${icall.name}' in the model`,
-      );
-    }
-    checkArity(qualifiedName(icall.name, ref.name), sig, icall.args.length);
-    /* v8 ignore start -- as above: `booleanShaped` admits no call on a
-       fresh instance, so no boolean position reaches this. */
-    if (expected !== "num") {
-      throw new ModelError(
-        `a method call yields a number, not ${describeTy(expected)}`,
-      );
-    }
-    /* v8 ignore stop */
-    const module = ref.module !== "" ? { module: ref.module } : {};
-    const object: EmitExpr = {
-      kind: "new",
-      className: ref.name,
-      ...module,
-      args: walkCtorArgs(rawCtorArgs, shape, scope, sf),
-    };
-    return {
-      kind: "method-call",
-      className: ref.name,
-      ...module,
-      name: icall.name,
-      object,
-      args: walkArgs(icall.args, sig, scope, sf),
-    };
-  }
-  const access = instanceAccess(e);
-  if (access !== undefined) {
-    const ref = newRef(scope, access.object);
-    const shape = classShapeOf(scope, ref);
-    const rawArgs = access.object.arguments ?? [];
-    checkCtorArity(ref, shape, rawArgs.length);
-    if (expected !== "num") {
-      throw new ModelError(
-        `a member read yields a number, not ${describeTy(expected)}`,
-      );
-    }
-    const module = ref.module !== "" ? { module: ref.module } : {};
-    const object: EmitExpr = {
-      kind: "new",
-      className: ref.name,
-      ...module,
-      args: walkCtorArgs(rawArgs, shape, scope, sf),
-    };
-    if (shape.getters.has(access.name)) {
-      return {
-        kind: "getter-read",
         className: ref.name,
-        ...module,
-        name: access.name,
-        object,
+        ...(ref.module !== "" ? { module: ref.module } : {}),
+        name: mcall.name,
+        object: recv.expr,
+        args: walkArgs(mcall.args, sig, scope, sf),
       };
     }
-    if (shape.fields.has(access.name)) {
-      const fty = shape.fields.get(access.name)!;
-      if (fty !== "num" && !("union" in fty)) {
+  }
+  const maccess = memberAccess(e);
+  if (maccess !== undefined) {
+    const recv = resolveReceiver(maccess.receiver, scope, sf);
+    if (
+      recv !== undefined &&
+      typeof recv.ty !== "string" &&
+      "instance" in recv.ty
+    ) {
+      const ref = recv.ty.instance;
+      const shape = shapeOfRef(scope, ref);
+      const module = ref.module !== "" ? { module: ref.module } : {};
+      // On `this` only a field dispatches: a getter body walks before its
+      // siblings have rendered, so a getter read on `this` has no target.
+      if (recv.expr.kind !== "self" && shape.getters.has(maccess.name)) {
+        /* v8 ignore start -- `booleanShaped` admits no member read, so no
+           boolean position reaches this. */
+        if (expected !== "num") {
+          throw new ModelError(
+            `a member read yields a number, not ${describeTy(expected)}`,
+          );
+        }
+        /* v8 ignore stop */
+        return {
+          kind: "getter-read",
+          className: ref.name,
+          ...module,
+          name: maccess.name,
+          object: recv.expr,
+        };
+      }
+      const fty = shape.fields.get(maccess.name);
+      if (fty === undefined) {
         throw new ModelError(
-          `field '${access.name}' is ${describeTy(fty)}, not a number`,
+          recv.expr.kind === "self"
+            ? `'this.${maccess.name}' does not name a field of '${ref.name}'`
+            : `'${displayName(ref)}' has no member '${maccess.name}' in the model`,
+        );
+      }
+      // A union field at a number position was projected above; here a
+      // field answers at its own type or refuses.
+      const ok =
+        typeof expected === "string"
+          ? expected === fty
+          : typeof fty !== "string" &&
+            "instance" in fty &&
+            sameClass(fty.instance, expected.instance);
+      if (!ok) {
+        throw new ModelError(
+          `field '${maccess.name}' is ${describeTy(fty)}, not ${describeTy(expected)}`,
         );
       }
       return {
         kind: "field-read",
         className: ref.name,
         ...module,
-        field: access.name,
-        object,
+        field: maccess.name,
+        object: recv.expr,
       };
     }
-    throw new ModelError(
-      `'${displayName(ref)}' has no member '${access.name}' in the model`,
-    );
-  }
-  const vcall = varCall(e, scope);
-  if (vcall !== undefined) {
-    const shape = shapeOfRef(scope, vcall.ref);
-    const sig = shape.methods.get(vcall.name);
-    if (sig === undefined) {
-      throw new ModelError(
-        `'${displayName(vcall.ref)}' has no method '${vcall.name}' in the model`,
-      );
-    }
-    checkArity(
-      qualifiedName(vcall.name, vcall.ref.name),
-      sig,
-      vcall.args.length,
-    );
-    /* v8 ignore start -- as for the calls on a fresh instance:
-       `booleanShaped` admits no method call, so no boolean position
-       reaches this. The throw is kept for the same defense. */
-    if (expected !== "num") {
-      throw new ModelError(
-        `a method call yields a number, not ${describeTy(expected)}`,
-      );
-    }
-    /* v8 ignore stop */
-    return {
-      kind: "method-call",
-      className: vcall.ref.name,
-      ...(vcall.ref.module !== "" ? { module: vcall.ref.module } : {}),
-      name: vcall.name,
-      object: { kind: "id", name: vcall.object },
-      args: walkArgs(vcall.args, sig, scope, sf),
-    };
-  }
-  const vaccess = varAccess(e, scope);
-  if (vaccess !== undefined) {
-    const shape = shapeOfRef(scope, vaccess.ref);
-    /* v8 ignore start -- a bound name is class-typed only inside a body,
-       whose only boolean position is a branch condition, and
-       `booleanShaped` admits no member read. */
-    if (expected !== "num") {
-      throw new ModelError(
-        `a member read yields a number, not ${describeTy(expected)}`,
-      );
-    }
-    /* v8 ignore stop */
-    const module =
-      vaccess.ref.module !== "" ? { module: vaccess.ref.module } : {};
-    const object: EmitExpr = { kind: "id", name: vaccess.object };
-    if (shape.getters.has(vaccess.name)) {
-      return {
-        kind: "getter-read",
-        className: vaccess.ref.name,
-        ...module,
-        name: vaccess.name,
-        object,
-      };
-    }
-    if (shape.fields.has(vaccess.name)) {
-      const fty = shape.fields.get(vaccess.name)!;
-      if (fty !== "num" && !("union" in fty)) {
-        throw new ModelError(
-          `field '${vaccess.name}' is ${describeTy(fty)}, not a number`,
-        );
-      }
-      return {
-        kind: "field-read",
-        className: vaccess.ref.name,
-        ...module,
-        field: vaccess.name,
-        object,
-      };
-    }
-    throw new ModelError(
-      `'${displayName(vaccess.ref)}' has no member '${vaccess.name}' in the model`,
-    );
   }
   const built = newCall(e);
   if (built !== undefined) {
@@ -1885,15 +1639,35 @@ function walkTyped(
   throw new ModelError(constructAt(e, e.kind, sf).reason);
 }
 
-/** A member access `recv.name`, `name` an identifier or a `#`-private. */
+/** A member access `recv.name`. A `#`-private is a member access only
+ * through `this`: TypeScript admits it nowhere else, so no other
+ * receiver's private name is a shape the model reads. */
 function memberAccess(
   e: ts.Expression,
 ): { receiver: ts.Expression; name: string } | undefined {
   const u = unwrapParens(e);
   if (!ts.isPropertyAccessExpression(u)) return undefined;
-  if (!ts.isIdentifier(u.name) && !ts.isPrivateIdentifier(u.name))
+  if (
+    ts.isPrivateIdentifier(u.name) &&
+    unwrapParens(u.expression).kind !== ts.SyntaxKind.ThisKeyword
+  ) {
     return undefined;
+  }
   return { receiver: u.expression, name: u.name.text };
+}
+
+/** A member call `recv.name(args)`. */
+function memberCall(e: ts.Expression):
+  | {
+      receiver: ts.Expression;
+      name: string;
+      args: readonly ts.Expression[];
+    }
+  | undefined {
+  const u = unwrapParens(e);
+  if (!ts.isCallExpression(u)) return undefined;
+  const access = memberAccess(u.expression);
+  return access === undefined ? undefined : { ...access, args: u.arguments };
 }
 
 /** A place's static type: an expression the walk types without an
@@ -1923,6 +1697,8 @@ function placeTy(e: ts.Expression, scope: WalkScope): ValueTy | undefined {
  * bare `this` is a receiver, never a value. */
 function receiverTy(e: ts.Expression, scope: WalkScope): ValueTy | undefined {
   const u = unwrapParens(e);
+  /* v8 ignore next 2 -- outside a member the scan makes `this` opaque,
+     so no chain rooted at one is asked about here. */
   if (u.kind === ts.SyntaxKind.ThisKeyword)
     return scope.self === undefined ? undefined : { instance: scope.self.ref };
   return placeTy(u, scope);
@@ -1944,6 +1720,8 @@ function resolvePlace(
   const u = unwrapParens(e);
   if (ts.isIdentifier(u)) {
     const ty = scope.vars.get(u.text);
+    /* v8 ignore next -- an unbound name is not a place, and no body binds
+       at an option; every caller has already found a place here. */
     if (ty === undefined || isOptionTy(ty)) return undefined;
     return { ty, expr: { kind: "id", name: u.text } };
   }
@@ -1963,6 +1741,9 @@ function resolvePlace(
       },
     };
   }
+  /* v8 ignore start -- the three shapes above are every place there is,
+     and a receiver that is not an instance was already refused by the
+     caller that found the place. */
   const access = memberAccess(u);
   if (access === undefined) return undefined;
   const recv = resolveReceiver(access.receiver, scope, sf);
@@ -1973,6 +1754,7 @@ function resolvePlace(
   ) {
     return undefined;
   }
+  /* v8 ignore stop */
   const ref = recv.ty.instance;
   const shape = shapeOfRef(scope, ref);
   const fty = shape.fields.get(access.name);
@@ -1997,6 +1779,7 @@ function resolveReceiver(
 ): { ty: ValueTy; expr: EmitExpr } | undefined {
   const u = unwrapParens(e);
   if (u.kind === ts.SyntaxKind.ThisKeyword) {
+    /* v8 ignore next -- outside a member the scan made `this` opaque. */
     if (scope.self === undefined) return undefined;
     return { ty: { instance: scope.self.ref }, expr: { kind: "self" } };
   }

@@ -43,3 +43,14 @@ export class Reading {
     return 0;
   }
 }
+
+export class Pair {
+  readonly inner: Inner;
+  constructor(i: Inner) {
+    this.inner = i;
+  }
+  /** @ensures{delegates} forall (a: number) { Object.is(new Pair(new Inner(a)).peek(), a) } */
+  peek(): number {
+    return this.inner.v;
+  }
+}
