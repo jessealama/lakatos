@@ -46,7 +46,8 @@ no bucket here.
   range.
 - `inappropriate/` — the annotation is outside the model: the function uses
   a construct the pipeline cannot map, an operator the model does not cover
-  (`&`, `??`, ...), an operator the model refuses on the merits (`**`), or a
+  (`&`, `??`, ...), an operator the model refuses on the merits (`**`), a
+  standard-library member the whitelist does not cover (`Math.sign`), or a
   well-typed call shape the model does not follow (a widened union, a
   default whose initializer is outside the slice) (`Inappropriate`).
 - `timeout/` — every annotation must report `Timeout` under the reduced

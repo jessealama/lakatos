@@ -216,6 +216,16 @@ const SAMEVALUE_FIXTURES = [
   `${CONFORMANCE}/inappropriate/object-is-string.ts`,
 ];
 
+/** The integral-rounding slice: Math.trunc, Math.floor, and Math.ceil
+ * over bounded int binders, the signed zero ceil keeps below one, and a
+ * member of the same objects the whitelist does not cover. */
+const ROUNDING_FIXTURES = [
+  `${CONFORMANCE}/theorem/days-to-weeks.ts`,
+  `${CONFORMANCE}/theorem/halve-integers.ts`,
+  `${CONFORMANCE}/theorem/ceil-keeps-sign.ts`,
+  `${CONFORMANCE}/inappropriate/math-sign.ts`,
+];
+
 const fixtures =
   process.env.LAKATOS_PROVE_E2E === "1"
     ? [
@@ -232,6 +242,7 @@ const fixtures =
         ...UNION_FIXTURES,
         ...OPTIONAL_FIXTURES,
         ...SAMEVALUE_FIXTURES,
+        ...ROUNDING_FIXTURES,
       ]
     : QUICK_FIXTURES;
 
