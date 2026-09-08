@@ -1488,6 +1488,31 @@
       "axioms": []
     }
   ],
+  "engines/thales/tests/conformance/theorem/clamp-to-range.ts": [
+    {
+      "function": "clamp",
+      "property": "atMost",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_3498696780756151301",
+      "axioms": []
+    },
+    {
+      "function": "clamp",
+      "property": "atLeast",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_6941981283275869173",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/min-of-three.ts": [
+    {
+      "function": "middle",
+      "property": "smallestArgument",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_4402893466646748721",
+      "axioms": []
+    }
+  ],
   "engines/thales/tests/conformance/inappropriate/math-log.ts": [
     {
       "function": "integerLog",
