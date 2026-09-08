@@ -1810,12 +1810,15 @@ function walkTyped(
       if (scope.constants.has(key)) {
         throw new ModelError(`'${name}' is a constant; it cannot be called`);
       }
-      // An arity-1 alias call was claimed as the builtin above; whatever
-      // alias call survives to here misuses it, exactly as a stray use
-      // of the direct spelling would.
-      if (scope.aliases.has(key)) {
-        const misuse = constructAt(e, e.kind, sf);
-        throw new ModelError(misuse.reason, misuse.construct);
+      // An alias call at an admitted arity was claimed as the builtin
+      // above, so an alias call surviving to here is one at an arity the
+      // member does not take — named the way the direct spelling is.
+      const aliased = scope.aliases.get(key);
+      if (aliased !== undefined) {
+        throw new ModelError(
+          `'${aliased.name}' ${arityPhrase(aliased.arity)}`,
+          aliased.name,
+        );
       }
     }
     const sig = scope.mapped.get(key);
@@ -2239,10 +2242,16 @@ function structureStmt(
   if (ts.isIfStatement(s)) {
     const inner = unwrapParens(s.expression);
     // The condition must be boolean-shaped — a comparison, an `Object.is`
-    // call, or a logical combination of them: truthiness has no model.
+    // call, or a logical combination of them: truthiness has no model. A
+    // standard-library member the model cannot take names itself here as
+    // it does anywhere else; only truthiness is left to the syntax kind.
     const cond = booleanShaped(inner, scope)
       ? { expr: inner }
-      : { opaque: constructAt(inner, inner.kind, sf) };
+      : {
+          opaque:
+            unsupportedBuiltin(inner, scope) ??
+            constructAt(inner, inner.kind, sf),
+        };
     // An arm's locals are a copy, so its bindings do not escape it. A
     // non-block arm is the one statement it is, which is how an `else if`
     // arrives: a nested if alone in the else arm.
@@ -3536,6 +3545,47 @@ function equationSides(
   return [e.arguments[0]!, e.arguments[1]!];
 }
 
+/** How many arguments a builtin admits: a floor, and a ceiling when it
+ * has one. A fixed-arity member sets both. */
+interface Arity {
+  min: number;
+  max?: number;
+}
+
+/** Whether a call site's argument count is one the member admits. */
+function admitsArity(arity: Arity, got: number): boolean {
+  return got >= arity.min && (arity.max === undefined || got <= arity.max);
+}
+
+/** A small count as a word, the spelling the diagnostics use. */
+function countWord(n: number): string {
+  /* v8 ignore next 2 -- every whitelisted arity is inside the list; a
+     larger one would still read, as a digit. */
+  return ["no", "one", "two", "three"][n] ?? `${n}`;
+}
+
+/** How a member's admitted arity reads in a refusal. Only a fixed-arity
+ * member can be refused for its count — the variadic ones admit every
+ * arity — so the floor-only and range spellings are here for a future
+ * member, not for anything the whitelist has today. */
+function arityPhrase(arity: Arity): string {
+  /* v8 ignore next -- every fixed-arity member the whitelist has is unary,
+     so only the singular is ever spelled. */
+  const noun = (n: number) => (n === 1 ? "argument" : "arguments");
+  /* v8 ignore start */
+  if (arity.max === undefined) {
+    return `takes at least ${countWord(arity.min)} ${noun(arity.min)}`;
+  }
+  if (arity.min !== arity.max) {
+    return (
+      `takes between ${countWord(arity.min)} and ` +
+      `${countWord(arity.max)} arguments`
+    );
+  }
+  /* v8 ignore stop */
+  return `takes ${countWord(arity.min)} ${noun(arity.min)}`;
+}
+
 /** A whitelisted builtin as a use site needs it: the source spelling
  * (for messages), the standard-library object and member it names, the
  * arity the model admits, and the value type it yields. */
@@ -3543,12 +3593,20 @@ interface BuiltinEntry {
   name: string;
   object: string;
   member: string;
-  arity: number;
+  arity: Arity;
   ty: Expected;
 }
 
 /** The standard-library objects whose member calls the model reads. */
 const BUILTIN_OBJECTS: ReadonlySet<string> = new Set(["Math", "Number"]);
+
+/** The arity of a member that takes exactly one argument. */
+const UNARY: Arity = { min: 1, max: 1 };
+
+/** The arity of a member whose call site fixes the count: `Math.min` and
+ * `Math.max` reduce over their arguments, so every count is one they
+ * admit, the empty call included — it is their identity. */
+const VARIADIC: Arity = { min: 0 };
 
 /** The builtin member calls with models, keyed by source spelling. The
  * objects are immutable in the standard library, so each entry is a fixed
@@ -3556,19 +3614,21 @@ const BUILTIN_OBJECTS: ReadonlySet<string> = new Set(["Math", "Number"]);
 const BUILTIN_MEMBER_CALLS: ReadonlyMap<string, BuiltinEntry> = new Map(
   (
     [
-      ["Math", "sqrt", "num"],
-      ["Math", "abs", "num"],
-      ["Math", "trunc", "num"],
-      ["Math", "floor", "num"],
-      ["Math", "ceil", "num"],
-      ["Math", "round", "num"],
-      ["Math", "sign", "num"],
-      ["Number", "isFinite", "bool"],
-      ["Number", "isNaN", "bool"],
+      ["Math", "sqrt", "num", UNARY],
+      ["Math", "abs", "num", UNARY],
+      ["Math", "trunc", "num", UNARY],
+      ["Math", "floor", "num", UNARY],
+      ["Math", "ceil", "num", UNARY],
+      ["Math", "round", "num", UNARY],
+      ["Math", "sign", "num", UNARY],
+      ["Math", "min", "num", VARIADIC],
+      ["Math", "max", "num", VARIADIC],
+      ["Number", "isFinite", "bool", UNARY],
+      ["Number", "isNaN", "bool", UNARY],
     ] as const
-  ).map(([object, member, ty]) => [
+  ).map(([object, member, ty, arity]) => [
     `${object}.${member}`,
-    { name: `${object}.${member}`, object, member, arity: 1, ty },
+    { name: `${object}.${member}`, object, member, arity, ty },
   ]),
 );
 
@@ -3594,20 +3654,27 @@ function builtinSpelling(
   return `${object}.${callee.name.text}`;
 }
 
-/** A standard-library member call the whitelist does not cover. The
- * failure names the member: the source wrote a real API, not an
- * arbitrary construct, and the object's other members are the reason
- * the whitelist exists. */
+/** A standard-library member call the model cannot take: one the
+ * whitelist does not cover, or a listed one called at an arity it does
+ * not admit. Either way the failure names the member: the source wrote a
+ * real API, not an arbitrary construct, and a count the whitelist knows
+ * is worth saying out loud rather than degrading to a syntax kind. */
 function unsupportedBuiltin(
   e: ts.Expression,
   scope: WalkScope,
 ): FailedDecl | undefined {
   if (!ts.isCallExpression(e)) return undefined;
   const spelled = builtinSpelling(e.expression, scope);
-  if (spelled === undefined || BUILTIN_MEMBER_CALLS.has(spelled)) {
-    return undefined;
+  if (spelled === undefined) return undefined;
+  const entry = BUILTIN_MEMBER_CALLS.get(spelled);
+  if (entry === undefined) {
+    return { construct: spelled, reason: `'${spelled}' is not supported` };
   }
-  return { construct: spelled, reason: `'${spelled}' is not supported` };
+  if (admitsArity(entry.arity, e.arguments.length)) return undefined;
+  return {
+    construct: spelled,
+    reason: `'${spelled}' ${arityPhrase(entry.arity)}`,
+  };
 }
 
 /** The whitelisted builtin member call an expression is, if any, with
@@ -3621,14 +3688,14 @@ function builtinCall(
   const callee = e.expression;
   if (ts.isIdentifier(callee) && !scope.vars.has(callee.text)) {
     const alias = scope.aliases.get(modelKey(refOf(scope, callee.text)));
-    if (alias !== undefined && e.arguments.length === alias.arity) {
+    if (alias !== undefined && admitsArity(alias.arity, e.arguments.length)) {
       return { ...alias, args: e.arguments };
     }
   }
   const spelled = builtinSpelling(callee, scope);
   if (spelled === undefined) return undefined;
   const entry = BUILTIN_MEMBER_CALLS.get(spelled);
-  if (entry === undefined || e.arguments.length !== entry.arity) {
+  if (entry === undefined || !admitsArity(entry.arity, e.arguments.length)) {
     return undefined;
   }
   return { ...entry, args: e.arguments };

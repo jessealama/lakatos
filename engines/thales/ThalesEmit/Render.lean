@@ -120,6 +120,48 @@ def typeofResultTerm (r : String) : RenderM (TSyntax `term) := do
     throw s!"unknown typeof result '{r}'"
   return mkIdent (`TypeofResult ++ Name.mkSimple r)
 
+/-- A right-nested fold of a binary model over a call site's arguments,
+with the model's identity for the empty call. The short forms are what
+the general fold already gives — `tsMin floatInf x` is `x` for every `x`,
+NaN and `-0` included — so they exist to keep the emitted text readable,
+which matters because it is read. -/
+def foldBinary (identity : TSyntax `term)
+    (app : TSyntax `term → TSyntax `term → RenderM (TSyntax `term)) :
+    List (TSyntax `term) → RenderM (TSyntax `term)
+  | [] => pure identity
+  | [a] => pure a
+  | a :: rest => do app a (← foldBinary identity app rest)
+
+/-- A whitelisted builtin member call over its rendered arguments. The
+arity is the call site's, so the variadic members fold here and the
+fixed-arity ones state their own count; the frontend has already refused
+a count no member admits. -/
+def builtinTerm (object member : String) (args : Array (TSyntax `term)) :
+    RenderM (TSyntax `term) := do
+  match object, member with
+  | "Math", "min" =>
+    foldBinary (← `(floatInf)) (fun x y => `(Number.FloatOps.tsMin $x $y))
+      args.toList
+  | "Math", "max" =>
+    foldBinary (← `(-floatInf)) (fun x y => `(Number.FloatOps.tsMax $x $y))
+      args.toList
+  | _, _ =>
+    let a ← match args.toList with
+      | [r] => pure r
+      | _ =>
+        throw s!"builtin '{object}.{member}' takes one argument, not {args.size}"
+    match object, member with
+    | "Math", "sqrt" => `(Float.sqrt $a)
+    | "Math", "abs" => `(Float.abs $a)
+    | "Math", "trunc" => `(Number.FloatOps.tsTrunc $a)
+    | "Math", "floor" => `(Number.FloatOps.tsFloor $a)
+    | "Math", "ceil" => `(Number.FloatOps.tsCeil $a)
+    | "Math", "round" => `(Number.FloatOps.tsRound $a)
+    | "Math", "sign" => `(Number.FloatOps.tsSign $a)
+    | "Number", "isFinite" => `(Float.isFinite $a)
+    | "Number", "isNaN" => `(Float.isNaN $a)
+    | _, _ => throw s!"no rendering for builtin '{object}.{member}'"
+
 mutual
 
 /-- `coerced` names the Int-valued binder variables: a use inside an
@@ -193,24 +235,12 @@ partial def valueTerm (coerced : String → Bool) : JsExpr → RenderM Rendered
       return ⟨← `((← if $ct then ((do return $tt) : JsM _)
         else ((do return $et) : JsM _))), true⟩
     return ⟨← `(if $ct then $tt else $et), cl⟩
+  -- The arguments render left to right, so a lift among them hoists in
+  -- JS evaluation order whichever way the fold nests.
   | .builtin object member args => do
     let rendered ← args.mapM (valueTerm coerced)
-    let ⟨a, lifted⟩ ← match rendered.toList with
-      | [r] => pure r
-      | _ =>
-        throw s!"builtin '{object}.{member}' takes one argument, not {rendered.size}"
-    let t ← match object, member with
-      | "Math", "sqrt" => `(Float.sqrt $a)
-      | "Math", "abs" => `(Float.abs $a)
-      | "Math", "trunc" => `(Number.FloatOps.tsTrunc $a)
-      | "Math", "floor" => `(Number.FloatOps.tsFloor $a)
-      | "Math", "ceil" => `(Number.FloatOps.tsCeil $a)
-      | "Math", "round" => `(Number.FloatOps.tsRound $a)
-      | "Math", "sign" => `(Number.FloatOps.tsSign $a)
-      | "Number", "isFinite" => `(Float.isFinite $a)
-      | "Number", "isNaN" => `(Float.isNaN $a)
-      | _, _ => throw s!"no rendering for builtin '{object}.{member}'"
-    return ⟨t, lifted⟩
+    let t ← builtinTerm object member (rendered.map (·.term))
+    return ⟨t, rendered.any (·.lifted)⟩
   | .call callee module args => do
     let c ← callTerm coerced callee module args
     return ⟨← `((← $c:term)), true⟩

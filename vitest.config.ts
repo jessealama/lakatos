@@ -51,7 +51,7 @@ export default defineConfig({
         // denominator shrank while the unreachable set did not.
         autoUpdate: true,
         statements: 99.42,
-        branches: 98.38,
+        branches: 98.39,
         functions: 100,
         lines: 99.62,
       },

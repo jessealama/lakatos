@@ -2514,7 +2514,7 @@ describe("Math.sqrt models as Float.sqrt", () => {
     ]);
   });
 
-  test("a wrong-arity Math.sqrt stays an unmapped construct", () => {
+  test("a wrong-arity Math.sqrt reports the count it takes", () => {
     const src = [
       "/** @ensures{p} forall (n: int ∈ [0, 3)) { two(n) >= 0 } */",
       "export function two(x: number): number {",
@@ -2525,9 +2525,23 @@ describe("Math.sqrt models as Float.sqrt", () => {
     expect(classified).toEqual([
       expect.objectContaining({
         szs: "Inappropriate",
-        reason: expect.stringContaining(
-          "unmapped TypeScript construct 'CallExpression'",
-        ),
+        reason: "'two' could not be modeled: 'Math.sqrt' takes one argument",
+      }),
+    ]);
+  });
+
+  test("a no-argument Math.sqrt reports the same count", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 3)) { none(n) >= 0 } */",
+      "export function none(x: number): number {",
+      "  return Math.sqrt() + x;",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining("'Math.sqrt' takes one argument"),
       }),
     ]);
   });
@@ -2884,7 +2898,28 @@ describe("builtin member calls model as Float primitives", () => {
     ]);
   });
 
-  test("a wrong-arity Number.isFinite stays an unmapped construct", () => {
+  test("a number-valued builtin as a condition is truthiness, not a member refusal", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 3)) { two(n) >= 0 } */",
+      "export function two(x: number): number {",
+      "  if (Math.abs(x)) {",
+      "    return x;",
+      "  }",
+      "  return 0;",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining(
+          "unmapped TypeScript construct 'CallExpression'",
+        ),
+      }),
+    ]);
+  });
+
+  test("a wrong-arity Number.isFinite reports the count it takes", () => {
     const src = [
       "/** @ensures{p} forall (n: int ∈ [0, 3)) { two(n) >= 0 } */",
       "export function two(x: number): number {",
@@ -2898,9 +2933,7 @@ describe("builtin member calls model as Float primitives", () => {
     expect(classified).toEqual([
       expect.objectContaining({
         szs: "Inappropriate",
-        reason: expect.stringContaining(
-          "unmapped TypeScript construct 'CallExpression'",
-        ),
+        reason: expect.stringContaining("'Number.isFinite' takes one argument"),
       }),
     ]);
   });
@@ -3030,6 +3063,192 @@ describe("builtin member calls model as Float primitives", () => {
         ),
       }),
     ]);
+  });
+
+  test("Math.min carries both of a two-argument call's arguments", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 5)) { cap(n) <= 3 } */",
+      "export function cap(x: number): number {",
+      "  return Math.min(x, 3);",
+      "}",
+    ].join("\n");
+    const { emission } = emitModule(src, FILE);
+    expectValidEmission(emission);
+    expect(emission.declarations).toEqual([
+      expect.objectContaining({
+        name: "cap",
+        body: [
+          {
+            kind: "return",
+            expr: {
+              kind: "builtin",
+              object: "Math",
+              member: "min",
+              args: [
+                { kind: "id", name: "x" },
+                { kind: "num", lit: "3" },
+              ],
+            },
+          },
+        ],
+      }),
+    ]);
+  });
+
+  test("Math.max carries three arguments", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 5)) { biggest(n) >= 0 } */",
+      "export function biggest(x: number): number {",
+      "  return Math.max(x, 0, 1);",
+      "}",
+    ].join("\n");
+    const { emission } = emitModule(src, FILE);
+    expectValidEmission(emission);
+    expect(emission.declarations).toEqual([
+      expect.objectContaining({
+        name: "biggest",
+        body: [
+          {
+            kind: "return",
+            expr: {
+              kind: "builtin",
+              object: "Math",
+              member: "max",
+              args: [
+                { kind: "id", name: "x" },
+                { kind: "num", lit: "0" },
+                { kind: "num", lit: "1" },
+              ],
+            },
+          },
+        ],
+      }),
+    ]);
+  });
+
+  test("a one-argument Math.min is still a builtin node", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 5)) { same(n) >= 0 } */",
+      "export function same(x: number): number {",
+      "  return Math.min(x);",
+      "}",
+    ].join("\n");
+    const { emission } = emitModule(src, FILE);
+    expectValidEmission(emission);
+    expect(emission.declarations).toEqual([
+      expect.objectContaining({
+        name: "same",
+        body: [
+          {
+            kind: "return",
+            expr: {
+              kind: "builtin",
+              object: "Math",
+              member: "min",
+              args: [{ kind: "id", name: "x" }],
+            },
+          },
+        ],
+      }),
+    ]);
+  });
+
+  test("a zero-argument Math.max is the identity, not a refusal", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 5)) { floorOf(n) <= 0 } */",
+      "export function floorOf(x: number): number {",
+      "  return Math.max() + 0 * x;",
+      "}",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, FILE);
+    expect(classified).toEqual([]);
+    expectValidEmission(emission);
+    expect(emission.declarations).toEqual([
+      expect.objectContaining({
+        name: "floorOf",
+        body: [
+          {
+            kind: "return",
+            expr: expect.objectContaining({
+              kind: "binop",
+              left: {
+                kind: "builtin",
+                object: "Math",
+                member: "max",
+                args: [],
+              },
+            }),
+          },
+        ],
+      }),
+    ]);
+  });
+
+  test("a nested clamp folds both members", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 9)) { clamp(n) <= 5 } */",
+      "export function clamp(x: number): number {",
+      "  return Math.min(Math.max(x, 1), 5);",
+      "}",
+    ].join("\n");
+    const { emission } = emitModule(src, FILE);
+    expectValidEmission(emission);
+    expect(emission.declarations).toEqual([
+      expect.objectContaining({
+        name: "clamp",
+        body: [
+          {
+            kind: "return",
+            expr: {
+              kind: "builtin",
+              object: "Math",
+              member: "min",
+              args: [
+                {
+                  kind: "builtin",
+                  object: "Math",
+                  member: "max",
+                  args: [
+                    { kind: "id", name: "x" },
+                    { kind: "num", lit: "1" },
+                  ],
+                },
+                { kind: "num", lit: "5" },
+              ],
+            },
+          },
+        ],
+      }),
+    ]);
+  });
+
+  test("a formula atom calls Math.min at three arguments", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 5)) { Math.min(n, n, n) >= 0 } */",
+      "export function id(x: number): number {",
+      "  return x;",
+      "}",
+    ].join("\n");
+    const { emission } = emitModule(src, FILE);
+    expectValidEmission(emission);
+    expect(emission.obligations[0]!.payload).toEqual(
+      expect.objectContaining({
+        conclusion: expect.objectContaining({
+          expr: expect.objectContaining({
+            left: {
+              kind: "builtin",
+              object: "Math",
+              member: "min",
+              args: [
+                { kind: "id", name: "n" },
+                { kind: "id", name: "n" },
+                { kind: "id", name: "n" },
+              ],
+            },
+          }),
+        }),
+      }),
+    );
   });
 
   test("a refused operator inside a Math.abs argument is still found", () => {
@@ -7063,9 +7282,41 @@ describe("module-level const bindings", () => {
     expect(classified).toEqual([
       expect.objectContaining({
         szs: "Inappropriate",
-        reason: expect.stringContaining(
-          "unmapped TypeScript construct 'CallExpression'",
-        ),
+        reason: "'f' could not be modeled: 'Math.abs' takes one argument",
+      }),
+    ]);
+  });
+
+  test("a variadic builtin's alias admits every arity", () => {
+    const src = [
+      "const smallest = Math.min;",
+      "/** @ensures{p} forall (n: int ∈ [0, 4)) { f(n) <= 0 } */",
+      "export function f(n: number): number {",
+      "  return smallest(n, 0, -n);",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, "alias-variadic.ts");
+    expect(classified).toEqual([]);
+    expect(emission.declarations).toEqual([
+      expect.objectContaining({
+        kind: "function",
+        name: "f",
+        body: [
+          {
+            kind: "return",
+            expr: {
+              kind: "builtin",
+              object: "Math",
+              member: "min",
+              args: [
+                { kind: "id", name: "n" },
+                { kind: "num", lit: "0" },
+                { kind: "unop", op: "-", operand: { kind: "id", name: "n" } },
+              ],
+            },
+          },
+        ],
       }),
     ]);
   });

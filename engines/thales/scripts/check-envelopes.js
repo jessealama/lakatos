@@ -216,16 +216,19 @@ const SAMEVALUE_FIXTURES = [
   `${CONFORMANCE}/inappropriate/object-is-string.ts`,
 ];
 
-/** The integral-rounding slice: Math.trunc, Math.floor, Math.ceil,
- * Math.round, and Math.sign over bounded int binders, the signed zero
- * ceil keeps below one, the tie direction round carries, and a member of
- * the same objects the whitelist does not cover. */
-const ROUNDING_FIXTURES = [
+/** The whitelisted `Math` members: the integral roundings and the sign
+ * unit over bounded int binders, the signed zero ceil keeps below one,
+ * the tie direction round carries, the two variadic members at a nested
+ * and a three-argument call site, and a member of the same objects the
+ * whitelist does not cover. */
+const MEMBER_FIXTURES = [
   `${CONFORMANCE}/theorem/days-to-weeks.ts`,
   `${CONFORMANCE}/theorem/halve-integers.ts`,
   `${CONFORMANCE}/theorem/ceil-keeps-sign.ts`,
   `${CONFORMANCE}/theorem/round-half-up.ts`,
   `${CONFORMANCE}/theorem/sign-unit.ts`,
+  `${CONFORMANCE}/theorem/clamp-to-range.ts`,
+  `${CONFORMANCE}/theorem/min-of-three.ts`,
   `${CONFORMANCE}/inappropriate/math-log.ts`,
 ];
 
@@ -245,7 +248,7 @@ const fixtures =
         ...UNION_FIXTURES,
         ...OPTIONAL_FIXTURES,
         ...SAMEVALUE_FIXTURES,
-        ...ROUNDING_FIXTURES,
+        ...MEMBER_FIXTURES,
       ]
     : QUICK_FIXTURES;
 

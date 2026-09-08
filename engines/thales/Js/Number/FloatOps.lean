@@ -1,14 +1,21 @@
+import Js.Number.Basic
 import Init.Data.Float.Model.Float
 
 /-!
 Binary64 operations JavaScript has and Lean does not: `%`, the integral
-roundings Lean ships only as opaque externs, and the sign unit.
+roundings Lean ships only as opaque externs, the sign unit, and the
+ordered minimum and maximum.
 
 Lean ships no float remainder at all — no `Float.mod`, no `Mod Float`
 instance — so `%` has nothing to map to. It is built here from
 `Float.Model` rather than an `extern`, which keeps it reducible in the
 kernel: `decide` can evaluate it, and no proof that uses it rests on an
 axiom.
+
+There is likewise no `Float.min` or `Float.max`: only the order-derived
+generic `min`/`max`, which disagree with ECMA-262 on both a NaN operand
+and the ordering of the two zeros, and disagree differently depending on
+which argument comes first. So those are built here too.
 -/
 
 namespace Js.Number.FloatOps
@@ -114,6 +121,35 @@ def tsSign (a : Float) : Float :=
   | .infinity .positive => 1.0
   | .finite .negative _ _ _ => -1.0
   | .finite .positive _ _ _ => 1.0
+
+/-! `Math.min` and `Math.max` are binary here; the emitter folds a call
+site's arguments over them, and the identities `+∞` and `-∞` cover the
+empty call. `Float`'s own `<` is the numeric order and reduces in the
+kernel, so it decides every pair but two: a NaN operand, against which
+every comparison is false, and two zeros, which compare equal yet must
+still be ordered. Both are read off the unpacked view. Every other
+numerically-equal pair is bit-identical, so which one comes back does not
+matter. -/
+
+/-- `Math.min`: a NaN operand makes the result NaN — C `fmin` drops it —
+and `-0` is below `+0`. -/
+def tsMin (a b : Float) : Float :=
+  match a.toModel.unpack, b.toModel.unpack with
+  | .notANumber, _ => floatNaN
+  | _, .notANumber => floatNaN
+  | .zero .negative, .zero _ => a
+  | .zero _, .zero .negative => b
+  | _, _ => if a < b then a else b
+
+/-- `Math.max`: the mirror of `tsMin`. NaN still propagates, and the
+preferred zero is `+0`. -/
+def tsMax (a b : Float) : Float :=
+  match a.toModel.unpack, b.toModel.unpack with
+  | .notANumber, _ => floatNaN
+  | _, .notANumber => floatNaN
+  | .zero .positive, .zero _ => a
+  | .zero _, .zero .positive => b
+  | _, _ => if a < b then b else a
 
 /-- `Number::sameValue`, the meaning of `Object.is` on numbers.
 Propositional equality on `Float` is exactly SameValue — every NaN is
