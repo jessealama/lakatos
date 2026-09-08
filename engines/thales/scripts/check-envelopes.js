@@ -220,11 +220,12 @@ const SAMEVALUE_FIXTURES = [
   `${CONFORMANCE}/inappropriate/object-is-string.ts`,
 ];
 
-/** The whitelisted `Math` members: the integral roundings and the sign
- * unit over bounded int binders, the signed zero ceil keeps below one,
- * the tie direction round carries, the two variadic members at a nested
- * and a three-argument call site, and a member of the same objects the
- * whitelist does not cover. */
+/** The whitelisted `Math`/`Number` members: the integral roundings and
+ * the sign unit over bounded int binders, the signed zero ceil keeps
+ * below one, the tie direction round carries, the two variadic members at
+ * a nested and a three-argument call site, the two integer predicates
+ * where they agree and where the safe bound separates them, and a member
+ * of the same objects the whitelist does not cover. */
 const MEMBER_FIXTURES = [
   `${CONFORMANCE}/theorem/days-to-weeks.ts`,
   `${CONFORMANCE}/theorem/halve-integers.ts`,
@@ -233,6 +234,8 @@ const MEMBER_FIXTURES = [
   `${CONFORMANCE}/theorem/sign-unit.ts`,
   `${CONFORMANCE}/theorem/clamp-to-range.ts`,
   `${CONFORMANCE}/theorem/min-of-three.ts`,
+  `${CONFORMANCE}/theorem/integral-scale.ts`,
+  `${CONFORMANCE}/theorem/beyond-safe-integer.ts`,
   `${CONFORMANCE}/inappropriate/math-log.ts`,
 ];
 
