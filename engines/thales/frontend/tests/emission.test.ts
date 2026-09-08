@@ -2653,6 +2653,68 @@ describe("builtin member calls model as Float primitives", () => {
     ]);
   });
 
+  test("a boolean island conclusion admits Number.isInteger", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 5)) { Number.isInteger(bump(n)) } */",
+      "export function bump(x: number): number {",
+      "  return x + 1;",
+      "}",
+    ].join("\n");
+    const { emission } = emitModule(src, FILE);
+    expectValidEmission(emission);
+    expect(emission.obligations[0]!.payload).toEqual(
+      expect.objectContaining({
+        conclusion: {
+          kind: "istrue",
+          expr: {
+            kind: "builtin",
+            object: "Number",
+            member: "isInteger",
+            args: [
+              {
+                kind: "call",
+                callee: "bump",
+                args: [{ kind: "id", name: "n" }],
+              },
+            ],
+          },
+        },
+      }),
+    );
+  });
+
+  test("Number.isSafeInteger works as a branch condition", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 5)) { flag(n) === 1 } */",
+      "export function flag(x: number): number {",
+      "  if (Number.isSafeInteger(x)) {",
+      "    return 1;",
+      "  }",
+      "  return 0;",
+      "}",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, FILE);
+    expect(classified).toEqual([]);
+    expectValidEmission(emission);
+    expect(emission.declarations).toEqual([
+      expect.objectContaining({
+        name: "flag",
+        body: [
+          expect.objectContaining({
+            kind: "if",
+            cond: {
+              kind: "builtin",
+              object: "Number",
+              member: "isSafeInteger",
+              args: [{ kind: "id", name: "x" }],
+            },
+          }),
+          expect.objectContaining({ kind: "return" }),
+        ],
+      }),
+    ]);
+  });
+
   test("a boolean island conclusion admits Number.isFinite", () => {
     const src = [
       "/** @ensures{p} forall (n: int ∈ [0, 5)) { Number.isFinite(bump(n)) } */",

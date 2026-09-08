@@ -94,6 +94,10 @@ def b1 (object member x : String) : JsExpr := .builtin object member #[.id x]
 #guard rendersAs (v (b1 "Math" "sign" "x")) `(Number.FloatOps.tsSign x)
 #guard rendersAs (v (b1 "Number" "isFinite" "x")) `(Float.isFinite x)
 #guard rendersAs (v (b1 "Number" "isNaN" "x")) `(Float.isNaN x)
+#guard rendersAs (v (b1 "Number" "isInteger" "x"))
+  `(Number.FloatOps.tsIsInteger x)
+#guard rendersAs (v (b1 "Number" "isSafeInteger" "x"))
+  `(Number.FloatOps.tsIsSafeInteger x)
 #guard renderFails (v (b1 "Math" "log" "x"))
 #guard renderFails (v (.builtin "Math" "trunc" #[.id "x", .id "y"]))
 

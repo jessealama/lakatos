@@ -160,6 +160,8 @@ def builtinTerm (object member : String) (args : Array (TSyntax `term)) :
     | "Math", "sign" => `(Number.FloatOps.tsSign $a)
     | "Number", "isFinite" => `(Float.isFinite $a)
     | "Number", "isNaN" => `(Float.isNaN $a)
+    | "Number", "isInteger" => `(Number.FloatOps.tsIsInteger $a)
+    | "Number", "isSafeInteger" => `(Number.FloatOps.tsIsSafeInteger $a)
     | _, _ => throw s!"no rendering for builtin '{object}.{member}'"
 
 mutual

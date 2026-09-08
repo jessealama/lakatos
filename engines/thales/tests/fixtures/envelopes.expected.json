@@ -1546,6 +1546,38 @@
       "axioms": []
     }
   ],
+  "engines/thales/tests/conformance/theorem/integral-scale.ts": [
+    {
+      "function": "triple",
+      "property": "integral",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_9878668163367402350",
+      "axioms": []
+    },
+    {
+      "function": "triple",
+      "property": "safe",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_290706288072636241",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/beyond-safe-integer.ts": [
+    {
+      "function": "beyond",
+      "property": "integral",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_1253342074913382767",
+      "axioms": []
+    },
+    {
+      "function": "beyond",
+      "property": "notSafe",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_6144997235448275506",
+      "axioms": []
+    }
+  ],
   "engines/thales/tests/conformance/inappropriate/math-log.ts": [
     {
       "function": "integerLog",

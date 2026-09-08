@@ -151,6 +151,22 @@ def tsMax (a b : Float) : Float :=
   | .zero _, .zero .positive => b
   | _, _ => if a < b then b else a
 
+/-- `IsIntegralNumber`, which `Number.isInteger` returns directly: finite,
+and equal to its own truncation. The comparison is the IEEE one, matching
+the spec's comparison of real numbers rather than SameValue — `ℝ(-0)` is
+`0`, so both zeros are integral and `Number.isInteger(-0)` is `true`. -/
+def tsIsInteger (a : Float) : Bool :=
+  a.isFinite && Float.beq (tsTrunc a) a
+
+/-- The largest integer binary64 represents without ambiguity, `2^53 - 1`.
+Exactly representable, so the bound below is exact. -/
+def maxSafeInteger : Float := 9007199254740991.0
+
+/-- `Number.isSafeInteger`: integral, and inside the safe magnitude. The
+spec bounds `abs(ℝ(x))`, so the two signs share one comparison. -/
+def tsIsSafeInteger (a : Float) : Bool :=
+  tsIsInteger a && Float.le (Float.abs a) maxSafeInteger
+
 /-- `Number::sameValue`, the meaning of `Object.is` on numbers.
 Propositional equality on `Float` is exactly SameValue — every NaN is
 one value, the zeros are two; `SameValueTest.lean` pins that
