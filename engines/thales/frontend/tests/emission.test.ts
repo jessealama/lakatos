@@ -124,6 +124,7 @@ describe("emitModule on the tracer fixture", () => {
     ["engines/thales/tests/fixtures/ctor-defaults.ts"],
     ["engines/thales/tests/fixtures/instance-defaults.ts"],
     ["engines/thales/tests/fixtures/object-is-tagged.ts"],
+    ["engines/thales/tests/fixtures/fields.ts"],
     [
       "engines/thales/tests/conformance/theorem/class-binder-equality-guards.ts",
     ],
@@ -170,6 +171,7 @@ describe("emitModule on the tracer fixture", () => {
       "engines/thales/tests/fixtures/object-is-tagged.ts",
       "object-is-tagged.emission.json",
     ],
+    ["engines/thales/tests/fixtures/fields.ts", "fields.emission.json"],
     [
       "engines/thales/tests/conformance/theorem/class-binder-equality-guards.ts",
       "class-binder-equality-guards.emission.json",
@@ -8497,5 +8499,193 @@ describe("refused annotations", () => {
     expect(annotations.map((a) => a.propertyName)).toEqual(["b"]);
     expect(classified).toEqual([]);
     expect(emission.obligations.map((o) => o.property)).toEqual(["b"]);
+  });
+});
+
+describe("fields beyond number", () => {
+  const INNER = `export class Inner {
+  readonly v: number;
+  constructor(v: number) {
+    this.v = v;
+  }
+}
+`;
+  /** A class over a union field and a number field; the annotation reads
+   * only the number field, so the union field is stored and never read. */
+  function withField(field: string, set: string): string {
+    return `${INNER}export class C {
+  readonly x: ${field};
+  readonly n: number;
+  constructor(n: number, i: Inner) {
+    this.x = ${set};
+    this.n = n;
+  }
+  /** @ensures{p} forall (a: number) { Object.is(new C(a, new Inner(a)).v, a) } */
+  get v(): number {
+    return this.n;
+  }
+}
+`;
+  }
+  function classC(src: string): EmitClass {
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    return emission.declarations[1] as EmitClass;
+  }
+  function setOf(cls: EmitClass): Extract<EmitStmt, { kind: "field-set" }> {
+    const s = cls.ctor.body[0]!;
+    assert(s.kind === "field-set");
+    return s;
+  }
+
+  test("a number | undefined field models, its write injecting the number", () => {
+    const cls = classC(withField("number | undefined", "n"));
+    expect(cls.fields).toEqual([
+      { name: "x", type: ["number", "undefined"] },
+      { name: "n" },
+    ]);
+    expect(setOf(cls)).toEqual({
+      kind: "field-set",
+      field: "x",
+      expr: { kind: "inject", tag: "number", expr: { kind: "id", name: "n" } },
+    });
+  });
+
+  test("the undefined and null atoms inject at their tags", () => {
+    expect(
+      setOf(classC(withField("number | undefined", "undefined"))).expr,
+    ).toEqual({ kind: "inject", tag: "undefined" });
+    expect(setOf(classC(withField("number | null", "null"))).expr).toEqual({
+      kind: "inject",
+      tag: "null",
+    });
+  });
+
+  test("a union spelling normalizes as a parameter's does, one member collapsing", () => {
+    expect(
+      classC(withField("undefined | number | number", "n")).fields[0],
+    ).toEqual({
+      name: "x",
+      type: ["number", "undefined"],
+    });
+    expect(classC(withField("number | number", "n")).fields[0]).toEqual({
+      name: "x",
+    });
+  });
+
+  test("a union local in the constructor flows to a field of the same spelling", () => {
+    const src = `export class C {
+  readonly x: number | undefined;
+  constructor(n: number) {
+    const w: number | undefined = n;
+    this.x = w;
+  }
+  /** @ensures{p} forall (a: number) { Object.is(new C(a).v, a) } */
+  get v(): number {
+    return 0 * 1 + 0;
+  }
+}
+`;
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    const cls = emission.declarations[0] as EmitClass;
+    expect(cls.ctor.body[1]).toEqual({
+      kind: "field-set",
+      field: "x",
+      expr: { kind: "id", name: "w" },
+    });
+  });
+
+  test("a class-typed field at an earlier class models, its write an instance", () => {
+    const cls = classC(withField("Inner", "i"));
+    expect(cls.fields[0]).toEqual({ name: "x", type: { class: "Inner" } });
+    expect(setOf(cls).expr).toEqual({ kind: "id", name: "i" });
+    expect(setOf(classC(withField("Inner", "new Inner(n)"))).expr).toEqual({
+      kind: "new",
+      className: "Inner",
+      args: [{ kind: "id", name: "n" }],
+    });
+    expect(
+      setOf(classC(withField("Inner", "n < 0 ? i : new Inner(n)"))).expr.kind,
+    ).toBe("cond");
+  });
+
+  test.each([
+    [
+      "a self-typed field",
+      "C",
+      "i",
+      "unmapped TypeScript construct 'TypeReference'",
+    ],
+    [
+      "a field at a later class",
+      "Later",
+      "i",
+      "unmapped TypeScript construct 'TypeReference'",
+    ],
+    [
+      "a literal member",
+      "number | 'a'",
+      "n",
+      "unmapped TypeScript construct 'LiteralType'",
+    ],
+    [
+      "a lone string",
+      "string",
+      "n",
+      "unmapped TypeScript construct 'StringKeyword'",
+    ],
+  ])("%s refuses the class", (_what, field, set, reason) => {
+    const src =
+      withField(field, set) + "export class Later {\n  constructor() {}\n}\n";
+    const { classified } = emitModule(src, "t.ts");
+    expect(classified).toHaveLength(1);
+    expect(classified[0]!.reason).toContain(reason);
+  });
+
+  test("a field at a degraded class travels that class's reason", () => {
+    const src = `export class Bad {
+  constructor(...xs: number[]) {}
+}
+export class C {
+  readonly b: Bad;
+  constructor(b: Bad) {
+    this.b = b;
+  }
+  /** @ensures{p} forall (a: number) { Object.is(new C(new Bad()).v, a) } */
+  get v(): number {
+    return 0;
+  }
+}
+`;
+    const { classified } = emitModule(src, "t.ts");
+    expect(classified[0]!.reason).toContain(
+      "'Bad' could not be modeled: unmapped TypeScript construct 'DotDotDotToken'",
+    );
+  });
+
+  test("a write typed at the field refuses a mismatch", () => {
+    const { classified } = emitModule(withField("Inner", "n"), "t.ts");
+    expect(classified[0]!.reason).toContain(
+      "identifier 'n' is a number, not an instance of 'Inner'",
+    );
+  });
+
+  test("a read of a non-number field refuses until it is a place", () => {
+    const src = `${INNER}export class C {
+  readonly inner: Inner;
+  constructor(i: Inner) {
+    this.inner = i;
+  }
+  /** @ensures{p} forall (a: number) { Object.is(new C(new Inner(a)).v, a) } */
+  get v(): number {
+    return this.inner;
+  }
+}
+`;
+    const { classified } = emitModule(src, "t.ts");
+    expect(classified[0]!.reason).toContain(
+      "field 'inner' is an instance of 'Inner', not a number",
+    );
   });
 });

@@ -1,0 +1,193 @@
+{
+  "file": "engines/thales/tests/fixtures/fields.ts",
+  "declarations": [
+    {
+      "kind": "class",
+      "name": "Inner",
+      "source": "export class Inner {\n  readonly v: number;\n  constructor(v: number) {\n    this.v = v;\n  }\n}",
+      "fields": [
+        {
+          "name": "v"
+        }
+      ],
+      "ctor": {
+        "params": [
+          {
+            "name": "v",
+            "type": "number"
+          }
+        ],
+        "body": [
+          {
+            "kind": "field-set",
+            "field": "v",
+            "expr": {
+              "kind": "id",
+              "name": "v"
+            }
+          }
+        ]
+      },
+      "getters": [],
+      "methods": []
+    },
+    {
+      "kind": "class",
+      "name": "Cell",
+      "source": "export class Cell {\n  readonly value: number | undefined;\n  readonly inner: Inner;\n  readonly n: number;\n  constructor(n: number, i: Inner) {\n    if (n < 0) {\n      this.value = undefined;\n    } else {\n      this.value = n;\n    }\n    this.inner = i;\n    this.n = n;\n  }\n  /** @ensures{keepsN} forall (a: number) { Object.is(new Cell(a, new Inner(a)).n, a) } */\n  get plain(): number {\n    return this.n;\n  }\n}",
+      "fields": [
+        {
+          "name": "value",
+          "type": ["number", "undefined"]
+        },
+        {
+          "name": "inner",
+          "type": {
+            "class": "Inner"
+          }
+        },
+        {
+          "name": "n"
+        }
+      ],
+      "ctor": {
+        "params": [
+          {
+            "name": "n",
+            "type": "number"
+          },
+          {
+            "name": "i",
+            "type": {
+              "class": "Inner"
+            }
+          }
+        ],
+        "body": [
+          {
+            "kind": "if",
+            "cond": {
+              "kind": "binop",
+              "op": "<",
+              "left": {
+                "kind": "id",
+                "name": "n"
+              },
+              "right": {
+                "kind": "num",
+                "lit": "0"
+              }
+            },
+            "then": [
+              {
+                "kind": "field-set",
+                "field": "value",
+                "expr": {
+                  "kind": "inject",
+                  "tag": "undefined"
+                }
+              }
+            ],
+            "else": [
+              {
+                "kind": "field-set",
+                "field": "value",
+                "expr": {
+                  "kind": "inject",
+                  "tag": "number",
+                  "expr": {
+                    "kind": "id",
+                    "name": "n"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "kind": "field-set",
+            "field": "inner",
+            "expr": {
+              "kind": "id",
+              "name": "i"
+            }
+          },
+          {
+            "kind": "field-set",
+            "field": "n",
+            "expr": {
+              "kind": "id",
+              "name": "n"
+            }
+          }
+        ]
+      },
+      "getters": [
+        {
+          "name": "plain",
+          "body": [
+            {
+              "kind": "return",
+              "expr": {
+                "kind": "field-read",
+                "className": "Cell",
+                "field": "n",
+                "object": {
+                  "kind": "self"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "methods": []
+    }
+  ],
+  "obligations": [
+    {
+      "function": "Cell#plain",
+      "property": "keepsN",
+      "formula": "forall (a: number) { Object.is(new Cell(a, new Inner(a)).n, a) }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "a",
+            "kind": "number"
+          }
+        ],
+        "conclusion": {
+          "kind": "eq",
+          "left": {
+            "kind": "field-read",
+            "className": "Cell",
+            "field": "n",
+            "object": {
+              "kind": "new",
+              "className": "Cell",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "a"
+                },
+                {
+                  "kind": "new",
+                  "className": "Inner",
+                  "args": [
+                    {
+                      "kind": "id",
+                      "name": "a"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "right": {
+            "kind": "id",
+            "name": "a"
+          }
+        }
+      }
+    }
+  ]
+}

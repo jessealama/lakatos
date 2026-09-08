@@ -372,7 +372,8 @@ function walkCtorArgs(
 /** What a use of a class needs to know: its fields in declaration order,
  * the getters that modeled, and its constructor's signature. */
 export interface ClassShape {
-  fields: string[];
+  /** The fields in declaration order with their declared types. */
+  fields: ReadonlyMap<string, ValueTy>;
   getters: ReadonlySet<string>;
   /** The slot types a construction fills, in declaration order: a number,
    * an instance, or — for a defaulted parameter — its boundary union. */
@@ -1038,6 +1039,9 @@ interface WalkScope {
   /** Set inside a member body: the enclosing class's member failures,
    * live while the class is still being walked. */
   selfFailed?: ReadonlyMap<string, FailedDecl>;
+  /** Set inside a constructor body: the fields a `this.F = e` may set,
+   * each with the type its right side is walked at. */
+  ctorFields?: ReadonlyMap<string, ValueTy>;
 }
 
 /** Whether the module itself binds a spelling: a top-level declaration or
@@ -1216,7 +1220,7 @@ function findFailedMemberUse(
     const shape = scope.classes.get(modelKey(ref));
     // An unmodeled class already travelled through its own `new`.
     if (shape === undefined) return undefined;
-    if (shape.getters.has(access.name) || shape.fields.includes(access.name))
+    if (shape.getters.has(access.name) || shape.fields.has(access.name))
       return undefined;
     return travelFailure(scope, {
       module: ref.module,
@@ -1245,7 +1249,7 @@ function findFailedMemberUse(
     if (view === undefined) return undefined;
     if (
       view.shape.getters.has(vaccess.name) ||
-      view.shape.fields.includes(vaccess.name)
+      view.shape.fields.has(vaccess.name)
     ) {
       return undefined;
     }
@@ -1576,9 +1580,15 @@ function walkTyped(
   // the receiver is here whenever the walk reaches a field read.
   if (scope.self !== undefined && isThisAccess(e)) {
     const field = e.name.text;
-    if (!scope.self.shape.fields.includes(field)) {
+    if (!scope.self.shape.fields.has(field)) {
       throw new ModelError(
         `'this.${field}' does not name a field of '${scope.self.ref.name}'`,
+      );
+    }
+    const fty = scope.self.shape.fields.get(field)!;
+    if (fty !== "num") {
+      throw new ModelError(
+        `field '${field}' is ${describeTy(fty)}, not a number`,
       );
     }
     /* v8 ignore start -- no boolean position admits a field read: every
@@ -1700,7 +1710,13 @@ function walkTyped(
         object,
       };
     }
-    if (shape.fields.includes(access.name)) {
+    if (shape.fields.has(access.name)) {
+      const fty = shape.fields.get(access.name)!;
+      if (fty !== "num") {
+        throw new ModelError(
+          `field '${access.name}' is ${describeTy(fty)}, not a number`,
+        );
+      }
       return {
         kind: "field-read",
         className: ref.name,
@@ -1769,7 +1785,13 @@ function walkTyped(
         object,
       };
     }
-    if (shape.fields.includes(vaccess.name)) {
+    if (shape.fields.has(vaccess.name)) {
+      const fty = shape.fields.get(vaccess.name)!;
+      if (fty !== "num") {
+        throw new ModelError(
+          `field '${vaccess.name}' is ${describeTy(fty)}, not a number`,
+        );
+      }
       return {
         kind: "field-read",
         className: vaccess.ref.name,
@@ -2447,7 +2469,10 @@ function lowerTree(
       return [{ kind: "assign", name: s.name, expr }, ...tail];
     }
     case "field-set": {
-      const expr = walk(s.expr, "num", vars);
+      // The right side meets the field's declared type as a slot: a
+      // union field injects, an instance field takes an instance.
+      const ty = scope.ctorFields?.get(s.field) ?? "num";
+      const expr = walk(s.expr, ty, vars);
       const tail = lowerTree(rest, vars, k, scope, sf);
       return [{ kind: "field-set", field: s.field, expr }, ...tail];
     }
@@ -2824,25 +2849,16 @@ interface ParamReg {
   unions: boolean;
 }
 
-/** A parameter's declared type: a number, an already-modeled class, or
- * the failure that degrades the declaration. A class resolves under the
- * source-order discipline member calls follow, and one that degraded
- * travels its own failure, the way a call to it would. */
-function paramValueTy(
-  p: ts.ParameterDeclaration,
+/** A declared type node's value type — a parameter's or a field's: a
+ * number, a class already in the model, or (where `reg.unions` admits
+ * it) a keyword union; anything else is the failure that degrades the
+ * declaration. A class resolves under the source-order discipline member
+ * calls follow, and one that degraded travels its own failure. */
+function declaredValueTy(
+  t: ts.TypeNode,
   sf: ts.SourceFile,
   reg: ParamReg,
 ): ValueTy | FailedDecl {
-  const t = p.type!;
-  // An optional's declared type is widened by `undefined`: the question
-  // mark is arity, the union is the type. Only the keyword domain carries
-  // that tag, so an optional at any other type refuses at the parameter,
-  // exactly where the blanket optional ban used to refuse.
-  if (p.questionToken !== undefined) {
-    const tags = keywordTags(t);
-    if (!Array.isArray(tags)) return constructAt(p, p.kind, sf);
-    return normalizedUnion([...tags, "undefined"], t, sf);
-  }
   if (t.kind === ts.SyntaxKind.NumberKeyword) return "num";
   if (
     ts.isTypeReferenceNode(t) &&
@@ -2875,6 +2891,26 @@ function paramValueTy(
     return normalizedUnion(tags, t, sf);
   }
   return constructAt(t, t.kind, sf);
+}
+
+/** A parameter's declared type, or the failure that degrades the
+ * declaration. */
+function paramValueTy(
+  p: ts.ParameterDeclaration,
+  sf: ts.SourceFile,
+  reg: ParamReg,
+): ValueTy | FailedDecl {
+  const t = p.type!;
+  // An optional's declared type is widened by `undefined`: the question
+  // mark is arity, the union is the type. Only the keyword domain carries
+  // that tag, so an optional at any other type refuses at the parameter,
+  // exactly where the blanket optional ban used to refuse.
+  if (p.questionToken !== undefined) {
+    const tags = keywordTags(t);
+    if (!Array.isArray(tags)) return constructAt(p, p.kind, sf);
+    return normalizedUnion([...tags, "undefined"], t, sf);
+  }
+  return declaredValueTy(t, sf, reg);
 }
 
 /** The tags a type node denotes — one for a bare keyword, several for a
@@ -3028,7 +3064,17 @@ function walkClass(
     }
   }
 
-  const fields: string[] = [];
+  const fields = new Map<string, ValueTy>();
+  // A field's type resolves as a parameter's does, the class itself not
+  // yet registered, so a self-typed field refuses like a self-typed
+  // constructor parameter.
+  const fieldReg: ParamReg = {
+    classes: c.classes,
+    failed: c.failed,
+    names,
+    module: qualifier,
+    unions: true,
+  };
   const ctors: ts.ConstructorDeclaration[] = [];
   const getterDecls: ts.GetAccessorDeclaration[] = [];
   const methodDecls: ts.MethodDeclaration[] = [];
@@ -3073,13 +3119,13 @@ function walkClass(
       if (m.initializer !== undefined || m.questionToken !== undefined)
         return constructAt(m, m.kind, sf);
       if (m.type === undefined) return constructAt(m, m.kind, sf);
-      if (m.type.kind !== ts.SyntaxKind.NumberKeyword)
-        return constructAt(m.type, m.type.kind, sf);
+      const ty = declaredValueTy(m.type, sf, fieldReg);
+      if (typeof ty !== "string" && "reason" in ty) return ty;
       if (RESERVED_MEMBERS.has(spelling))
         return memberNameFailure(className, spelling, "reserves the name");
-      if (fields.includes(spelling))
+      if (fields.has(spelling))
         return memberNameFailure(className, spelling, "declares two fields");
-      fields.push(spelling);
+      fields.set(spelling, ty);
       continue;
     }
     if (ts.isGetAccessorDeclaration(m)) {
@@ -3110,7 +3156,7 @@ function walkClass(
   }
   for (const g of getterDecls) {
     const spelling = (g.name as ts.Identifier).text;
-    if (fields.includes(spelling))
+    if (fields.has(spelling))
       return memberNameFailure(
         className,
         spelling,
@@ -3123,7 +3169,7 @@ function walkClass(
   const seenMethods = new Set<string>();
   for (const m of methodDecls) {
     const spelling = (m.name as ts.Identifier | ts.PrivateIdentifier).text;
-    if (fields.includes(spelling))
+    if (fields.has(spelling))
       return memberNameFailure(
         className,
         spelling,
@@ -3174,8 +3220,9 @@ function walkClass(
   const ctorScope: WalkScope = {
     ...base,
     vars: new Map(ctorParams.map((p) => [p.name, p.ty])),
+    ctorFields: fields,
   };
-  const fieldSet = new Set(fields);
+  const fieldSet = new Set(fields.keys());
   const ctorLocals: Locals = new Map(
     ctorParams.map((p) => [p.name, "mutable" as const]),
   );
@@ -3193,7 +3240,7 @@ function walkClass(
   try {
     const assigned = assignedFields(tree, new Set(), className);
     if (assigned !== "leaves") {
-      const missing = fields.find((f) => !assigned.has(f));
+      const missing = [...fields.keys()].find((f) => !assigned.has(f));
       if (missing !== undefined) {
         return {
           construct: "constructor",
@@ -3373,7 +3420,7 @@ function walkClass(
       name: className,
       ...(qualifier !== "" ? { module: qualifier } : {}),
       source: cls.getText(sf),
-      fields: fields.map((name) => ({ name })),
+      fields: [...fields].map(([name, ty]) => ({ name, ...bindingTy(ty) })),
       ctor: {
         params: ctorParams.map((p) => wireParam(p.name, p.slot)),
         body: ctorBody,
