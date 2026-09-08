@@ -1,7 +1,8 @@
 import Init.Data.Float.Model.Float
 
 /-!
-Binary64 operations JavaScript has and Lean does not.
+Binary64 operations JavaScript has and Lean does not: `%`, and the three
+integral roundings Lean ships only as opaque externs.
 
 Lean ships no float remainder at all — no `Float.mod`, no `Mod Float`
 instance — so `%` has nothing to map to. It is built here from
@@ -44,6 +45,45 @@ The result is exact in every case — `remFinite` says why — but that
 argument is carried by the bit-exact tests, not yet by a proof. -/
 def tsRem (a b : Float) : Float :=
   .ofModel (.pack (remUnpacked Format.binary64 a.toModel.unpack b.toModel.unpack))
+
+/-- The integral neighbour a fractional magnitude rounds to. -/
+inductive RoundDir where
+  | towardZero | towardNegInf | towardPosInf
+
+/-- Round to an integral value in the given direction. A finite value
+with a non-negative exponent is already integral; otherwise the mantissa
+loses its fraction bits, and floor/ceil bump the magnitude when the
+dropped bits were nonzero and the sign matches the direction. `normalize`
+repacks; its `zeroSign` carries the input's sign, so a magnitude that
+rounds to zero keeps it (`Math.ceil(-0.5)` is `-0`). -/
+def roundIntegral (spec : Format) (dir : RoundDir) : UnpackedFloat → UnpackedFloat
+  | .notANumber => .notANumber
+  | .infinity s => .infinity s
+  | .zero s => .zero s
+  | .finite s m e h =>
+    if e ≥ 0 then .finite s m e h
+    else
+      let k := (-e).toNat
+      let q := m >>> k
+      let inexact := m % 2 ^ k != 0
+      let bump :=
+        match dir, s with
+        | .towardNegInf, .negative => inexact
+        | .towardPosInf, .positive => inexact
+        | _, _ => false
+      normalize spec (s.apply (if bump then q + 1 else q)) 0 s
+
+/-- `Math.trunc`: toward zero. -/
+def tsTrunc (a : Float) : Float :=
+  .ofModel (.pack (roundIntegral Format.binary64 .towardZero a.toModel.unpack))
+
+/-- `Math.floor`: toward negative infinity. -/
+def tsFloor (a : Float) : Float :=
+  .ofModel (.pack (roundIntegral Format.binary64 .towardNegInf a.toModel.unpack))
+
+/-- `Math.ceil`: toward positive infinity. -/
+def tsCeil (a : Float) : Float :=
+  .ofModel (.pack (roundIntegral Format.binary64 .towardPosInf a.toModel.unpack))
 
 /-- `Number::sameValue`, the meaning of `Object.is` on numbers.
 Propositional equality on `Float` is exactly SameValue — every NaN is
