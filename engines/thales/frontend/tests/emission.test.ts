@@ -7800,7 +7800,7 @@ describe("union-typed parameters", () => {
     expect(widened.classified.map((c) => [c.szs, c.reason])).toEqual([
       [
         "Inappropriate",
-        "'narrow' could not be modeled: identifier 'v' is a 'number | string' value, " +
+        "'narrow' could not be modeled: 'v' is a 'number | string' value, " +
           "not a 'number | string | boolean' value; unions flow only between identical spellings",
       ],
     ]);
@@ -8226,7 +8226,7 @@ describe("union-typed locals (#117)", () => {
     expect(classified.map((c) => [c.szs, c.reason])).toEqual([
       [
         "Error",
-        "'f' could not be modeled: identifier 'v' is a 'number | boolean' value, " +
+        "'f' could not be modeled: 'v' is a 'number | boolean' value, " +
           "not a 'number | string' value; unions flow only between identical spellings",
       ],
     ]);
@@ -8686,6 +8686,180 @@ export class C {
     const { classified } = emitModule(src, "t.ts");
     expect(classified[0]!.reason).toContain(
       "field 'inner' is an instance of 'Inner', not a number",
+    );
+  });
+
+  /** A class over a `number | undefined` field, with a method body `m`
+   * and a free function `f` over the class, both annotated. */
+  function unionField(method: string, fn = "return 0;"): string {
+    return `export class R {
+  readonly x: number | undefined;
+  constructor(n: number) {
+    this.x = n;
+  }
+  /** @ensures{m} forall (a: number) { Object.is(new R(a).m(), new R(a).m()) } */
+  m(): number {
+    ${method}
+  }
+}
+/** @ensures{f} forall (a: number) { Object.is(f(new R(a)), f(new R(a))) } */
+export function f(r: R): number {
+  ${fn}
+}
+`;
+  }
+  function bodyOf(src: string, which: "m" | "f"): EmitStmt[] {
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    return which === "m"
+      ? (emission.declarations[0] as EmitClass).methods[0]!.body
+      : fnBody(emission.declarations[1]!);
+  }
+  const SELF_X: EmitExpr = {
+    kind: "field-read",
+    className: "R",
+    field: "x",
+    object: { kind: "self" },
+  };
+
+  test("a union field at a number position is the throwing projection", () => {
+    expect(bodyOf(unionField("return this.x;"), "m")[0]).toEqual({
+      kind: "return",
+      expr: { kind: "project", tag: "number", expr: SELF_X },
+    });
+    expect(bodyOf(unionField("return 0;", "return r.x;"), "f")[0]).toEqual({
+      kind: "return",
+      expr: {
+        kind: "project",
+        tag: "number",
+        expr: {
+          kind: "field-read",
+          className: "R",
+          field: "x",
+          object: { kind: "id", name: "r" },
+        },
+      },
+    });
+  });
+
+  test("typeof narrows a union field read", () => {
+    const body = bodyOf(
+      unionField(
+        'if (typeof this.x === "number") {\n      return this.x;\n    }\n    return 0;',
+      ),
+      "m",
+    );
+    expect(body[0]).toMatchObject({
+      kind: "if",
+      cond: { kind: "typeof-test", expr: SELF_X, result: "number" },
+    });
+  });
+
+  test("strict equality and Object.is on a union field read lower over JsVal", () => {
+    expect(
+      bodyOf(unionField("return this.x === undefined ? 0 : this.x;"), "m")[0],
+    ).toEqual({
+      kind: "return",
+      expr: {
+        kind: "cond",
+        cond: {
+          kind: "jsval-eq",
+          semantics: "strict",
+          left: SELF_X,
+          right: { kind: "inject", tag: "undefined" },
+        },
+        then: { kind: "num", lit: "0" },
+        else: { kind: "project", tag: "number", expr: SELF_X },
+      },
+    });
+    expect(
+      bodyOf(
+        unionField("return Object.is(this.x, undefined) ? 1 : 0;"),
+        "m",
+      )[0],
+    ).toMatchObject({
+      expr: {
+        cond: { kind: "jsval-eq", semantics: "same-value", left: SELF_X },
+      },
+    });
+  });
+
+  test("Object.is over a field read in a formula atom", () => {
+    const src = `export class R {
+  readonly x: number | undefined;
+  constructor(n: number) {
+    this.x = n;
+  }
+}
+/** @ensures{p} forall (a: number) { Object.is(new R(a).x, undefined) } */
+export function f(a: number): number {
+  return a;
+}
+`;
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    expect(JSON.stringify(emission.obligations[0])).toContain(
+      '"semantics":"same-value"',
+    );
+  });
+
+  test("a union field read flows to a union local and a union parameter of the same spelling", () => {
+    // `take` is declared first: a method body resolves free functions
+    // from the registry the walk fills in source order.
+    const src = `export function take(v: number | undefined): number {
+  return 0;
+}
+export class R {
+  readonly x: number | undefined;
+  constructor(n: number) {
+    this.x = n;
+  }
+  /** @ensures{m} forall (a: number) { Object.is(new R(a).m(), new R(a).m()) } */
+  m(): number {
+    const w: number | undefined = this.x;
+    return take(w) + take(this.x);
+  }
+}
+`;
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    const body = (emission.declarations[1] as EmitClass).methods[0]!.body;
+    expect(body[0]).toMatchObject({ kind: "const", name: "w", init: SELF_X });
+    expect(body[1]).toMatchObject({
+      expr: { right: { kind: "call", callee: "take", args: [SELF_X] } },
+    });
+  });
+
+  test("a union field read at a wider union spelling refuses", () => {
+    const { classified } = emitModule(
+      unionField(
+        "const w: number | string | undefined = this.x;\n    return 0;",
+      ),
+      "t.ts",
+    );
+    expect(classified[0]!.reason).toContain(
+      "unions flow only between identical spellings",
+    );
+  });
+
+  test("typeof on a number field is still outside the model", () => {
+    const src = `export class R {
+  readonly n: number;
+  constructor(n: number) {
+    this.n = n;
+  }
+  /** @ensures{m} forall (a: number) { Object.is(new R(a).m(), 0) } */
+  m(): number {
+    if (typeof this.n === "number") {
+      return 0;
+    }
+    return 1;
+  }
+}
+`;
+    const { classified } = emitModule(src, "t.ts");
+    expect(classified[0]!.reason).toContain(
+      "unmapped TypeScript construct 'TypeOfExpression'",
     );
   });
 });

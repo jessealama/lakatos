@@ -140,6 +140,131 @@
         }
       ],
       "methods": []
+    },
+    {
+      "kind": "class",
+      "name": "Reading",
+      "source": "export class Reading {\n  readonly value: number | undefined;\n  constructor(value: number) {\n    this.value = value;\n  }\n  /** @ensures{readsBack} forall (a: number) { Object.is(new Reading(a).get(), a) } */\n  get(): number {\n    return this.value === undefined ? 0 : this.value;\n  }\n  /** @ensures{typeofNarrows} forall (a: number) { Object.is(new Reading(a).narrow(), a) } */\n  narrow(): number {\n    if (typeof this.value === \"number\") {\n      return this.value;\n    }\n    return 0;\n  }\n}",
+      "fields": [
+        {
+          "name": "value",
+          "type": ["number", "undefined"]
+        }
+      ],
+      "ctor": {
+        "params": [
+          {
+            "name": "value",
+            "type": "number"
+          }
+        ],
+        "body": [
+          {
+            "kind": "field-set",
+            "field": "value",
+            "expr": {
+              "kind": "inject",
+              "tag": "number",
+              "expr": {
+                "kind": "id",
+                "name": "value"
+              }
+            }
+          }
+        ]
+      },
+      "getters": [],
+      "methods": [
+        {
+          "name": "get",
+          "params": [],
+          "body": [
+            {
+              "kind": "return",
+              "expr": {
+                "kind": "cond",
+                "cond": {
+                  "kind": "jsval-eq",
+                  "semantics": "strict",
+                  "left": {
+                    "kind": "field-read",
+                    "className": "Reading",
+                    "field": "value",
+                    "object": {
+                      "kind": "self"
+                    }
+                  },
+                  "right": {
+                    "kind": "inject",
+                    "tag": "undefined"
+                  }
+                },
+                "then": {
+                  "kind": "num",
+                  "lit": "0"
+                },
+                "else": {
+                  "kind": "project",
+                  "tag": "number",
+                  "expr": {
+                    "kind": "field-read",
+                    "className": "Reading",
+                    "field": "value",
+                    "object": {
+                      "kind": "self"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "narrow",
+          "params": [],
+          "body": [
+            {
+              "kind": "if",
+              "cond": {
+                "kind": "typeof-test",
+                "expr": {
+                  "kind": "field-read",
+                  "className": "Reading",
+                  "field": "value",
+                  "object": {
+                    "kind": "self"
+                  }
+                },
+                "result": "number"
+              },
+              "then": [
+                {
+                  "kind": "return",
+                  "expr": {
+                    "kind": "project",
+                    "tag": "number",
+                    "expr": {
+                      "kind": "field-read",
+                      "className": "Reading",
+                      "field": "value",
+                      "object": {
+                        "kind": "self"
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "return",
+              "expr": {
+                "kind": "num",
+                "lit": "0"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "obligations": [
@@ -181,6 +306,80 @@
                 }
               ]
             }
+          },
+          "right": {
+            "kind": "id",
+            "name": "a"
+          }
+        }
+      }
+    },
+    {
+      "function": "Reading#get",
+      "property": "readsBack",
+      "formula": "forall (a: number) { Object.is(new Reading(a).get(), a) }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "a",
+            "kind": "number"
+          }
+        ],
+        "conclusion": {
+          "kind": "eq",
+          "left": {
+            "kind": "method-call",
+            "className": "Reading",
+            "name": "get",
+            "object": {
+              "kind": "new",
+              "className": "Reading",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "a"
+                }
+              ]
+            },
+            "args": []
+          },
+          "right": {
+            "kind": "id",
+            "name": "a"
+          }
+        }
+      }
+    },
+    {
+      "function": "Reading#narrow",
+      "property": "typeofNarrows",
+      "formula": "forall (a: number) { Object.is(new Reading(a).narrow(), a) }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "a",
+            "kind": "number"
+          }
+        ],
+        "conclusion": {
+          "kind": "eq",
+          "left": {
+            "kind": "method-call",
+            "className": "Reading",
+            "name": "narrow",
+            "object": {
+              "kind": "new",
+              "className": "Reading",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "a"
+                }
+              ]
+            },
+            "args": []
           },
           "right": {
             "kind": "id",

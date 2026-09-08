@@ -698,13 +698,13 @@ const TYPEOF_RESULTS = new Set([
   "symbol",
 ]);
 
-/** `typeof v === "lit"` / `!==`, either side order, `v` an identifier:
- * the one typeof shape the model reads. Shape only — validity (a
- * union-typed operand, a recognized literal) is the walk's question. */
+/** `typeof v === "lit"` / `!==`, either side order, `v` a place: the one
+ * typeof shape the model reads. Shape only — validity (a union-typed
+ * operand, a recognized literal) is the walk's question. */
 function typeofTest(e: ts.BinaryExpression):
   | {
       typeofNode: ts.TypeOfExpression;
-      operand: ts.Identifier;
+      operand: ts.Expression;
       result: string;
       negated: boolean;
     }
@@ -715,7 +715,6 @@ function typeofTest(e: ts.BinaryExpression):
     const t = unwrapParens(a);
     if (!ts.isTypeOfExpression(t)) return undefined;
     const operand = unwrapParens(t.expression);
-    if (!ts.isIdentifier(operand)) return undefined;
     const lit = unwrapParens(b);
     if (!ts.isStringLiteral(lit)) return undefined;
     return { typeofNode: t, operand, result: lit.text };
@@ -725,18 +724,12 @@ function typeofTest(e: ts.BinaryExpression):
 }
 
 /** Whether a recognized typeof-test shape is inside the model: the
- * operand is union-typed and the literal is a typeof result. */
+ * operand is a union-typed place and the literal is a typeof result. */
 function validTypeofTest(
-  tt: { operand: ts.Identifier; result: string },
+  tt: { operand: ts.Expression; result: string },
   scope: WalkScope,
 ): boolean {
-  const bound = scope.vars.get(tt.operand.text);
-  return (
-    bound !== undefined &&
-    typeof bound !== "string" &&
-    "union" in bound &&
-    TYPEOF_RESULTS.has(tt.result)
-  );
+  return isUnionPlace(tt.operand, scope) && TYPEOF_RESULTS.has(tt.result);
 }
 
 /** Truthiness has no model: a logical operator is admitted only over
@@ -1359,6 +1352,15 @@ function walkTyped(
   if (isUnionTy(expected)) return walkUnionSlot(e, expected.union, scope, sf);
   if (isOptionTy(expected))
     return walkOptionSlot(e, expected.option, scope, sf);
+  // A union-typed place at a number position lowers as the throwing
+  // projection; the norm layer discharges it on tag-determined paths.
+  if (expected === "num" && isUnionPlace(e, scope)) {
+    return {
+      kind: "project",
+      tag: "number",
+      expr: resolvePlace(e, scope, sf)!.expr,
+    };
+  }
   const negated = negatedLiteral(e);
   if (ts.isNumericLiteral(e) || negated !== undefined) {
     if (expected !== "num") {
@@ -1410,16 +1412,8 @@ function walkTyped(
     // whatever type it was bound at, and an instance matches only its
     // own class.
     const actual: ValueTy = bound ?? "num";
-    // A union-typed read at a number position lowers as the throwing
-    // projection; the norm layer discharges it on tag-determined paths.
-    if (expected === "num" && typeof actual !== "string" && "union" in actual) {
-      return {
-        kind: "project",
-        tag: "number",
-        expr: { kind: "id", name: e.text },
-      };
-    }
-    // A union `expected` never reaches here: the slot walk intercepted it.
+    // A union `expected` never reaches here: the slot walk intercepted it,
+    // and a union-typed read at `num` projected above.
     const ok =
       typeof expected === "string"
         ? expected === actual
@@ -1487,7 +1481,7 @@ function walkTyped(
       }
       const test: EmitExpr = {
         kind: "typeof-test",
-        expr: { kind: "id", name: tt.operand.text },
+        expr: resolvePlace(tt.operand, scope, sf)!.expr,
         result: tt.result,
       };
       return tt.negated ? { kind: "unop", op: "!", operand: test } : test;
@@ -1586,7 +1580,7 @@ function walkTyped(
       );
     }
     const fty = scope.self.shape.fields.get(field)!;
-    if (fty !== "num") {
+    if (fty !== "num" && !("union" in fty)) {
       throw new ModelError(
         `field '${field}' is ${describeTy(fty)}, not a number`,
       );
@@ -1712,7 +1706,7 @@ function walkTyped(
     }
     if (shape.fields.has(access.name)) {
       const fty = shape.fields.get(access.name)!;
-      if (fty !== "num") {
+      if (fty !== "num" && !("union" in fty)) {
         throw new ModelError(
           `field '${access.name}' is ${describeTy(fty)}, not a number`,
         );
@@ -1787,7 +1781,7 @@ function walkTyped(
     }
     if (shape.fields.has(vaccess.name)) {
       const fty = shape.fields.get(vaccess.name)!;
-      if (fty !== "num") {
+      if (fty !== "num" && !("union" in fty)) {
         throw new ModelError(
           `field '${vaccess.name}' is ${describeTy(fty)}, not a number`,
         );
@@ -1891,12 +1885,122 @@ function walkTyped(
   throw new ModelError(constructAt(e, e.kind, sf).reason);
 }
 
-/** Whether an expression is a union-typed identifier in scope. */
-function unionIdent(e: ts.Expression, scope: WalkScope): boolean {
+/** A member access `recv.name`, `name` an identifier or a `#`-private. */
+function memberAccess(
+  e: ts.Expression,
+): { receiver: ts.Expression; name: string } | undefined {
   const u = unwrapParens(e);
-  if (!ts.isIdentifier(u)) return false;
-  const ty = scope.vars.get(u.text);
-  return ty !== undefined && typeof ty !== "string" && "union" in ty;
+  if (!ts.isPropertyAccessExpression(u)) return undefined;
+  if (!ts.isIdentifier(u.name) && !ts.isPrivateIdentifier(u.name))
+    return undefined;
+  return { receiver: u.expression, name: u.name.text };
+}
+
+/** A place's static type: an expression the walk types without an
+ * expected type — a bound identifier, a fresh instance, or a field read
+ * on an instance place, nested to any depth. Shape and registries only,
+ * no argument walked, so the scan and the walk agree by construction. */
+function placeTy(e: ts.Expression, scope: WalkScope): ValueTy | undefined {
+  const u = unwrapParens(e);
+  if (ts.isIdentifier(u)) {
+    const ty = scope.vars.get(u.text);
+    return ty === undefined || isOptionTy(ty) ? undefined : ty;
+  }
+  const built = newCall(u);
+  if (built !== undefined) {
+    const ref = newRef(scope, built);
+    return classView(scope, ref) === undefined ? undefined : { instance: ref };
+  }
+  const access = memberAccess(u);
+  if (access === undefined) return undefined;
+  const recv = receiverTy(access.receiver, scope);
+  if (recv === undefined || typeof recv === "string" || !("instance" in recv))
+    return undefined;
+  return classView(scope, recv.instance)?.shape.fields.get(access.name);
+}
+
+/** A receiver's type: a place's, or the enclosing class for `this`. A
+ * bare `this` is a receiver, never a value. */
+function receiverTy(e: ts.Expression, scope: WalkScope): ValueTy | undefined {
+  const u = unwrapParens(e);
+  if (u.kind === ts.SyntaxKind.ThisKeyword)
+    return scope.self === undefined ? undefined : { instance: scope.self.ref };
+  return placeTy(u, scope);
+}
+
+/** Whether an expression is a union-typed place. */
+function isUnionPlace(e: ts.Expression, scope: WalkScope): boolean {
+  const ty = placeTy(e, scope);
+  return ty !== undefined && isUnionTy(ty);
+}
+
+/** A walked place: its type and its lowering. `new` arguments walk here,
+ * and a member outside the model throws, exactly as a receiver arm does. */
+function resolvePlace(
+  e: ts.Expression,
+  scope: WalkScope,
+  sf: ts.SourceFile,
+): { ty: ValueTy; expr: EmitExpr } | undefined {
+  const u = unwrapParens(e);
+  if (ts.isIdentifier(u)) {
+    const ty = scope.vars.get(u.text);
+    if (ty === undefined || isOptionTy(ty)) return undefined;
+    return { ty, expr: { kind: "id", name: u.text } };
+  }
+  const built = newCall(u);
+  if (built !== undefined) {
+    const ref = newRef(scope, built);
+    const shape = classShapeOf(scope, ref);
+    const rawArgs = built.arguments ?? [];
+    checkCtorArity(ref, shape, rawArgs.length);
+    return {
+      ty: { instance: ref },
+      expr: {
+        kind: "new",
+        className: ref.name,
+        ...(ref.module !== "" ? { module: ref.module } : {}),
+        args: walkCtorArgs(rawArgs, shape, scope, sf),
+      },
+    };
+  }
+  const access = memberAccess(u);
+  if (access === undefined) return undefined;
+  const recv = resolveReceiver(access.receiver, scope, sf);
+  if (
+    recv === undefined ||
+    typeof recv.ty === "string" ||
+    !("instance" in recv.ty)
+  ) {
+    return undefined;
+  }
+  const ref = recv.ty.instance;
+  const shape = shapeOfRef(scope, ref);
+  const fty = shape.fields.get(access.name);
+  if (fty === undefined) return undefined;
+  return {
+    ty: fty,
+    expr: {
+      kind: "field-read",
+      className: ref.name,
+      ...(ref.module !== "" ? { module: ref.module } : {}),
+      field: access.name,
+      object: recv.expr,
+    },
+  };
+}
+
+/** A walked receiver: a place, or `this` as the instance itself. */
+function resolveReceiver(
+  e: ts.Expression,
+  scope: WalkScope,
+  sf: ts.SourceFile,
+): { ty: ValueTy; expr: EmitExpr } | undefined {
+  const u = unwrapParens(e);
+  if (u.kind === ts.SyntaxKind.ThisKeyword) {
+    if (scope.self === undefined) return undefined;
+    return { ty: { instance: scope.self.ref }, expr: { kind: "self" } };
+  }
+  return resolvePlace(u, scope, sf);
 }
 
 /** `undefined` as JS resolves it here: the global, unshadowed. */
@@ -1919,14 +2023,14 @@ function undefAtom(e: ts.Expression, scope: WalkScope): boolean {
 function taggedOperand(e: ts.Expression, scope: WalkScope): boolean {
   const u = unwrapParens(e);
   return (
-    unionIdent(u, scope) ||
+    isUnionPlace(u, scope) ||
     booleanShaped(u, scope) ||
     undefAtom(u, scope) ||
     u.kind === ts.SyntaxKind.NullKeyword
   );
 }
 
-/** One side of a JsVal equality: a union identifier stays itself, the
+/** One side of a JsVal equality: a union place stays itself, the
  * undefined/null atoms inject at their tags, a boolean-valued shape
  * injects at 'boolean', and everything else is a number injected at
  * its. */
@@ -1936,8 +2040,7 @@ function eqOperand(
   sf: ts.SourceFile,
 ): EmitExpr {
   const u = unwrapParens(e);
-  if (unionIdent(u, scope))
-    return { kind: "id", name: (u as ts.Identifier).text };
+  if (isUnionPlace(u, scope)) return resolvePlace(u, scope, sf)!.expr;
   if (undefAtom(u, scope)) return { kind: "inject", tag: "undefined" };
   if (u.kind === ts.SyntaxKind.NullKeyword)
     return { kind: "inject", tag: "null" };
@@ -1966,7 +2069,7 @@ function unionEquality(
   scope: WalkScope,
   sf: ts.SourceFile,
 ): EmitExpr | undefined {
-  const pulls = semantics === "same-value" ? taggedOperand : unionIdent;
+  const pulls = semantics === "same-value" ? taggedOperand : isUnionPlace;
   if (!pulls(l, scope) && !pulls(r, scope)) return undefined;
   return {
     kind: "jsval-eq",
@@ -2001,19 +2104,19 @@ function walkUnionSlot(
   sf: ts.SourceFile,
 ): EmitExpr {
   const u = unwrapParens(e);
+  const bound = placeTy(u, scope);
+  if (bound !== undefined && isUnionTy(bound)) {
+    if (sameUnion(bound.union, union)) return resolvePlace(u, scope, sf)!.expr;
+    // Widening to a superset is legal TypeScript the model does not
+    // follow; any other spelling mismatch is tsc's to refuse first.
+    const widening = bound.union.every((m) => union.includes(m));
+    throw new ModelError(
+      `'${u.getText(sf)}' is ${describeTy(bound)}, not ` +
+        `${describeTy({ union })}; unions flow only between identical spellings`,
+      widening ? "UnionType" : undefined,
+    );
+  }
   if (ts.isIdentifier(u)) {
-    const bound = scope.vars.get(u.text);
-    if (bound !== undefined && typeof bound !== "string" && "union" in bound) {
-      if (sameUnion(bound.union, union)) return { kind: "id", name: u.text };
-      // Widening to a superset is legal TypeScript the model does not
-      // follow; any other spelling mismatch is tsc's to refuse first.
-      const widening = bound.union.every((m) => union.includes(m));
-      throw new ModelError(
-        `identifier '${u.text}' is ${describeTy(bound)}, not ` +
-          `${describeTy({ union })}; unions flow only between identical spellings`,
-        widening ? "UnionType" : undefined,
-      );
-    }
     if (
       bound === undefined &&
       u.text === "undefined" &&

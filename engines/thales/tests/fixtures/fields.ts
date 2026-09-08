@@ -25,3 +25,21 @@ export class Cell {
     return this.n;
   }
 }
+
+export class Reading {
+  readonly value: number | undefined;
+  constructor(value: number) {
+    this.value = value;
+  }
+  /** @ensures{readsBack} forall (a: number) { Object.is(new Reading(a).get(), a) } */
+  get(): number {
+    return this.value === undefined ? 0 : this.value;
+  }
+  /** @ensures{typeofNarrows} forall (a: number) { Object.is(new Reading(a).narrow(), a) } */
+  narrow(): number {
+    if (typeof this.value === "number") {
+      return this.value;
+    }
+    return 0;
+  }
+}
