@@ -9127,4 +9127,29 @@ export function g(a: number): number {
       "'**' is implementation-approximated",
     );
   });
+
+  test("the scan reports a construct inside a builtin call's argument", () => {
+    const src = `/** @ensures{p} forall (a: number) { Object.is(g(a), a) } */
+export function g(a: number): number {
+  return Math.abs(a!);
+}
+`;
+    const { classified } = emitModule(src, "t.ts");
+    expect(classified[0]!.reason).toContain(
+      "unmapped TypeScript construct 'NonNullExpression'",
+    );
+  });
+
+  test("a degraded declaration inside a builtin call's argument travels", () => {
+    const src = `export class Bad {
+  constructor(...xs: number[]) {}
+}
+/** @ensures{p} forall (a: number) { Object.is(g(a), a) } */
+export function g(a: number): number {
+  return Math.abs(new Bad(a).v);
+}
+`;
+    const { classified } = emitModule(src, "t.ts");
+    expect(classified[0]!.reason).toContain("'Bad' could not be modeled");
+  });
 });
