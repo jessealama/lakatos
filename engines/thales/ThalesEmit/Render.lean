@@ -205,6 +205,8 @@ partial def valueTerm (coerced : String → Bool) : JsExpr → RenderM Rendered
       | "Math", "trunc" => `(Number.FloatOps.tsTrunc $a)
       | "Math", "floor" => `(Number.FloatOps.tsFloor $a)
       | "Math", "ceil" => `(Number.FloatOps.tsCeil $a)
+      | "Math", "round" => `(Number.FloatOps.tsRound $a)
+      | "Math", "sign" => `(Number.FloatOps.tsSign $a)
       | "Number", "isFinite" => `(Float.isFinite $a)
       | "Number", "isNaN" => `(Float.isNaN $a)
       | _, _ => throw s!"no rendering for builtin '{object}.{member}'"

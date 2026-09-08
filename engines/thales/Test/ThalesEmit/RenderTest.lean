@@ -90,9 +90,11 @@ def b1 (object member x : String) : JsExpr := .builtin object member #[.id x]
 #guard rendersAs (v (b1 "Math" "trunc" "x")) `(Number.FloatOps.tsTrunc x)
 #guard rendersAs (v (b1 "Math" "floor" "x")) `(Number.FloatOps.tsFloor x)
 #guard rendersAs (v (b1 "Math" "ceil" "x")) `(Number.FloatOps.tsCeil x)
+#guard rendersAs (v (b1 "Math" "round" "x")) `(Number.FloatOps.tsRound x)
+#guard rendersAs (v (b1 "Math" "sign" "x")) `(Number.FloatOps.tsSign x)
 #guard rendersAs (v (b1 "Number" "isFinite" "x")) `(Float.isFinite x)
 #guard rendersAs (v (b1 "Number" "isNaN" "x")) `(Float.isNaN x)
-#guard renderFails (v (b1 "Math" "sign" "x"))
+#guard renderFails (v (b1 "Math" "log" "x"))
 #guard renderFails (v (.builtin "Math" "trunc" #[.id "x", .id "y"]))
 
 -- Calls lift, under the model namespace, a dependency's one component

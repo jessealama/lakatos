@@ -2552,6 +2552,8 @@ describe("Math.sqrt models as Float.sqrt", () => {
     ["trunc", "Math.trunc(x)"],
     ["floor", "Math.floor(x)"],
     ["ceil", "Math.ceil(x)"],
+    ["round", "Math.round(x)"],
+    ["sign", "Math.sign(x)"],
   ])("Math.%s walks to a builtin node", (member, call) => {
     const src = [
       "/** @ensures{p} forall (n: int ∈ [0, 3)) { r(n) >= 0 } */",
