@@ -45,6 +45,34 @@ theorem float_le_of_not_lt_of_ne_nan {x y : Float}
   have := lt_of_key (canonical_unpack _) (canonical_unpack _) hx hy hk
   exact Bool.noConfusion (this.symm.trans h)
 
+/-! ## IEEE equality at the `Float` layer
+
+`beq` is key equality away from NaN, so it is reflexive there, transitive,
+and antisymmetry's conclusion: the currency the emitter's `===` uses. -/
+
+theorem float_beq_refl_of_ne_nan {a : Float} (ha : a.toModel.unpack ≠ .notANumber) :
+    Float.beq a a = true := by
+  rw [float_beq_unpack]
+  exact beq_of_key (canonical_unpack _) (canonical_unpack _) ha ha rfl
+
+theorem float_beq_trans {a b c : Float} (h1 : Float.beq a b = true)
+    (h2 : Float.beq b c = true) : Float.beq a c = true := by
+  rw [float_beq_unpack] at h1 h2 ⊢
+  exact beq_of_key (canonical_unpack _) (canonical_unpack _) (beq_ne_nan_left h1)
+    (beq_ne_nan_right h2)
+    ((key_of_beq (canonical_unpack _) (canonical_unpack _) h1).trans
+      (key_of_beq (canonical_unpack _) (canonical_unpack _) h2))
+
+/-- Two floats that compare `≤` both ways are IEEE-equal. -/
+theorem float_beq_of_le_of_le {a b : Float} (h1 : Float.le a b = true)
+    (h2 : Float.le b a = true) : Float.beq a b = true := by
+  rw [float_le_unpack] at h1 h2
+  rw [float_beq_unpack]
+  exact beq_of_key (canonical_unpack _) (canonical_unpack _) (le_ne_nan_left h1)
+    (le_ne_nan_right h1)
+    (Int.le_antisymm (key_of_le (canonical_unpack _) (canonical_unpack _) h1)
+      (key_of_le (canonical_unpack _) (canonical_unpack _) h2))
+
 /-! ## `Math.min` and `Math.max`
 
 Each model is a five-arm match: two NaN arms the hypotheses exclude, two
@@ -149,6 +177,92 @@ theorem tsMax_lub {a b c : Float} (ha : Float.le a c = true) (hb : Float.le b c 
   · split
     · exact hb
     · exact ha
+
+/-! ## `min` and `max` return an operand
+
+Inside its range a clamp is the identity. The conclusion is IEEE equality
+rather than `=`: on `+0 ≤ -0` the model returns `-0`, which is `beq` to
+`+0` but not the same float. In the ordinary arm the result is the operand
+the comparison picked, and when the comparison came back false the two
+operands compare `≤` both ways. -/
+
+/-- `min` is its left operand when that is at most the right one. -/
+theorem tsMin_beq_left_of_le {a b : Float} (h : Float.le a b = true) :
+    Float.beq (tsMin a b) a = true := by
+  have hab := h
+  rw [float_le_unpack] at hab
+  have ha := le_ne_nan_left hab
+  have hb := le_ne_nan_right hab
+  unfold tsMin
+  split
+  · exact absurd ‹_› ha
+  · exact absurd ‹_› hb
+  · exact float_beq_refl_of_ne_nan ha
+  · rename_i sgn _ ha' hb'
+    rw [float_beq_unpack, hb', ha']
+    cases sgn <;> rfl
+  · split
+    · exact float_beq_refl_of_ne_nan ha
+    · exact float_beq_of_le_of_le
+        (float_le_of_not_lt_of_ne_nan ha hb (Bool.eq_false_iff.mpr ‹_›)) h
+
+/-- `min` is its right operand when that is at most the left one. -/
+theorem tsMin_beq_right_of_le {a b : Float} (h : Float.le b a = true) :
+    Float.beq (tsMin a b) b = true := by
+  have hba := h
+  rw [float_le_unpack] at hba
+  have hb := le_ne_nan_left hba
+  have ha := le_ne_nan_right hba
+  unfold tsMin
+  split
+  · exact absurd ‹_› ha
+  · exact absurd ‹_› hb
+  · rename_i ha' hb'
+    rw [float_beq_unpack, ha', hb']
+    rename_i s; cases s <;> rfl
+  · exact float_beq_refl_of_ne_nan hb
+  · split
+    · exact float_beq_of_le_of_le (float_le_of_lt ‹_›) h
+    · exact float_beq_refl_of_ne_nan hb
+
+/-- `max` is its right operand when the left one is at most it. -/
+theorem tsMax_beq_right_of_le {a b : Float} (h : Float.le a b = true) :
+    Float.beq (tsMax a b) b = true := by
+  have hab := h
+  rw [float_le_unpack] at hab
+  have ha := le_ne_nan_left hab
+  have hb := le_ne_nan_right hab
+  unfold tsMax
+  split
+  · exact absurd ‹_› ha
+  · exact absurd ‹_› hb
+  · rename_i ha' hb'
+    rw [float_beq_unpack, ha', hb']
+    rename_i s; cases s <;> rfl
+  · exact float_beq_refl_of_ne_nan hb
+  · split
+    · exact float_beq_refl_of_ne_nan hb
+    · exact float_beq_of_le_of_le h
+        (float_le_of_not_lt_of_ne_nan ha hb (Bool.eq_false_iff.mpr ‹_›))
+
+/-- `max` is its left operand when the right one is at most it. -/
+theorem tsMax_beq_left_of_le {a b : Float} (h : Float.le b a = true) :
+    Float.beq (tsMax a b) a = true := by
+  have hba := h
+  rw [float_le_unpack] at hba
+  have hb := le_ne_nan_left hba
+  have ha := le_ne_nan_right hba
+  unfold tsMax
+  split
+  · exact absurd ‹_› ha
+  · exact absurd ‹_› hb
+  · exact float_beq_refl_of_ne_nan ha
+  · rename_i sgn _ ha' hb'
+    rw [float_beq_unpack, hb', ha']
+    cases sgn <;> rfl
+  · split
+    · exact float_beq_of_le_of_le h (float_le_of_lt ‹_›)
+    · exact float_beq_refl_of_ne_nan ha
 
 /-! ## Strict bounds propagate through `min` and `max`
 

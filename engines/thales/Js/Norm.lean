@@ -350,6 +350,30 @@ theorem tsMax_lub {a b c : Float} (ha : Float.le a c = true) (hb : Float.le b c 
     Float.le (Number.FloatOps.tsMax a b) c = true :=
   Number.FloatOpsFacts.tsMax_lub ha hb
 
+/-! The equation facts, in the emitter's currency for `===`: inside its
+range a clamp returns its input, up to IEEE equality. A two-sided clamp
+chains two of them, which is what the transitivity fact is for. -/
+
+theorem tsMin_beq_left_of_le {a b : Float} (h : Float.le a b = true) :
+    Float.beq (Number.FloatOps.tsMin a b) a = true :=
+  Number.FloatOpsFacts.tsMin_beq_left_of_le h
+
+theorem tsMin_beq_right_of_le {a b : Float} (h : Float.le b a = true) :
+    Float.beq (Number.FloatOps.tsMin a b) b = true :=
+  Number.FloatOpsFacts.tsMin_beq_right_of_le h
+
+theorem tsMax_beq_right_of_le {a b : Float} (h : Float.le a b = true) :
+    Float.beq (Number.FloatOps.tsMax a b) b = true :=
+  Number.FloatOpsFacts.tsMax_beq_right_of_le h
+
+theorem tsMax_beq_left_of_le {a b : Float} (h : Float.le b a = true) :
+    Float.beq (Number.FloatOps.tsMax a b) a = true :=
+  Number.FloatOpsFacts.tsMax_beq_left_of_le h
+
+theorem float_beq_trans {a b c : Float} (h1 : Float.beq a b = true)
+    (h2 : Float.beq b c = true) : Float.beq a c = true :=
+  Number.FloatOpsFacts.float_beq_trans h1 h2
+
 /-- Strict bounds on both operands bound the result: what lets `min` or
 `max` feed a branch condition or another member. -/
 theorem tsMin_lo {a b : Float} (haLo : -floatInf < a) (hbLo : -floatInf < b) :
@@ -548,6 +572,11 @@ grind_pattern tsMax_ge_left => Number.FloatOps.tsMax a b
 grind_pattern tsMax_ge_right => Number.FloatOps.tsMax a b
 grind_pattern tsMin_glb => Float.le c (Number.FloatOps.tsMin a b)
 grind_pattern tsMax_lub => Float.le (Number.FloatOps.tsMax a b) c
+grind_pattern tsMin_beq_left_of_le => Number.FloatOps.tsMin a b
+grind_pattern tsMin_beq_right_of_le => Number.FloatOps.tsMin a b
+grind_pattern tsMax_beq_right_of_le => Number.FloatOps.tsMax a b
+grind_pattern tsMax_beq_left_of_le => Number.FloatOps.tsMax a b
+grind_pattern float_beq_trans => Float.beq a b, Float.beq b c
 grind_pattern tsMin_lo => Number.FloatOps.tsMin a b
 grind_pattern tsMin_hi => Number.FloatOps.tsMin a b
 grind_pattern tsMax_lo => Number.FloatOps.tsMax a b
