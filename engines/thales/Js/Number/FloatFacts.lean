@@ -3023,6 +3023,34 @@ theorem lt_of_key {u v : UnpackedFloat} (hu : Canonical u) (hv : Canonical v)
   rw [UnpackedFloat.lt, compare_eq_key hu hv h1 h2, Int.compare_eq_lt.mpr hk]
   rfl
 
+theorem beq_ne_nan_left {u v : UnpackedFloat} (h : UnpackedFloat.beq u v = true) :
+    u ≠ .notANumber := by
+  intro rfl
+  rw [UnpackedFloat.beq] at h
+  simp [UnpackedFloat.compare] at h
+
+theorem beq_ne_nan_right {u v : UnpackedFloat} (h : UnpackedFloat.beq u v = true) :
+    v ≠ .notANumber := by
+  intro rfl
+  rw [UnpackedFloat.beq] at h
+  cases u <;> simp [UnpackedFloat.compare] at h
+
+/-- A true IEEE equality on canonical floats yields equal keys. -/
+theorem key_of_beq {u v : UnpackedFloat} (hu : Canonical u) (hv : Canonical v)
+    (h : UnpackedFloat.beq u v = true) : key u = key v := by
+  have h1 := beq_ne_nan_left h
+  have h2 := beq_ne_nan_right h
+  rw [UnpackedFloat.beq, compare_eq_key hu hv h1 h2] at h
+  simpa using h
+
+/-- Equal keys on canonical non-NaN floats give a true IEEE equality: the
+two zeros included. -/
+theorem beq_of_key {u v : UnpackedFloat} (hu : Canonical u) (hv : Canonical v)
+    (h1 : u ≠ .notANumber) (h2 : v ≠ .notANumber) (hk : key u = key v) :
+    UnpackedFloat.beq u v = true := by
+  rw [UnpackedFloat.beq, compare_eq_key hu hv h1 h2, Int.compare_eq_eq.mpr hk]
+  rfl
+
 /-- A strict bound below a canonical float and above zero pins it to a
 positive finite value. -/
 theorem pos_finite_of_bounds {u : UnpackedFloat} (hu : Canonical u)
