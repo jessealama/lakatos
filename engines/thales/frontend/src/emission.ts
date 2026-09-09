@@ -1849,7 +1849,13 @@ function unionEquality(
   scope: WalkScope,
   sf: ts.SourceFile,
 ): EmitExpr | undefined {
-  const pulls = semantics === "same-value" ? taggedOperand : isUnionPlace;
+  // Strict equality reaches the tagged domain for a union place and for a
+  // boolean side; the number walk keeps every other pair.
+  const pulls =
+    semantics === "same-value"
+      ? taggedOperand
+      : (e: ts.Expression, s: WalkScope) =>
+          isUnionPlace(e, s) || booleanShaped(e, s);
   if (!pulls(l, scope) && !pulls(r, scope)) return undefined;
   return {
     kind: "jsval-eq",
@@ -1874,9 +1880,10 @@ function walkOptionSlot(
 /** An expression meeting a union slot. An identical-union identifier
  * flows as itself; the `undefined`/`null` atoms inject where the union
  * carries their tag (any binding of those spellings shadows, exactly as
- * `NaN`/`Infinity` behave); anything that walks at `num` injects at
- * `number`. Union subtyping is out of scope: a narrower, wider, or
- * overlapping union refuses. */
+ * `NaN`/`Infinity` behave); a boolean-shaped expression injects at
+ * `boolean`; anything that walks at `num` injects at `number`. Union
+ * subtyping is out of scope: a narrower, wider, or overlapping union
+ * refuses. */
 function walkUnionSlot(
   e: ts.Expression,
   union: UnionTag[],
@@ -1911,6 +1918,19 @@ function walkUnionSlot(
     if (union.includes("null")) return { kind: "inject", tag: "null" };
     const failed = constructAt(u, u.kind, sf);
     throw new ModelError(failed.reason, failed.construct);
+  }
+  if (booleanShaped(u, scope)) {
+    if (!union.includes("boolean")) {
+      throw new ModelError(
+        `${describeTy({ union })} slot has no 'boolean' member, so a ` +
+          `boolean-valued expression cannot flow to it`,
+      );
+    }
+    return {
+      kind: "inject",
+      tag: "boolean",
+      expr: walkTyped(u, "bool", scope, sf),
+    };
   }
   if (!union.includes("number")) {
     throw new ModelError(

@@ -10537,3 +10537,109 @@ describe("inferred boolean locals and bound boolean names (#117)", () => {
     );
   });
 });
+
+describe("boolean equality and union slots (#117)", () => {
+  const emit = (src: string) => emitModule(src, "t.ts");
+
+  test("strict equality on booleans lowers over the tagged domain", () => {
+    const { emission, classified } = emit(
+      `export function f(n: number): number {\n` +
+        `  const a = n < 5;\n  if (a === true) {\n    return 0;\n  }\n` +
+        `  if (a !== (n > 7)) {\n    return 1;\n  }\n  return n;\n}\n`,
+    );
+    expect(classified).toEqual([]);
+    expectValidEmission(emission);
+    const fn = emission.declarations[0];
+    assert(fn?.kind === "function");
+    expect(fnBody(fn)[1]).toMatchObject({
+      kind: "if",
+      cond: {
+        kind: "jsval-eq",
+        semantics: "strict",
+        left: {
+          kind: "inject",
+          tag: "boolean",
+          expr: { kind: "id", name: "a" },
+        },
+        right: {
+          kind: "inject",
+          tag: "boolean",
+          expr: { kind: "bool", value: true },
+        },
+      },
+    });
+    expect(fnBody(fn)[2]).toMatchObject({
+      kind: "if",
+      cond: {
+        kind: "unop",
+        op: "!",
+        operand: { kind: "jsval-eq", semantics: "strict" },
+      },
+    });
+  });
+
+  test("Object.is on a bound boolean and a literal", () => {
+    const { emission, classified } = emit(
+      `export function f(n: number): number {\n` +
+        `  const a = n < 5;\n  if (Object.is(a, false)) {\n    return 0;\n  }\n  return n;\n}\n`,
+    );
+    expect(classified).toEqual([]);
+    const fn = emission.declarations[0];
+    assert(fn?.kind === "function");
+    expect(fnBody(fn)[1]).toMatchObject({
+      kind: "if",
+      cond: {
+        kind: "jsval-eq",
+        semantics: "same-value",
+        left: {
+          kind: "inject",
+          tag: "boolean",
+          expr: { kind: "id", name: "a" },
+        },
+        right: {
+          kind: "inject",
+          tag: "boolean",
+          expr: { kind: "bool", value: false },
+        },
+      },
+    });
+  });
+
+  test("a boolean-shaped expression meets a union slot carrying boolean", () => {
+    const { emission, classified } = emit(
+      `export function f(n: number): number {\n` +
+        `  const w: boolean | undefined = n < 5;\n` +
+        `  if (typeof w === "boolean") {\n    return 1;\n  }\n  return 0;\n}\n`,
+    );
+    expect(classified).toEqual([]);
+    const fn = emission.declarations[0];
+    assert(fn?.kind === "function");
+    expect(fnBody(fn)[0]).toEqual({
+      kind: "const",
+      name: "w",
+      init: {
+        kind: "inject",
+        tag: "boolean",
+        expr: {
+          kind: "binop",
+          op: "<",
+          left: { kind: "id", name: "n" },
+          right: { kind: "num", lit: "5" },
+        },
+      },
+      type: ["boolean", "undefined"],
+    });
+  });
+
+  test("a boolean cannot flow to a union slot without a boolean member", () => {
+    const { classified } = emit(
+      `/** @ensures{p} forall (n: int ∈ [0, 10)) { f(n) >= 0 } */\n` +
+        `export function f(n: number): number {\n` +
+        `  const w: number | undefined = n < 5;\n  return 0;\n}\n`,
+    );
+    expect(classified).toHaveLength(1);
+    expect(classified[0]!.reason).toContain(
+      "slot has no 'boolean' member, so a boolean-valued expression cannot flow to it",
+    );
+  });
+});
