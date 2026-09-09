@@ -6749,7 +6749,7 @@ export class Point {
     );
   });
 
-  test("keeps instance-valued locals refused", () => {
+  test("keeps an unannotated instance-valued local refused", () => {
     const src = `
 export class Point {
   readonly x: number;
@@ -8348,6 +8348,207 @@ describe("union-typed locals (#117)", () => {
         "'f' could not be modeled: unmapped TypeScript construct 'VariableStatement' at 3:3",
       ],
     ]);
+  });
+});
+
+describe("class-typed locals (#117)", () => {
+  const emit = (src: string) => emitModule(src, "t.ts");
+  const PT = `export class Pt {
+  readonly x: number;
+  constructor(x: number) {
+    this.x = x;
+  }
+  twice(): number {
+    return this.x * 2;
+  }
+}
+`;
+
+  test("a class-annotated const rides the wire at its class", () => {
+    const { emission, classified } = emit(
+      `${PT}export function f(q: Pt): number {\n` +
+        `  const p: Pt = q;\n  return 0;\n}\n`,
+    );
+    expect(classified).toEqual([]);
+    expectValidEmission(emission);
+    const fn = emission.declarations[1];
+    assert(fn?.kind === "function");
+    expect(fnBody(fn)[0]).toEqual({
+      kind: "const",
+      name: "p",
+      init: { kind: "id", name: "q" },
+      type: { class: "Pt" },
+    });
+  });
+
+  test("a construction meets the local's class as a slot", () => {
+    const { emission, classified } = emit(
+      `${PT}export function f(n: number): number {\n` +
+        `  const p: Pt = new Pt(n);\n  return 0;\n}\n`,
+    );
+    expect(classified).toEqual([]);
+    const fn = emission.declarations[1];
+    assert(fn?.kind === "function");
+    expect(fnBody(fn)[0]).toEqual({
+      kind: "const",
+      name: "p",
+      init: { kind: "new", className: "Pt", args: [{ kind: "id", name: "n" }] },
+      type: { class: "Pt" },
+    });
+  });
+
+  test("a field read on a class local is a place", () => {
+    const { emission, classified } = emit(
+      `${PT}export function f(q: Pt): number {\n` +
+        `  const p: Pt = q;\n  return p.x;\n}\n`,
+    );
+    expect(classified).toEqual([]);
+    const fn = emission.declarations[1];
+    assert(fn?.kind === "function");
+    expect(fnBody(fn)[1]).toEqual({
+      kind: "return",
+      expr: {
+        kind: "field-read",
+        className: "Pt",
+        field: "x",
+        object: { kind: "id", name: "p" },
+      },
+    });
+  });
+
+  test("a method call on a class local dispatches to its class", () => {
+    const { emission, classified } = emit(
+      `${PT}export function f(q: Pt): number {\n` +
+        `  const p: Pt = q;\n  return p.twice();\n}\n`,
+    );
+    expect(classified).toEqual([]);
+    const fn = emission.declarations[1];
+    assert(fn?.kind === "function");
+    expect(fnBody(fn)[1]).toEqual({
+      kind: "return",
+      expr: {
+        kind: "method-call",
+        className: "Pt",
+        name: "twice",
+        object: { kind: "id", name: "p" },
+        args: [],
+      },
+    });
+  });
+
+  test("a class local meets a class-typed argument slot", () => {
+    const { emission, classified } = emit(
+      `${PT}export function g(p: Pt): number {\n  return p.x;\n}\n` +
+        `export function f(q: Pt): number {\n` +
+        `  const p: Pt = q;\n  return g(p);\n}\n`,
+    );
+    expect(classified).toEqual([]);
+    const fn = emission.declarations[2];
+    assert(fn?.kind === "function");
+    expect(fnBody(fn)[1]).toEqual({
+      kind: "return",
+      expr: { kind: "call", callee: "g", args: [{ kind: "id", name: "p" }] },
+    });
+  });
+
+  test("a mutable class local reassigns at its class", () => {
+    const { emission, classified } = emit(
+      `${PT}export function f(q: Pt): number {\n` +
+        `  let p: Pt = q;\n  p = new Pt(2);\n  return p.x;\n}\n`,
+    );
+    expect(classified).toEqual([]);
+    const fn = emission.declarations[1];
+    assert(fn?.kind === "function");
+    expect(fnBody(fn).slice(0, 2)).toEqual([
+      {
+        kind: "let",
+        name: "p",
+        init: { kind: "id", name: "q" },
+        type: { class: "Pt" },
+      },
+      {
+        kind: "assign",
+        name: "p",
+        expr: {
+          kind: "new",
+          className: "Pt",
+          args: [{ kind: "num", lit: "2" }],
+        },
+      },
+    ]);
+  });
+
+  test("a method body binds a local at its enclosing class", () => {
+    const { emission, classified } = emit(
+      `export class A {
+  readonly x: number;
+  constructor(x: number) {
+    this.x = x;
+  }
+  /** @ensures{p} forall (a: int ∈ [0, 10)) { 0 <= new A(a).m(new A(a)) } */
+  m(b: A): number {
+    const other: A = b;
+    return other.x;
+  }
+}
+`,
+    );
+    expect(classified).toEqual([]);
+    expectValidEmission(emission);
+  });
+
+  test("an initializer that is not an instance of the class refuses at the slot", () => {
+    const { classified } = emit(
+      `${PT}/** @ensures{p} forall (n: int ∈ [0, 10)) { 0 <= f(n) } */\n` +
+        `export function f(n: number): number {\n` +
+        `  const p: Pt = n;\n  return 0;\n}\n`,
+    );
+    expect(classified[0]!.reason).toContain(
+      "identifier 'n' is a number, not an instance of 'Pt'",
+    );
+  });
+
+  test("a local at the class under construction refuses in its constructor", () => {
+    const { classified } = emit(
+      `export class Node {
+  readonly x: number;
+  constructor(x: number) {
+    const me: Node = new Node(x);
+    this.x = x;
+  }
+  /** @ensures{p} forall (a: int ∈ [0, 10)) { 0 <= a } */
+  get v(): number {
+    return this.x;
+  }
+}
+`,
+    );
+    expect(classified[0]!.szs).toBe("Inappropriate");
+    expect(classified[0]!.reason).toContain("'VariableStatement' at 4:5");
+  });
+
+  test("a local at a later-declared class keeps the statement refusal", () => {
+    const { classified } = emit(
+      `/** @ensures{p} forall (n: int ∈ [0, 10)) { 0 <= f(n) } */\n` +
+        `export function f(n: number): number {\n` +
+        `  const p: Pt = new Pt(n);\n  return 0;\n}\n${PT}`,
+    );
+    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
+      [
+        "Inappropriate",
+        "'f' could not be modeled: unmapped TypeScript construct 'VariableStatement' at 3:3",
+      ],
+    ]);
+  });
+
+  test("a local at a degraded class travels that class's reason", () => {
+    const { classified } = emit(
+      `export abstract class Bad {}\n` +
+        `/** @ensures{p} forall (n: int ∈ [0, 10)) { 0 <= f(n) } */\n` +
+        `export function f(n: number): number {\n` +
+        `  const b: Bad = n;\n  return 0;\n}\n`,
+    );
+    expect(classified[0]!.reason).toMatch(/'Bad' could not be modeled/);
   });
 });
 

@@ -844,6 +844,29 @@
       "axioms": []
     }
   ],
+  "engines/thales/tests/conformance/theorem/class-local.ts": [
+    {
+      "function": "viaLocal",
+      "property": "copies",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_16069670729986704880",
+      "axioms": []
+    },
+    {
+      "function": "held",
+      "property": "doubles",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_16480558824634636674",
+      "axioms": []
+    },
+    {
+      "function": "rebound",
+      "property": "rebinds",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_7720581166775413761",
+      "axioms": []
+    }
+  ],
   "engines/thales/tests/conformance/inappropriate/ctor-default-this.ts": [
     {
       "function": "Q#z",

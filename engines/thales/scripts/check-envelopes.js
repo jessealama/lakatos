@@ -121,6 +121,7 @@ const CLASS_FIXTURES = [
   `${CONFORMANCE}/theorem/fn-default-instance.ts`,
   `${CONFORMANCE}/theorem/ctor-default-instance.ts`,
   `${CONFORMANCE}/theorem/method-default-instance.ts`,
+  `${CONFORMANCE}/theorem/class-local.ts`,
   `${CONFORMANCE}/inappropriate/ctor-default-this.ts`,
   `${CONFORMANCE}/theorem/method-default-omitted.ts`,
   `${CONFORMANCE}/theorem/method-default-this.ts`,
