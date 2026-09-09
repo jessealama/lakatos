@@ -121,12 +121,12 @@ grind too, so it can open them without a simp pass first. -/
     ballIco lo hi p ↔ ∀ x : Int, lo ≤ x → x < hi → p x :=
   Iff.rfl
 
-/-! The four monotonicity facts, restated on `floatInf` so their bound
-hypotheses match the strict infinity bounds a finite `JsNumber` carries
-(`-floatInf < x`, `x < floatInf`), and given grind patterns keyed on the
-operation terms: whenever both sides of a comparison goal apply the same
-operation, the fact instantiates and the implication closes by forward
-reasoning. -/
+/-! The four monotonicity facts and the negation facts they lean on,
+restated on `floatInf` so their bound hypotheses match the strict
+infinity bounds a finite `JsNumber` carries (`-floatInf < x`,
+`x < floatInf`), and given grind patterns keyed on the operation terms:
+whenever both sides of a comparison goal apply the same operation, the
+fact instantiates and the implication closes by forward reasoning. -/
 
 /-- Multiplying both sides by a positive finite factor. -/
 theorem float_le_mul_of_le {x y c : Float} (h : Float.le x y = true)

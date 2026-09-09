@@ -24,15 +24,16 @@ example (a b : Float)
 
 -- The bounds a class binder actually arrives with: refuted infinity tests,
 -- which leave NaN open until the ordering guard rules it out.
+set_option linter.unusedVariables.analyzeTactics true in
 example (a b : Float)
     (h1 : Float.beq a (-floatInf) = false) (h2 : Float.beq a floatInf = false)
     (h5 : Float.le a b = true) :
     Float.le 0 (b + -a) = true := by
   grind
 
--- The isFinite-guarded spelling, source subtraction intact.
-example (a b : Float) (h1 : Float.isFinite a = true) (h2 : Float.isFinite b = true)
-    (hab : Float.le a b = true) :
+-- The isFinite-guarded spelling, source subtraction intact: the minuend
+-- needs no guard of its own.
+example (a b : Float) (h1 : Float.isFinite a = true) (hab : Float.le a b = true) :
     Float.le 0 (b - a) = true := by
   grind
 
