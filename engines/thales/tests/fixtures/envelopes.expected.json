@@ -408,6 +408,65 @@
       "axioms": []
     }
   ],
+  "engines/thales/tests/conformance/theorem/boolean-local.ts": [
+    {
+      "function": "clip",
+      "property": "named",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_2646615123927305584",
+      "axioms": []
+    },
+    {
+      "function": "flagged",
+      "property": "flag",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_14985616730343954364",
+      "axioms": []
+    },
+    {
+      "function": "gated",
+      "property": "annotated",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_5768392361740938523",
+      "axioms": []
+    },
+    {
+      "function": "strictly",
+      "property": "strict",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_10232556900977345181",
+      "axioms": []
+    },
+    {
+      "function": "sameValued",
+      "property": "sameValue",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_11532376255049967282",
+      "axioms": []
+    },
+    {
+      "function": "combined",
+      "property": "logical",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_2035651931075884090",
+      "axioms": []
+    },
+    {
+      "function": "slotted",
+      "property": "slot",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_14943145407097068635",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/inappropriate/truthiness-local.ts": [
+    {
+      "function": "f",
+      "property": "p",
+      "szs": "Inappropriate",
+      "reason": "'f' could not be modeled: unmapped TypeScript construct 'Identifier' at 7:7"
+    }
+  ],
   "engines/thales/tests/conformance/theorem/const-chain.ts": [
     {
       "function": "affine",
@@ -1265,6 +1324,27 @@
       "szs": "Theorem",
       "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_4672349895282863036",
       "axioms": []
+    },
+    {
+      "function": "diagonal",
+      "property": "nonNegative",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_15743218023071547581",
+      "axioms": []
+    },
+    {
+      "function": "shrink",
+      "property": "nonNegative",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_15608764981390155211",
+      "axioms": []
+    },
+    {
+      "function": "nudge",
+      "property": "nonNegative",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_5711952237535301684",
+      "axioms": []
     }
   ],
   "engines/thales/tests/conformance/theorem/module-const-scale.ts": [
@@ -1307,6 +1387,31 @@
       "property": "nonNegative",
       "szs": "Theorem",
       "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_16982873862515653733",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/initializers.ts": [
+    {
+      "function": "diagonal",
+      "property": "nonNegative",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_10904502840955390271",
+      "axioms": []
+    },
+    {
+      "function": "shrink",
+      "property": "nonNegative",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_5507470128438272180",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/const-epsilon-read.ts": [
+    {
+      "function": "nudge",
+      "property": "nonNegative",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_8856698680001601505",
       "axioms": []
     }
   ],

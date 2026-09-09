@@ -68,6 +68,8 @@ const EXPRESSION_FIXTURES = [
 const STATEMENT_FIXTURES = [
   "engines/thales/tests/fixtures/statements.ts",
   `${CONFORMANCE}/theorem/branch-joined-let.ts`,
+  `${CONFORMANCE}/theorem/boolean-local.ts`,
+  `${CONFORMANCE}/inappropriate/truthiness-local.ts`,
   `${CONFORMANCE}/theorem/const-chain.ts`,
   `${CONFORMANCE}/theorem/let-binding.ts`,
   `${CONFORMANCE}/countersatisfiable/branch-throw.ts`,
