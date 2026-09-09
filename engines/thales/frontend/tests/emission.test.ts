@@ -4181,6 +4181,254 @@ describe("class declarations (#129)", () => {
   });
 });
 
+describe("builtin member reads model as the library's constants", () => {
+  const FILE = "engines/thales/tests/fixtures/tracer.ts"; // any resolvable path; no imports are followed
+
+  test("a returned Number.EPSILON product walks to a builtin read", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 10)) { tiny(n) >= 0 } */",
+      "export function tiny(x: number): number {",
+      "  return x * Number.EPSILON;",
+      "}",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, FILE);
+    expect(classified).toEqual([]);
+    expectValidEmission(emission);
+    expect(emission.declarations).toEqual([
+      expect.objectContaining({
+        name: "tiny",
+        body: [
+          {
+            kind: "return",
+            expr: {
+              kind: "binop",
+              op: "*",
+              left: { kind: "id", name: "x" },
+              right: {
+                kind: "builtin-read",
+                object: "Number",
+                member: "EPSILON",
+              },
+            },
+          },
+        ],
+      }),
+    ]);
+  });
+
+  test.each([
+    ["Number", "EPSILON"],
+    ["Number", "MAX_SAFE_INTEGER"],
+    ["Number", "MIN_SAFE_INTEGER"],
+    ["Number", "MAX_VALUE"],
+    ["Number", "MIN_VALUE"],
+    ["Number", "POSITIVE_INFINITY"],
+    ["Number", "NEGATIVE_INFINITY"],
+    ["Number", "NaN"],
+    ["Math", "E"],
+    ["Math", "LN10"],
+    ["Math", "LN2"],
+    ["Math", "LOG10E"],
+    ["Math", "LOG2E"],
+    ["Math", "PI"],
+    ["Math", "SQRT1_2"],
+    ["Math", "SQRT2"],
+  ])("%s.%s is a whitelisted read", (object, member) => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 3)) { k(n) >= 0 } */",
+      "export function k(x: number): number {",
+      `  return ${object}.${member};`,
+      "}",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, FILE);
+    expect(classified).toEqual([]);
+    expectValidEmission(emission);
+    expect(fnBody(emission.declarations[0]!)).toEqual([
+      { kind: "return", expr: { kind: "builtin-read", object, member } },
+    ]);
+  });
+
+  test("a formula atom reads Number.MAX_SAFE_INTEGER", () => {
+    const src = [
+      "/** @ensures{bounded} forall (n: int ∈ [0, 10)) { keep(n) <= Number.MAX_SAFE_INTEGER } */",
+      "export function keep(x: number): number {",
+      "  return x;",
+      "}",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, FILE);
+    expect(classified).toEqual([]);
+    expectValidEmission(emission);
+    const payload = emission.obligations[0]!.payload;
+    assert(payload.kind === "structured");
+    expect(payload.conclusion).toEqual({
+      kind: "istrue",
+      expr: {
+        kind: "binop",
+        op: "<=",
+        left: {
+          kind: "call",
+          callee: "keep",
+          args: [{ kind: "id", name: "n" }],
+        },
+        right: {
+          kind: "builtin-read",
+          object: "Number",
+          member: "MAX_SAFE_INTEGER",
+        },
+      },
+    });
+  });
+
+  test("a negated read is unary minus over the read", () => {
+    const { emission } = emitModule(fnWith("-Number.EPSILON"), FILE);
+    expect(fnBody(emission.declarations[0]!)).toEqual([
+      {
+        kind: "return",
+        expr: {
+          kind: "unop",
+          op: "-",
+          operand: {
+            kind: "builtin-read",
+            object: "Number",
+            member: "EPSILON",
+          },
+        },
+      },
+    ]);
+  });
+
+  test("a read at a boolean position is the engine's type error", () => {
+    expect(
+      classifications(formulaWith("forall (x: int ∈ [0, 5)) { Math.PI }"))
+        .classified,
+    ).toEqual([
+      [
+        "Error",
+        expect.stringContaining(
+          "a read of 'Math.PI' yields a number, not a boolean",
+        ),
+      ],
+    ]);
+  });
+
+  test("a parameter named Math shadows the constants in its own body", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 4)) { k(n) >= 0 } */",
+      "export function k(Math: number): number {",
+      "  return Math.PI;",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining(
+          "unmapped TypeScript construct 'PropertyAccessExpression'",
+        ),
+      }),
+    ]);
+  });
+
+  test("a local named Number shadows the constants from its declaration on", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 4)) { k(n) >= 0 } */",
+      "export function k(x: number): number {",
+      "  const Number = x;",
+      "  return Number.EPSILON;",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining(
+          "unmapped TypeScript construct 'PropertyAccessExpression'",
+        ),
+      }),
+    ]);
+  });
+
+  test("a module binding of the namespace spelling shadows the constants", () => {
+    const src = [
+      "const Math = { PI: 3 };",
+      "/** @ensures{p} forall (n: int ∈ [0, 4)) { k(n) >= 0 } */",
+      "export function k(x: number): number {",
+      "  return x * Math.PI;",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining(
+          "unmapped TypeScript construct 'PropertyAccessExpression'",
+        ),
+      }),
+    ]);
+  });
+
+  test("an unresolved import of the namespace spelling shadows the constants", () => {
+    const src = [
+      'import { Number } from "./nowhere.js";',
+      "/** @ensures{p} forall (n: int ∈ [0, 4)) { k(n) >= 0 } */",
+      "export function k(x: number): number {",
+      "  return x * Number.EPSILON;",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining(
+          "unmapped TypeScript construct 'PropertyAccessExpression'",
+        ),
+      }),
+    ]);
+  });
+
+  test("a shadowed namespace in a formula atom is refused too", () => {
+    const src = [
+      "const Number = { EPSILON: 1 };",
+      "/** @ensures{p} forall (n: int ∈ [0, 4)) { k(n) <= Number.EPSILON } */",
+      "export function k(x: number): number {",
+      "  return x;",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: expect.stringContaining(
+          "unmapped TypeScript construct 'PropertyAccessExpression'",
+        ),
+      }),
+    ]);
+  });
+
+  test("Object.is against Number.NaN stays on the number path", () => {
+    const { emission, classified } = emitModule(
+      fnWith("Object.is(x, Number.NaN) ? 1 : 0"),
+      FILE,
+    );
+    expect(classified).toEqual([]);
+    expect(fnBody(emission.declarations[0]!)).toEqual([
+      {
+        kind: "return",
+        expr: {
+          kind: "cond",
+          cond: {
+            kind: "same-value",
+            left: { kind: "id", name: "x" },
+            right: { kind: "builtin-read", object: "Number", member: "NaN" },
+          },
+          then: { kind: "num", lit: "1" },
+          else: { kind: "num", lit: "0" },
+        },
+      },
+    ]);
+  });
+});
+
 describe("new and member access in atoms (#129)", () => {
   test("the Box roundTrip obligation structures with new and getter access", () => {
     const { emission, classified } = emitModule(BOX, "t.ts");
