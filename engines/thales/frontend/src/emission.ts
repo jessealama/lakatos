@@ -1457,9 +1457,9 @@ function walkTyped(
       const ref = recv.ty.instance;
       const shape = shapeOfRef(scope, ref);
       const module = ref.module !== "" ? { module: ref.module } : {};
-      // On `this` only a field dispatches: a getter body walks before its
-      // siblings have rendered, so a getter read on `this` has no target.
-      if (recv.expr.kind !== "self" && shape.getters.has(maccess.name)) {
+      // The shape's getter set is live during the class's own walk, so a
+      // forward or self-recursive getter read on `this` falls through.
+      if (shape.getters.has(maccess.name)) {
         /* v8 ignore start -- `booleanShaped` admits no member read, so no
            boolean position reaches this. */
         if (expected !== "num") {
@@ -1480,7 +1480,8 @@ function walkTyped(
       if (fty === undefined) {
         throw new ModelError(
           recv.expr.kind === "self"
-            ? `'this.${maccess.name}' does not name a field of '${ref.name}'`
+            ? `'this.${maccess.name}' does not name a field or a modeled ` +
+                `getter of '${ref.name}'`
             : `'${displayName(ref)}' has no member '${maccess.name}' in the model`,
         );
       }
@@ -3143,10 +3144,13 @@ function walkClass(
     shapeCtorParams.push(p.slot);
   }
 
+  // Both registries fill as members render, so a member body sees only
+  // the siblings ahead of it: a forward reference degrades the reader.
+  const modeledGetters = new Set<string>();
   const methodSigs = new Map<string, FnSig>();
   const shape: ClassShape = {
     fields,
-    getters: getterNames,
+    getters: modeledGetters,
     ctorParams: shapeCtorParams,
     ctorParamNames: ctorParams.map((p) => p.name),
     ctorRequired:
@@ -3195,6 +3199,7 @@ function walkClass(
           sf,
         ),
       });
+      modeledGetters.add(spelling);
     } catch (err) {
       /* v8 ignore next -- the walk throws nothing else */
       if (!(err instanceof ModelError)) throw err;
@@ -3202,13 +3207,7 @@ function walkClass(
     }
   }
   // Getters render ahead of methods, so a getter body sees an empty
-  // method map: a getter calling a method degrades alone. A method reads
-  // members off an instance of its own class, so its receiver shape
-  // carries the getters that actually modeled, not the declared ones.
-  const methodSelf = {
-    ref: self.ref,
-    shape: { ...shape, getters: new Set(getters.map((g) => g.name)) },
-  };
+  // method map: a getter calling a method degrades alone.
   const methodReg: ParamReg = { ...ctorReg, unions: true, self: self.ref };
   const methods: EmitMethod[] = [];
   for (const m of methodDecls) {
@@ -3233,7 +3232,7 @@ function walkClass(
     const scope: WalkScope = {
       ...base,
       vars: new Map(params.map((p) => [p.name, p.ty])),
-      self: methodSelf,
+      self,
       selfFailed: memberFailed,
     };
     const locals: Locals = new Map(
@@ -3286,11 +3285,7 @@ function walkClass(
       getters,
       methods,
     },
-    shape: {
-      ...shape,
-      getters: new Set(getters.map((g) => g.name)),
-      methods: methodSigs,
-    },
+    shape,
     memberFailed,
   };
 }
