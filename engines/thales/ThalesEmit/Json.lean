@@ -24,6 +24,10 @@ inductive JsExpr where
   /-- A whitelisted standard-library member call, by the object and member
   the source names; the renderer owns what each pair means. -/
   | builtin (object member : String) (args : Array JsExpr)
+  /-- A whitelisted standard-library member read — one of the Number
+  constants the standard fixes — by the object and member the source
+  names; the renderer owns what each pair means. -/
+  | builtinRead (object member : String)
   | call (callee : String) (module : Option String) (args : Array JsExpr)
   | newObj (className : String) (module : Option String) (args : Array JsExpr)
   | getterRead (className : String) (module : Option String) (name : String)
@@ -312,6 +316,8 @@ partial def decodeExpr (j : Json) : Except String JsExpr := do
   | "builtin" =>
     pure (.builtin (← getStr j "object") (← getStr j "member")
       (← (← getArr j "args").mapM decodeExpr))
+  | "builtin-read" =>
+    pure (.builtinRead (← getStr j "object") (← getStr j "member"))
   | "call" =>
     pure (.call (← getStr j "callee") (← getStrOpt j "module")
       (← (← getArr j "args").mapM decodeExpr))

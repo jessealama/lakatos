@@ -47,6 +47,9 @@ export type EmitExpr =
   | { kind: "same-value"; left: EmitExpr; right: EmitExpr }
   | { kind: "cond"; cond: EmitExpr; then: EmitExpr; else: EmitExpr }
   | { kind: "builtin"; object: string; member: string; args: EmitExpr[] }
+  /** A whitelisted standard-library member read: one of the Number
+   * constants ECMA-262 fixes. A value, never a callee, so no arguments. */
+  | { kind: "builtin-read"; object: string; member: string }
   | { kind: "call"; callee: string; module?: string; args: EmitExpr[] }
   | { kind: "const-read"; name: string; module?: string }
   | { kind: "new"; className: string; module?: string; args: EmitExpr[] }

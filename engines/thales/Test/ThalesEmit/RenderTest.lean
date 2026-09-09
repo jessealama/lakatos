@@ -126,6 +126,20 @@ def b1 (object member x : String) : JsExpr := .builtin object member #[.id x]
 #guard rendersAs
     (v (.builtin "Math" "min" #[.builtin "Math" "max" #[.id "x", .id "lo"], .id "hi"]))
   `(Number.FloatOps.tsMin (Number.FloatOps.tsMax x lo) hi)
+-- Builtin member reads render as the library's constants under the
+-- source spelling; a call member or an unknown pair is a render failure.
+#guard rendersAs (v (.builtinRead "Number" "EPSILON")) `(Number.EPSILON)
+#guard rendersAs (v (.builtinRead "Number" "MAX_SAFE_INTEGER"))
+  `(Number.MAX_SAFE_INTEGER)
+#guard rendersAs (v (.builtinRead "Number" "NaN")) `(Number.NaN)
+#guard rendersAs (v (.builtinRead "Math" "PI")) `(Math.PI)
+#guard rendersAs (v (.unop "-" (.builtinRead "Number" "EPSILON"))) `(-Number.EPSILON)
+#guard rendersLifted (v (.binop "*" (.id "x") (.builtinRead "Number" "EPSILON"))) false
+  `(x * Number.EPSILON)
+#guard renderFails (v (.builtinRead "Math" "TAU"))
+#guard renderFails (v (.builtinRead "Math" "sqrt"))
+-- `Math` joins the reserved vocabulary, like `Number`.
+#guard rendersAs (v (.id "Math")) `(Math')
 
 -- Calls lift, under the model namespace, a dependency's one component
 -- deeper; a binder named after the callee cannot capture it.
