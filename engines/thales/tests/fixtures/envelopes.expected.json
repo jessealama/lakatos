@@ -1684,6 +1684,59 @@
       "axioms": []
     }
   ],
+  "engines/thales/tests/conformance/theorem/unbounded-round-sign.ts": [
+    {
+      "function": "unit",
+      "property": "atMostOne",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_11251349853416469454",
+      "axioms": []
+    },
+    {
+      "function": "unit",
+      "property": "atLeastMinusOne",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_12244072041468523135",
+      "axioms": []
+    },
+    {
+      "function": "nearest",
+      "property": "atMostCeil",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_9438029143769278525",
+      "axioms": []
+    },
+    {
+      "function": "nearest",
+      "property": "atLeastFloor",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_6999063717887102660",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/clamp-identity.ts": [
+    {
+      "function": "capAt5",
+      "property": "identityBelow",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_10998678116141444883",
+      "axioms": []
+    },
+    {
+      "function": "floorAt0",
+      "property": "identityAbove",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_10319502167616355491",
+      "axioms": []
+    },
+    {
+      "function": "clamp",
+      "property": "identityOnRange",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_5486929042650794249",
+      "axioms": []
+    }
+  ],
   "engines/thales/tests/conformance/inappropriate/math-log.ts": [
     {
       "function": "integerLog",
