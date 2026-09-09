@@ -107,6 +107,7 @@ one outcome a checker must not have.
   satisfies no interval — and clips the infinities to the interval: an
   infinite endpoint written open (`(-∞,` or `, ∞)`) excludes the infinity
   of that sign, while one written closed (`[-∞,` or `, ∞]`) includes it.
+  `boolean` denotes the two values `false` and `true`.
   Because a binder's value is passed to a `number`-typed parameter, an
   `int`/`nat` binder's values must be exactly representable as binary64;
   values outside `±(2^53 − 1)` are not, which is why an interval reaching
