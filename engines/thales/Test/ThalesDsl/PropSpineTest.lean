@@ -13,6 +13,7 @@ def spineKinds (t : TSyntax `term) : List String :=
     | .ranged n .. => s!"ranged {n}"
     | .unbounded n => s!"unbounded {n}"
     | .opaque n => s!"opaque {n}"
+    | .bool n => s!"bool {n}"
 
 -- Built unhygienically, the way the parsed artifact text reaches the
 -- command: a macro scope on a binder name is a test artifact, not a shape
@@ -27,7 +28,7 @@ def spineKinds (t : TSyntax `term) : List String :=
   unless kinds == ["unbounded «p.x»", "unbounded «p.y»", "opaque p"] do
     throwError "the class-binder spine is {kinds}"
   -- Never enumerable: the domain is a constructor's image, not a range.
-  unless (propSpine t).ranges?.isNone do
+  unless (propSpine t).domains?.isNone do
     throwError "an opaque binder was reported bounded"
 
 #eval show CoreM Unit from do
@@ -94,16 +95,31 @@ def spineKinds (t : TSyntax `term) : List String :=
     throwError "a bound under a ranged binder was read as a guard"
 
 #eval show CoreM Unit from do
-  -- `ranges?` is the one reading the elaboration takes: the endpoints the
-  -- search enumerates, present exactly when every binder has them.
+  -- `domains?` is the one reading the elaboration takes: the domains the
+  -- search enumerates, present exactly when every binder has one.
   let t := Unhygienic.run `(ballIco 0 5 fun x =>
     ballIco (-2) 3 fun y => ((pure true : JsM Bool) = pure true))
-  unless (propSpine t).ranges? == some [("x", 0, 5), ("y", -2, 3)] do
-    throwError "the all-ranged spine reads {repr (propSpine t).ranges?}"
+  unless (propSpine t).domains? == some [("x", .ico 0 5), ("y", .ico (-2) 3)] do
+    throwError "the all-ranged spine reads {repr (propSpine t).domains?}"
   let u := Unhygienic.run `(ballIco 0 5 fun x =>
     ∀ (n : Int), ((pure true : JsM Bool) = pure true))
-  unless (propSpine u).ranges?.isNone do
-    throwError "a spine with an unbounded binder reported ranges"
+  unless (propSpine u).domains?.isNone do
+    throwError "a spine with an unbounded binder reported domains"
   let v := Unhygienic.run `(((pure true : JsM Bool) = pure true))
-  unless (propSpine v).ranges? == some [] do
-    throwError "a closed leaf is bounded with no ranges, not {repr (propSpine v).ranges?}"
+  unless (propSpine v).domains? == some [] do
+    throwError "a closed leaf is bounded with no domains, not {repr (propSpine v).domains?}"
+
+#eval show CoreM Unit from do
+  -- A boolean head is enumerable: two values, no bounds to read past.
+  let t := Unhygienic.run `(ballIco 0 3 fun n => ∀ (b : Bool),
+    ((pure true : JsM Bool) = pure true))
+  unless spineKinds t == ["ranged n", "bool b"] do
+    throwError "the boolean head is {spineKinds t}"
+  unless (propSpine t).domains? == some [("n", .ico 0 3), ("b", .bool)] do
+    throwError "the mixed spine reads {repr (propSpine t).domains?}"
+  let u := Unhygienic.run `(∀ (b : Bool), ∀ (x : Int),
+    ((pure true : JsM Bool) = pure true))
+  unless spineKinds u == ["bool b", "unbounded x"] do
+    throwError "the boolean-then-int spine is {spineKinds u}"
+  unless (propSpine u).domains?.isNone do
+    throwError "a spine with an unbounded binder reported domains"

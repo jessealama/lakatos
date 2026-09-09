@@ -104,6 +104,22 @@ describe("the lean pass, through runEmission", () => {
     });
   });
 
+  test("a boolean witness value rides through", () => {
+    const line =
+      'thales-verdict:{"identity":["t.ts","f","p"],"szs":"CounterSatisfiable",' +
+      '"reason":"r","counterexample":{"n":1,"b":false}}\n';
+    const res = runEmission(
+      jobsOf(["a.lean"]),
+      "/engine",
+      fakeSpawn([...beforeLean(1), { status: 0, stdout: line }]).spawn,
+    );
+    expect(res).toMatchObject({
+      kind: "completed",
+      verdicts: [{ counterexample: { n: 1, b: false } }],
+      failures: [],
+    });
+  });
+
   test("lake absent from PATH is no-project with install guidance", () => {
     const enoent = Object.assign(new Error("spawn lake ENOENT"), {
       code: "ENOENT",
@@ -228,7 +244,6 @@ describe("the lean pass, through runEmission", () => {
       'thales-verdict:{"identity":[1,2,3],"szs":"Theorem","reason":"r"}',
       'thales-verdict:{"identity":["f.ts","f","p"],"szs":"Theorem"}',
       'thales-verdict:{"identity":["f.ts","f","p"],"szs":"CounterSatisfiable","reason":"r","counterexample":[]}',
-      'thales-verdict:{"identity":["f.ts","f","p"],"szs":"CounterSatisfiable","reason":"r","counterexample":{"x":true}}',
       'thales-verdict:{"identity":["f.ts","f","p"],"szs":"CounterSatisfiable","reason":"r","counterexample":{"x":null}}',
       // A status off the prove contract — invented, or refute's alone.
       'thales-verdict:{"identity":["f.ts","f","p"],"szs":"Proven","reason":"r"}',

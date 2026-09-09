@@ -100,6 +100,24 @@ describe("envelope schema", () => {
     ).not.toThrow();
   });
 
+  it("accepts a boolean witness value", () => {
+    expect(() =>
+      expectValidEnvelope({
+        ...META,
+        annotations: [
+          {
+            file: "f.ts",
+            function: "f",
+            property: "p",
+            szs: "CounterSatisfiable",
+            kind: "falsified",
+            counterexample: { b: true },
+          },
+        ],
+      }),
+    ).not.toThrow();
+  });
+
   it("rejects a CounterSatisfiable annotation without a counterexample", () => {
     expect(() =>
       expectValidEnvelope({

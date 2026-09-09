@@ -100,6 +100,7 @@ const BINDER_FIXTURES = [
   `${CONFORMANCE}/theorem/or-guard.ts`,
   `${CONFORMANCE}/countersatisfiable/or-guard-witness.ts`,
   `${CONFORMANCE}/theorem/connective-conclusions.ts`,
+  `${CONFORMANCE}/countersatisfiable/boolean-witness.ts`,
 ];
 
 /** The class slice (#129): structures, single-assignment constructors,
@@ -157,6 +158,8 @@ const PARAM_FIXTURES = [
   "engines/thales/tests/fixtures/class-params.ts",
   `${CONFORMANCE}/theorem/class-param-gap.ts`,
   `${CONFORMANCE}/inappropriate/class-param-interface.ts`,
+  `${CONFORMANCE}/theorem/boolean-param.ts`,
+  `${CONFORMANCE}/inappropriate/boolean-field.ts`,
 ];
 
 /** The degradation slice (#151): unsupported ranges and the names

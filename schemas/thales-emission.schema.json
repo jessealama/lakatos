@@ -65,9 +65,10 @@
       }
     },
     "paramType": {
-      "description": "A parameter's slot type: a TypeScript number, a keyword union, an instance of a modeled class, or — for a defaulted class parameter — an option of one.",
+      "description": "A parameter's slot type: a TypeScript number, a boolean, a keyword union, an instance of a modeled class, or — for a defaulted class parameter — an option of one.",
       "oneOf": [
         { "const": "number" },
+        { "const": "boolean" },
         { "$ref": "#/definitions/unionTags" },
         { "$ref": "#/definitions/classRef" },
         {
@@ -365,7 +366,7 @@
           "required": ["kind", "tag", "expr"],
           "properties": {
             "kind": { "const": "project" },
-            "tag": { "const": "number" },
+            "tag": { "enum": ["number", "boolean"] },
             "expr": { "$ref": "#/definitions/expr" }
           }
         },
@@ -456,6 +457,10 @@
         "body": {
           "type": "array",
           "items": { "$ref": "#/definitions/statement" }
+        },
+        "returns": {
+          "const": "boolean",
+          "description": "Present exactly for a boolean-returning declaration; absent means number."
         }
       }
     },
@@ -511,6 +516,10 @@
               "body": {
                 "type": "array",
                 "items": { "$ref": "#/definitions/statement" }
+              },
+              "returns": {
+                "const": "boolean",
+                "description": "Present exactly for a boolean-returning declaration; absent means number."
               }
             }
           }
@@ -531,6 +540,10 @@
               "body": {
                 "type": "array",
                 "items": { "$ref": "#/definitions/statement" }
+              },
+              "returns": {
+                "const": "boolean",
+                "description": "Present exactly for a boolean-returning declaration; absent means number."
               }
             }
           }
@@ -672,7 +685,7 @@
                 "kind": { "const": "structured" },
                 "binders": {
                   "type": "array",
-                  "description": "Nested binders, outermost first: a half-open [lo, hi) Int range with decimal-string endpoints, the whole int line, the naturals, or a number binder over the doubles its bounds admit.",
+                  "description": "Nested binders, outermost first: a half-open [lo, hi) Int range with decimal-string endpoints, the whole int line, the naturals, the two booleans, or a number binder over the doubles its bounds admit.",
                   "items": {
                     "oneOf": [
                       {
@@ -692,7 +705,7 @@
                         "required": ["name", "kind"],
                         "properties": {
                           "name": { "$ref": "#/definitions/identifier" },
-                          "kind": { "enum": ["int", "nat"] }
+                          "kind": { "enum": ["int", "nat", "boolean"] }
                         }
                       },
                       {

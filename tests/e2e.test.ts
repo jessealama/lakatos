@@ -57,6 +57,10 @@ describe.runIf(enabled)("lakatos prove end-to-end (tracer)", () => {
     );
     fs.copyFileSync(path.join(cs, "zero-edge.ts"), path.join(dir, "unique.ts"));
     fs.copyFileSync(path.join(cs, "commutes.ts"), path.join(dir, "comm.ts"));
+    fs.copyFileSync(
+      path.join(cs, "boolean-witness.ts"),
+      path.join(dir, "boolwit.ts"),
+    );
     // The symbolic rungs' flagship: guarded monotonicity of the linear
     // conversion, chained from the four Float monotonicity facts.
     fs.copyFileSync(
@@ -257,6 +261,24 @@ describe.runIf(enabled)("lakatos prove end-to-end (tracer)", () => {
         e.annotations.map((a) => [a.file, a.function, a.property]).sort();
       expect(ids(proveEnv)).toEqual([["parity.ts", "add", "commutes"]]);
       expect(ids(proveEnv)).toEqual(ids(refuteEnv));
+    },
+  );
+
+  it(
+    "a boolean binder's witness is the same assignment under both engines",
+    { timeout: proveTimeoutMs(1) },
+    async () => {
+      const proveEnv = await runForEnvelope(["prove", "boolwit.ts"], 1);
+      const refuteEnv = await runForEnvelope(["refute", "boolwit.ts"], 1);
+      const witnesses = (e: Envelope) =>
+        e.annotations
+          .map((a) => [a.property, a.counterexample] as const)
+          .sort(([p], [q]) => p.localeCompare(q));
+      expect(witnesses(proveEnv)).toEqual([
+        ["alwaysPicks", { n: 1, b: false }],
+        ["onlyOff", { b: true }],
+      ]);
+      expect(witnesses(refuteEnv)).toEqual(witnesses(proveEnv));
     },
   );
 

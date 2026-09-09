@@ -111,6 +111,7 @@ one outcome a checker must not have.
   `int`/`nat` binder's values must be exactly representable as binary64;
   values outside `±(2^53 − 1)` are not, which is why an interval reaching
   beyond that range is refused rather than narrowed.
+  `boolean` denotes the two values `false` and `true`.
 
 ### Class-valued binders
 

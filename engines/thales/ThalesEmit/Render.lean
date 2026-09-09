@@ -318,7 +318,11 @@ partial def valueTerm (coerced : String → Bool) : JsExpr → RenderM Rendered
     | .number =>
       let ⟨t, _⟩ ← valueTerm coerced e
       return ⟨← `((← JsVal.toNumber $t)), true⟩
-    | _ => throw "a projection outside 'number' is not in the emission slice yet"
+    | .boolean =>
+      let ⟨t, _⟩ ← valueTerm coerced e
+      return ⟨← `((← JsVal.toBoolean $t)), true⟩
+    | _ =>
+      throw "a projection outside 'number'/'boolean' is not in the emission slice yet"
   | .typeofTest e r => do
     let ⟨t, lifted⟩ ← valueTerm coerced e
     return ⟨← `(JsVal.typeof $t == $(← typeofResultTerm r)), lifted⟩
@@ -390,6 +394,11 @@ def bindingTyTerm : BindingTy → RenderM (TSyntax `term)
   | .bool => `(Bool)
   | .union _ => `(JsVal)
   | .cls n m => do let c ← classIdent m n; `($c)
+
+/-- The monadic result type a callable is ascribed. -/
+def returnTyTerm : ReturnTy → RenderM (TSyntax `term)
+  | .number => `(JsM JsNumber)
+  | .bool => `(JsM Bool)
 
 mutual
 
@@ -481,6 +490,7 @@ def paramBinders (params : Array Param) :
   groups.mapM fun (ty, xs) => do
     let t : TSyntax `term ← match ty with
       | .number => `(JsNumber)
+      | .bool => `(Bool)
       -- Every union spelling is the one tagged domain: the tags say what
       -- may be injected, never what the binder's type is.
       | .union _ => `(JsVal)
@@ -513,9 +523,10 @@ def fnCommand (f : EmitFn) : RenderM (TSyntax `command) := do
   let rebound ← reboundParams f.params f.body
   let body ← f.body.mapM (stmtDoElem none)
   let elems := rebound ++ body
+  let ret ← returnTyTerm f.returns
   -- Dual-tagged: the js_norm closers and the grind rung both unfold a
   -- model by its equations.
-  `(@[js_norm, grind] def $name $binders* : JsM JsNumber := do
+  `(@[js_norm, grind] def $name $binders* : $ret := do
       $[$elems:doElem]*)
 
 /-- A module constant: a pure `JsNumber` def, dual-tagged like the models
@@ -591,12 +602,13 @@ def methodCommand (c : EmitClass) (m : EmitMethod) : RenderM (TSyntax `command) 
   let rebound ← reboundParams m.params m.body
   let body ← m.body.mapM (stmtDoElem none)
   let elems := rebound ++ body
-  `(@[js_norm, grind] def $name ($self : $cls) $binders* : JsM JsNumber := do
+  let ret ← returnTyTerm m.returns
+  `(@[js_norm, grind] def $name ($self : $cls) $binders* : $ret := do
       $[$elems:doElem]*)
 
 /-- A getter is the zero-parameter method shape. -/
 def getterCommand (c : EmitClass) (g : EmitGetter) : RenderM (TSyntax `command) :=
-  methodCommand c { name := g.name, params := #[], body := g.body }
+  methodCommand c { name := g.name, returns := g.returns, params := #[], body := g.body }
 
 /-- A boolean-valued expression as the proposition that it evaluates to
 `pure true` — one shape for both a boolean island conclusion and a guard
@@ -683,6 +695,11 @@ def obligationCommand (e : Emission) (o : Obligation) : RenderM (TSyntax `comman
       | .nat name =>
         let xi ← scopedIdent name
         `(∀ ($xi : Int), 0 ≤ $xi → $acc)
+      | .bool name =>
+        -- One ungrouped ∀ head at Bool: the only spelling propSpine
+        -- recovers.
+        let xi ← scopedIdent name
+        `(∀ ($xi : Bool), $acc)
       | .number name lower upper =>
         -- Never enumerated: the binder is its type plus whichever bounds it
         -- carries as hypotheses, lower outermost.

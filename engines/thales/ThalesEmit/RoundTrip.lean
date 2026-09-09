@@ -30,6 +30,7 @@ def expectedSpine (binders : Array BinderIR) : RenderM (List SpineBinder) := do
     match b with
     | .range _ lo hi => out := out ++ [.ranged name lo hi]
     | .int _ | .nat _ | .number .. => out := out ++ [.unbounded name]
+    | .bool _ => out := out ++ [.bool name]
     | .cls _ _ _ ps => out := out ++ (← ctorSpine b.name ps) ++ [.opaque name]
   return out
 

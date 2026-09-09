@@ -55,6 +55,13 @@ def mismatch (expected : List SpineBinder) (guards : Nat) (t : Unhygienic Term) 
   `(∀ (x : JsNumber), 0 < x → ∀ (y : Int),
       (pure true : JsM Bool) = pure true)) matches some _
 
+#guard spineOf #[.range "n" 0 3, .bool "b"] == [.ranged "n" 0 3, .bool "b"]
+#guard mismatch [.ranged "n" 0 3, .bool "b"] 0
+  `(ballIco 0 3 fun n => ∀ (b : Bool), (pure true : JsM Bool) = pure true) == none
+-- A grouped Bool ∀ is drift like any other.
+#guard (mismatch [.bool "a", .bool "b"] 0
+  `(∀ (a b : Bool), (pure true : JsM Bool) = pure true)) matches some _
+
 -- Drift is named: a grouped ∀ recovers no binders; a parenthesized
 -- endpoint is fine but a parenthesized domain type is not; a guard count
 -- is checked once the binders agree.
