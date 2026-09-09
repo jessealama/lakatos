@@ -438,4 +438,86 @@ theorem tsCeil_ge {x : Float} (hx : x.toModel.unpack ≠ .notANumber) :
   rw [unpack_pack_of_canonical hc] at hmono
   exact le_of_key hc (canonical_unpack _) hx (unpack_pack_ne_nan hshape hnn) hmono
 
+/-! `Math.trunc` is floor on the non-negative side and ceil on the
+non-positive side — not an inequality but an equation, so the floor and
+ceil facts carry over. On a positive-signed input trunc's and floor's
+`bump` are both `false`, so the unpacked results are the same term; the
+zeros and the infinities round to themselves in every direction. -/
+
+/-- On a positive-signed unpacking, toward-zero and toward-negative-infinity agree. -/
+theorem roundIntegral_towardZero_eq_negInf_of_positive (m : Nat) (e : Int) (h : 0 < m) :
+    roundIntegral .binary64 .towardZero (.finite .positive m e h)
+      = roundIntegral .binary64 .towardNegInf (.finite .positive m e h) := by
+  dsimp only [roundIntegral]
+
+/-- On a negative-signed unpacking, toward-zero and toward-positive-infinity agree. -/
+theorem roundIntegral_towardZero_eq_posInf_of_negative (m : Nat) (e : Int) (h : 0 < m) :
+    roundIntegral .binary64 .towardZero (.finite .negative m e h)
+      = roundIntegral .binary64 .towardPosInf (.finite .negative m e h) := by
+  dsimp only [roundIntegral]
+
+theorem tsTrunc_eq_tsFloor_of_nonneg {x : Float} (h : Float.le 0 x = true) :
+    tsTrunc x = tsFloor x := by
+  have h' := h
+  rw [float_le_unpack, show (0 : Float).toModel.unpack = UnpackedFloat.zero .positive from rfl] at h'
+  have hc : Canonical x.toModel.unpack := canonical_unpack _
+  have hk := key_of_le (.zero .positive) hc h'
+  unfold tsTrunc tsFloor
+  congr 2
+  generalize x.toModel.unpack = u at hc hk h' ⊢
+  cases hc with
+  | notANumber => exact absurd rfl (le_ne_nan_right h')
+  | infinity s =>
+    have hs := sign_of_inf_key_nonneg (show (0 : Int) ≤ _ from hk)
+    subst hs
+    rfl
+  | zero s => cases s <;> rfl
+  | subnormal s m hm hmlt =>
+    have hs := sign_of_key_nonneg (show (0 : Int) ≤ _ from hk)
+    subst hs
+    exact roundIntegral_towardZero_eq_negInf_of_positive m _ hm
+  | normal s m e hm hlo hhi helo hehi =>
+    have hs := sign_of_key_nonneg (show (0 : Int) ≤ _ from hk)
+    subst hs
+    exact roundIntegral_towardZero_eq_negInf_of_positive m e hm
+
+theorem tsTrunc_eq_tsCeil_of_nonpos {x : Float} (h : Float.le x 0 = true) :
+    tsTrunc x = tsCeil x := by
+  have h' := h
+  rw [float_le_unpack, show (0 : Float).toModel.unpack = UnpackedFloat.zero .positive from rfl] at h'
+  have hc : Canonical x.toModel.unpack := canonical_unpack _
+  have hk := key_of_le hc (.zero .positive) h'
+  unfold tsTrunc tsCeil
+  congr 2
+  generalize x.toModel.unpack = u at hc hk h' ⊢
+  cases hc with
+  | notANumber => exact absurd rfl (le_ne_nan_left h')
+  | infinity s =>
+    cases s with
+    | positive =>
+      exfalso
+      have := HUGE_pos
+      simp only [key, Sign.apply] at hk
+      omega
+    | negative => rfl
+  | zero s => cases s <;> rfl
+  | subnormal s m hm hmlt =>
+    cases s with
+    | positive =>
+      exfalso
+      rw [key_finite_cast] at hk
+      have := Nat.mul_pos hm (Nat.two_pow_pos ((-1074 : Int) + 1074).toNat)
+      simp only [Sign.apply, key] at hk
+      omega
+    | negative => exact roundIntegral_towardZero_eq_posInf_of_negative m _ hm
+  | normal s m e hm hlo hhi helo hehi =>
+    cases s with
+    | positive =>
+      exfalso
+      rw [key_finite_cast] at hk
+      have := Nat.mul_pos hm (Nat.two_pow_pos (e + 1074).toNat)
+      simp only [Sign.apply, key] at hk
+      omega
+    | negative => exact roundIntegral_towardZero_eq_posInf_of_negative m e hm
+
 end Js.Number.FloatOpsFacts
