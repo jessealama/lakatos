@@ -287,6 +287,59 @@ theorem isFinite_iff {x : Float} :
   ⟨fun h => ⟨float_lo_of_isFinite h, float_hi_of_isFinite h⟩,
    fun ⟨hLo, hHi⟩ => isFinite_of_bounds hLo hHi⟩
 
+/-! The whitelisted `Math` members. `FloatOpsFacts` proves the defining
+inequalities; here they are keyed on the model applications, so a residual
+that applies `tsMin` to a guarded value instantiates them. The NaN
+exclusions they ask for are what `float_ne_nan_of_bounds` supplies from a
+guard; the extremal facts ask for nothing and are keyed on the comparison
+goal itself, since `c` occurs nowhere in `tsMin a b`. -/
+
+theorem tsMin_le_left {a b : Float} (ha : a.toModel.unpack ≠ .notANumber)
+    (hb : b.toModel.unpack ≠ .notANumber) :
+    Float.le (Number.FloatOps.tsMin a b) a = true :=
+  Number.FloatOpsFacts.tsMin_le_left ha hb
+
+theorem tsMin_le_right {a b : Float} (ha : a.toModel.unpack ≠ .notANumber)
+    (hb : b.toModel.unpack ≠ .notANumber) :
+    Float.le (Number.FloatOps.tsMin a b) b = true :=
+  Number.FloatOpsFacts.tsMin_le_right ha hb
+
+theorem tsMax_ge_left {a b : Float} (ha : a.toModel.unpack ≠ .notANumber)
+    (hb : b.toModel.unpack ≠ .notANumber) :
+    Float.le a (Number.FloatOps.tsMax a b) = true :=
+  Number.FloatOpsFacts.tsMax_ge_left ha hb
+
+theorem tsMax_ge_right {a b : Float} (ha : a.toModel.unpack ≠ .notANumber)
+    (hb : b.toModel.unpack ≠ .notANumber) :
+    Float.le b (Number.FloatOps.tsMax a b) = true :=
+  Number.FloatOpsFacts.tsMax_ge_right ha hb
+
+theorem tsMin_glb {a b c : Float} (ha : Float.le c a = true) (hb : Float.le c b = true) :
+    Float.le c (Number.FloatOps.tsMin a b) = true :=
+  Number.FloatOpsFacts.tsMin_glb ha hb
+
+theorem tsMax_lub {a b c : Float} (ha : Float.le a c = true) (hb : Float.le b c = true) :
+    Float.le (Number.FloatOps.tsMax a b) c = true :=
+  Number.FloatOpsFacts.tsMax_lub ha hb
+
+/-- Strict bounds on both operands bound the result: what lets `min` or
+`max` feed a branch condition or another member. -/
+theorem tsMin_lo {a b : Float} (haLo : -floatInf < a) (hbLo : -floatInf < b) :
+    -floatInf < Number.FloatOps.tsMin a b :=
+  Number.FloatOpsFacts.tsMin_lo haLo hbLo
+
+theorem tsMin_hi {a b : Float} (haHi : a < floatInf) (hbHi : b < floatInf) :
+    Number.FloatOps.tsMin a b < floatInf :=
+  Number.FloatOpsFacts.tsMin_hi haHi hbHi
+
+theorem tsMax_lo {a b : Float} (haLo : -floatInf < a) (hbLo : -floatInf < b) :
+    -floatInf < Number.FloatOps.tsMax a b :=
+  Number.FloatOpsFacts.tsMax_lo haLo hbLo
+
+theorem tsMax_hi {a b : Float} (haHi : a < floatInf) (hbHi : b < floatInf) :
+    Number.FloatOps.tsMax a b < floatInf :=
+  Number.FloatOpsFacts.tsMax_hi haHi hbHi
+
 /-! A constructor's guards throw, so what follows a triggered guard never
 runs. These two are what let a successful construction refute the guards
 it passed; both are definitional on `Except`, and neither is derivable
@@ -420,5 +473,15 @@ grind_pattern unpack_ne_nan_of_sameValue_false => Number.FloatOps.sameValue x fl
 grind_pattern float_lo_of_isFinite => Float.isFinite x
 grind_pattern float_hi_of_isFinite => Float.isFinite x
 grind_pattern isFinite_of_bounds => Float.isFinite x
+grind_pattern tsMin_le_left => Number.FloatOps.tsMin a b
+grind_pattern tsMin_le_right => Number.FloatOps.tsMin a b
+grind_pattern tsMax_ge_left => Number.FloatOps.tsMax a b
+grind_pattern tsMax_ge_right => Number.FloatOps.tsMax a b
+grind_pattern tsMin_glb => Float.le c (Number.FloatOps.tsMin a b)
+grind_pattern tsMax_lub => Float.le (Number.FloatOps.tsMax a b) c
+grind_pattern tsMin_lo => Number.FloatOps.tsMin a b
+grind_pattern tsMin_hi => Number.FloatOps.tsMin a b
+grind_pattern tsMax_lo => Number.FloatOps.tsMax a b
+grind_pattern tsMax_hi => Number.FloatOps.tsMax a b
 
 end Js
