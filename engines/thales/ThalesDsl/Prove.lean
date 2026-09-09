@@ -36,12 +36,23 @@ def readInt (e : Expr) : Option Int :=
   else if e.isAppOfArity ``Int.negSucc 1 then (e.getArg! 0).rawNatLit?.map Int.negSucc
   else none
 
-/-- Reads back a fully reduced `List Int` literal. -/
-partial def readIntList (e : Expr) : Option (List Int) :=
+/-- Reads back a fully reduced witness value: an `Int` or a `Bool` under
+its constructor. -/
+def readWitnessValue (e : Expr) : Option WitnessValue :=
+  if e.isAppOfArity ``WitnessValue.int 1 then (readInt (e.getArg! 0)).map .int
+  else if e.isAppOfArity ``WitnessValue.bool 1 then
+    let b := e.getArg! 0
+    if b.isConstOf ``Bool.true then some (.bool true)
+    else if b.isConstOf ``Bool.false then some (.bool false)
+    else none
+  else none
+
+/-- Reads back a fully reduced `List WitnessValue` literal. -/
+partial def readWitnessList (e : Expr) : Option (List WitnessValue) :=
   if e.isAppOfArity ``List.nil 1 then some []
   else if e.isAppOfArity ``List.cons 3 then do
-    let head ← readInt (e.getArg! 1)
-    let tail ← readIntList (e.getArg! 2)
+    let head ← readWitnessValue (e.getArg! 1)
+    let tail ← readWitnessList (e.getArg! 2)
     return head :: tail
   else none
 
@@ -51,16 +62,16 @@ escaping, a spent resource limit included. The sole caller runs this after
 falsity is already established, and an established verdict must not be lost
 to the cost of illustrating it. -/
 def extractWitness (names : List String) (searchStx : TSyntax `term) :
-    Term.TermElabM (Option (Array (String × Int))) :=
+    Term.TermElabM (Option (Array (String × WitnessValue))) :=
   tryCatchRuntimeEx
     (try
       let s ← Term.withoutErrToSorry do
-        let s ← Term.elabTerm (← `(($searchStx : Option (List Int)))) none
+        let s ← Term.elabTerm (← `(($searchStx : Option (List WitnessValue)))) none
         Term.synthesizeSyntheticMVarsNoPostponing
         instantiateMVars s
       let r ← Meta.reduce s (explicitOnly := false) (skipTypes := true) (skipProofs := true)
       if r.isAppOfArity ``Option.some 2 then
-        if let some vals := readIntList (r.getArg! 1) then
+        if let some vals := readWitnessList (r.getArg! 1) then
           if vals.length == names.length then
             return some (names.zip vals).toArray
       return none

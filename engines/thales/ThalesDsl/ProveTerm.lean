@@ -56,12 +56,25 @@ structure PropSpine where
   leaf : TSyntax `term
   deriving Inhabited
 
-/-- The binders as ranges, when every one of them is; `none` is a domain
-neither enumerable nor searchable, so the decide tiers are skipped. -/
-def PropSpine.ranges? (s : PropSpine) : Option (List (String × Int × Int)) :=
+/-- An enumerable binder domain: an int range, or the two booleans. -/
+inductive SearchDomain where
+  | ico (lo hi : Int)
+  | bool
+  deriving BEq, Repr
+
+/-- How many assignments the domain contributes; an empty range is 0. -/
+def SearchDomain.size : SearchDomain → Nat
+  | .ico lo hi => (hi - lo).toNat
+  | .bool => 2
+
+/-- The binders as enumerable domains, when every one of them is; `none`
+is a domain neither enumerable nor searchable, so the decide tiers are
+skipped. -/
+def PropSpine.domains? (s : PropSpine) : Option (List (String × SearchDomain)) :=
   s.binders.mapM fun
-    | .ranged x lo hi => some (x, lo, hi)
-    | .unbounded _ | .opaque _ | .bool _ => none
+    | .ranged x lo hi => some (x, .ico lo hi)
+    | .bool x => some (x, .bool)
+    | .unbounded _ | .opaque _ => none
 
 /-- Whether a term is an emitted guard hypothesis: a boolean island's
 `= pure true` proposition. A binder's own bound (`0 ≤ n`, `0 < x`)
@@ -137,6 +150,10 @@ partial def propSpine (t : TSyntax `term) : PropSpine :=
     let x := x.getId.eraseMacroScopes
     let inner := propSpine (pastBounds x body)
     { inner with binders := .unbounded x.toString :: inner.binders }
+  -- A boolean head: no bounds to read past, two values to enumerate.
+  | `(∀ ($x:ident : Bool), $body) =>
+    let inner := propSpine body
+    { inner with binders := .bool x.getId.eraseMacroScopes.toString :: inner.binders }
   -- A constructor-image head: the instance and the hypothesis that names
   -- it as the constructor's output. Placed after the numeric heads, which
   -- claim their own types first.
@@ -165,21 +182,24 @@ def intTerm (i : Int) : CommandElabM (TSyntax `term) := do
   let n := Syntax.mkNumLit (toString i.natAbs)
   if i < 0 then `((-$n : Int)) else `(($n : Int))
 
-/-- The witness-search term for a spine: one `findCexIco` per binder, the
-guards threaded inside them, and a decidable test on the leaf — the shape
-`extractWitness` reduces. A guard that is false, or that throws, excludes
-the assignment, so a reported witness always satisfies every guard. Only
-the falsity path ever elaborates this, so a leaf with no `Decidable`
-instance costs nothing here. -/
-def buildSearchTerm (spine : List (String × Int × Int))
+/-- The witness-search term for a spine: one `findCexIco` or `findCexBool`
+per binder, the guards threaded inside them, and a decidable test on the
+leaf — the shape `extractWitness` reduces. A guard that is false, or that
+throws, excludes the assignment, so a reported witness always satisfies
+every guard. Only the falsity path ever elaborates this, so a leaf with no
+`Decidable` instance costs nothing here. -/
+def buildSearchTerm (spine : List (String × SearchDomain))
     (guards : List (TSyntax `term)) (leaf : TSyntax `term) :
     CommandElabM (TSyntax `term) := do
-  let base ← `(if $leaf then (none : Option (List Int)) else some [])
+  let base ← `(if $leaf then (none : Option (List WitnessValue)) else some [])
   let init ← guards.foldrM (init := base) fun g acc =>
-    `(if $g then $acc else (none : Option (List Int)))
-  spine.foldrM (init := init) fun (x, lo, hi) acc => do
+    `(if $g then $acc else (none : Option (List WitnessValue)))
+  spine.foldrM (init := init) fun (x, d) acc => do
     let xi := mkIdent (Name.mkSimple x)
-    `(findCexIco $(← intTerm lo) $(← intTerm hi) (fun ($xi : Int) => $acc))
+    match d with
+    | .ico lo hi =>
+      `(findCexIco $(← intTerm lo) $(← intTerm hi) (fun ($xi : Int) => $acc))
+    | .bool => `(findCexBool (fun ($xi : Bool) => $acc))
 
 elab_rules : command
   | `(#thales_prove $file:str $fn:str $prop:str := $p:term) => do
@@ -197,18 +217,18 @@ elab_rules : command
         -- closed leaf, domain size 1).
         -- A leaf the decide rungs cannot handle falls through them the way
         -- any undecidable goal does.
-        let ranges? := spine.ranges?
-        let allBounded := ranges?.isSome
-        let ranged := ranges?.getD []
+        let domains? := spine.domains?
+        let allBounded := domains?.isSome
+        let domains := domains?.getD []
         -- How many assignments the enumeration would visit; an empty range
-        -- contributes 0, since there is nothing to evaluate. Read only on a
-        -- bounded domain, so the unbounded reading of 1 is never consulted.
-        let domainSize := ranged.foldl
-          (fun acc (_, lo, hi) => acc * (hi - lo).toNat) 1
+        -- contributes 0, since there is nothing to evaluate, and a boolean
+        -- binder contributes 2. Read only on a bounded domain, so the
+        -- unbounded reading of 1 is never consulted.
+        let domainSize := domains.foldl (fun acc (_, d) => acc * d.size) 1
         -- Witness search never runs on an unbounded domain.
         let searchStx ←
-          if allBounded then buildSearchTerm ranged spine.guards spine.leaf
-          else `((none : Option (List Int)))
+          if allBounded then buildSearchTerm domains spine.guards spine.leaf
+          else `((none : Option (List WitnessValue)))
         let budget := max (thales.heartbeats.get (← getOptions)) 1
         let evalCap := thales.maxEvaluatedElements.get (← getOptions)
         liftTermElabM <|

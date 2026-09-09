@@ -32,6 +32,13 @@ def Szs.toString : Szs → String
   | .NotTried => "NotTried"
   | .Error => "Error"
 
+/-- One binder's value in a witness: an integer from an enumerated range,
+or a boolean from a boolean binder. -/
+inductive WitnessValue where
+  | int (i : Int)
+  | bool (b : Bool)
+  deriving Repr, BEq, DecidableEq
+
 /-- One per-annotation result, printed as a single JSON line on stdout.
 This is the contract between `#thales_prove` and the lakatos CLI. -/
 structure Verdict where
@@ -39,7 +46,7 @@ structure Verdict where
   szs : Szs
   reason : String
   /-- Binder-name/value pairs falsifying the property, in binder order. -/
-  counterexample : Option (Array (String × Int)) := none
+  counterexample : Option (Array (String × WitnessValue)) := none
   /-- Theorem only: the non-standard axioms the proof depends on, read off
   the theorem itself. Empty for a kernel-checked proof. -/
   axioms : Option (Array Lean.Name) := none
@@ -48,6 +55,12 @@ structure Verdict where
 `JSON.parse` on the CLI side cannot lose precision. -/
 def Verdict.jsonInt (v : Int) : Lean.Json :=
   if v.natAbs ≤ 9007199254740991 then .num v else .str (toString v)
+
+/-- A witness value on the wire: an integer under the safe-integer rule,
+a boolean as a JSON boolean. -/
+def WitnessValue.toJson : WitnessValue → Lean.Json
+  | .int i => Verdict.jsonInt i
+  | .bool b => .bool b
 
 def Verdict.toJson (v : Verdict) : Lean.Json :=
   Lean.Json.mkObj <|
@@ -59,7 +72,7 @@ def Verdict.toJson (v : Verdict) : Lean.Json :=
     (match v.counterexample with
     | none => []
     | some cex =>
-      [("counterexample", Lean.Json.mkObj (cex.toList.map fun (n, x) => (n, jsonInt x)))]) ++
+      [("counterexample", Lean.Json.mkObj (cex.toList.map fun (n, x) => (n, x.toJson)))]) ++
     match v.axioms with
     | none => []
     | some axs =>
