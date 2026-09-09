@@ -49,15 +49,49 @@ def spineKinds (t : TSyntax `term) : List String :=
     throwError "a non-image implication was read as a binder: {spineKinds t}"
 
 #eval show CoreM Unit from do
-  -- A number binder's endpoints are hypotheses in the leaf, the way a nat
-  -- binder's nonnegativity is: nothing under them is read, since search
-  -- never runs on an unbounded domain.
+  -- A binder's own bounds — a number binder's endpoints, a nat binder's
+  -- nonnegativity — are stepped over, so the binders and guards under
+  -- them are read. Search never runs on such a domain, so the bounds
+  -- need not be kept.
   let t := Unhygienic.run `(∀ (sf : JsNumber), 0 < sf → sf < floatInf →
     ((pure true : JsM Bool) = pure true) → ((pure true : JsM Bool) = pure true))
   unless spineKinds t == ["unbounded sf"] do
     throwError "the bounded number head is {spineKinds t}"
+  unless (propSpine t).guards.length == 1 do
+    throwError "the guard under a number binder's bounds was not recovered"
+  let u := Unhygienic.run `(∀ (n : Int), 0 ≤ n → ∀ (y : Int),
+    ((pure true : JsM Bool) = pure true) → ((pure true : JsM Bool) = pure true))
+  unless spineKinds u == ["unbounded n", "unbounded y"] do
+    throwError "the binder under a nat binder's bound is {spineKinds u}"
+  unless (propSpine u).guards.length == 1 do
+    throwError "the guard under a nat binder's bound was not recovered"
+  -- Every endpoint spelling the renderer prints is a bound.
+  let v := Unhygienic.run `(∀ (x : JsNumber), (-1.5e3) ≤ x → x < -floatInf →
+    ∀ (y : Int), ((pure true : JsM Bool) = pure true))
+  unless spineKinds v == ["unbounded x", "unbounded y"] do
+    throwError "the literal endpoints read as {spineKinds v}"
+
+#eval show CoreM Unit from do
+  -- Only a bound on the binder just bound is stepped over: one naming
+  -- another binder, or one whose far side is not a literal, is the leaf.
+  let t := Unhygienic.run `(∀ (x : JsNumber), ∀ (y : JsNumber), 0 < x →
+    ((pure true : JsM Bool) = pure true))
+  unless spineKinds t == ["unbounded x", "unbounded y"] do
+    throwError "a bound on an outer binder read as {spineKinds t}"
   unless (propSpine t).guards.isEmpty do
-    throwError "a guard under a number binder's bounds was recovered"
+    throwError "a bound on an outer binder was read as a guard"
+  let u := Unhygienic.run `(∀ (x : JsNumber), ∀ (y : JsNumber), y < x →
+    ∀ (z : Int), ((pure true : JsM Bool) = pure true))
+  unless spineKinds u == ["unbounded x", "unbounded y"] do
+    throwError "a comparison between binders read as {spineKinds u}"
+  -- A ranged binder never prints a bound; one under it stays in the leaf,
+  -- where the witness search still sees it.
+  let v := Unhygienic.run `(ballIco 0 5 fun x => 0 < x →
+    ((pure true : JsM Bool) = pure true))
+  unless spineKinds v == ["ranged x"] do
+    throwError "a bound under a ranged binder read as {spineKinds v}"
+  unless (propSpine v).guards.isEmpty do
+    throwError "a bound under a ranged binder was read as a guard"
 
 #eval show CoreM Unit from do
   -- `ranges?` is the one reading the elaboration takes: the endpoints the
