@@ -131,12 +131,13 @@ export type EmitStmt =
   | { kind: "if"; cond: EmitExpr; then: EmitStmt[]; else?: EmitStmt[] }
   | { kind: "field-set"; field: string; expr: EmitExpr };
 
-/** A parameter on the wire: its name and its declared type — a TypeScript
- * number, a keyword union's normalized tags, or an instance of a modeled
- * class. */
+/** A parameter on the wire: its name and its declared type — a
+ * TypeScript number, a boolean, a keyword union's normalized tags, or an
+ * instance of a modeled class. */
 export interface EmitParam {
   name: string;
   type:
+    | "boolean"
     | "number"
     | UnionTag[]
     | { class: string; module?: string }
@@ -233,8 +234,9 @@ export type ValueTy =
    * which the tagged domain cannot hold, so it is Lean's `Option`. */
   | { option: ModelRef };
 
-/** What a parameter, a field, or a constructor slot may be typed at:
- * every value type but a boolean, which only a local binds at so far. */
+/** What a field or a constructor slot may be typed at: every value type
+ * but a boolean, which only locals and free-function/method parameters
+ * bind at so far. */
 export type SlotTy = Exclude<ValueTy, "bool">;
 
 function isOptionTy(t: Expected): t is { option: ModelRef } {
@@ -279,8 +281,9 @@ function keywordTag(m: ts.TypeNode): UnionTag | undefined {
 }
 
 /** A walked parameter as the wire carries it. */
-function wireParam(name: string, ty: SlotTy): EmitParam {
+function wireParam(name: string, ty: ValueTy): EmitParam {
   if (ty === "num") return { name, type: "number" };
+  if (ty === "bool") return { name, type: "boolean" };
   if ("union" in ty) return { name, type: [...ty.union] };
   if ("option" in ty) {
     const { module, name: cls } = ty.option;
@@ -2139,6 +2142,7 @@ function declStmts(
     module: scope.module,
     ...(scope.self !== undefined ? { self: scope.self.ref } : {}),
     unions: true,
+    booleans: true,
   };
   const stmts: TStmt[] = [];
   for (const d of s.declarationList.declarations) {
@@ -2814,19 +2818,24 @@ interface ParamReg {
   /** Whether a union type is admitted here: free functions and methods
    * take them, a constructor keeps its refusal. */
   unions: boolean;
+  /** Whether a bare `boolean` is admitted here: free functions and
+   * methods take it, a constructor and a field keep their refusal. */
+  booleans: boolean;
 }
 
 /** A declared type node's value type — a parameter's or a field's: a
- * number, a class already in the model, or (where `reg.unions` admits
- * it) a keyword union; anything else is the failure that degrades the
- * declaration. A class resolves under the source-order discipline member
- * calls follow, and one that degraded travels its own failure. */
+ * number, a boolean (where `reg.booleans` admits it), a class already in
+ * the model, or (where `reg.unions` admits it) a keyword union; anything
+ * else is the failure that degrades the declaration. A class resolves
+ * under the source-order discipline member calls follow, and one that
+ * degraded travels its own failure. */
 function declaredValueTy(
   t: ts.TypeNode,
   sf: ts.SourceFile,
   reg: ParamReg,
-): SlotTy | FailedDecl {
+): ValueTy | FailedDecl {
   if (t.kind === ts.SyntaxKind.NumberKeyword) return "num";
+  if (t.kind === ts.SyntaxKind.BooleanKeyword && reg.booleans) return "bool";
   const cls = classRefTy(t, reg);
   if (cls !== undefined) return cls;
   // A keyword union normalizes to its deduplicated tags; a member outside
@@ -2883,7 +2892,7 @@ function paramValueTy(
   p: ts.ParameterDeclaration,
   sf: ts.SourceFile,
   reg: ParamReg,
-): SlotTy | FailedDecl {
+): ValueTy | FailedDecl {
   const t = p.type!;
   // An optional's declared type is widened by `undefined`: the question
   // mark is arity, the union is the type. Only the keyword domain carries
@@ -2932,8 +2941,8 @@ function normalizedUnion(
  * initializer makes the argument optional), and the initializer itself. */
 type WalkedParam = {
   name: string;
-  ty: SlotTy;
-  slot: SlotTy;
+  ty: ValueTy;
+  slot: ValueTy;
   optional: boolean;
   init?: ts.Expression;
 };
@@ -2942,8 +2951,9 @@ type WalkedParams = WalkedParam[];
 /** The boundary type a defaulted parameter presents to callers. The
  * tagged domain has no instance tag, so a class default takes an option
  * of that class instead. */
-function boundaryTy(ty: SlotTy): SlotTy {
+function boundaryTy(ty: ValueTy): ValueTy {
   if (ty === "num") return { union: ["number", "undefined"] };
+  if (ty === "bool") return { union: ["boolean", "undefined"] };
   if ("union" in ty) {
     const tags = UNION_TAGS.filter(
       (t) => ty.union.includes(t) || t === "undefined",
@@ -3058,6 +3068,7 @@ function walkClass(
     names,
     module: qualifier,
     unions: true,
+    booleans: false,
   };
   const ctors: ts.ConstructorDeclaration[] = [];
   const getterDecls: ts.GetAccessorDeclaration[] = [];
@@ -3105,6 +3116,8 @@ function walkClass(
       if (m.type === undefined) return constructAt(m, m.kind, sf);
       const ty = declaredValueTy(m.type, sf, fieldReg);
       if (typeof ty !== "string" && "reason" in ty) return ty;
+      /* v8 ignore next 2 -- unreachable: fieldReg refused the boolean first. */
+      if (ty === "bool") return constructAt(m.type, m.type.kind, sf);
       if (RESERVED_MEMBERS.has(spelling))
         return memberNameFailure(className, spelling, "reserves the name");
       if (fields.has(spelling))
@@ -3189,6 +3202,7 @@ function walkClass(
     names,
     module: qualifier,
     unions: false,
+    booleans: false,
   };
   const ctorParams = walkParams(ctor.parameters, sf, ctorReg, ctorParamFailure);
   if (!Array.isArray(ctorParams)) return ctorParams;
@@ -3255,14 +3269,19 @@ function walkClass(
     return modelFailure(err);
   }
 
-  // `ctorReg` bans declared unions, so this restates the ban where the
-  // shape is recorded rather than trusting the flag everywhere
-  // downstream. A defaulted parameter's slot is a union all the same:
-  // the ban is on what the source declares, not on the boundary.
+  // `ctorReg` bans declared unions and booleans, so this restates both
+  // bans where the shape is recorded rather than trusting the flags
+  // everywhere downstream. A defaulted parameter's slot is a union all
+  // the same: the ban is on what the source declares, not on the
+  // boundary.
   const shapeCtorParams: SlotTy[] = [];
   for (const p of ctorParams) {
-    /* v8 ignore next 2 -- unreachable: ctorReg refused the union first. */
-    if (typeof p.ty !== "string" && "union" in p.ty)
+    /* v8 ignore next 3 -- unreachable: ctorReg refused the union and the boolean first. */
+    if (
+      (typeof p.ty !== "string" && "union" in p.ty) ||
+      p.ty === "bool" ||
+      p.slot === "bool"
+    )
       return constructAt(ctor, ctor.kind, sf);
     shapeCtorParams.push(p.slot);
   }
@@ -3331,7 +3350,12 @@ function walkClass(
   }
   // Getters render ahead of methods, so a getter body sees an empty
   // method map: a getter calling a method degrades alone.
-  const methodReg: ParamReg = { ...ctorReg, unions: true, self: self.ref };
+  const methodReg: ParamReg = {
+    ...ctorReg,
+    unions: true,
+    booleans: true,
+    self: self.ref,
+  };
   const methods: EmitMethod[] = [];
   for (const m of methodDecls) {
     const spelling = (m.name as ts.Identifier | ts.PrivateIdentifier).text;
@@ -3482,6 +3506,7 @@ function walkFunction(
     names,
     module,
     unions: true,
+    booleans: true,
   });
   if (!("params" in sig)) return sig;
   const params = sig.params;

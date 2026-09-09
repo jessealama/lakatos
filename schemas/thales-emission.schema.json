@@ -65,9 +65,10 @@
       }
     },
     "paramType": {
-      "description": "A parameter's slot type: a TypeScript number, a keyword union, an instance of a modeled class, or — for a defaulted class parameter — an option of one.",
+      "description": "A parameter's slot type: a TypeScript number, a boolean, a keyword union, an instance of a modeled class, or — for a defaulted class parameter — an option of one.",
       "oneOf": [
         { "const": "number" },
+        { "const": "boolean" },
         { "$ref": "#/definitions/unionTags" },
         { "$ref": "#/definitions/classRef" },
         {
