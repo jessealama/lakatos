@@ -41,6 +41,7 @@ import {
  * pipeline's elaborator does. */
 export type EmitExpr =
   | { kind: "num"; lit: string }
+  | { kind: "bool"; value: boolean }
   | { kind: "id"; name: string }
   | { kind: "unop"; op: "-" | "+" | "!"; operand: EmitExpr }
   | { kind: "binop"; op: string; left: EmitExpr; right: EmitExpr }
@@ -110,20 +111,21 @@ export type EmitExpr =
 export type EmitStmt =
   | { kind: "return"; expr: EmitExpr }
   | { kind: "throw"; error: string }
-  /** A local's `type` is present exactly for a union or class binding —
-   * the same normalized tag array or class reference a parameter's type
-   * carries; absent means the numeric slice the statement always had. */
+  /** A local's `type` is present exactly for a boolean, union, or class
+   * binding — `"boolean"`, or the same normalized tag array or class
+   * reference a parameter's type carries; absent means the numeric slice
+   * the statement always had. */
   | {
       kind: "const";
       name: string;
       init: EmitExpr;
-      type?: UnionTag[] | { class: string; module?: string };
+      type?: UnionTag[] | { class: string; module?: string } | "boolean";
     }
   | {
       kind: "let";
       name: string;
       init: EmitExpr;
-      type?: UnionTag[] | { class: string; module?: string };
+      type?: UnionTag[] | { class: string; module?: string } | "boolean";
     }
   | { kind: "assign"; name: string; expr: EmitExpr }
   | { kind: "if"; cond: EmitExpr; then: EmitStmt[]; else?: EmitStmt[] }
@@ -219,16 +221,21 @@ export const UNION_TAGS = [
 ] as const;
 export type UnionTag = (typeof UNION_TAGS)[number];
 
-/** A value's type in the walk: a number, a keyword union, or an instance
- * of a modeled class. Parameters, locals, and fields carry all three;
- * returns are numbers. */
+/** A value's type in the walk: a number, a boolean, a keyword union, or
+ * an instance of a modeled class. Parameters and fields carry number,
+ * union, and instance; locals carry all four; returns are numbers. */
 export type ValueTy =
   | "num"
+  | "bool"
   | { instance: ModelRef }
   | { union: UnionTag[] }
   /** A defaulted class parameter's slot: the instance or `undefined`,
    * which the tagged domain cannot hold, so it is Lean's `Option`. */
   | { option: ModelRef };
+
+/** What a parameter, a field, or a constructor slot may be typed at:
+ * every value type but a boolean, which only a local binds at so far. */
+export type SlotTy = Exclude<ValueTy, "bool">;
 
 function isOptionTy(t: Expected): t is { option: ModelRef } {
   return typeof t !== "string" && "option" in t;
@@ -272,7 +279,7 @@ function keywordTag(m: ts.TypeNode): UnionTag | undefined {
 }
 
 /** A walked parameter as the wire carries it. */
-function wireParam(name: string, ty: ValueTy): EmitParam {
+function wireParam(name: string, ty: SlotTy): EmitParam {
   if (ty === "num") return { name, type: "number" };
   if ("union" in ty) return { name, type: [...ty.union] };
   if ("option" in ty) {
@@ -376,11 +383,11 @@ function walkCtorArgs(
  * the getters that modeled, and its constructor's signature. */
 export interface ClassShape {
   /** The fields in declaration order with their declared types. */
-  fields: ReadonlyMap<string, ValueTy>;
+  fields: ReadonlyMap<string, SlotTy>;
   getters: ReadonlySet<string>;
   /** The slot types a construction fills, in declaration order: a number,
    * an instance, or — for a defaulted parameter — its boundary union. */
-  ctorParams: ValueTy[];
+  ctorParams: SlotTy[];
   /** The constructor parameters' source spellings, positionally aligned
    * with `ctorParams`. A class binder quantifies over them by name. */
   ctorParamNames: string[];
@@ -571,6 +578,13 @@ function isPrefixNot(e: ts.Expression): e is ts.PrefixUnaryExpression {
   );
 }
 
+/** `true`/`false`: reserved words, so no binding can shadow them. */
+function booleanLiteral(e: ts.Expression): boolean | undefined {
+  if (e.kind === ts.SyntaxKind.TrueKeyword) return true;
+  if (e.kind === ts.SyntaxKind.FalseKeyword) return false;
+  return undefined;
+}
+
 /** Whether a member chain's root is one the typed walk will type: `this`
  * inside a member, a class-typed identifier, or a construction — one of
  * an unregistered or degraded name included, so that failure travels to
@@ -622,6 +636,7 @@ function numericShaped(e: ts.Expression, scope: WalkScope): boolean {
  * Top-level shape only: deeper offenders keep their own refusals. */
 function booleanShaped(e: ts.Expression, scope: WalkScope): boolean {
   const u = unwrapParens(e);
+  if (booleanLiteral(u) !== undefined) return true;
   if (ts.isBinaryExpression(u)) {
     const op = u.operatorToken.getText();
     return COMPARISON_OPERATORS.has(op) || LOGICAL_OPERATORS.has(op);
@@ -747,6 +762,7 @@ function findConstruct(
   // position admits it is the typed walk's question, and elsewhere it
   // degrades there with this same construct.
   if (e.kind === ts.SyntaxKind.NullKeyword) return undefined;
+  if (booleanLiteral(e) !== undefined) return undefined;
   if (negatedLiteral(e) !== undefined) return undefined;
   if (isUnaryArith(e)) return findConstruct(e.operand, sf, scope);
   if (ts.isBinaryExpression(e)) {
@@ -1116,7 +1132,7 @@ function findFailedMemberUse(
   return undefined;
 }
 
-type Expected = ValueTy | "bool";
+type Expected = ValueTy;
 
 function describeTy(t: Expected): string {
   if (t === "num") return "a number";
@@ -1203,6 +1219,15 @@ function walkTyped(
       tag: "number",
       expr: resolvePlace(e, scope, sf)!.expr,
     };
+  }
+  const boolLit = booleanLiteral(e);
+  if (boolLit !== undefined) {
+    if (expected !== "bool") {
+      throw new ModelError(
+        `a boolean literal cannot be ${describeTy(expected)}`,
+      );
+    }
+    return { kind: "bool", value: boolLit };
   }
   const negated = negatedLiteral(e);
   if (ts.isNumericLiteral(e) || negated !== undefined) {
@@ -1983,7 +2008,7 @@ function paramLocals(params: readonly { name: string; ty: ValueTy }[]): Locals {
 /** The types a local binding may carry: the numeric slice, a keyword
  * union riding the same tagged domain a parameter's does, or an instance
  * of a class already in the model. */
-type LocalTy = "num" | { union: UnionTag[] } | { instance: ModelRef };
+type LocalTy = "num" | "bool" | { union: UnionTag[] } | { instance: ModelRef };
 
 /** The body as a tree of mapped statements, their expressions still tsc
  * nodes, each unmappable statement replaced by the opaque failure that
@@ -2035,6 +2060,7 @@ function localValueTy(
   const t = d.type;
   if (t === undefined) return inferredLocalTy(d.initializer!, scope, reg);
   if (t.kind === ts.SyntaxKind.NumberKeyword) return "num";
+  if (t.kind === ts.SyntaxKind.BooleanKeyword) return "bool";
   const cls = classRefTy(t, reg);
   if (cls !== undefined) return cls;
   if (!ts.isUnionTypeNode(t)) return undefined;
@@ -2500,12 +2526,20 @@ function defaultFailure(name: string, reason: string): string {
   return `parameter '${name}' has a default the model cannot evaluate: ${reason}`;
 }
 
-/** The `type` a local binding at `ty` carries on the wire: absent for the
- * numeric slice, the tag array for a union, the class for an instance. */
-function bindingTy(ty: ValueTy): {
+/** The `type` a binding at `ty` carries on the wire: absent for the
+ * numeric slice, `"boolean"` for a boolean local, the tag array for a
+ * union, the class for an instance. A slot never spells `"boolean"`. */
+function bindingTy(ty: SlotTy): {
   type?: UnionTag[] | { class: string; module?: string };
+};
+function bindingTy(ty: ValueTy): {
+  type?: UnionTag[] | { class: string; module?: string } | "boolean";
+};
+function bindingTy(ty: ValueTy): {
+  type?: UnionTag[] | { class: string; module?: string } | "boolean";
 } {
   if (ty === "num") return {};
+  if (ty === "bool") return { type: "boolean" };
   if ("union" in ty) return { type: [...ty.union] };
   /* v8 ignore next -- a body never binds at an option; the opening is T */
   if ("option" in ty) return {};
@@ -2762,7 +2796,7 @@ function declaredValueTy(
   t: ts.TypeNode,
   sf: ts.SourceFile,
   reg: ParamReg,
-): ValueTy | FailedDecl {
+): SlotTy | FailedDecl {
   if (t.kind === ts.SyntaxKind.NumberKeyword) return "num";
   const cls = classRefTy(t, reg);
   if (cls !== undefined) return cls;
@@ -2820,7 +2854,7 @@ function paramValueTy(
   p: ts.ParameterDeclaration,
   sf: ts.SourceFile,
   reg: ParamReg,
-): ValueTy | FailedDecl {
+): SlotTy | FailedDecl {
   const t = p.type!;
   // An optional's declared type is widened by `undefined`: the question
   // mark is arity, the union is the type. Only the keyword domain carries
@@ -2857,7 +2891,7 @@ function normalizedUnion(
   tags: UnionTag[],
   t: ts.TypeNode,
   sf: ts.SourceFile,
-): ValueTy | FailedDecl {
+): SlotTy | FailedDecl {
   const union = UNION_TAGS.filter((tag) => tags.includes(tag));
   if (union.length >= 2) return { union: [...union] };
   if (union[0] === "number") return "num";
@@ -2869,8 +2903,8 @@ function normalizedUnion(
  * initializer makes the argument optional), and the initializer itself. */
 type WalkedParam = {
   name: string;
-  ty: ValueTy;
-  slot: ValueTy;
+  ty: SlotTy;
+  slot: SlotTy;
   optional: boolean;
   init?: ts.Expression;
 };
@@ -2879,7 +2913,7 @@ type WalkedParams = WalkedParam[];
 /** The boundary type a defaulted parameter presents to callers. The
  * tagged domain has no instance tag, so a class default takes an option
  * of that class instead. */
-function boundaryTy(ty: ValueTy): ValueTy {
+function boundaryTy(ty: SlotTy): SlotTy {
   if (ty === "num") return { union: ["number", "undefined"] };
   if ("union" in ty) {
     const tags = UNION_TAGS.filter(
@@ -2985,7 +3019,7 @@ function walkClass(
     }
   }
 
-  const fields = new Map<string, ValueTy>();
+  const fields = new Map<string, SlotTy>();
   // A field's type resolves as a parameter's does, the class itself not
   // yet registered, so a self-typed field refuses like a self-typed
   // constructor parameter.
@@ -3196,7 +3230,7 @@ function walkClass(
   // shape is recorded rather than trusting the flag everywhere
   // downstream. A defaulted parameter's slot is a union all the same:
   // the ban is on what the source declares, not on the boundary.
-  const shapeCtorParams: ValueTy[] = [];
+  const shapeCtorParams: SlotTy[] = [];
   for (const p of ctorParams) {
     /* v8 ignore next 2 -- unreachable: ctorReg refused the union first. */
     if (typeof p.ty !== "string" && "union" in p.ty)

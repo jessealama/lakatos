@@ -10364,3 +10364,69 @@ export function g(a: number): number {
     expect(classified[0]!.reason).toContain("'Bad' could not be modeled");
   });
 });
+
+describe("boolean locals (#117)", () => {
+  const emit = (src: string) => emitModule(src, "t.ts");
+
+  test("an annotated boolean local with a literal initializer binds at boolean", () => {
+    const { emission, classified } = emit(
+      `/** @ensures{p} forall (n: int ∈ [0, 10)) { f(n) >= 0 } */\n` +
+        `export function f(n: number): number {\n` +
+        `  const ok: boolean = true;\n  return n;\n}\n`,
+    );
+    expect(classified).toEqual([]);
+    expectValidEmission(emission);
+    const fn = emission.declarations[0];
+    assert(fn?.kind === "function");
+    expect(fnBody(fn)[0]).toEqual({
+      kind: "const",
+      name: "ok",
+      init: { kind: "bool", value: true },
+      type: "boolean",
+    });
+  });
+
+  test("an annotated boolean local takes a comparison", () => {
+    const { emission, classified } = emit(
+      `export function f(n: number): number {\n` +
+        `  const small: boolean = n < 5;\n  return n;\n}\n`,
+    );
+    expect(classified).toEqual([]);
+    const fn = emission.declarations[0];
+    assert(fn?.kind === "function");
+    expect(fnBody(fn)[0]).toEqual({
+      kind: "const",
+      name: "small",
+      init: {
+        kind: "binop",
+        op: "<",
+        left: { kind: "id", name: "n" },
+        right: { kind: "num", lit: "5" },
+      },
+      type: "boolean",
+    });
+  });
+
+  test("a numeric initializer cannot bind a boolean local", () => {
+    const { classified } = emit(
+      `/** @ensures{p} forall (n: int ∈ [0, 10)) { f(n) >= 0 } */\n` +
+        `export function f(n: number): number {\n` +
+        `  const ok: boolean = 5;\n  return n;\n}\n`,
+    );
+    expect(classified).toHaveLength(1);
+    expect(classified[0]!.reason).toContain(
+      "a numeric literal cannot be a boolean",
+    );
+  });
+
+  test("a boolean literal cannot stand where a number is expected", () => {
+    const { classified } = emit(
+      `/** @ensures{p} forall (n: int ∈ [0, 10)) { f(n) >= 0 } */\n` +
+        `export function f(n: number): number {\n  return true;\n}\n`,
+    );
+    expect(classified).toHaveLength(1);
+    expect(classified[0]!.reason).toContain(
+      "a boolean literal cannot be a number",
+    );
+  });
+});

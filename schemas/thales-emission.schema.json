@@ -156,6 +156,15 @@
         {
           "type": "object",
           "additionalProperties": false,
+          "required": ["kind", "value"],
+          "properties": {
+            "kind": { "const": "bool" },
+            "value": { "type": "boolean" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
           "required": ["kind", "name"],
           "properties": {
             "kind": { "const": "id" },
@@ -582,8 +591,9 @@
             "name": { "$ref": "#/definitions/identifier" },
             "init": { "$ref": "#/definitions/expr" },
             "type": {
-              "description": "Present exactly for a union-typed or class-typed local; absent means the numeric slice the statement always had.",
+              "description": "Present exactly for a boolean-, union-, or class-typed local; absent means the numeric slice the statement always had.",
               "oneOf": [
+                { "const": "boolean" },
                 { "$ref": "#/definitions/unionTags" },
                 { "$ref": "#/definitions/classRef" }
               ]
