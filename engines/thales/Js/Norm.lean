@@ -154,6 +154,12 @@ theorem float_neg_lo {c : Float} (h : c < floatInf) : -floatInf < -c :=
 theorem float_neg_hi {c : Float} (h : -floatInf < c) : -c < floatInf :=
   FloatFacts.float_neg_bound_hi h
 
+/-- A finite float minus itself is `+0`, keyed on the negation alone so an
+ordering guard `a ≤ b` can reach `0 ≤ b + -a` through the add fact. -/
+theorem float_add_neg_self {a : Float} (hLo : -floatInf < a) (hHi : a < floatInf) :
+    a + -a = 0 :=
+  FloatFacts.float_add_neg_self hLo hHi
+
 /-! A finite bound reaches the infinity hypotheses through one ground
 comparison: transitivity chains `c < 1000` with `1000 < floatInf`, and
 the ground link evaluates away during grind preprocessing. The infinity
@@ -199,6 +205,18 @@ instantiate them directly. -/
 theorem float_ne_nan_of_bounds {c : Float} (hLo : -floatInf < c) (hHi : c < floatInf) :
     c.toModel.unpack ≠ .notANumber :=
   FloatFacts.unpack_ne_nan hLo hHi
+
+/-- A true `≤` rules NaN out on both sides; an infinity guard alone leaves
+it open, so this is what feeds the beq-false bridges. -/
+theorem float_le_ne_nan_left {x y : Float} (h : Float.le x y = true) :
+    x.toModel.unpack ≠ .notANumber := by
+  rw [FloatFacts.float_le_unpack] at h
+  exact FloatFacts.le_ne_nan_left h
+
+theorem float_le_ne_nan_right {x y : Float} (h : Float.le x y = true) :
+    y.toModel.unpack ≠ .notANumber := by
+  rw [FloatFacts.float_le_unpack] at h
+  exact FloatFacts.le_ne_nan_right h
 
 /-- Subtraction of floats strictly inside the infinities is never NaN;
 overflow to an infinity is absorbed downstream. -/
@@ -396,6 +414,7 @@ grind_pattern float_le_add_of_le => x + c, y + c
 grind_pattern float_le_div_of_le => x / c, y / c
 grind_pattern float_neg_lo => -c
 grind_pattern float_neg_hi => -c
+grind_pattern float_add_neg_self => -a
 grind_pattern float_lt_inf_of_lt => a < b
 grind_pattern float_lt_inf_of_le => a ≤ b
 grind_pattern float_gt_neg_inf_of_lt => a < b
@@ -403,6 +422,8 @@ grind_pattern float_gt_neg_inf_of_le => a ≤ b
 grind_pattern float_le_of_not_lt => Float.lt x y
 grind_pattern float_lt_eq_false_of_le => Float.lt x y
 grind_pattern float_ne_nan_of_bounds => c.toModel.unpack
+grind_pattern float_le_ne_nan_left => Float.le x y
+grind_pattern float_le_ne_nan_right => Float.le x y
 grind_pattern float_sub_ne_nan_of_bounds => (a - b).toModel.unpack
 -- Normalization rewrites subtraction to addition of the negation, so a
 -- normalized goal carries the second spelling.
