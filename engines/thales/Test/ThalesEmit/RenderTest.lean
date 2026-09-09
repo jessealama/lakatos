@@ -39,6 +39,11 @@ def call1 (f x : String) : JsExpr := .call f none #[.id x]
 #guard rendersAs (v (.unop "!" (.id "b"))) `(!b)
 #guard renderFails (v (.unop "~" (.id "x")))
 
+-- The boolean literals are Lean's, pure.
+#guard rendersAs (v (.bool true)) `(true)
+#guard rendersAs (v (.bool false)) `(false)
+#guard rendersLifted (v (.bool true)) false `(true)
+
 -- Arithmetic and comparison. `>`/`>=` flip into the IEEE predicates.
 #guard rendersAs (v (.binop "+" (.id "x") (.id "y"))) `(x + y)
 #guard rendersAs (v (.binop "-" (.id "x") (.id "y"))) `(x - y)
@@ -336,6 +341,10 @@ def ctorStmt (straight : List (String × BindingTy)) (s : JsStmt) :
   `(doElem| let w : JsVal := v)
 #guard rendersSyntax (stmt (.constDecl "p" (.cls "Pt" none) (.id "q"))) `(doElem| let p : TsModel.Pt := q)
 #guard rendersSyntax (stmt (.letDecl "y" .number (.id "x"))) `(doElem| let mut y : JsNumber := x)
+#guard rendersSyntax (stmt (.constDecl "b" .bool (.binop "<" (.id "n") (.num "5"))))
+  `(doElem| let b : Bool := Float.lt n 5)
+#guard rendersSyntax (stmt (.letDecl "found" .bool (.bool false))) `(doElem| let mut found : Bool := false)
+#guard rendersSyntax (stmt (.assign "found" (.bool true))) `(doElem| found := true)
 #guard rendersSyntax (stmt (.assign "y" (.binop "+" (.id "y") (.num "1")))) `(doElem| y := y + 1)
 
 -- `if` chains: no else, an else, an else-if grafted onto the same node,

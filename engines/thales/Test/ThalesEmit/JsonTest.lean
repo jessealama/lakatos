@@ -36,6 +36,13 @@ def numParamJson (name : String) : Json :=
      ("left", Json.mkObj [("kind", "id"), ("name", "x")]),
      ("right", Json.mkObj [("kind", "num"), ("lit", "-0")])]))
   matches .ok (.sameValue (.id "x") (.num "-0"))
+-- A boolean literal carries a JSON boolean, nothing else.
+#guard
+  (decodeExpr (Json.mkObj [("kind", "bool"), ("value", true)]))
+  matches .ok (.bool true)
+#guard
+  (decodeExpr (Json.mkObj [("kind", "bool"), ("value", "yes")]))
+  matches .error _
 #guard
   (decodeExpr (Json.mkObj
     [("kind", "cond"),
@@ -174,6 +181,17 @@ def numParamJson (name : String) : Json :=
      ("type", Json.mkObj [("class", "Pt")]),
      ("init", Json.mkObj [("kind", "id"), ("name", "q")])]))
   matches .ok (.constDecl "p" (.cls "Pt" none) (.id "q"))
+-- A boolean local's type is the one keyword string the wire spells.
+#guard
+  (decodeStmt (Json.mkObj
+    [("kind", "const"), ("name", "b"), ("type", "boolean"),
+     ("init", Json.mkObj [("kind", "bool"), ("value", false)])]))
+  matches .ok (.constDecl "b" .bool (.bool false))
+#guard
+  (decodeStmt (Json.mkObj
+    [("kind", "let"), ("name", "b"), ("type", "string"),
+     ("init", Json.mkObj [("kind", "bool"), ("value", false)])]))
+  matches .error _
 #guard
   (decodeParams (Json.mkObj [("params", Json.arr #[Json.mkObj [("name", "x")]])])
     "params")

@@ -89,6 +89,9 @@ def JsVal.sameValue : JsVal → JsVal → Bool
 @[js_norm, grind =] theorem JsVal.strictEq_num_null (x : Float) :
     JsVal.strictEq (.num x) .null = false := rfl
 
+@[js_norm, grind =] theorem JsVal.strictEq_bool_bool (a b : Bool) :
+    JsVal.strictEq (.bool a) (.bool b) = (a == b) := rfl
+
 @[js_norm, grind =] theorem JsVal.sameValue_num_null (x : Float) :
     JsVal.sameValue (.num x) .null = false := rfl
 

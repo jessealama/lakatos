@@ -193,6 +193,7 @@ mutual
 obligation body crosses to the Float world as `Float.ofInt x`. -/
 partial def valueTerm (coerced : String → Bool) : JsExpr → RenderM Rendered
   | .num lit => return ⟨← numTerm lit, false⟩
+  | .bool b => return ⟨← (if b then `(true) else `(false)), false⟩
   | .id name => do
     let x ← scopedIdent name
     if coerced name then return ⟨← `(Float.ofInt $x), false⟩
@@ -386,6 +387,7 @@ def bodyTerm (e : JsExpr) : RenderM (TSyntax `term) :=
 tagged domain, exactly as `paramBinders` renders a union parameter's. -/
 def bindingTyTerm : BindingTy → RenderM (TSyntax `term)
   | .number => `(JsNumber)
+  | .bool => `(Bool)
   | .union _ => `(JsVal)
   | .cls n m => do let c ← classIdent m n; `($c)
 
