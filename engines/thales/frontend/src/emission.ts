@@ -632,11 +632,13 @@ function numericShaped(e: ts.Expression, scope: WalkScope): boolean {
 }
 
 /** Whether an expression's own shape can denote a boolean in this slice:
- * a comparison, a SameValue call, or a logical combination of them.
- * Top-level shape only: deeper offenders keep their own refusals. */
+ * a literal, a name bound at boolean, a comparison, a SameValue call, or
+ * a logical combination of them. Top-level shape only: deeper offenders
+ * keep their own refusals. */
 function booleanShaped(e: ts.Expression, scope: WalkScope): boolean {
   const u = unwrapParens(e);
   if (booleanLiteral(u) !== undefined) return true;
+  if (ts.isIdentifier(u)) return scope.vars.get(u.text) === "bool";
   if (ts.isBinaryExpression(u)) {
     const op = u.operatorToken.getText();
     return COMPARISON_OPERATORS.has(op) || LOGICAL_OPERATORS.has(op);
@@ -2084,6 +2086,7 @@ function inferredLocalTy(
   const built = newCall(init);
   if (built !== undefined)
     return classNamed((built.expression as ts.Identifier).text, reg);
+  if (booleanShaped(init, scope)) return "bool";
   const ty = placeTy(init, scope);
   /* v8 ignore next 2 -- no place is an option: a bound option is not a
      place, and no field holds one. */
@@ -2209,11 +2212,17 @@ function structureStmt(
     // call, or a logical combination of them: truthiness has no model. A
     // standard-library member the model cannot take names itself here as
     // it does anywhere else; only truthiness is left to the syntax kind.
-    const cond = booleanShaped(inner, scope)
+    // The scan types a bound name off the same binding the walk will, so
+    // a boolean local is a condition here exactly as it is in the walk.
+    const bound: WalkScope = {
+      ...scope,
+      vars: new Map([...locals].map(([n, l]) => [n, l.ty])),
+    };
+    const cond = booleanShaped(inner, bound)
       ? { expr: inner }
       : {
           opaque:
-            unsupportedBuiltin(inner, scope) ??
+            unsupportedBuiltin(inner, bound) ??
             constructAt(inner, inner.kind, sf),
         };
     // An arm's locals are a copy, so its bindings do not escape it. A
