@@ -22,3 +22,22 @@ export function keepBelowSecond(s: number): number {
 export function hoursToMilliseconds(hours: number): number {
   return hours * millisecondsInHour;
 }
+
+const root2 = Math.sqrt(2);
+const noLimit = Infinity;
+const epsilon = Number.EPSILON;
+
+/** @ensures{nonNegative} forall (n: int ∈ [0, 10)) { diagonal(n) >= 0 } */
+export function diagonal(x: number): number {
+  return x * root2;
+}
+
+/** @ensures{nonNegative} forall (n: int ∈ [0, 10)) { shrink(n) >= 0 } */
+export function shrink(x: number): number {
+  return x / noLimit;
+}
+
+/** @ensures{nonNegative} forall (n: int ∈ [0, 10)) { nudge(n) >= 0 } */
+export function nudge(x: number): number {
+  return x + epsilon;
+}

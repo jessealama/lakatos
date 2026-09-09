@@ -184,6 +184,8 @@ const CONST_FIXTURES = [
   `${CONFORMANCE}/theorem/module-const-ladder.ts`,
   `${CONFORMANCE}/theorem/builtin-alias-magnitude.ts`,
   `${CONFORMANCE}/theorem/imported-constants/main.ts`,
+  `${CONFORMANCE}/theorem/initializers.ts`,
+  `${CONFORMANCE}/theorem/const-epsilon-read.ts`,
   `${CONFORMANCE}/inappropriate/module-let-read.ts`,
 ];
 
