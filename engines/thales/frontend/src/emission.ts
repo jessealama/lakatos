@@ -3183,7 +3183,7 @@ function walkClass(
       if (m.type === undefined) return constructAt(m, m.kind, sf);
       const ty = declaredValueTy(m.type, sf, fieldReg);
       if (typeof ty !== "string" && "reason" in ty) return ty;
-      /* v8 ignore next 2 -- unreachable: fieldReg refused the boolean first. */
+      /* v8 ignore next -- unreachable: fieldReg refused the boolean first. */
       if (ty === "bool") return constructAt(m.type, m.type.kind, sf);
       if (RESERVED_MEMBERS.has(spelling))
         return memberNameFailure(className, spelling, "reserves the name");
@@ -3347,14 +3347,12 @@ function walkClass(
   // boundary.
   const shapeCtorParams: SlotTy[] = [];
   for (const p of ctorParams) {
-    /* v8 ignore next 3 -- unreachable: ctorReg refused the union and the boolean first. */
-    if (
-      (typeof p.ty !== "string" && "union" in p.ty) ||
-      p.ty === "bool" ||
-      p.slot === "bool"
-    )
+    /* v8 ignore start -- unreachable: ctorReg refused the union and the boolean first. */
+    if ((typeof p.ty !== "string" && "union" in p.ty) || p.ty === "bool")
       return constructAt(ctor, ctor.kind, sf);
-    shapeCtorParams.push(p.slot);
+    /* v8 ignore stop */
+    // p.slot matches p.ty here (no default), so it excludes "bool" too.
+    shapeCtorParams.push(p.slot as SlotTy);
   }
 
   // Both registries fill as members render, so a member body sees only
@@ -3403,6 +3401,7 @@ function walkClass(
     try {
       getters.push({
         name: spelling,
+        ...wireReturns(returns),
         body: lowerTree(
           body,
           [],
@@ -3413,7 +3412,6 @@ function walkClass(
           sf,
           returns,
         ),
-        ...wireReturns(returns),
       });
       modeledGetters.set(spelling, returns);
     } catch (err) {

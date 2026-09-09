@@ -160,7 +160,11 @@ def numParamJson (name : String) : Json :=
 #guard
   (decodeFn (Json.mkObj [("name", "f"), ("params", Json.arr #[]), ("source", ""),
     ("body", Json.arr #[]), ("returns", "string")]))
-  matches .error _
+  matches .error "return type 'string' is not a keyword the model returns"
+#guard
+  (decodeFn (Json.mkObj [("name", "f"), ("params", Json.arr #[]), ("source", ""),
+    ("body", Json.arr #[]), ("returns", Json.num 1)]))
+  matches .error "field 'returns' is not a string"
 -- The three option expression kinds decode strictly, and a local may bind
 -- at a class.
 #guard
