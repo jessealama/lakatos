@@ -750,6 +750,27 @@
       "axioms": []
     }
   ],
+  "engines/thales/tests/conformance/countersatisfiable/boolean-witness.ts": [
+    {
+      "function": "pick",
+      "property": "alwaysPicks",
+      "szs": "CounterSatisfiable",
+      "reason": "the property is false on its bounded domain",
+      "counterexample": {
+        "b": false,
+        "n": 1
+      }
+    },
+    {
+      "function": "flip",
+      "property": "onlyOff",
+      "szs": "CounterSatisfiable",
+      "reason": "the property is false on its bounded domain",
+      "counterexample": {
+        "b": true
+      }
+    }
+  ],
   "engines/thales/tests/fixtures/classes.ts": [
     {
       "function": "Box#v",
@@ -1215,6 +1236,79 @@
       "property": "p",
       "szs": "Inappropriate",
       "reason": "'Point#near' could not be modeled: 'Named' could not be modeled: unmapped TypeScript construct 'InterfaceDeclaration' at 1:18"
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/boolean-param.ts": [
+    {
+      "function": "isSmall",
+      "property": "small",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_1815843846112742980",
+      "axioms": []
+    },
+    {
+      "function": "isSmall",
+      "property": "equalsTrue",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_16965545618310154415",
+      "axioms": []
+    },
+    {
+      "function": "pick",
+      "property": "picks",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_2701021842910207141",
+      "axioms": []
+    },
+    {
+      "function": "clamp",
+      "property": "viaHelper",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_15897373661297761935",
+      "axioms": []
+    },
+    {
+      "function": "flip",
+      "property": "flips",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_16349589892317839672",
+      "axioms": []
+    },
+    {
+      "function": "pickOr",
+      "property": "defaulted",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_13215094288800604350",
+      "axioms": []
+    },
+    {
+      "function": "Gate#pass",
+      "property": "gated",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_16437103519873746072",
+      "axioms": []
+    },
+    {
+      "function": "passes",
+      "property": "opens",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_15496391804623285422",
+      "axioms": []
+    },
+    {
+      "function": "passes",
+      "property": "above",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_4779472611796102491",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/inappropriate/boolean-field.ts": [
+    {
+      "function": "Flag#read",
+      "property": "p",
+      "szs": "Inappropriate",
+      "reason": "'Flag#read' could not be modeled: unmapped TypeScript construct 'BooleanKeyword' at 5:16"
     }
   ],
   "engines/thales/tests/fixtures/degradations.ts": [
