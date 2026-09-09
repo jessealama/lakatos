@@ -82,8 +82,7 @@ example (x y c : Float) (h : Float.le x y = true)
     Float.le (x - c) (y - c) = true :=
   FloatFacts.float_le_sub_right h hLo hHi
 
--- Self-subtraction of a finite float is exactly +0, whichever zero the
--- operand was.
+-- Self-subtraction of a finite float is exactly +0.
 example (a : Float) (hLo : (-(1.0 / 0.0) : Float) < a) (hHi : a < (1.0 / 0.0 : Float)) :
     a + -a = 0 :=
   FloatFacts.float_add_neg_self hLo hHi

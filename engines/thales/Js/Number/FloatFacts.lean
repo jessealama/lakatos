@@ -3285,10 +3285,8 @@ theorem float_le_sub_right {x y c : Float} (hxy : Float.le x y = true)
   rw [hsub, hsub]
   exact float_le_add_right hxy (float_neg_bound_lo hHi) (float_neg_bound_hi hLo)
 
-/-- A finite float minus itself is `+0`. Both operands unpack to the same
-mantissa and exponent, so the aligned signed sum is literally zero and
-`normalize` hands back its positive zero; opposite-signed zeros sum to
-`+0` by the same rule. -/
+/-- A finite float minus itself is `+0`: the difference is exact, and an
+exact zero result takes the positive sign, whichever zero the operand was. -/
 theorem float_add_neg_self {a : Float}
     (hLo : (-(1.0 / 0.0) : Float) < a) (hHi : a < (1.0 / 0.0 : Float)) :
     a + -a = 0 := by
