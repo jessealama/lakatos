@@ -1,8 +1,9 @@
 namespace Js
 
 /-- IEEE positive infinity, the endpoint an infinite `number` bound compares
-against (core has `Float.isInf` but no constant). -/
-def floatInf : Float := 1.0 / 0.0
+against. Core's constant under the name the renderer emits as an atom and
+the `Norm` lemmas are stated over. -/
+def floatInf : Float := Float.inf
 
 /-- Bounded ∀ over the half-open interval `[lo, hi)` of `Int`. Carries its
 own `Decidable` instance so `decide` works on bounded properties. -/
