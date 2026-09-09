@@ -48,12 +48,15 @@ export default defineConfig({
         // positioned rethrow no longer does, and the arm is unreachable
         // behind the gate. Reseeded 2026-09-03: zero-argument discovery
         // lost its src/ fallback, whose branches were all covered, so the
-        // denominator shrank while the unreachable set did not.
+        // denominator shrank while the unreachable set did not. Reseeded
+        // 2026-09-09: the refused-operator scan was deleted, every operator
+        // outside the model now refusing at the construct scan, so the
+        // denominator shrank again while the unreachable set did not.
         autoUpdate: true,
-        statements: 99.52,
-        branches: 98.4,
+        statements: 99.54,
+        branches: 98.41,
         functions: 100,
-        lines: 99.65,
+        lines: 99.64,
       },
     },
   },

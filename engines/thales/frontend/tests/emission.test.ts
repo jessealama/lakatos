@@ -753,27 +753,57 @@ describe("body classification", () => {
     ]);
   });
 
-  test("** refuses with the spec-fidelity reason", () => {
+  test("** is not supported, by name", () => {
     expect(classifications(fnWith("x ** 2"))).toEqual({
       classified: [
-        [
-          "Inappropriate",
-          "'f' could not be modeled: '**' is implementation-approximated " +
-            "in JavaScript, so any model would certify results a conforming " +
-            "engine may disagree with",
-        ],
+        ["Inappropriate", "'f' could not be modeled: '**' is not supported"],
       ],
       obligations: 0,
     });
   });
 
+  test.each(["&", "|", "<<", "??", "=="])(
+    "an operator outside the model names itself: %s",
+    (op) => {
+      expect(classifications(fnWith(`x ${op} 2`))).toEqual({
+        classified: [
+          [
+            "Inappropriate",
+            `'f' could not be modeled: '${op}' is not supported`,
+          ],
+        ],
+        obligations: 0,
+      });
+    },
+  );
+
+  test("an unsupported operator in dead code still refuses the declaration", () => {
+    const src =
+      "/** @ensures{p} forall (x: int ∈ [0, 5)) { f(x) ≡ x } */\n" +
+      "export function f(x: number): number { return x; return x & 7; }\n";
+    expect(classifications(src).classified).toEqual([
+      ["Inappropriate", "'f' could not be modeled: '&' is not supported"],
+    ]);
+  });
+
+  test("an unsupported operator and an opaque construct report in tree order", () => {
+    expect(classifications(fnWith("x ** 2 + x.y")).classified).toEqual([
+      ["Inappropriate", "'f' could not be modeled: '**' is not supported"],
+    ]);
+    expect(classifications(fnWith("x.y + x ** 2")).classified).toEqual([
+      [
+        "Inappropriate",
+        expect.stringMatching(
+          /^'f' could not be modeled: unmapped TypeScript construct 'PropertyAccessExpression' at 2:\d+$/,
+        ),
+      ],
+    ]);
+  });
+
   test("an operator with no model is outside the model", () => {
     expect(classifications(fnWith("x & 7"))).toEqual({
       classified: [
-        [
-          "Inappropriate",
-          "'f' could not be modeled: operator '&' has no model in this slice",
-        ],
+        ["Inappropriate", "'f' could not be modeled: '&' is not supported"],
       ],
       obligations: 0,
     });
@@ -1173,13 +1203,7 @@ describe("formula classification", () => {
         formulaWith("forall (x: int ∈ [0, 5)) { f(x) ** 2 >= 0 }"),
       ),
     ).toEqual({
-      classified: [
-        [
-          "Inappropriate",
-          "'**' is implementation-approximated in JavaScript, so any model " +
-            "would certify results a conforming engine may disagree with",
-        ],
-      ],
+      classified: [["Inappropriate", "'**' is not supported"]],
       obligations: 0,
     });
   });
@@ -1190,13 +1214,7 @@ describe("formula classification", () => {
         formulaWith("forall (x: int ∈ [0, 5)) { x ** 2 >= 0 -> f(x) >= 0 }"),
       ),
     ).toEqual({
-      classified: [
-        [
-          "Inappropriate",
-          "'**' is implementation-approximated in JavaScript, so any model " +
-            "would certify results a conforming engine may disagree with",
-        ],
-      ],
+      classified: [["Inappropriate", "'**' is not supported"]],
       obligations: 0,
     });
   });
@@ -1241,7 +1259,7 @@ describe("formula classification", () => {
     expect(
       classifications(formulaWith("forall (x: int ∈ [0, 5)) { (x & 7) >= 0 }"))
         .classified,
-    ).toEqual([["Inappropriate", "operator '&' has no model in this slice"]]);
+    ).toEqual([["Inappropriate", "'&' is not supported"]]);
   });
 
   test("an unmapped construct is Inappropriate at its atom coordinates", () => {
@@ -2548,7 +2566,7 @@ describe("Math.sqrt models as Float.sqrt", () => {
     ]);
   });
 
-  test("a refused operator inside the argument is still found", () => {
+  test("an unsupported operator inside the argument is still found", () => {
     const src = [
       "/** @ensures{p} forall (n: int ∈ [0, 3)) { f(n) >= 0 } */",
       "export function f(x: number): number {",
@@ -3315,7 +3333,7 @@ describe("builtin member calls model as Float primitives", () => {
     );
   });
 
-  test("a refused operator inside a Math.abs argument is still found", () => {
+  test("an unsupported operator inside a Math.abs argument is still found", () => {
     const src = [
       "/** @ensures{p} forall (n: int ∈ [0, 3)) { f(n) >= 0 } */",
       "export function f(x: number): number {",
@@ -3496,7 +3514,7 @@ describe("logical operators on boolean operands", () => {
     ]);
   });
 
-  test("a refused operator inside a logical operand still refuses as itself", () => {
+  test("an unsupported operator inside a logical operand still refuses as itself", () => {
     const { classified } = emitModule(
       [
         "/** @ensures{p} forall (x: int in [0, 4)) { pick(x) >= 0 } */",
@@ -3512,7 +3530,7 @@ describe("logical operators on boolean operands", () => {
     expect(classified).toEqual([
       expect.objectContaining({
         szs: "Inappropriate",
-        reason: expect.stringContaining("'**' is implementation-approximated"),
+        reason: expect.stringContaining("'**' is not supported"),
       }),
     ]);
   });
@@ -3592,7 +3610,7 @@ describe("conditional expressions", () => {
     ]);
   });
 
-  test("a refused operator in an arm refuses the declaration", () => {
+  test("an unsupported operator in an arm refuses the declaration", () => {
     const { classified } = emitModule(
       [
         "/** @ensures{p} forall (x: number) { Object.is(pick(x), pick(x)) } */",
@@ -3605,10 +3623,7 @@ describe("conditional expressions", () => {
     expect(classified).toEqual([
       expect.objectContaining({
         szs: "Inappropriate",
-        reason:
-          "'pick' could not be modeled: '**' is implementation-approximated " +
-          "in JavaScript, so any model would certify results a conforming " +
-          "engine may disagree with",
+        reason: "'pick' could not be modeled: '**' is not supported",
       }),
     ]);
   });
@@ -4845,7 +4860,7 @@ describe("class-level degrade paths (#129)", () => {
       },
     ],
     [
-      "a refused operator in the constructor",
+      "an unsupported operator in the constructor",
       { ctor: "  constructor(v: number) {\n    this.#v = v ** 2;\n  }" },
     ],
   ])("%s degrades the class", (_label, opts) => {
@@ -4983,7 +4998,7 @@ describe("class member-level degrade paths (#129)", () => {
       "  get bad(): number {\n    return this.other;\n  }",
     ],
     [
-      "a refused operator in a getter",
+      "an unsupported operator in a getter",
       "  get bad(): number {\n    return this.#v ** 2;\n  }",
     ],
     ["a getter that can run off the end", "  get bad(): number {}"],
@@ -5130,9 +5145,9 @@ describe("instance atoms outside the happy path (#129)", () => {
       /unmapped TypeScript construct 'AwaitExpression'/,
     ],
     [
-      "a refused operator in a new argument",
+      "an unsupported operator in a new argument",
       "Object.is(new Box(x ** 2).v, x)",
-      /'\*\*' is implementation-approximated/,
+      /'\*\*' is not supported/,
     ],
     [
       "a qualified constructor name",
@@ -5658,6 +5673,106 @@ describe("method calls in atoms and bodies (#130)", () => {
   });
 });
 
+describe("getter reads on this", () => {
+  const boxWith = (members: string) => `export class Box {
+  readonly v: number;
+  constructor(v: number) {
+    this.v = v;
+  }
+${members}
+}
+`;
+
+  test("a method reads its own class's getter through this", () => {
+    const src = boxWith(`  get twice(): number {
+    return this.v * 2;
+  }
+  /** @ensures{viaThis} forall (a: number) { Object.is(new Box(a).direct(), a * 2) } */
+  direct(): number {
+    return this.twice;
+  }`);
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    const cls = emission.declarations[0] as EmitClass;
+    expect(cls.methods[0]!.body[0]).toEqual({
+      kind: "return",
+      expr: {
+        kind: "getter-read",
+        className: "Box",
+        name: "twice",
+        object: { kind: "self" },
+      },
+    });
+  });
+
+  test("a method reads a getter declared after it", () => {
+    const src =
+      boxWith(`  /** @ensures{p} forall (a: number) { Object.is(new Box(a).direct(), a * 2) } */
+  direct(): number {
+    return this.later;
+  }
+  get later(): number {
+    return this.v * 2;
+  }`);
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    const cls = emission.declarations[0] as EmitClass;
+    expect(cls.getters.map((g) => g.name)).toEqual(["later"]);
+    expect(cls.methods.map((m) => m.name)).toEqual(["direct"]);
+  });
+
+  test("a getter reads an earlier getter through this", () => {
+    const src = boxWith(`  get twice(): number {
+    return this.v * 2;
+  }
+  get quad(): number {
+    return this.twice * 2;
+  }`);
+    const { emission } = emitModule(src, "t.ts");
+    const cls = emission.declarations[0] as EmitClass;
+    expect(cls.getters.map((g) => g.name)).toEqual(["twice", "quad"]);
+    expect(JSON.stringify(cls.getters[1]!.body)).toContain(
+      '{"kind":"getter-read","className":"Box","name":"twice","object":{"kind":"self"}}',
+    );
+  });
+
+  test("a forward getter read through this degrades the reader alone", () => {
+    const src = boxWith(`  get quad(): number {
+    return this.twice * 2;
+  }
+  get twice(): number {
+    return this.v * 2;
+  }`);
+    const { emission } = emitModule(src, "t.ts");
+    const cls = emission.declarations[0] as EmitClass;
+    expect(cls.getters.map((g) => g.name)).toEqual(["twice"]);
+  });
+
+  test("a self-recursive getter degrades alone", () => {
+    const src = boxWith(`  get loop(): number {
+    return this.loop;
+  }`);
+    const { emission } = emitModule(src, "t.ts");
+    expect((emission.declarations[0] as EmitClass).getters).toEqual([]);
+  });
+
+  test("a read of a degraded earlier getter travels its reason", () => {
+    const src = boxWith(`  get gone(): number {
+    const q = [1];
+    return q[0];
+  }
+  /** @ensures{p} forall (a: number) { Object.is(new Box(a).direct(), a * 2) } */
+  direct(): number {
+    return this.gone;
+  }`);
+    const { classified } = emitModule(src, "t.ts");
+    expect(classified[0]!.szs).toBe("Inappropriate");
+    expect(classified[0]!.reason).toContain(
+      "'Box#direct' could not be modeled: 'Box#gone' could not be modeled: ",
+    );
+  });
+});
+
 describe("method-call scanning and misuse (#130)", () => {
   /** A class whose `plus` method the later members exercise. */
   const withPlus = (members: string) => `export class C {
@@ -5793,7 +5908,7 @@ ${box}`;
     }
   });
 
-  test("a refused operator inside a call's receiver or arguments refuses", () => {
+  test("an unsupported operator inside a call's receiver or arguments refuses", () => {
     const box = `export class Box {
   #v: number;
   constructor(v: number) {
@@ -6760,9 +6875,7 @@ describe("a body opens by resolving each default", () => {
       [
         "Inappropriate",
         "'f' could not be modeled: parameter 'y' has a default the model " +
-          "cannot evaluate: '**' is implementation-approximated in " +
-          "JavaScript, so any model would certify results a conforming " +
-          "engine may disagree with",
+          "cannot evaluate: '**' is not supported",
       ],
     ]);
   });
@@ -7076,7 +7189,7 @@ export class Point {
     );
   });
 
-  test("keeps instance-valued locals refused", () => {
+  test("keeps an unannotated instance-valued local refused", () => {
     const src = `
 export class Point {
   readonly x: number;
@@ -8012,7 +8125,7 @@ describe("module-level const bindings", () => {
     ]);
   });
 
-  test("a call, a builtin, a refused operator, or a mutable read keeps the degradation", () => {
+  test("a call, a builtin, an unsupported operator, or a mutable read keeps the degradation", () => {
     const src = [
       "let base = 2;",
       "const a = base * 3;",
@@ -8675,6 +8788,207 @@ describe("union-typed locals (#117)", () => {
         "'f' could not be modeled: unmapped TypeScript construct 'VariableStatement' at 3:3",
       ],
     ]);
+  });
+});
+
+describe("class-typed locals (#117)", () => {
+  const emit = (src: string) => emitModule(src, "t.ts");
+  const PT = `export class Pt {
+  readonly x: number;
+  constructor(x: number) {
+    this.x = x;
+  }
+  twice(): number {
+    return this.x * 2;
+  }
+}
+`;
+
+  test("a class-annotated const rides the wire at its class", () => {
+    const { emission, classified } = emit(
+      `${PT}export function f(q: Pt): number {\n` +
+        `  const p: Pt = q;\n  return 0;\n}\n`,
+    );
+    expect(classified).toEqual([]);
+    expectValidEmission(emission);
+    const fn = emission.declarations[1];
+    assert(fn?.kind === "function");
+    expect(fnBody(fn)[0]).toEqual({
+      kind: "const",
+      name: "p",
+      init: { kind: "id", name: "q" },
+      type: { class: "Pt" },
+    });
+  });
+
+  test("a construction meets the local's class as a slot", () => {
+    const { emission, classified } = emit(
+      `${PT}export function f(n: number): number {\n` +
+        `  const p: Pt = new Pt(n);\n  return 0;\n}\n`,
+    );
+    expect(classified).toEqual([]);
+    const fn = emission.declarations[1];
+    assert(fn?.kind === "function");
+    expect(fnBody(fn)[0]).toEqual({
+      kind: "const",
+      name: "p",
+      init: { kind: "new", className: "Pt", args: [{ kind: "id", name: "n" }] },
+      type: { class: "Pt" },
+    });
+  });
+
+  test("a field read on a class local is a place", () => {
+    const { emission, classified } = emit(
+      `${PT}export function f(q: Pt): number {\n` +
+        `  const p: Pt = q;\n  return p.x;\n}\n`,
+    );
+    expect(classified).toEqual([]);
+    const fn = emission.declarations[1];
+    assert(fn?.kind === "function");
+    expect(fnBody(fn)[1]).toEqual({
+      kind: "return",
+      expr: {
+        kind: "field-read",
+        className: "Pt",
+        field: "x",
+        object: { kind: "id", name: "p" },
+      },
+    });
+  });
+
+  test("a method call on a class local dispatches to its class", () => {
+    const { emission, classified } = emit(
+      `${PT}export function f(q: Pt): number {\n` +
+        `  const p: Pt = q;\n  return p.twice();\n}\n`,
+    );
+    expect(classified).toEqual([]);
+    const fn = emission.declarations[1];
+    assert(fn?.kind === "function");
+    expect(fnBody(fn)[1]).toEqual({
+      kind: "return",
+      expr: {
+        kind: "method-call",
+        className: "Pt",
+        name: "twice",
+        object: { kind: "id", name: "p" },
+        args: [],
+      },
+    });
+  });
+
+  test("a class local meets a class-typed argument slot", () => {
+    const { emission, classified } = emit(
+      `${PT}export function g(p: Pt): number {\n  return p.x;\n}\n` +
+        `export function f(q: Pt): number {\n` +
+        `  const p: Pt = q;\n  return g(p);\n}\n`,
+    );
+    expect(classified).toEqual([]);
+    const fn = emission.declarations[2];
+    assert(fn?.kind === "function");
+    expect(fnBody(fn)[1]).toEqual({
+      kind: "return",
+      expr: { kind: "call", callee: "g", args: [{ kind: "id", name: "p" }] },
+    });
+  });
+
+  test("a mutable class local reassigns at its class", () => {
+    const { emission, classified } = emit(
+      `${PT}export function f(q: Pt): number {\n` +
+        `  let p: Pt = q;\n  p = new Pt(2);\n  return p.x;\n}\n`,
+    );
+    expect(classified).toEqual([]);
+    const fn = emission.declarations[1];
+    assert(fn?.kind === "function");
+    expect(fnBody(fn).slice(0, 2)).toEqual([
+      {
+        kind: "let",
+        name: "p",
+        init: { kind: "id", name: "q" },
+        type: { class: "Pt" },
+      },
+      {
+        kind: "assign",
+        name: "p",
+        expr: {
+          kind: "new",
+          className: "Pt",
+          args: [{ kind: "num", lit: "2" }],
+        },
+      },
+    ]);
+  });
+
+  test("a method body binds a local at its enclosing class", () => {
+    const { emission, classified } = emit(
+      `export class A {
+  readonly x: number;
+  constructor(x: number) {
+    this.x = x;
+  }
+  /** @ensures{p} forall (a: int ∈ [0, 10)) { 0 <= new A(a).m(new A(a)) } */
+  m(b: A): number {
+    const other: A = b;
+    return other.x;
+  }
+}
+`,
+    );
+    expect(classified).toEqual([]);
+    expectValidEmission(emission);
+  });
+
+  test("an initializer that is not an instance of the class refuses at the slot", () => {
+    const { classified } = emit(
+      `${PT}/** @ensures{p} forall (n: int ∈ [0, 10)) { 0 <= f(n) } */\n` +
+        `export function f(n: number): number {\n` +
+        `  const p: Pt = n;\n  return 0;\n}\n`,
+    );
+    expect(classified[0]!.reason).toContain(
+      "identifier 'n' is a number, not an instance of 'Pt'",
+    );
+  });
+
+  test("a local at the class under construction refuses in its constructor", () => {
+    const { classified } = emit(
+      `export class Node {
+  readonly x: number;
+  constructor(x: number) {
+    const me: Node = new Node(x);
+    this.x = x;
+  }
+  /** @ensures{p} forall (a: int ∈ [0, 10)) { 0 <= a } */
+  get v(): number {
+    return this.x;
+  }
+}
+`,
+    );
+    expect(classified[0]!.szs).toBe("Inappropriate");
+    expect(classified[0]!.reason).toContain("'VariableStatement' at 4:5");
+  });
+
+  test("a local at a later-declared class keeps the statement refusal", () => {
+    const { classified } = emit(
+      `/** @ensures{p} forall (n: int ∈ [0, 10)) { 0 <= f(n) } */\n` +
+        `export function f(n: number): number {\n` +
+        `  const p: Pt = new Pt(n);\n  return 0;\n}\n${PT}`,
+    );
+    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
+      [
+        "Inappropriate",
+        "'f' could not be modeled: unmapped TypeScript construct 'VariableStatement' at 3:3",
+      ],
+    ]);
+  });
+
+  test("a local at a degraded class travels that class's reason", () => {
+    const { classified } = emit(
+      `export abstract class Bad {}\n` +
+        `/** @ensures{p} forall (n: int ∈ [0, 10)) { 0 <= f(n) } */\n` +
+        `export function f(n: number): number {\n` +
+        `  const b: Bad = n;\n  return 0;\n}\n`,
+    );
+    expect(classified[0]!.reason).toMatch(/'Bad' could not be modeled/);
   });
 });
 
@@ -9413,9 +9727,9 @@ export function g(a: number): number {
       "'Inner' has no method 'nope' in the model",
     ],
     [
-      "a getter on this",
-      "return this.twice;",
-      "'this.twice' does not name a field of 'Outer'",
+      "a member on this the model lacks",
+      "return this.nope;",
+      "'this.nope' does not name a field or a modeled getter of 'Outer'",
     ],
   ])("%s refuses", (_what, body, reason) => {
     const src = NESTED.replace("BODY", body).replace(
@@ -9502,7 +9816,7 @@ export function g(a: number): number {
     );
   });
 
-  test("a refused operator inside a plain call's argument still names it", () => {
+  test("an unsupported operator inside a plain call's argument still names it", () => {
     const src = `export function h(a: number): number {
   return a;
 }
@@ -9512,9 +9826,7 @@ export function g(a: number): number {
 }
 `;
     const { classified } = emitModule(src, "t.ts");
-    expect(classified[0]!.reason).toContain(
-      "'**' is implementation-approximated",
-    );
+    expect(classified[0]!.reason).toContain("'**' is not supported");
   });
 
   test("the scan reports a construct inside a builtin call's argument", () => {

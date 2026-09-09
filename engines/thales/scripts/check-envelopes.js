@@ -108,6 +108,7 @@ const BINDER_FIXTURES = [
 const CLASS_FIXTURES = [
   "engines/thales/tests/fixtures/classes.ts",
   `${CONFORMANCE}/theorem/class-box-roundtrip.ts`,
+  `${CONFORMANCE}/theorem/class-getter-on-this.ts`,
   `${CONFORMANCE}/theorem/class-binder-distance.ts`,
   `${CONFORMANCE}/theorem/class-binder-equality-guards.ts`,
   `${CONFORMANCE}/theorem/class-binder-nested.ts`,
@@ -121,6 +122,7 @@ const CLASS_FIXTURES = [
   `${CONFORMANCE}/theorem/fn-default-instance.ts`,
   `${CONFORMANCE}/theorem/ctor-default-instance.ts`,
   `${CONFORMANCE}/theorem/method-default-instance.ts`,
+  `${CONFORMANCE}/theorem/class-local.ts`,
   `${CONFORMANCE}/inappropriate/ctor-default-this.ts`,
   `${CONFORMANCE}/theorem/method-default-omitted.ts`,
   `${CONFORMANCE}/theorem/method-default-this.ts`,
@@ -239,6 +241,7 @@ const MEMBER_FIXTURES = [
   `${CONFORMANCE}/theorem/epsilon-scale.ts`,
   `${CONFORMANCE}/theorem/safe-integer-bound.ts`,
   `${CONFORMANCE}/theorem/infinity-spelled.ts`,
+  `${CONFORMANCE}/theorem/unbounded-clamp.ts`,
   `${CONFORMANCE}/inappropriate/math-log.ts`,
   `${CONFORMANCE}/inappropriate/number-length.ts`,
   `${CONFORMANCE}/inappropriate/math-sqrt-local-alias.ts`,

@@ -54,7 +54,7 @@
       "function": "bump",
       "property": "grows",
       "szs": "GaveUp",
-      "reason": "unsolved goal: ∀ (n : Int), 0 ≤ n → (Float.ofInt n).lt (Float.ofInt n + 1) = true"
+      "reason": "unsolved goal: \u2200 (n : Int), 0 \u2264 n \u2192 (Float.ofInt n).lt (Float.ofInt n + 1) = true"
     },
     {
       "function": "bump",
@@ -282,7 +282,7 @@
       "function": "scale",
       "property": "grows",
       "szs": "GaveUp",
-      "reason": "unsolved goal: ∀ (x : Int), 0 ≤ x → (Float.ofInt x).le (Float.ofInt x * 2) = true"
+      "reason": "unsolved goal: \u2200 (x : Int), 0 \u2264 x \u2192 (Float.ofInt x).le (Float.ofInt x * 2) = true"
     }
   ],
   "engines/thales/tests/conformance/gaveup/unbounded-double.ts": [
@@ -290,7 +290,7 @@
       "function": "dbl",
       "property": "doubles",
       "szs": "GaveUp",
-      "reason": "unsolved goal: ∀ (x : Int), Float.ofInt x * 2 = Float.ofInt x + Float.ofInt x"
+      "reason": "unsolved goal: \u2200 (x : Int), Float.ofInt x * 2 = Float.ofInt x + Float.ofInt x"
     }
   ],
   "engines/thales/tests/conformance/gaveup/unbounded-false.ts": [
@@ -298,7 +298,7 @@
       "function": "bump",
       "property": "unchanged",
       "szs": "GaveUp",
-      "reason": "unsolved goal: ∀ (x : Int), Float.ofInt x + 1 = Float.ofInt x"
+      "reason": "unsolved goal: \u2200 (x : Int), Float.ofInt x + 1 = Float.ofInt x"
     }
   ],
   "engines/thales/tests/conformance/gaveup/unbounded-nat.ts": [
@@ -306,7 +306,7 @@
       "function": "dbl",
       "property": "grows",
       "szs": "GaveUp",
-      "reason": "unsolved goal: ∀ (x : Int), 0 ≤ x → (Float.ofInt x).le (Float.ofInt x * 2) = true"
+      "reason": "unsolved goal: \u2200 (x : Int), 0 \u2264 x \u2192 (Float.ofInt x).le (Float.ofInt x * 2) = true"
     }
   ],
   "engines/thales/tests/conformance/inappropriate/await-remote.ts": [
@@ -330,7 +330,7 @@
       "function": "square",
       "property": "nonNegative",
       "szs": "Inappropriate",
-      "reason": "'square' could not be modeled: '**' is implementation-approximated in JavaScript, so any model would certify results a conforming engine may disagree with"
+      "reason": "'square' could not be modeled: '**' is not supported"
     }
   ],
   "engines/thales/tests/conformance/inappropriate/unmodeled-operator.ts": [
@@ -338,7 +338,7 @@
       "function": "masked",
       "property": "stuck",
       "szs": "Inappropriate",
-      "reason": "'masked' could not be modeled: operator '&' has no model in this slice"
+      "reason": "'masked' could not be modeled: '&' is not supported"
     }
   ],
   "engines/thales/tests/conformance/timeout/big-domain.ts": [
@@ -623,7 +623,7 @@
       "function": "scale",
       "property": "fixed",
       "szs": "GaveUp",
-      "reason": "unsolved goal: ∀ (x : JsNumber), 0 < x → x < floatInf → x * 2 = x"
+      "reason": "unsolved goal: \u2200 (x : JsNumber), 0 < x \u2192 x < floatInf \u2192 x * 2 = x"
     }
   ],
   "engines/thales/tests/conformance/inappropriate/guarded-power.ts": [
@@ -631,7 +631,7 @@
       "function": "keep",
       "property": "guardedPower",
       "szs": "Inappropriate",
-      "reason": "'**' is implementation-approximated in JavaScript, so any model would certify results a conforming engine may disagree with"
+      "reason": "'**' is not supported"
     }
   ],
   "engines/thales/tests/conformance/theorem/or-guard.ts": [
@@ -727,6 +727,36 @@
       "property": "roundTrip",
       "szs": "Theorem",
       "reason": "proved by generic proof search, kernel-checked as TsProof.thm_5912744196769564160",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/class-getter-on-this.ts": [
+    {
+      "function": "Box#direct",
+      "property": "viaThis",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_7038518527700066741",
+      "axioms": []
+    },
+    {
+      "function": "Box#chained",
+      "property": "viaEarlierGetter",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_18126771824224478959",
+      "axioms": []
+    },
+    {
+      "function": "fresh",
+      "property": "viaFresh",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_13809191002433773899",
+      "axioms": []
+    },
+    {
+      "function": "fromVar",
+      "property": "viaVar",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_4173488319210614077",
       "axioms": []
     }
   ],
@@ -844,6 +874,29 @@
       "axioms": []
     }
   ],
+  "engines/thales/tests/conformance/theorem/class-local.ts": [
+    {
+      "function": "viaLocal",
+      "property": "copies",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_16069670729986704880",
+      "axioms": []
+    },
+    {
+      "function": "held",
+      "property": "doubles",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_16480558824634636674",
+      "axioms": []
+    },
+    {
+      "function": "rebound",
+      "property": "rebinds",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_7720581166775413761",
+      "axioms": []
+    }
+  ],
   "engines/thales/tests/conformance/inappropriate/ctor-default-this.ts": [
     {
       "function": "Q#z",
@@ -911,7 +964,7 @@
       "function": "g",
       "property": "p",
       "szs": "Inappropriate",
-      "reason": "'g' could not be modeled: 'pow' could not be modeled: parameter 'y' has a default the model cannot evaluate: '**' is implementation-approximated in JavaScript, so any model would certify results a conforming engine may disagree with"
+      "reason": "'g' could not be modeled: 'pow' could not be modeled: parameter 'y' has a default the model cannot evaluate: '**' is not supported"
     }
   ],
   "engines/thales/tests/conformance/theorem/field-union-undefined.ts": [
@@ -1004,7 +1057,7 @@
       "function": "Pow#square",
       "property": "grows",
       "szs": "Inappropriate",
-      "reason": "'Pow#square' could not be modeled: '**' is implementation-approximated in JavaScript, so any model would certify results a conforming engine may disagree with"
+      "reason": "'Pow#square' could not be modeled: '**' is not supported"
     }
   ],
   "engines/thales/tests/fixtures/class-params.ts": [
@@ -1078,7 +1131,7 @@
       "function": "lone",
       "property": "huge",
       "szs": "NotTried",
-      "reason": "endpoint 1000000000000000000000000000000 exceeds the safe integer range (±9007199254740991)",
+      "reason": "endpoint 1000000000000000000000000000000 exceeds the safe integer range (\u00b19007199254740991)",
       "kind": "unsupported-range"
     }
   ],
@@ -1087,7 +1140,7 @@
       "function": "vac",
       "property": "vacuous",
       "szs": "NotTried",
-      "reason": "endpoints 1000000000000000000000000000000 and 10000000000000000000000000000000 exceed the safe integer range (±9007199254740991)",
+      "reason": "endpoints 1000000000000000000000000000000 and 10000000000000000000000000000000 exceed the safe integer range (\u00b19007199254740991)",
       "kind": "unsupported-range"
     }
   ],
@@ -1104,7 +1157,7 @@
       "function": "keep",
       "property": "nonneg",
       "szs": "NotTried",
-      "reason": "endpoint 1000000000000000000000000000000 exceeds the safe integer range (±9007199254740991)",
+      "reason": "endpoint 1000000000000000000000000000000 exceeds the safe integer range (\u00b19007199254740991)",
       "kind": "unsupported-range"
     }
   ],
@@ -1578,6 +1631,37 @@
       "axioms": []
     }
   ],
+  "engines/thales/tests/conformance/theorem/unbounded-clamp.ts": [
+    {
+      "function": "clamp",
+      "property": "atMost",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_609593344721741901",
+      "axioms": []
+    },
+    {
+      "function": "clamp",
+      "property": "atLeast",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_8384504518921046319",
+      "axioms": []
+    },
+    {
+      "function": "capAt1",
+      "property": "noBigger",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_951271163676996204",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/inappropriate/math-log.ts": [
+    {
+      "function": "integerLog",
+      "property": "nonNegative",
+      "szs": "Inappropriate",
+      "reason": "'integerLog' could not be modeled: 'Math.log' is not supported"
+    }
+  ],
   "engines/thales/tests/conformance/theorem/epsilon-scale.ts": [
     {
       "function": "tiny",
@@ -1603,14 +1687,6 @@
       "szs": "Theorem",
       "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_16343456677024528816",
       "axioms": []
-    }
-  ],
-  "engines/thales/tests/conformance/inappropriate/math-log.ts": [
-    {
-      "function": "integerLog",
-      "property": "nonNegative",
-      "szs": "Inappropriate",
-      "reason": "'integerLog' could not be modeled: 'Math.log' is not supported"
     }
   ],
   "engines/thales/tests/conformance/inappropriate/number-length.ts": [
