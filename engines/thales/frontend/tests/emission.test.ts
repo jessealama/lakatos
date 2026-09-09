@@ -5346,6 +5346,106 @@ describe("method calls in atoms and bodies (#130)", () => {
   });
 });
 
+describe("getter reads on this", () => {
+  const boxWith = (members: string) => `export class Box {
+  readonly v: number;
+  constructor(v: number) {
+    this.v = v;
+  }
+${members}
+}
+`;
+
+  test("a method reads its own class's getter through this", () => {
+    const src = boxWith(`  get twice(): number {
+    return this.v * 2;
+  }
+  /** @ensures{viaThis} forall (a: number) { Object.is(new Box(a).direct(), a * 2) } */
+  direct(): number {
+    return this.twice;
+  }`);
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    const cls = emission.declarations[0] as EmitClass;
+    expect(cls.methods[0]!.body[0]).toEqual({
+      kind: "return",
+      expr: {
+        kind: "getter-read",
+        className: "Box",
+        name: "twice",
+        object: { kind: "self" },
+      },
+    });
+  });
+
+  test("a method reads a getter declared after it", () => {
+    const src =
+      boxWith(`  /** @ensures{p} forall (a: number) { Object.is(new Box(a).direct(), a * 2) } */
+  direct(): number {
+    return this.later;
+  }
+  get later(): number {
+    return this.v * 2;
+  }`);
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    const cls = emission.declarations[0] as EmitClass;
+    expect(cls.getters.map((g) => g.name)).toEqual(["later"]);
+    expect(cls.methods.map((m) => m.name)).toEqual(["direct"]);
+  });
+
+  test("a getter reads an earlier getter through this", () => {
+    const src = boxWith(`  get twice(): number {
+    return this.v * 2;
+  }
+  get quad(): number {
+    return this.twice * 2;
+  }`);
+    const { emission } = emitModule(src, "t.ts");
+    const cls = emission.declarations[0] as EmitClass;
+    expect(cls.getters.map((g) => g.name)).toEqual(["twice", "quad"]);
+    expect(JSON.stringify(cls.getters[1]!.body)).toContain(
+      '{"kind":"getter-read","className":"Box","name":"twice","object":{"kind":"self"}}',
+    );
+  });
+
+  test("a forward getter read through this degrades the reader alone", () => {
+    const src = boxWith(`  get quad(): number {
+    return this.twice * 2;
+  }
+  get twice(): number {
+    return this.v * 2;
+  }`);
+    const { emission } = emitModule(src, "t.ts");
+    const cls = emission.declarations[0] as EmitClass;
+    expect(cls.getters.map((g) => g.name)).toEqual(["twice"]);
+  });
+
+  test("a self-recursive getter degrades alone", () => {
+    const src = boxWith(`  get loop(): number {
+    return this.loop;
+  }`);
+    const { emission } = emitModule(src, "t.ts");
+    expect((emission.declarations[0] as EmitClass).getters).toEqual([]);
+  });
+
+  test("a read of a degraded earlier getter travels its reason", () => {
+    const src = boxWith(`  get gone(): number {
+    const q = [1];
+    return q[0];
+  }
+  /** @ensures{p} forall (a: number) { Object.is(new Box(a).direct(), a * 2) } */
+  direct(): number {
+    return this.gone;
+  }`);
+    const { classified } = emitModule(src, "t.ts");
+    expect(classified[0]!.szs).toBe("Inappropriate");
+    expect(classified[0]!.reason).toContain(
+      "'Box#direct' could not be modeled: 'Box#gone' could not be modeled: ",
+    );
+  });
+});
+
 describe("method-call scanning and misuse (#130)", () => {
   /** A class whose `plus` method the later members exercise. */
   const withPlus = (members: string) => `export class C {
@@ -9300,9 +9400,9 @@ export function g(a: number): number {
       "'Inner' has no method 'nope' in the model",
     ],
     [
-      "a getter on this",
-      "return this.twice;",
-      "'this.twice' does not name a field of 'Outer'",
+      "a member on this the model lacks",
+      "return this.nope;",
+      "'this.nope' does not name a field or a modeled getter of 'Outer'",
     ],
   ])("%s refuses", (_what, body, reason) => {
     const src = NESTED.replace("BODY", body).replace(

@@ -108,6 +108,7 @@ const BINDER_FIXTURES = [
 const CLASS_FIXTURES = [
   "engines/thales/tests/fixtures/classes.ts",
   `${CONFORMANCE}/theorem/class-box-roundtrip.ts`,
+  `${CONFORMANCE}/theorem/class-getter-on-this.ts`,
   `${CONFORMANCE}/theorem/class-binder-distance.ts`,
   `${CONFORMANCE}/theorem/class-binder-equality-guards.ts`,
   `${CONFORMANCE}/theorem/class-binder-nested.ts`,

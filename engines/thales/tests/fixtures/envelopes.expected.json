@@ -730,6 +730,36 @@
       "axioms": []
     }
   ],
+  "engines/thales/tests/conformance/theorem/class-getter-on-this.ts": [
+    {
+      "function": "Box#direct",
+      "property": "viaThis",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_7038518527700066741",
+      "axioms": []
+    },
+    {
+      "function": "Box#chained",
+      "property": "viaEarlierGetter",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_18126771824224478959",
+      "axioms": []
+    },
+    {
+      "function": "fresh",
+      "property": "viaFresh",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_13809191002433773899",
+      "axioms": []
+    },
+    {
+      "function": "fromVar",
+      "property": "viaVar",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_4173488319210614077",
+      "axioms": []
+    }
+  ],
   "engines/thales/tests/conformance/theorem/class-binder-distance.ts": [
     {
       "function": "Point#distance",
