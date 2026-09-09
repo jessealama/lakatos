@@ -3583,6 +3583,29 @@ describe("logical operators on boolean operands", () => {
     ]);
   });
 
+  test("a call to a shadowed callee is not a boolean-shaped operand", () => {
+    const { classified } = emitModule(
+      [
+        "/** @ensures{p} forall (x: int in [0, 4)) (cb: int in [0, 4)) { pick(x, cb) >= 0 } */",
+        "export function pick(x: number, cb: number): number {",
+        "  if (cb(1) && x > 0) {",
+        "    return 0;",
+        "  }",
+        "  return 1;",
+        "}",
+      ].join("\n"),
+      FILE,
+    );
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason:
+          "'pick' could not be modeled: '&&' models boolean operands only; " +
+          "the left operand is not a boolean (CallExpression at 3:7)",
+      }),
+    ]);
+  });
+
   test("a numeric ! operand refuses naming !", () => {
     const { classified } = emitModule(
       [

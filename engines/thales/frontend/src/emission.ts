@@ -678,6 +678,9 @@ function callReturns(u: ts.Expression, scope: WalkScope): ReturnTy | undefined {
   if (recv === undefined || typeof recv === "string" || !("instance" in recv))
     return undefined;
   const shape = classView(scope, recv.instance)?.shape;
+  /* v8 ignore next -- classView returns undefined only for the ref classView
+     itself already marks unreachable: an instance place always names an
+     already-modeled class or the enclosing one. */
   if (shape === undefined) return undefined;
   return call !== undefined
     ? shape.methods.get(call.name)?.returns
@@ -3344,15 +3347,18 @@ function walkClass(
   // bans where the shape is recorded rather than trusting the flags
   // everywhere downstream. A defaulted parameter's slot is a union all
   // the same: the ban is on what the source declares, not on the
-  // boundary.
+  // boundary. The p.slot test also narrows p.slot to SlotTy for the push.
   const shapeCtorParams: SlotTy[] = [];
   for (const p of ctorParams) {
     /* v8 ignore start -- unreachable: ctorReg refused the union and the boolean first. */
-    if ((typeof p.ty !== "string" && "union" in p.ty) || p.ty === "bool")
+    if (
+      (typeof p.ty !== "string" && "union" in p.ty) ||
+      p.ty === "bool" ||
+      p.slot === "bool"
+    )
       return constructAt(ctor, ctor.kind, sf);
     /* v8 ignore stop */
-    // p.slot matches p.ty here (no default), so it excludes "bool" too.
-    shapeCtorParams.push(p.slot as SlotTy);
+    shapeCtorParams.push(p.slot);
   }
 
   // Both registries fill as members render, so a member body sees only
