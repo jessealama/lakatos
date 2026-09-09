@@ -59,6 +59,15 @@ def numParamJson (name : String) : Json :=
   (decodeExpr (Json.mkObj
     [("kind", "builtin"), ("object", "Math"), ("member", "trunc")]))
   matches .error _
+-- A builtin member read decodes by its pair alone; it carries no
+-- arguments, and a missing member is a field error.
+#guard
+  (decodeExpr (Json.mkObj
+    [("kind", "builtin-read"), ("object", "Number"), ("member", "EPSILON")]))
+  matches .ok (.builtinRead "Number" "EPSILON")
+#guard
+  (decodeExpr (Json.mkObj [("kind", "builtin-read"), ("object", "Math")]))
+  matches .error _
 -- The class IR: instance construction, member reads, the receiver, and
 -- a constructor's field assignment.
 #guard

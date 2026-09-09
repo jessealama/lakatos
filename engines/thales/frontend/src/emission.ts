@@ -47,6 +47,9 @@ export type EmitExpr =
   | { kind: "same-value"; left: EmitExpr; right: EmitExpr }
   | { kind: "cond"; cond: EmitExpr; then: EmitExpr; else: EmitExpr }
   | { kind: "builtin"; object: string; member: string; args: EmitExpr[] }
+  /** A whitelisted standard-library member read: one of the Number
+   * constants ECMA-262 fixes. A value, never a callee, so no arguments. */
+  | { kind: "builtin-read"; object: string; member: string }
   | { kind: "call"; callee: string; module?: string; args: EmitExpr[] }
   | { kind: "const-read"; name: string; module?: string }
   | { kind: "new"; className: string; module?: string; args: EmitExpr[] }
@@ -608,6 +611,7 @@ function numericShaped(e: ts.Expression, scope: WalkScope): boolean {
   // receiver is a namespace, not an instance place.
   const builtin = builtinCall(u, scope);
   if (builtin !== undefined) return builtin.ty === "num";
+  if (builtinRead(u, scope) !== undefined) return true;
   const member = memberCall(u) ?? memberAccess(u);
   if (member !== undefined) return receiverShaped(member.receiver, scope);
   return ts.isCallExpression(u) && ts.isIdentifier(u.expression);
@@ -814,6 +818,8 @@ function findConstruct(
   }
   const unsupported = unsupportedBuiltin(e, scope);
   if (unsupported !== undefined) return unsupported;
+  // A whitelisted read is a value with no operands to scan.
+  if (builtinRead(e, scope) !== undefined) return undefined;
   if (ts.isCallExpression(e) && ts.isIdentifier(e.expression)) {
     for (const a of e.arguments) {
       const found = findConstruct(a, sf, scope);
@@ -1407,6 +1413,15 @@ function walkTyped(
       member: builtin.member,
       args,
     };
+  }
+  const read = builtinRead(e, scope);
+  if (read !== undefined) {
+    if (expected !== "num") {
+      throw new ModelError(
+        `a read of '${read.name}' yields a number, not ${describeTy(expected)}`,
+      );
+    }
+    return { kind: "builtin-read", object: read.object, member: read.member };
   }
   const mcall = memberCall(e);
   if (mcall !== undefined) {
@@ -3541,48 +3556,117 @@ const BUILTIN_MEMBER_CALLS: ReadonlyMap<string, BuiltinEntry> = new Map(
   ]),
 );
 
-/** The `Math.m`/`Number.m` spelling a callee reads from the standard
- * library, if it is one: a binding of the object's name — parameter,
- * local, module-level declaration, or import, degraded ones included —
- * wins over the builtin, the way one wins over the `NaN`/`Infinity`
- * atoms, so the model never states a claim about the standard library
- * the source does not make. */
-function builtinSpelling(
-  callee: ts.Expression,
-  scope: WalkScope,
-): string | undefined {
-  if (
-    !ts.isPropertyAccessExpression(callee) ||
-    !ts.isIdentifier(callee.expression)
-  ) {
-    return undefined;
-  }
-  const object = callee.expression.text;
-  if (!BUILTIN_OBJECTS.has(object)) return undefined;
-  if (scope.vars.has(object) || moduleBinds(scope, object)) return undefined;
-  return `${object}.${callee.name.text}`;
+/** A whitelisted builtin as a read site needs it: the source spelling
+ * and the object and member it names. Every read is one of the Number
+ * constants the standard fixes, so it has no arity and yields a number. */
+interface BuiltinReadEntry {
+  name: string;
+  object: string;
+  member: string;
 }
 
-/** A standard-library member call the model cannot take: one the
- * whitelist does not cover, or a listed one called at an arity it does
- * not admit. Either way the failure names the member: the source wrote a
- * real API, not an arbitrary construct, and a count the whitelist knows
- * is worth saying out loud rather than degrading to a syntax kind. */
+/** The builtin member reads with models: the Number values ECMA-262 fixes
+ * as own properties of `Math` and `Number`, keyed by source spelling. The
+ * Js library defines each under that spelling. */
+const BUILTIN_MEMBER_READS: ReadonlyMap<string, BuiltinReadEntry> = new Map(
+  (
+    [
+      ["Number", "EPSILON"],
+      ["Number", "MAX_SAFE_INTEGER"],
+      ["Number", "MIN_SAFE_INTEGER"],
+      ["Number", "MAX_VALUE"],
+      ["Number", "MIN_VALUE"],
+      ["Number", "POSITIVE_INFINITY"],
+      ["Number", "NEGATIVE_INFINITY"],
+      ["Number", "NaN"],
+      ["Math", "E"],
+      ["Math", "LN10"],
+      ["Math", "LN2"],
+      ["Math", "LOG10E"],
+      ["Math", "LOG2E"],
+      ["Math", "PI"],
+      ["Math", "SQRT1_2"],
+      ["Math", "SQRT2"],
+    ] as const
+  ).map(([object, member]) => [
+    `${object}.${member}`,
+    { name: `${object}.${member}`, object, member },
+  ]),
+);
+
+/** The `Math.m`/`Number.m` spelling an expression reads from the standard
+ * library, if it is one, under a shadowing rule: a binding of the
+ * object's name wins over the builtin, the way one wins over the
+ * `NaN`/`Infinity` atoms, so the model never states a claim about the
+ * standard library the source does not make. The rule is the caller's —
+ * a body's or a module scope's — so the two cannot drift apart. */
+function builtinSpelling(
+  e: ts.Expression,
+  binds: (name: string) => boolean,
+): string | undefined {
+  if (!ts.isPropertyAccessExpression(e) || !ts.isIdentifier(e.expression)) {
+    return undefined;
+  }
+  const object = e.expression.text;
+  if (!BUILTIN_OBJECTS.has(object)) return undefined;
+  if (binds(object)) return undefined;
+  return `${object}.${e.name.text}`;
+}
+
+/** A body's shadowing rule: a parameter, a local, or anything the module
+ * binds — declaration or import, degraded ones included. */
+function bodyBinds(scope: WalkScope): (name: string) => boolean {
+  return (name) => scope.vars.has(name) || moduleBinds(scope, name);
+}
+
+/** The whitelisted builtin member read an expression is, if any. The call
+ * recognizers answer first at every site, so a read here is a value. */
+function builtinRead(
+  e: ts.Expression,
+  scope: WalkScope,
+): BuiltinReadEntry | undefined {
+  const spelled = builtinSpelling(e, bodyBinds(scope));
+  return spelled === undefined ? undefined : BUILTIN_MEMBER_READS.get(spelled);
+}
+
+/** A standard-library member the model cannot take, named: a call of a
+ * member the calls table does not cover, a listed call at an arity it
+ * does not admit, a read of a member the reads table does not cover —
+ * and, across the tables, a call member read as a value or a read member
+ * called. The source wrote a real API, so the failure says which, rather
+ * than degrading to a syntax kind. */
 function unsupportedBuiltin(
   e: ts.Expression,
   scope: WalkScope,
 ): FailedDecl | undefined {
-  if (!ts.isCallExpression(e)) return undefined;
-  const spelled = builtinSpelling(e.expression, scope);
-  if (spelled === undefined) return undefined;
-  const entry = BUILTIN_MEMBER_CALLS.get(spelled);
-  if (entry === undefined) {
-    return { construct: spelled, reason: `'${spelled}' is not supported` };
+  const binds = bodyBinds(scope);
+  if (ts.isCallExpression(e)) {
+    const spelled = builtinSpelling(e.expression, binds);
+    if (spelled === undefined) return undefined;
+    const entry = BUILTIN_MEMBER_CALLS.get(spelled);
+    if (entry === undefined) {
+      return {
+        construct: spelled,
+        reason: BUILTIN_MEMBER_READS.has(spelled)
+          ? `'${spelled}' is modeled only as a read`
+          : `'${spelled}' is not supported`,
+      };
+    }
+    if (admitsArity(entry.arity, e.arguments.length)) return undefined;
+    return {
+      construct: spelled,
+      reason: `'${spelled}' ${arityPhrase(entry.arity)}`,
+    };
   }
-  if (admitsArity(entry.arity, e.arguments.length)) return undefined;
+  const spelled = builtinSpelling(e, binds);
+  if (spelled === undefined || BUILTIN_MEMBER_READS.has(spelled)) {
+    return undefined;
+  }
   return {
     construct: spelled,
-    reason: `'${spelled}' ${arityPhrase(entry.arity)}`,
+    reason: BUILTIN_MEMBER_CALLS.has(spelled)
+      ? `'${spelled}' is modeled only as a callee`
+      : `'${spelled}' is not supported`,
   };
 }
 
@@ -3601,7 +3685,7 @@ function builtinCall(
       return { ...alias, args: e.arguments };
     }
   }
-  const spelled = builtinSpelling(callee, scope);
+  const spelled = builtinSpelling(callee, bodyBinds(scope));
   if (spelled === undefined) return undefined;
   const entry = BUILTIN_MEMBER_CALLS.get(spelled);
   if (entry === undefined || !admitsArity(entry.arity, e.arguments.length)) {

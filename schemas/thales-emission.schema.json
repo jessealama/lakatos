@@ -239,6 +239,17 @@
         },
         {
           "type": "object",
+          "description": "A whitelisted standard-library member read, by the object and member the source names: the Number constants ECMA-262 fixes — Number.EPSILON, Number.MAX_SAFE_INTEGER, Number.MIN_SAFE_INTEGER, Number.MAX_VALUE, Number.MIN_VALUE, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NaN, Math.E, Math.LN10, Math.LN2, Math.LOG10E, Math.LOG2E, Math.PI, Math.SQRT1_2, Math.SQRT2. A read carries no arguments; the renderer owns what each pair means.",
+          "additionalProperties": false,
+          "required": ["kind", "object", "member"],
+          "properties": {
+            "kind": { "const": "builtin-read" },
+            "object": { "enum": ["Math", "Number"] },
+            "member": { "$ref": "#/definitions/identifier" }
+          }
+        },
+        {
+          "type": "object",
           "additionalProperties": false,
           "required": ["kind", "callee", "args"],
           "properties": {

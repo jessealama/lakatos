@@ -54,7 +54,7 @@
       "function": "bump",
       "property": "grows",
       "szs": "GaveUp",
-      "reason": "unsolved goal: ∀ (n : Int), 0 ≤ n → (Float.ofInt n).lt (Float.ofInt n + 1) = true"
+      "reason": "unsolved goal: \u2200 (n : Int), 0 \u2264 n \u2192 (Float.ofInt n).lt (Float.ofInt n + 1) = true"
     },
     {
       "function": "bump",
@@ -282,7 +282,7 @@
       "function": "scale",
       "property": "grows",
       "szs": "GaveUp",
-      "reason": "unsolved goal: ∀ (x : Int), 0 ≤ x → (Float.ofInt x).le (Float.ofInt x * 2) = true"
+      "reason": "unsolved goal: \u2200 (x : Int), 0 \u2264 x \u2192 (Float.ofInt x).le (Float.ofInt x * 2) = true"
     }
   ],
   "engines/thales/tests/conformance/gaveup/unbounded-double.ts": [
@@ -290,7 +290,7 @@
       "function": "dbl",
       "property": "doubles",
       "szs": "GaveUp",
-      "reason": "unsolved goal: ∀ (x : Int), Float.ofInt x * 2 = Float.ofInt x + Float.ofInt x"
+      "reason": "unsolved goal: \u2200 (x : Int), Float.ofInt x * 2 = Float.ofInt x + Float.ofInt x"
     }
   ],
   "engines/thales/tests/conformance/gaveup/unbounded-false.ts": [
@@ -298,7 +298,7 @@
       "function": "bump",
       "property": "unchanged",
       "szs": "GaveUp",
-      "reason": "unsolved goal: ∀ (x : Int), Float.ofInt x + 1 = Float.ofInt x"
+      "reason": "unsolved goal: \u2200 (x : Int), Float.ofInt x + 1 = Float.ofInt x"
     }
   ],
   "engines/thales/tests/conformance/gaveup/unbounded-nat.ts": [
@@ -306,7 +306,7 @@
       "function": "dbl",
       "property": "grows",
       "szs": "GaveUp",
-      "reason": "unsolved goal: ∀ (x : Int), 0 ≤ x → (Float.ofInt x).le (Float.ofInt x * 2) = true"
+      "reason": "unsolved goal: \u2200 (x : Int), 0 \u2264 x \u2192 (Float.ofInt x).le (Float.ofInt x * 2) = true"
     }
   ],
   "engines/thales/tests/conformance/inappropriate/await-remote.ts": [
@@ -623,7 +623,7 @@
       "function": "scale",
       "property": "fixed",
       "szs": "GaveUp",
-      "reason": "unsolved goal: ∀ (x : JsNumber), 0 < x → x < floatInf → x * 2 = x"
+      "reason": "unsolved goal: \u2200 (x : JsNumber), 0 < x \u2192 x < floatInf \u2192 x * 2 = x"
     }
   ],
   "engines/thales/tests/conformance/inappropriate/guarded-power.ts": [
@@ -1131,7 +1131,7 @@
       "function": "lone",
       "property": "huge",
       "szs": "NotTried",
-      "reason": "endpoint 1000000000000000000000000000000 exceeds the safe integer range (±9007199254740991)",
+      "reason": "endpoint 1000000000000000000000000000000 exceeds the safe integer range (\u00b19007199254740991)",
       "kind": "unsupported-range"
     }
   ],
@@ -1140,7 +1140,7 @@
       "function": "vac",
       "property": "vacuous",
       "szs": "NotTried",
-      "reason": "endpoints 1000000000000000000000000000000 and 10000000000000000000000000000000 exceed the safe integer range (±9007199254740991)",
+      "reason": "endpoints 1000000000000000000000000000000 and 10000000000000000000000000000000 exceed the safe integer range (\u00b19007199254740991)",
       "kind": "unsupported-range"
     }
   ],
@@ -1157,7 +1157,7 @@
       "function": "keep",
       "property": "nonneg",
       "szs": "NotTried",
-      "reason": "endpoint 1000000000000000000000000000000 exceeds the safe integer range (±9007199254740991)",
+      "reason": "endpoint 1000000000000000000000000000000 exceeds the safe integer range (\u00b19007199254740991)",
       "kind": "unsupported-range"
     }
   ],
@@ -1743,6 +1743,49 @@
       "property": "nonNegative",
       "szs": "Inappropriate",
       "reason": "'integerLog' could not be modeled: 'Math.log' is not supported"
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/epsilon-scale.ts": [
+    {
+      "function": "tiny",
+      "property": "nonNegative",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_6316605364473587067",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/safe-integer-bound.ts": [
+    {
+      "function": "keep",
+      "property": "bounded",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_14305630265078764008",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/infinity-spelled.ts": [
+    {
+      "function": "shrink",
+      "property": "vanishes",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_16343456677024528816",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/inappropriate/number-length.ts": [
+    {
+      "function": "arity",
+      "property": "nonNegative",
+      "szs": "Inappropriate",
+      "reason": "'arity' could not be modeled: 'Number.length' is not supported"
+    }
+  ],
+  "engines/thales/tests/conformance/inappropriate/math-sqrt-local-alias.ts": [
+    {
+      "function": "root",
+      "property": "nonNegative",
+      "szs": "Inappropriate",
+      "reason": "'root' could not be modeled: 'Math.sqrt' is modeled only as a callee"
     }
   ]
 }

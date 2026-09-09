@@ -49,7 +49,7 @@ def modulePathIdent (path : String) : RenderM Name := do
 re-parsed plain text, so a binder or parameter spelled like one would
 capture the reference. -/
 def reservedNames : List String :=
-  ["pure", "ballIco", "floatInf", "floatNaN", "Float", "Number", "Int",
+  ["pure", "ballIco", "floatInf", "floatNaN", "Float", "Number", "Math", "Int",
    "JsM", "JsNumber", "Bool", "TsModel", "JsError", "mut", "self",
    "JsVal", "TypeofResult", "Option", "some", "none"]
 
@@ -164,6 +164,29 @@ def builtinTerm (object member : String) (args : Array (TSyntax `term)) :
     | "Number", "isSafeInteger" => `(Number.FloatOps.tsIsSafeInteger $a)
     | _, _ => throw s!"no rendering for builtin '{object}.{member}'"
 
+/-- A whitelisted builtin member read: the Js library's def under the
+source spelling. An unknown pair, a call member among them, is a render
+failure, never a verdict. -/
+def builtinReadTerm (object member : String) : RenderM (TSyntax `term) := do
+  match object, member with
+  | "Number", "EPSILON" => `(Number.EPSILON)
+  | "Number", "MAX_SAFE_INTEGER" => `(Number.MAX_SAFE_INTEGER)
+  | "Number", "MIN_SAFE_INTEGER" => `(Number.MIN_SAFE_INTEGER)
+  | "Number", "MAX_VALUE" => `(Number.MAX_VALUE)
+  | "Number", "MIN_VALUE" => `(Number.MIN_VALUE)
+  | "Number", "POSITIVE_INFINITY" => `(Number.POSITIVE_INFINITY)
+  | "Number", "NEGATIVE_INFINITY" => `(Number.NEGATIVE_INFINITY)
+  | "Number", "NaN" => `(Number.NaN)
+  | "Math", "E" => `(Math.E)
+  | "Math", "LN10" => `(Math.LN10)
+  | "Math", "LN2" => `(Math.LN2)
+  | "Math", "LOG10E" => `(Math.LOG10E)
+  | "Math", "LOG2E" => `(Math.LOG2E)
+  | "Math", "PI" => `(Math.PI)
+  | "Math", "SQRT1_2" => `(Math.SQRT1_2)
+  | "Math", "SQRT2" => `(Math.SQRT2)
+  | _, _ => throw s!"no rendering for builtin read '{object}.{member}'"
+
 mutual
 
 /-- `coerced` names the Int-valued binder variables: a use inside an
@@ -243,6 +266,8 @@ partial def valueTerm (coerced : String → Bool) : JsExpr → RenderM Rendered
     let rendered ← args.mapM (valueTerm coerced)
     let t ← builtinTerm object member (rendered.map (·.term))
     return ⟨t, rendered.any (·.lifted)⟩
+  -- A constant is pure; the library def is the value.
+  | .builtinRead object member => return ⟨← builtinReadTerm object member, false⟩
   | .call callee module args => do
     let c ← callTerm coerced callee module args
     return ⟨← `((← $c:term)), true⟩
