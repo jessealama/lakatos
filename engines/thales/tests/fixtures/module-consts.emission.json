@@ -146,6 +146,125 @@
           }
         }
       ]
+    },
+    {
+      "kind": "constant",
+      "name": "root2",
+      "init": {
+        "kind": "builtin",
+        "object": "Math",
+        "member": "sqrt",
+        "args": [
+          {
+            "kind": "num",
+            "lit": "2"
+          }
+        ]
+      },
+      "source": "const root2 = Math.sqrt(2);"
+    },
+    {
+      "kind": "constant",
+      "name": "noLimit",
+      "init": {
+        "kind": "num",
+        "lit": "Infinity"
+      },
+      "source": "const noLimit = Infinity;"
+    },
+    {
+      "kind": "constant",
+      "name": "epsilon",
+      "init": {
+        "kind": "builtin-read",
+        "object": "Number",
+        "member": "EPSILON"
+      },
+      "source": "const epsilon = Number.EPSILON;"
+    },
+    {
+      "kind": "function",
+      "name": "diagonal",
+      "params": [
+        {
+          "name": "x",
+          "type": "number"
+        }
+      ],
+      "source": "export function diagonal(x: number): number {\n  return x * root2;\n}",
+      "body": [
+        {
+          "kind": "return",
+          "expr": {
+            "kind": "binop",
+            "op": "*",
+            "left": {
+              "kind": "id",
+              "name": "x"
+            },
+            "right": {
+              "kind": "const-read",
+              "name": "root2"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "kind": "function",
+      "name": "shrink",
+      "params": [
+        {
+          "name": "x",
+          "type": "number"
+        }
+      ],
+      "source": "export function shrink(x: number): number {\n  return x / noLimit;\n}",
+      "body": [
+        {
+          "kind": "return",
+          "expr": {
+            "kind": "binop",
+            "op": "/",
+            "left": {
+              "kind": "id",
+              "name": "x"
+            },
+            "right": {
+              "kind": "const-read",
+              "name": "noLimit"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "kind": "function",
+      "name": "nudge",
+      "params": [
+        {
+          "name": "x",
+          "type": "number"
+        }
+      ],
+      "source": "export function nudge(x: number): number {\n  return x + epsilon;\n}",
+      "body": [
+        {
+          "kind": "return",
+          "expr": {
+            "kind": "binop",
+            "op": "+",
+            "left": {
+              "kind": "id",
+              "name": "x"
+            },
+            "right": {
+              "kind": "const-read",
+              "name": "epsilon"
+            }
+          }
+        }
+      ]
     }
   ],
   "obligations": [
@@ -286,6 +405,117 @@
                 {
                   "kind": "id",
                   "name": "h"
+                }
+              ]
+            },
+            "right": {
+              "kind": "num",
+              "lit": "0"
+            }
+          }
+        }
+      }
+    },
+    {
+      "function": "diagonal",
+      "property": "nonNegative",
+      "formula": "forall (n: int ∈ [0, 10)) { diagonal(n) >= 0 }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "n",
+            "kind": "range",
+            "lo": "0",
+            "hi": "10"
+          }
+        ],
+        "conclusion": {
+          "kind": "istrue",
+          "expr": {
+            "kind": "binop",
+            "op": ">=",
+            "left": {
+              "kind": "call",
+              "callee": "diagonal",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "n"
+                }
+              ]
+            },
+            "right": {
+              "kind": "num",
+              "lit": "0"
+            }
+          }
+        }
+      }
+    },
+    {
+      "function": "shrink",
+      "property": "nonNegative",
+      "formula": "forall (n: int ∈ [0, 10)) { shrink(n) >= 0 }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "n",
+            "kind": "range",
+            "lo": "0",
+            "hi": "10"
+          }
+        ],
+        "conclusion": {
+          "kind": "istrue",
+          "expr": {
+            "kind": "binop",
+            "op": ">=",
+            "left": {
+              "kind": "call",
+              "callee": "shrink",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "n"
+                }
+              ]
+            },
+            "right": {
+              "kind": "num",
+              "lit": "0"
+            }
+          }
+        }
+      }
+    },
+    {
+      "function": "nudge",
+      "property": "nonNegative",
+      "formula": "forall (n: int ∈ [0, 10)) { nudge(n) >= 0 }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "n",
+            "kind": "range",
+            "lo": "0",
+            "hi": "10"
+          }
+        ],
+        "conclusion": {
+          "kind": "istrue",
+          "expr": {
+            "kind": "binop",
+            "op": ">=",
+            "left": {
+              "kind": "call",
+              "callee": "nudge",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "n"
                 }
               ]
             },

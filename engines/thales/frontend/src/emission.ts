@@ -4003,6 +4003,7 @@ interface EmitClosure {
 function constantInit(
   d: ts.VariableDeclaration,
   admitted: (name: string) => ModelRef | undefined,
+  binds: (name: string) => boolean,
 ): EmitExpr | undefined {
   if (!ts.isIdentifier(d.name)) return undefined;
   if (d.type !== undefined && d.type.kind !== ts.SyntaxKind.NumberKeyword)
@@ -4010,16 +4011,22 @@ function constantInit(
   /* v8 ignore next -- an uninitialized `const` does not typecheck, and the
      run is gated on the project typechecking; `declare` is not admissible. */
   if (d.initializer === undefined) return undefined;
-  return constantExpr(d.initializer, admitted);
+  return constantExpr(d.initializer, admitted, binds);
 }
 
-/** A constant expression: numeric literals and reads of constants
- * already admitted, under the arithmetic operators and unary sign.
- * Source order bounds the reads, so a forward or self reference is
- * simply not yet admitted; every other shape declines. */
+/** A constant expression: numeric literals, the `NaN`/`Infinity` atoms,
+ * reads of constants already admitted, and the whitelisted builtin
+ * constants, under the arithmetic operators, unary sign, and whitelisted
+ * number-valued builtin calls over such arguments. Source order bounds
+ * the reads, so a forward or self reference is simply not yet admitted;
+ * the atoms and the builtins are read under the module's own shadowing
+ * (`binds`), the rule a body applies with no locals in scope; every other
+ * shape declines — a call member met as a value included, which leaves
+ * it for the alias registration. */
 function constantExpr(
   e: ts.Expression,
   admitted: (name: string) => ModelRef | undefined,
+  binds: (name: string) => boolean,
 ): EmitExpr | undefined {
   const u = unwrapParens(e);
   if (ts.isNumericLiteral(u)) return { kind: "num", lit: numberToken(u) };
@@ -4029,15 +4036,20 @@ function constantExpr(
   }
   if (ts.isIdentifier(u)) {
     const ref = admitted(u.text);
-    if (ref === undefined) return undefined;
-    return {
-      kind: "const-read",
-      name: ref.name,
-      ...(ref.module !== "" ? { module: ref.module } : {}),
-    };
+    if (ref !== undefined) {
+      return {
+        kind: "const-read",
+        name: ref.name,
+        ...(ref.module !== "" ? { module: ref.module } : {}),
+      };
+    }
+    if (GLOBAL_NUMBER_ATOMS.has(u.text) && !binds(u.text)) {
+      return { kind: "num", lit: u.text };
+    }
+    return undefined;
   }
   if (isUnaryArith(u)) {
-    const operand = constantExpr(u.operand, admitted);
+    const operand = constantExpr(u.operand, admitted, binds);
     if (operand === undefined) return undefined;
     const op = u.operator === ts.SyntaxKind.MinusToken ? "-" : "+";
     return { kind: "unop", op, operand };
@@ -4045,12 +4057,40 @@ function constantExpr(
   if (ts.isBinaryExpression(u)) {
     const op = u.operatorToken.getText();
     if (!ARITH_OPERATORS.has(op)) return undefined;
-    const left = constantExpr(u.left, admitted);
-    const right = constantExpr(u.right, admitted);
+    const left = constantExpr(u.left, admitted, binds);
+    const right = constantExpr(u.right, admitted, binds);
     if (left === undefined || right === undefined) return undefined;
     return { kind: "binop", op, left, right };
   }
-  return undefined;
+  if (ts.isCallExpression(u)) {
+    const spelled = builtinSpelling(u.expression, binds);
+    if (spelled === undefined) return undefined;
+    const entry = BUILTIN_MEMBER_CALLS.get(spelled);
+    if (
+      entry === undefined ||
+      entry.ty !== "num" ||
+      !admitsArity(entry.arity, u.arguments.length)
+    ) {
+      return undefined;
+    }
+    const args: EmitExpr[] = [];
+    for (const a of u.arguments) {
+      const arg = constantExpr(a, admitted, binds);
+      if (arg === undefined) return undefined;
+      args.push(arg);
+    }
+    return {
+      kind: "builtin",
+      object: entry.object,
+      member: entry.member,
+      args,
+    };
+  }
+  const spelled = builtinSpelling(u, binds);
+  if (spelled === undefined) return undefined;
+  const read = BUILTIN_MEMBER_READS.get(spelled);
+  if (read === undefined) return undefined;
+  return { kind: "builtin-read", object: read.object, member: read.member };
 }
 
 /** The whitelisted builtin a module-scope declarator aliases, when the
@@ -4249,7 +4289,7 @@ function walkEmitModule(
         return c.constants.has(modelKey(ref)) ? ref : undefined;
       };
       for (const d of stmt.declarationList.declarations) {
-        const init = admissible ? constantInit(d, admitted) : undefined;
+        const init = admissible ? constantInit(d, admitted, binds) : undefined;
         if (init !== undefined) {
           const name = (d.name as ts.Identifier).text;
           c.declarations.push({

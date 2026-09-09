@@ -7547,6 +7547,274 @@ export function f(p: Point): number {
 });
 
 describe("module-level const bindings", () => {
+  test("an initializer admits a whitelisted builtin call over constants", () => {
+    const src = [
+      "const root2 = Math.sqrt(2);",
+      "/** @ensures{p} forall (n: int ∈ [0, 10)) { diagonal(n) >= 0 } */",
+      "export function diagonal(x: number): number {",
+      "  return x * root2;",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, "init-call.ts");
+    expect(classified).toEqual([]);
+    expectValidEmission(emission);
+    expect(emission.declarations[0]).toEqual({
+      kind: "constant",
+      name: "root2",
+      init: {
+        kind: "builtin",
+        object: "Math",
+        member: "sqrt",
+        args: [{ kind: "num", lit: "2" }],
+      },
+      source: "const root2 = Math.sqrt(2);",
+    });
+    expect(fnBody(emission.declarations[1]!)).toEqual([
+      {
+        kind: "return",
+        expr: {
+          kind: "binop",
+          op: "*",
+          left: { kind: "id", name: "x" },
+          right: { kind: "const-read", name: "root2" },
+        },
+      },
+    ]);
+  });
+
+  test.each([
+    ["Infinity", { kind: "num", lit: "Infinity" }],
+    ["NaN", { kind: "num", lit: "NaN" }],
+    [
+      "-Infinity",
+      { kind: "unop", op: "-", operand: { kind: "num", lit: "Infinity" } },
+    ],
+  ])("an initializer admits the global atom %s", (spelling, init) => {
+    const src = [
+      `const limit = ${spelling};`,
+      "/** @ensures{p} forall (n: int ∈ [0, 10)) { shrink(n) >= 0 } */",
+      "export function shrink(x: number): number {",
+      "  return x / limit;",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, "init-atom.ts");
+    expect(classified).toEqual([]);
+    expectValidEmission(emission);
+    expect(emission.declarations[0]).toEqual(
+      expect.objectContaining({ kind: "constant", name: "limit", init }),
+    );
+  });
+
+  test("an initializer admits a builtin constant read", () => {
+    const src = [
+      "const EPSILON = Number.EPSILON;",
+      "/** @ensures{p} forall (n: int ∈ [0, 10)) { nudge(n) >= 0 } */",
+      "export function nudge(x: number): number {",
+      "  return x + EPSILON;",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, "init-read.ts");
+    expect(classified).toEqual([]);
+    expectValidEmission(emission);
+    expect(emission.declarations[0]).toEqual(
+      expect.objectContaining({
+        kind: "constant",
+        name: "EPSILON",
+        init: { kind: "builtin-read", object: "Number", member: "EPSILON" },
+      }),
+    );
+  });
+
+  test("the new shapes compose with arithmetic and each other", () => {
+    const src = [
+      "const twoPi = 2 * Math.PI;",
+      "const tiny = Math.abs(-Number.EPSILON);",
+      "const lo = Math.min(twoPi, tiny, 1);",
+      "/** @ensures{p} forall (n: int ∈ [0, 10)) { f(n) >= 0 } */",
+      "export function f(x: number): number {",
+      "  return x * lo;",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, "init-compose.ts");
+    expect(classified).toEqual([]);
+    expectValidEmission(emission);
+    expect(emission.declarations.slice(0, 3)).toEqual([
+      expect.objectContaining({
+        name: "twoPi",
+        init: {
+          kind: "binop",
+          op: "*",
+          left: { kind: "num", lit: "2" },
+          right: { kind: "builtin-read", object: "Math", member: "PI" },
+        },
+      }),
+      expect.objectContaining({
+        name: "tiny",
+        init: {
+          kind: "builtin",
+          object: "Math",
+          member: "abs",
+          args: [
+            {
+              kind: "unop",
+              op: "-",
+              operand: {
+                kind: "builtin-read",
+                object: "Number",
+                member: "EPSILON",
+              },
+            },
+          ],
+        },
+      }),
+      expect.objectContaining({
+        name: "lo",
+        init: {
+          kind: "builtin",
+          object: "Math",
+          member: "min",
+          args: [
+            { kind: "const-read", name: "twoPi" },
+            { kind: "const-read", name: "tiny" },
+            { kind: "num", lit: "1" },
+          ],
+        },
+      }),
+    ]);
+  });
+
+  test("a formula atom reads a constant initialized from a builtin", () => {
+    const src = [
+      "const root2 = Math.sqrt(2);",
+      "/** @ensures{p} forall (n: int ∈ [0, 10)) { keep(n) <= root2 } */",
+      "export function keep(x: number): number {",
+      "  return 0;",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, "init-atom-read.ts");
+    expect(classified).toEqual([]);
+    const payload = emission.obligations[0]!.payload;
+    assert(payload.kind === "structured");
+    expect(payload.conclusion).toEqual(
+      expect.objectContaining({
+        expr: expect.objectContaining({
+          right: { kind: "const-read", name: "root2" },
+        }),
+      }),
+    );
+  });
+
+  test("a module binding of an atom spelling is read as that binding", () => {
+    const src = [
+      "const Infinity = 5;",
+      "const limit = Infinity;",
+      "/** @ensures{p} forall (n: int ∈ [0, 10)) { f(n) >= 0 } */",
+      "export function f(x: number): number {",
+      "  return x * limit;",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, "shadow-atom.ts");
+    expect(classified).toEqual([]);
+    expect(emission.declarations[1]).toEqual(
+      expect.objectContaining({
+        name: "limit",
+        init: { kind: "const-read", name: "Infinity" },
+      }),
+    );
+  });
+
+  test("a module binding of the namespace spelling declines the initializer call", () => {
+    const src = [
+      "const Math = null;",
+      "const root2 = Math.sqrt(2);",
+      "/** @ensures{p} forall (n: int ∈ [0, 4)) { f(n) >= 0 } */",
+      "export function f(n: number): number {",
+      "  return n * root2;",
+      "}",
+      "",
+    ].join("\n");
+    const { classified } = emitModule(src, "shadowed-init.ts");
+    expect(classified[0]!.szs).toBe("Inappropriate");
+    expect(classified[0]!.reason).toContain(
+      "'root2' could not be modeled: unmapped TypeScript construct " +
+        "'VariableStatement'",
+    );
+  });
+
+  test("an unresolved import of the namespace spelling declines the initializer read", () => {
+    const src = [
+      'import { Number } from "./nowhere.js";',
+      "const EPSILON = Number.EPSILON;",
+      "/** @ensures{p} forall (n: int ∈ [0, 4)) { f(n) >= 0 } */",
+      "export function f(n: number): number {",
+      "  return n + EPSILON;",
+      "}",
+      "",
+    ].join("\n");
+    const { classified } = emitModule(src, "shadowed-import-init.ts");
+    expect(classified[0]!.szs).toBe("Inappropriate");
+    expect(classified[0]!.reason).toContain(
+      "'EPSILON' could not be modeled: unmapped TypeScript construct " +
+        "'VariableStatement'",
+    );
+  });
+
+  test("a call member spelling in an initializer still registers as an alias", () => {
+    const src = [
+      "const safeSqrt = Math.sqrt;",
+      "/** @ensures{p} forall (n: int ∈ [0, 4)) { f(n) >= 0 } */",
+      "export function f(n: number): number {",
+      "  return safeSqrt(n);",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(src, "alias-still.ts");
+    expect(classified).toEqual([]);
+    expect(emission.declarations).toHaveLength(1);
+    expect(fnBody(emission.declarations[0]!)).toEqual([
+      {
+        kind: "return",
+        expr: {
+          kind: "builtin",
+          object: "Math",
+          member: "sqrt",
+          args: [{ kind: "id", name: "n" }],
+        },
+      },
+    ]);
+  });
+
+  test.each([
+    ["const b = Number.isNaN(1);", "b"],
+    ["const r = Math.sqrt();", "r"],
+    ["const l = Math.log(2);", "l"],
+    ["const len = Number.length;", "len"],
+    ["const m = Math.sqrt(twoPi);", "m"],
+  ])(
+    "an initializer outside the slice keeps its degradation: %s",
+    (decl, name) => {
+      const src = [
+        decl,
+        `/** @ensures{p} forall (n: int ∈ [0, 4)) { f(n) >= 0 } */`,
+        "export function f(n: number): number {",
+        `  return n * ${name};`,
+        "}",
+        "",
+      ].join("\n");
+      const { classified } = emitModule(src, "init-declines.ts");
+      expect(classified[0]!.szs).toBe("Inappropriate");
+      expect(classified[0]!.reason).toContain(
+        `'${name}' could not be modeled: unmapped TypeScript construct 'VariableStatement'`,
+      );
+    },
+  );
+
   test("a formula atom reads an admitted constant", () => {
     const src = [
       "const cap = 100;",
@@ -8125,11 +8393,11 @@ describe("module-level const bindings", () => {
     ]);
   });
 
-  test("a call, a builtin, an unsupported operator, or a mutable read keeps the degradation", () => {
+  test("a call, a boolean builtin, an unsupported operator, or a mutable read keeps the degradation", () => {
     const src = [
       "let base = 2;",
       "const a = base * 3;",
-      "const b = Math.abs(-3);",
+      "const b = Number.isNaN(3);",
       "const c = 2 ** 3;",
       "const d = minutes();",
       "const e = 1 < 2;",
