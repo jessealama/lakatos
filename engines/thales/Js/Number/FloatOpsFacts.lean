@@ -215,4 +215,117 @@ theorem tsMax_hi {a b : Float} (haHi : a < (1.0 / 0.0 : Float))
     · exact hbHi
     · exact haHi
 
+/-! ## The integral roundings
+
+`roundIntegral`'s finite arm is `normalize (s.apply M) 0 s` with `M` the
+shifted mantissa `q = m >>> k` or its successor. The rounding directions
+reduce to three facts about that shift. -/
+
+theorem shift_mul_le (m k : Nat) : (m >>> k) * 2 ^ k ≤ m := by
+  rw [Nat.shiftRight_eq_div_pow]
+  exact Nat.div_mul_le_self m (2 ^ k)
+
+theorem lt_succ_shift_mul (m k : Nat) : m < (m >>> k + 1) * 2 ^ k := by
+  rw [Nat.shiftRight_eq_div_pow, Nat.succ_mul]
+  have h1 := Nat.div_add_mod m (2 ^ k)
+  have h2 := Nat.mod_lt m (Nat.two_pow_pos k)
+  rw [Nat.mul_comm] at h1
+  omega
+
+theorem exact_shift (m k : Nat) (h : m % 2 ^ k = 0) : (m >>> k) * 2 ^ k = m := by
+  rw [Nat.shiftRight_eq_div_pow]
+  have h1 := Nat.div_add_mod m (2 ^ k)
+  rw [Nat.mul_comm] at h1
+  omega
+
+/-- What the floor arm rounds to, scaled back to the input's grid: at most
+the input. Positive inputs never bump; negative ones bump exactly when the
+dropped bits were nonzero. The `bump` match is spelled as `roundIntegral`
+spells it, so the statement is what `dsimp` leaves in a goal. -/
+theorem floor_int_le (s : Sign) (m k : Nat) :
+    s.apply (if (match RoundDir.towardNegInf, s with
+        | .towardZero, _ => false
+        | .towardNegInf, .negative => (m % 2 ^ k != 0)
+        | .towardNegInf, .positive => false
+        | .towardPosInf, .positive => (m % 2 ^ k != 0)
+        | .towardPosInf, .negative => false
+        | .nearestHalfUp, .positive => decide (2 ^ (k - 1) ≤ m % 2 ^ k)
+        | .nearestHalfUp, .negative => decide (2 ^ (k - 1) < m % 2 ^ k))
+      then ((m >>> k : Nat) : Int) + 1 else ((m >>> k : Nat) : Int)) * (2 ^ k : Int)
+      ≤ s.apply m := by
+  cases s with
+  | positive =>
+    simp only [Sign.apply, Bool.false_eq_true, ite_false]
+    exact_mod_cast shift_mul_le m k
+  | negative =>
+    simp only [Sign.apply]
+    rw [Int.neg_mul]
+    apply Int.neg_le_neg
+    split
+    · exact_mod_cast Nat.le_of_lt (lt_succ_shift_mul m k)
+    · rename_i heq
+      simp only [bne_iff_ne, ne_eq, Decidable.not_not] at heq
+      exact_mod_cast Nat.le_of_eq (exact_shift m k heq).symm
+
+/-- The ceil arm: at least the input. The mirror of `floor_int_le`. -/
+theorem ceil_int_ge (s : Sign) (m k : Nat) :
+    s.apply m ≤
+    s.apply (if (match RoundDir.towardPosInf, s with
+        | .towardZero, _ => false
+        | .towardNegInf, .negative => (m % 2 ^ k != 0)
+        | .towardNegInf, .positive => false
+        | .towardPosInf, .positive => (m % 2 ^ k != 0)
+        | .towardPosInf, .negative => false
+        | .nearestHalfUp, .positive => decide (2 ^ (k - 1) ≤ m % 2 ^ k)
+        | .nearestHalfUp, .negative => decide (2 ^ (k - 1) < m % 2 ^ k))
+      then ((m >>> k : Nat) : Int) + 1 else ((m >>> k : Nat) : Int)) * (2 ^ k : Int) := by
+  cases s with
+  | positive =>
+    simp only [Sign.apply]
+    split
+    · exact_mod_cast Nat.le_of_lt (lt_succ_shift_mul m k)
+    · rename_i heq
+      simp only [bne_iff_ne, ne_eq, Decidable.not_not] at heq
+      exact_mod_cast Nat.le_of_eq (exact_shift m k heq).symm
+  | negative =>
+    simp only [Sign.apply, Bool.false_eq_true, ite_false]
+    rw [Int.neg_mul]
+    apply Int.neg_le_neg
+    exact_mod_cast shift_mul_le m k
+
+/-- The finite floor arm's key is at most the input's. The input is
+rewritten as its own normalization so `key_normalize_mono_value` compares
+the two, and the exponent split `1074 = k + (e + 1074)` reduces that to
+`floor_int_le`. -/
+theorem key_floor_finite_le {s : Sign} {m : Nat} {e : Int} {h : 0 < m}
+    (hc : Canonical (.finite s m e h)) :
+    key (roundIntegral .binary64 .towardNegInf (.finite s m e h)) ≤ key (.finite s m e h) := by
+  obtain ⟨_, helo, _, _⟩ := canonical_finite_bounds hc
+  dsimp only [roundIntegral]
+  split
+  · exact Int.le_refl _
+  · rename_i he
+    rw [← normalize_canonical_self hc]
+    apply key_normalize_mono_value _ _ _ (by omega) helo
+    have hk : (-e).toNat + (e + 1074).toNat = ((0 : Int) + 1074).toNat := by omega
+    rw [← hk, int_pow_split, ← Int.mul_assoc]
+    exact Int.mul_le_mul_of_nonneg_right (floor_int_le s m (-e).toNat)
+      (Int.le_of_lt (intPow_pos _))
+
+/-- The finite ceil arm's key is at least the input's. -/
+theorem key_ceil_finite_ge {s : Sign} {m : Nat} {e : Int} {h : 0 < m}
+    (hc : Canonical (.finite s m e h)) :
+    key (.finite s m e h) ≤ key (roundIntegral .binary64 .towardPosInf (.finite s m e h)) := by
+  obtain ⟨_, helo, _, _⟩ := canonical_finite_bounds hc
+  dsimp only [roundIntegral]
+  split
+  · exact Int.le_refl _
+  · rename_i he
+    rw [← normalize_canonical_self hc]
+    apply key_normalize_mono_value _ _ _ helo (by omega)
+    have hk : (-e).toNat + (e + 1074).toNat = ((0 : Int) + 1074).toNat := by omega
+    rw [← hk, int_pow_split, ← Int.mul_assoc]
+    exact Int.mul_le_mul_of_nonneg_right (ceil_int_ge s m (-e).toNat)
+      (Int.le_of_lt (intPow_pos _))
+
 end Js.Number.FloatOpsFacts
