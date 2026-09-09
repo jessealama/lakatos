@@ -62,12 +62,44 @@ def PropSpine.ranges? (s : PropSpine) : Option (List (String × Int × Int)) :=
     | .unbounded _ | .opaque _ => none
 
 /-- Whether a term is an emitted guard hypothesis: a boolean island's
-`= pure true` proposition. A nat binder's `0 ≤ n` occupies the same arrow
-position and is deliberately not one — it stays in the leaf. -/
+`= pure true` proposition. A binder's own bound (`0 ≤ n`, `0 < x`)
+occupies the same arrow position and is not one; `pastBounds` reads
+those. -/
 partial def isGuardProp : TSyntax `term → Bool
   | `(($inner)) => isGuardProp inner
   | `($_ = pure true) => true
   | _ => false
+
+/-- An endpoint as the renderer prints one: a numeral, a scientific
+literal, `floatInf`, `floatNaN`, or a negation of one. -/
+partial def isEndpoint : TSyntax `term → Bool
+  | `(($inner)) => isEndpoint inner
+  | `(-$inner) => isEndpoint inner
+  | `($_:num) | `($_:scientific) => true
+  | `($i:ident) =>
+    let n := i.getId.eraseMacroScopes
+    n == `floatInf || n == `floatNaN
+  | _ => false
+
+private def isIdent (x : Name) : TSyntax `term → Bool
+  | `($y:ident) => y.getId.eraseMacroScopes == x
+  | _ => false
+
+/-- Whether a hypothesis is one of `x`'s own bounds: `x` on one side of a
+`<` or `≤`, an endpoint on the other. -/
+partial def isBoundOn (x : Name) : TSyntax `term → Bool
+  | `(($inner)) => isBoundOn x inner
+  | `($a < $b) | `($a ≤ $b) =>
+    (isIdent x a && isEndpoint b) || (isEndpoint a && isIdent x b)
+  | _ => false
+
+/-- The body under `x`'s own bound hypotheses, which the renderer prints
+directly under `x`'s head. Search never runs on a domain with such a
+binder, so the bounds are not kept. -/
+partial def pastBounds (x : Name) (t : TSyntax `term) : TSyntax `term :=
+  match t with
+  | `($h → $rest) => if isBoundOn x h then pastBounds x rest else t
+  | _ => t
 
 /-- Whether a hypothesis names `x` as some computation's successful
 result — the shape a class binder's domain is written as, since the
@@ -82,10 +114,10 @@ partial def isCtorImage (x : Name) : TSyntax `term → Bool
 outermost first, then the guard hypotheses under them, and the leaf under
 those. A plain Prop carries no structure, so the spine is recovered by
 matching the shapes `Render.lean` commits to — rung selection and witness
-search both read it. A payload with any other head is its own leaf; a
+search both read it. A payload with any other head is its own leaf. A
 binder's own bound hypotheses — a nat binder's nonnegativity, a `number`
-binder's endpoints — stay in the leaf, since search never runs on an
-unbounded domain. -/
+binder's endpoints — are read past, so the spine and guards under them
+are recovered. -/
 partial def propSpine (t : TSyntax `term) : PropSpine :=
   match t with
   | `(($inner)) => propSpine inner
@@ -100,8 +132,9 @@ partial def propSpine (t : TSyntax `term) : PropSpine :=
   | `(∀ ($x:ident : Int), $body)
   | `(∀ ($x:ident : JsNumber), $body)
   | `(∀ ($x:ident : Float), $body) =>
-    let inner := propSpine body
-    { inner with binders := .unbounded x.getId.eraseMacroScopes.toString :: inner.binders }
+    let x := x.getId.eraseMacroScopes
+    let inner := propSpine (pastBounds x body)
+    { inner with binders := .unbounded x.toString :: inner.binders }
   -- A constructor-image head: the instance and the hypothesis that names
   -- it as the constructor's output. Placed after the numeric heads, which
   -- claim their own types first.

@@ -21,15 +21,11 @@ def spineOf (bs : Array BinderIR) : List SpineBinder :=
 #guard spineOf #[.cls "s" "Span" none #[.cls "p" "Point" none #[.number "x" false] false]]
   == [.unbounded "«s.p.x»", .opaque "«s.p»", .opaque "s"]
 
--- A binder whose own bounds print as implications stops the reader
--- there: nothing under it is recovered, later binders and the guard
--- chain included.
-#guard spineOf #[.nat "n", .int "y"] == [.unbounded "n"]
-#guard spineOf #[.number "a" (some (.lt, "0")) none, .int "y"] == [.unbounded "a"]
-#guard spineOf #[.number "a" none (some (.le, "1")), .int "y"] == [.unbounded "a"]
-#guard expectedGuards #[.int "n"] 2 == 2
-#guard expectedGuards #[.nat "n"] 2 == 0
-#guard expectedGuards #[.number "a" (some (.lt, "0")) none] 1 == 0
+-- A binder whose own bounds print as implications is read past them,
+-- so the binders under it are expected too.
+#guard spineOf #[.nat "n", .int "y"] == [.unbounded "n", .unbounded "y"]
+#guard spineOf #[.number "a" (some (.lt, "0")) none, .int "y"] == [.unbounded "a", .unbounded "y"]
+#guard spineOf #[.number "a" none (some (.le, "1")), .int "y"] == [.unbounded "a", .unbounded "y"]
 
 def mismatch (expected : List SpineBinder) (guards : Nat) (t : Unhygienic Term) : Option String :=
   spineMismatch? expected guards (Unhygienic.run t)
@@ -42,6 +38,22 @@ def mismatch (expected : List SpineBinder) (guards : Nat) (t : Unhygienic Term) 
 #guard mismatch [.unbounded "«p.x»", .opaque "p"] 0
   `(∀ («p.x» : JsNumber), ∀ (p : TsModel.Point),
       TsModel.Point.construct «p.x» = .ok p → (pure true : JsM Bool) = pure true) == none
+
+-- The bounds a binder prints are read past, and the guards under them
+-- are counted.
+#guard mismatch [.unbounded "x", .unbounded "y"] 1
+  `(∀ (x : JsNumber), 0 < x → ∀ (y : Int),
+      (pure b : JsM Bool) = pure true → (pure true : JsM Bool) = pure true) == none
+#guard mismatch [.unbounded "x", .unbounded "y", .unbounded "sf"] 1
+  `(∀ (x : JsNumber), ∀ (y : JsNumber), ∀ (sf : JsNumber), 0 < sf → sf < floatInf →
+      (pure b : JsM Bool) = pure true → (pure true : JsM Bool) = pure true) == none
+-- Drift below a bounded binder is named like drift anywhere else.
+#guard (mismatch [.unbounded "x", .unbounded "y"] 1
+  `(∀ (x : JsNumber), 0 < x → ∀ (y z : Int),
+      (pure true : JsM Bool) = pure true)).getD "" |>.startsWith "binder 1"
+#guard (mismatch [.unbounded "x", .unbounded "y"] 1
+  `(∀ (x : JsNumber), 0 < x → ∀ (y : Int),
+      (pure true : JsM Bool) = pure true)) matches some _
 
 -- Drift is named: a grouped ∀ recovers no binders; a parenthesized
 -- endpoint is fine but a parenthesized domain type is not; a guard count
