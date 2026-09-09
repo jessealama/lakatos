@@ -26,17 +26,19 @@ partial def intLitTerm? : TSyntax `term → Option Int
   | _ => none
 
 /-- One recovered binder: a bounded int range, an unbounded head (bare
-int, nat-shaped, or a Float binder), or an opaque one — a class binder,
-whose domain is a constructor's image rather than a range, so it is
-neither enumerable nor searchable. -/
+int, nat-shaped, or a Float binder), a boolean head (enumerable, two
+values), or an opaque one — a class binder, whose domain is a
+constructor's image rather than a range, so it is neither enumerable nor
+searchable. -/
 inductive SpineBinder where
   | ranged (name : String) (lo hi : Int)
   | unbounded (name : String)
   | opaque (name : String)
+  | bool (name : String)
   deriving BEq, Repr
 
 def SpineBinder.name : SpineBinder → String
-  | .ranged n .. | .unbounded n | .opaque n => n
+  | .ranged n .. | .unbounded n | .opaque n | .bool n => n
 
 /-- The renderer primes a binder spelled like the artifact's reserved
 vocabulary (`pure` → `pure'`); no TS identifier contains a prime, so a
@@ -59,7 +61,7 @@ neither enumerable nor searchable, so the decide tiers are skipped. -/
 def PropSpine.ranges? (s : PropSpine) : Option (List (String × Int × Int)) :=
   s.binders.mapM fun
     | .ranged x lo hi => some (x, lo, hi)
-    | .unbounded _ | .opaque _ => none
+    | .unbounded _ | .opaque _ | .bool _ => none
 
 /-- Whether a term is an emitted guard hypothesis: a boolean island's
 `= pure true` proposition. A binder's own bound (`0 ≤ n`, `0 < x`)

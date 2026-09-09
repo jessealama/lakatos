@@ -56,6 +56,12 @@ def JsVal.toNumber : JsVal → JsM Float
   | .num x => pure x
   | _ => JsM.throw (.error "type-projection")
 
+/-- Project the `bool` tag, the same refusal of coercion as `toNumber`. -/
+@[js_norm, grind]
+def JsVal.toBoolean : JsVal → JsM Bool
+  | .bool b => pure b
+  | _ => JsM.throw (.error "type-projection")
+
 /-- JS `===` on the domain: no coercion, so cross-tag is `false`; on
 `num` it is IEEE equality (NaN unequal to itself, the zeros equal). -/
 @[js_norm, grind]

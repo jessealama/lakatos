@@ -13,6 +13,7 @@ def spineKinds (t : TSyntax `term) : List String :=
     | .ranged n .. => s!"ranged {n}"
     | .unbounded n => s!"unbounded {n}"
     | .opaque n => s!"opaque {n}"
+    | .bool n => s!"bool {n}"
 
 -- Built unhygienically, the way the parsed artifact text reaches the
 -- command: a macro scope on a binder name is a test artifact, not a shape

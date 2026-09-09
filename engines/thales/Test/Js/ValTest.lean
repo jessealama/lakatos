@@ -23,6 +23,8 @@ open Js
 #guard decide ((JsVal.bool false).toNumber = (JsM.throw (.error "type-projection") : JsM Float))
 #guard decide (JsVal.undef.toNumber = (JsM.throw (.error "type-projection") : JsM Float))
 #guard decide (JsVal.null.toNumber = (JsM.throw (.error "type-projection") : JsM Float))
+#guard decide ((JsVal.bool true).toBoolean = pure true)
+#guard decide ((JsVal.num 1).toBoolean = (JsM.throw (.error "type-projection") : JsM Bool))
 
 -- The two JS equalities diverge only at the num corners: strictEq is
 -- IEEE (NaN unequal, zeros conflated), sameValue is SameValue.

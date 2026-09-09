@@ -146,6 +146,21 @@ def numParamJson (name : String) : Json :=
 #guard
   (decodeParam (Json.mkObj [("name", "s"), ("type", "string")]))
   matches .error "unknown parameter type 'string'"
+-- A boolean parameter, and the optional `returns` field: absent is number,
+-- "boolean" is Bool, anything else fails the run.
+#guard (decodeParamTy (Json.str "boolean")) matches .ok .bool
+#guard
+  (decodeFn (Json.mkObj [("name", "f"), ("params", Json.arr #[]), ("source", ""),
+    ("body", Json.arr #[]), ("returns", "boolean")]))
+  matches .ok { returns := .bool, .. }
+#guard
+  (decodeFn (Json.mkObj [("name", "f"), ("params", Json.arr #[]), ("source", ""),
+    ("body", Json.arr #[])]))
+  matches .ok { returns := .number, .. }
+#guard
+  (decodeFn (Json.mkObj [("name", "f"), ("params", Json.arr #[]), ("source", ""),
+    ("body", Json.arr #[]), ("returns", "string")]))
+  matches .error _
 -- The three option expression kinds decode strictly, and a local may bind
 -- at a class.
 #guard
@@ -318,6 +333,9 @@ def numParamJson (name : String) : Json :=
   (decodeBinder (Json.mkObj
     [("name", "x"), ("kind", "range"), ("lo", "0"), ("hi", "10")]))
   matches .ok (.range "x" 0 10)
+#guard
+  (decodeBinder (Json.mkObj [("name", "b"), ("kind", "boolean")]))
+  matches .ok (.bool "b")
 #guard
   (decodeBinder (Json.mkObj
     [("name", "a"), ("kind", "number"),

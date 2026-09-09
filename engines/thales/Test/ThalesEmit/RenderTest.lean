@@ -184,6 +184,7 @@ def b1 (object member x : String) : JsExpr := .builtin object member #[.id x]
 #guard renderFails (v (.inject .string (some (.id "s"))))
 #guard renderFails (v (.inject .number none))
 #guard rendersLifted (v (.project .number (.id "w"))) true `((← JsVal.toNumber w))
+#guard rendersLifted (v (.project .boolean (.id "w"))) true `((← JsVal.toBoolean w))
 #guard renderFails (v (.project .string (.id "w")))
 #guard rendersAs (v (.typeofTest (.id "w") "number")) `(JsVal.typeof w == TypeofResult.number)
 #guard renderFails (v (.typeofTest (.id "w") "numbr"))
@@ -284,6 +285,13 @@ def obl (binders : Array BinderIR) (guards : Array JsExpr) (c : Conclusion) :
 #guard rendersSyntax
   (obl #[.number "y" none (some (.le, "1"))] #[] (.eq (call1 "f" "y") (.id "y")))
   `(#thales_prove "t.ts" "f" "p" := ∀ (y : JsNumber), y ≤ 1 → TsModel.f y = pure y)
+-- A boolean binder: one ungrouped ∀ at Bool, the only spelling propSpine
+-- recovers; never coerced.
+#guard rendersSyntax (obl #[.range "n" 0 3, .bool "b"] #[]
+    (.istrue (.binop ">=" (.call "pick" none #[.id "n", .id "b"]) (.num "0"))))
+  `(#thales_prove "t.ts" "f" "p" :=
+      ballIco 0 3 fun n => ∀ (b : Bool),
+        ((do return Float.le 0 (← TsModel.pick (Float.ofInt n) b)) : JsM Bool) = pure true)
 -- A reserved binder spelling is primed throughout.
 #guard rendersSyntax (obl #[.int "pure"] #[] (.eq (call1 "f" "pure") (.id "pure")))
   `(#thales_prove "t.ts" "f" "p" :=
@@ -388,6 +396,10 @@ def ctorStmt (straight : List (String × BindingTy)) (s : JsStmt) :
           { name := "y", ty := .number }]
       `(def f $bs* : Nat := 0))
   `(def f (x : JsNumber) (v : JsVal) (p : TsModel.Pt) (q : Option TsModel.Pt) (y : JsNumber) : Nat := 0)
+#guard rendersSyntax
+  (do let bs ← paramBinders #[{ name := "n", ty := .number }, { name := "b", ty := .bool }]
+      `(def f $bs* : Nat := 0))
+  `(def f (n : JsNumber) (b : Bool) : Nat := 0)
 
 -- A function: dual-tagged, namespaced, an assigned parameter rebound
 -- ahead of the body, a parameter the body itself rebinds not rebound twice.
@@ -396,6 +408,12 @@ def ctorStmt (straight : List (String × BindingTy)) (s : JsStmt) :
                body := #[.ret (.binop "+" (.id "a") (.id "b"))] })
   `(@[js_norm, grind] def TsModel.add (a b : JsNumber) : JsM JsNumber := do
       return a + b)
+-- A boolean-returning function is ascribed at Bool.
+#guard rendersSyntax
+  (fnCommand { name := "isSmall", params := nums #["n"], source := "", returns := .bool,
+               body := #[.ret (.binop "<" (.id "n") (.num "5"))] })
+  `(@[js_norm, grind] def TsModel.isSmall (n : JsNumber) : JsM Bool := do
+      return Float.lt n 5)
 #guard rendersSyntax
   (fnCommand { name := "id", params := nums #["x"], source := "", body := #[.ret (.id "x")] })
   `(@[js_norm, grind] def TsModel.id (x : JsNumber) : JsM JsNumber := do
@@ -491,6 +509,12 @@ def hashV : Ident := mkIdent (Name.mkSimple "«#v»")
 #guard rendersSyntax (methodCommand box box.methods[0]!)
   `(@[js_norm, grind] def TsModel.Box.scale (self : TsModel.Box) (k : JsNumber) : JsM JsNumber := do
       return TsModel.Box.«#v» self * k)
+-- A boolean-returning getter is ascribed at Bool, like its method shape.
+#guard rendersSyntax
+  (getterCommand box { name := "live", returns := .bool,
+                       body := #[.ret (.binop ">" (.fieldRead "Box" none "#v" .selfRef) (.num "0"))] })
+  `(@[js_norm, grind] def TsModel.Box.live (self : TsModel.Box) : JsM Bool := do
+      return Float.lt 0 (TsModel.Box.«#v» self))
 
 /-- A class over a union field and a class field. -/
 def outer : EmitClass :=

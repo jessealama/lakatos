@@ -80,12 +80,14 @@ inductive JsStmt where
   | fieldSet (field : String) (expr : JsExpr)
 deriving Repr, Inhabited
 
-/-- A parameter's declared type: a TypeScript number, a keyword union, or
-an instance of a modeled class, whose module is none for the entry file's
-own. Every union spelling is one Lean type, so the tags never reach the
-binder — they are the frontend's record of what may be injected. -/
+/-- A parameter's declared type: a TypeScript number, a boolean, a keyword
+union, or an instance of a modeled class, whose module is none for the
+entry file's own. Every union spelling is one Lean type, so the tags never
+reach the binder — they are the frontend's record of what may be
+injected. -/
 inductive ParamTy where
   | number
+  | bool
   | union (tags : Array JsTag)
   | cls (name : String) (module : Option String)
   /-- A defaulted class parameter's slot: the instance or `undefined`. -/
@@ -97,10 +99,18 @@ structure Param where
   ty : ParamTy
 deriving Repr, Inhabited
 
+/-- What a function, method, or getter returns: the number every
+callable returned before, or a boolean. -/
+inductive ReturnTy where
+  | number
+  | bool
+deriving Repr, Inhabited, BEq
+
 structure EmitFn where
   name : String
   /-- The defining module's entry-relative path; none for the entry. -/
   module : Option String := none
+  returns : ReturnTy := .number
   params : Array Param
   source : String
   body : Array JsStmt
@@ -108,11 +118,13 @@ deriving Repr, Inhabited
 
 structure EmitGetter where
   name : String
+  returns : ReturnTy := .number
   body : Array JsStmt
 deriving Repr, Inhabited
 
 structure EmitMethod where
   name : String
+  returns : ReturnTy := .number
   params : Array Param
   body : Array JsStmt
 deriving Repr, Inhabited
@@ -184,12 +196,14 @@ inductive BoundOp where
 deriving Repr, DecidableEq, Inhabited
 
 /-- A binder's denoted domain: a finite half-open `[lo, hi)` integer
-range, the whole int line, the naturals, or the doubles a `number`
-binder's bounds admit — each bound an op × endpoint-literal pair. -/
+range, the whole int line, the naturals, the two booleans, or the doubles
+a `number` binder's bounds admit — each bound an op × endpoint-literal
+pair. -/
 inductive BinderIR where
   | range (name : String) (lo hi : Int)
   | int (name : String)
   | nat (name : String)
+  | bool (name : String)
   | number (name : String) (lower upper : Option (BoundOp × String))
   /-- A class-valued binder: the instance ranges over the image of the
   named class's constructor, applied to one argument per `ctorParams`. -/
@@ -201,14 +215,16 @@ def BinderIR.name : BinderIR → String
   | .range n _ _ => n
   | .int n => n
   | .nat n => n
+  | .bool n => n
   | .number n _ _ => n
   | .cls n .. => n
 
 /-- Whether the binder enumerates `Int`s, so a use of it inside the body
-crosses to the Float world. A `number` binder is already a double. -/
+crosses to the Float world. A `number` binder is already a double, and a
+boolean one never reaches the Float world at all. -/
 def BinderIR.isIntValued : BinderIR → Bool
-  | .number .. | .cls .. => false
-  | _ => true
+  | .range .. | .int _ | .nat _ => true
+  | .number .. | .cls .. | .bool _ => false
 
 inductive Conclusion where
   | eq (left right : JsExpr)
@@ -423,11 +439,12 @@ partial def decodeStmt (j : Json) : Except String JsStmt := do
       (← decodeExpr (← j.getObjVal? "expr")))
   | k => throw s!"unknown statement kind '{k}'"
 
-/-- A parameter's type: the string "number", an array of union tags, or a
-class object. -/
+/-- A parameter's type: the string "number" or "boolean", an array of
+union tags, or a class object. -/
 def decodeParamTy (j : Json) : Except String ParamTy :=
   match j.getStr? with
   | .ok "number" => pure .number
+  | .ok "boolean" => pure .bool
   | .ok s => throw s!"unknown parameter type '{s}'"
   | .error _ =>
     match j.getArr? with
@@ -436,6 +453,16 @@ def decodeParamTy (j : Json) : Except String ParamTy :=
       match j.getObjVal? "option" with
       | .ok o => do pure (.option (← getStr o "class") (← getStrOpt o "module"))
       | .error _ => do pure (.cls (← getStr j "class") (← getStrOpt j "module"))
+
+/-- The optional `returns` field: absent is number, "boolean" is Bool. -/
+def decodeReturnTy (j : Json) : Except String ReturnTy :=
+  match j.getObjVal? "returns" with
+  | .error _ => pure .number
+  | .ok v =>
+    match v.getStr? with
+    | .ok "boolean" => pure .bool
+    | .ok other => throw s!"return type '{other}' is not a keyword the model returns"
+    | .error _ => throw "field 'returns' is not a string"
 
 def decodeParam (j : Json) : Except String Param := do
   pure { name := ← getStr j "name"
@@ -451,16 +478,19 @@ def decodeParams (j : Json) (field : String) : Except String (Array Param) := do
 def decodeFn (j : Json) : Except String EmitFn := do
   pure { name := ← getStr j "name"
          module := ← getStrOpt j "module"
+         returns := ← decodeReturnTy j
          params := ← decodeParams j "params"
          source := ← getStr j "source"
          body := ← (← getArr j "body").mapM decodeStmt }
 
 def decodeGetter (j : Json) : Except String EmitGetter := do
   pure { name := ← getStr j "name"
+         returns := ← decodeReturnTy j
          body := ← (← getArr j "body").mapM decodeStmt }
 
 def decodeMethod (j : Json) : Except String EmitMethod := do
   pure { name := ← getStr j "name"
+         returns := ← decodeReturnTy j
          params := ← decodeParams j "params"
          body := ← (← getArr j "body").mapM decodeStmt }
 
@@ -523,6 +553,7 @@ def decodeBinder (j : Json) : Except String BinderIR := do
       (← decodeIntString (← getStr j "hi")))
   | "int" => pure (.int name)
   | "nat" => pure (.nat name)
+  | "boolean" => pure (.bool name)
   | "number" =>
     pure (.number name (← decodeBound j "lower") (← decodeBound j "upper"))
   | "class" =>
