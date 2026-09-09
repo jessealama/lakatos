@@ -122,6 +122,16 @@ grind too, so it can open them without a simp pass first. -/
     ballIco lo hi p ↔ ∀ x : Int, lo ≤ x → x < hi → p x :=
   Iff.rfl
 
+/-! The Prop order on `Float` is the Bool comparison by definition, but
+grind sees two atoms unless told. Both spellings occur in a residual:
+binder and infinity bounds are Props, property atoms are Bools. -/
+
+@[grind _=_] theorem float_le_prop_eq_bool (a b : Float) :
+    (a ≤ b) = (Float.le a b = true) := rfl
+
+@[grind _=_] theorem float_lt_prop_eq_bool (a b : Float) :
+    (a < b) = (Float.lt a b = true) := rfl
+
 /-! The four monotonicity facts and the negation facts they lean on,
 restated on `floatInf` so their bound hypotheses match the strict
 infinity bounds a finite `JsNumber` carries (`-floatInf < x`,
