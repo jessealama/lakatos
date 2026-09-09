@@ -3285,6 +3285,27 @@ theorem float_le_sub_right {x y c : Float} (hxy : Float.le x y = true)
   rw [hsub, hsub]
   exact float_le_add_right hxy (float_neg_bound_lo hHi) (float_neg_bound_hi hLo)
 
+/-- A finite float minus itself is `+0`. Both operands unpack to the same
+mantissa and exponent, so the aligned signed sum is literally zero and
+`normalize` hands back its positive zero; opposite-signed zeros sum to
+`+0` by the same rule. -/
+theorem float_add_neg_self {a : Float}
+    (hLo : (-(1.0 / 0.0) : Float) < a) (hHi : a < (1.0 / 0.0 : Float)) :
+    a + -a = 0 := by
+  show Float.ofModel (Float.Model.add a.toModel (Float.Model.neg a.toModel)) = 0
+  rw [Float.Model.add, Float.Model.neg, model_unpack_pack_neg]
+  rcases unpack_finite_or_zero hLo hHi with ⟨s, hu⟩ | ⟨s, m, e, hm, hu, _⟩
+  · rw [hu]
+    cases s <;> rfl
+  · rw [hu]
+    show Float.ofModel (Float.Model.pack (UnpackedFloat.add .binary64 (.finite s m e hm)
+      (.finite (-s) m e hm))) = 0
+    rw [add_finite_unfold]
+    simp only [Int.min_self, Int.sub_self, Int.toNat_zero, Nat.shiftLeft_zero, sign_apply_neg,
+      Int.add_right_neg]
+    rw [normalize_eq_of_zero]
+    rfl
+
 /-! ## Order transitivity at the `Float` layer
 
 Unpacking is always canonical and a true strict comparison rules out NaN

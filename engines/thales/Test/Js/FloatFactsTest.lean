@@ -82,6 +82,12 @@ example (x y c : Float) (h : Float.le x y = true)
     Float.le (x - c) (y - c) = true :=
   FloatFacts.float_le_sub_right h hLo hHi
 
+-- Self-subtraction of a finite float is exactly +0, whichever zero the
+-- operand was.
+example (a : Float) (hLo : (-(1.0 / 0.0) : Float) < a) (hHi : a < (1.0 / 0.0 : Float)) :
+    a + -a = 0 :=
+  FloatFacts.float_add_neg_self hLo hHi
+
 example (x y c : Float) (h : Float.le x y = true)
     (h0 : (0 : Float) < c) (hInf : c < (1.0 / 0.0 : Float)) :
     Float.le (x / c) (y / c) = true :=
@@ -174,6 +180,16 @@ example : Float.le 0 (Float.sqrt (1.0 / 0.0)) = true :=
 
 example : ((1.5 : Float) - 2.5).toModel.unpack ≠ .notANumber :=
   FloatFacts.float_sub_ne_nan rfl rfl rfl rfl
+
+example : (-3.5 : Float) + -(-3.5) = 0 :=
+  FloatFacts.float_add_neg_self rfl rfl
+
+-- Both signed zeros: -0 + 0 and 0 + -0 are +0.
+example : (-0.0 : Float) + -(-0.0) = 0 :=
+  FloatFacts.float_add_neg_self rfl rfl
+
+example : (0.0 : Float) + -0.0 = 0 :=
+  FloatFacts.float_add_neg_self rfl rfl
 
 -- The beq bridge: IEEE equality against an infinity is refuted by a
 -- strict comparison on the same side.
