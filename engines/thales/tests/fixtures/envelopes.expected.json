@@ -1654,6 +1654,36 @@
       "axioms": []
     }
   ],
+  "engines/thales/tests/conformance/theorem/unbounded-rounding.ts": [
+    {
+      "function": "down",
+      "property": "noBigger",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_10670282017565668854",
+      "axioms": []
+    },
+    {
+      "function": "up",
+      "property": "noSmaller",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_4931325726713045413",
+      "axioms": []
+    },
+    {
+      "function": "chop",
+      "property": "shrinks",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_13124988550544732411",
+      "axioms": []
+    },
+    {
+      "function": "floorCap",
+      "property": "floorCap",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_15699434239334957785",
+      "axioms": []
+    }
+  ],
   "engines/thales/tests/conformance/inappropriate/math-log.ts": [
     {
       "function": "integerLog",

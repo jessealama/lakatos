@@ -239,6 +239,7 @@ const MEMBER_FIXTURES = [
   `${CONFORMANCE}/theorem/integral-scale.ts`,
   `${CONFORMANCE}/theorem/beyond-safe-integer.ts`,
   `${CONFORMANCE}/theorem/unbounded-clamp.ts`,
+  `${CONFORMANCE}/theorem/unbounded-rounding.ts`,
   `${CONFORMANCE}/inappropriate/math-log.ts`,
 ];
 
