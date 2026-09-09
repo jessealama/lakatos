@@ -3,6 +3,7 @@ import Js.NormAttr
 import Js.Number.Basic
 import Js.Number.FloatFacts
 import Js.Number.FloatOps
+import Js.Number.FloatOpsFacts
 import Js.Runtime
 import Js.Binders
 
