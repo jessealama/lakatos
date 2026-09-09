@@ -122,12 +122,12 @@ grind too, so it can open them without a simp pass first. -/
     ballIco lo hi p ↔ ∀ x : Int, lo ≤ x → x < hi → p x :=
   Iff.rfl
 
-/-! The four monotonicity facts, restated on `floatInf` so their bound
-hypotheses match the strict infinity bounds a finite `JsNumber` carries
-(`-floatInf < x`, `x < floatInf`), and given grind patterns keyed on the
-operation terms: whenever both sides of a comparison goal apply the same
-operation, the fact instantiates and the implication closes by forward
-reasoning. -/
+/-! The four monotonicity facts and the negation facts they lean on,
+restated on `floatInf` so their bound hypotheses match the strict
+infinity bounds a finite `JsNumber` carries (`-floatInf < x`,
+`x < floatInf`), and given grind patterns keyed on the operation terms:
+whenever both sides of a comparison goal apply the same operation, the
+fact instantiates and the implication closes by forward reasoning. -/
 
 /-- Multiplying both sides by a positive finite factor. -/
 theorem float_le_mul_of_le {x y c : Float} (h : Float.le x y = true)
@@ -154,6 +154,12 @@ theorem float_neg_lo {c : Float} (h : c < floatInf) : -floatInf < -c :=
 
 theorem float_neg_hi {c : Float} (h : -floatInf < c) : -c < floatInf :=
   FloatFacts.float_neg_bound_hi h
+
+/-- A finite float minus itself is `+0`, keyed on the negation alone so an
+ordering guard `a ≤ b` can reach `0 ≤ b + -a` through the add fact. -/
+theorem float_add_neg_self {a : Float} (hLo : -floatInf < a) (hHi : a < floatInf) :
+    a + -a = 0 :=
+  FloatFacts.float_add_neg_self hLo hHi
 
 /-! A finite bound reaches the infinity hypotheses through one ground
 comparison: transitivity chains `c < 1000` with `1000 < floatInf`, and
@@ -200,6 +206,18 @@ instantiate them directly. -/
 theorem float_ne_nan_of_bounds {c : Float} (hLo : -floatInf < c) (hHi : c < floatInf) :
     c.toModel.unpack ≠ .notANumber :=
   FloatFacts.unpack_ne_nan hLo hHi
+
+/-- A true `≤` rules NaN out on both sides; an infinity guard alone leaves
+it open, so this is what feeds the beq-false bridges. -/
+theorem float_le_ne_nan_left {x y : Float} (h : Float.le x y = true) :
+    x.toModel.unpack ≠ .notANumber := by
+  rw [FloatFacts.float_le_unpack] at h
+  exact FloatFacts.le_ne_nan_left h
+
+theorem float_le_ne_nan_right {x y : Float} (h : Float.le x y = true) :
+    y.toModel.unpack ≠ .notANumber := by
+  rw [FloatFacts.float_le_unpack] at h
+  exact FloatFacts.le_ne_nan_right h
 
 /-- Subtraction of floats strictly inside the infinities is never NaN;
 overflow to an infinity is absorbed downstream. -/
@@ -340,6 +358,44 @@ theorem tsMax_hi {a b : Float} (haHi : a < floatInf) (hbHi : b < floatInf) :
     Number.FloatOps.tsMax a b < floatInf :=
   Number.FloatOpsFacts.tsMax_hi haHi hbHi
 
+/-! The integral roundings: floor and ceil bracket the input, trunc is one
+of them by sign, and every rounding keeps a strictly bounded input strictly
+bounded (`tsRound` included: it costs one pattern, and its order facts are
+a follow-up). -/
+
+theorem tsFloor_le {x : Float} (hx : x.toModel.unpack ≠ .notANumber) :
+    Float.le (Number.FloatOps.tsFloor x) x = true :=
+  Number.FloatOpsFacts.tsFloor_le hx
+
+theorem tsCeil_ge {x : Float} (hx : x.toModel.unpack ≠ .notANumber) :
+    Float.le x (Number.FloatOps.tsCeil x) = true :=
+  Number.FloatOpsFacts.tsCeil_ge hx
+
+theorem tsTrunc_eq_tsFloor_of_nonneg {x : Float} (h : Float.le 0 x = true) :
+    Number.FloatOps.tsTrunc x = Number.FloatOps.tsFloor x :=
+  Number.FloatOpsFacts.tsTrunc_eq_tsFloor_of_nonneg h
+
+theorem tsTrunc_eq_tsCeil_of_nonpos {x : Float} (h : Float.le x 0 = true) :
+    Number.FloatOps.tsTrunc x = Number.FloatOps.tsCeil x :=
+  Number.FloatOpsFacts.tsTrunc_eq_tsCeil_of_nonpos h
+
+theorem tsFloor_lo {x : Float} (h : -floatInf < x) : -floatInf < Number.FloatOps.tsFloor x :=
+  Number.FloatOpsFacts.tsFloor_lo h
+theorem tsFloor_hi {x : Float} (h : x < floatInf) : Number.FloatOps.tsFloor x < floatInf :=
+  Number.FloatOpsFacts.tsFloor_hi h
+theorem tsCeil_lo {x : Float} (h : -floatInf < x) : -floatInf < Number.FloatOps.tsCeil x :=
+  Number.FloatOpsFacts.tsCeil_lo h
+theorem tsCeil_hi {x : Float} (h : x < floatInf) : Number.FloatOps.tsCeil x < floatInf :=
+  Number.FloatOpsFacts.tsCeil_hi h
+theorem tsTrunc_lo {x : Float} (h : -floatInf < x) : -floatInf < Number.FloatOps.tsTrunc x :=
+  Number.FloatOpsFacts.tsTrunc_lo h
+theorem tsTrunc_hi {x : Float} (h : x < floatInf) : Number.FloatOps.tsTrunc x < floatInf :=
+  Number.FloatOpsFacts.tsTrunc_hi h
+theorem tsRound_lo {x : Float} (h : -floatInf < x) : -floatInf < Number.FloatOps.tsRound x :=
+  Number.FloatOpsFacts.tsRound_lo h
+theorem tsRound_hi {x : Float} (h : x < floatInf) : Number.FloatOps.tsRound x < floatInf :=
+  Number.FloatOpsFacts.tsRound_hi h
+
 /-! A constructor's guards throw, so what follows a triggered guard never
 runs. These two are what let a successful construction refute the guards
 it passed; both are definitional on `Except`, and neither is derivable
@@ -450,6 +506,7 @@ grind_pattern float_le_add_of_le => x + c, y + c
 grind_pattern float_le_div_of_le => x / c, y / c
 grind_pattern float_neg_lo => -c
 grind_pattern float_neg_hi => -c
+grind_pattern float_add_neg_self => -a
 grind_pattern float_lt_inf_of_lt => a < b
 grind_pattern float_lt_inf_of_le => a ≤ b
 grind_pattern float_gt_neg_inf_of_lt => a < b
@@ -457,6 +514,8 @@ grind_pattern float_gt_neg_inf_of_le => a ≤ b
 grind_pattern float_le_of_not_lt => Float.lt x y
 grind_pattern float_lt_eq_false_of_le => Float.lt x y
 grind_pattern float_ne_nan_of_bounds => c.toModel.unpack
+grind_pattern float_le_ne_nan_left => Float.le x y
+grind_pattern float_le_ne_nan_right => Float.le x y
 grind_pattern float_sub_ne_nan_of_bounds => (a - b).toModel.unpack
 -- Normalization rewrites subtraction to addition of the negation, so a
 -- normalized goal carries the second spelling.
@@ -483,5 +542,17 @@ grind_pattern tsMin_lo => Number.FloatOps.tsMin a b
 grind_pattern tsMin_hi => Number.FloatOps.tsMin a b
 grind_pattern tsMax_lo => Number.FloatOps.tsMax a b
 grind_pattern tsMax_hi => Number.FloatOps.tsMax a b
+grind_pattern tsFloor_le => Number.FloatOps.tsFloor x
+grind_pattern tsCeil_ge => Number.FloatOps.tsCeil x
+grind_pattern tsTrunc_eq_tsFloor_of_nonneg => Number.FloatOps.tsTrunc x
+grind_pattern tsTrunc_eq_tsCeil_of_nonpos => Number.FloatOps.tsTrunc x
+grind_pattern tsFloor_lo => Number.FloatOps.tsFloor x
+grind_pattern tsFloor_hi => Number.FloatOps.tsFloor x
+grind_pattern tsCeil_lo => Number.FloatOps.tsCeil x
+grind_pattern tsCeil_hi => Number.FloatOps.tsCeil x
+grind_pattern tsTrunc_lo => Number.FloatOps.tsTrunc x
+grind_pattern tsTrunc_hi => Number.FloatOps.tsTrunc x
+grind_pattern tsRound_lo => Number.FloatOps.tsRound x
+grind_pattern tsRound_hi => Number.FloatOps.tsRound x
 
 end Js
