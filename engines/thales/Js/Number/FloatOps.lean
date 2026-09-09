@@ -1,4 +1,5 @@
 import Js.Number.Basic
+import Js.Number.Constants
 import Init.Data.Float.Model.Float
 
 /-!
@@ -158,14 +159,10 @@ the spec's comparison of real numbers rather than SameValue — `ℝ(-0)` is
 def tsIsInteger (a : Float) : Bool :=
   a.isFinite && Float.beq (tsTrunc a) a
 
-/-- The largest integer binary64 represents without ambiguity, `2^53 - 1`.
-Exactly representable, so the bound below is exact. -/
-def maxSafeInteger : Float := 9007199254740991.0
-
 /-- `Number.isSafeInteger`: integral, and inside the safe magnitude. The
 spec bounds `abs(ℝ(x))`, so the two signs share one comparison. -/
 def tsIsSafeInteger (a : Float) : Bool :=
-  tsIsInteger a && Float.le (Float.abs a) maxSafeInteger
+  tsIsInteger a && Float.le (Float.abs a) Number.MAX_SAFE_INTEGER
 
 /-- `Number::sameValue`, the meaning of `Object.is` on numbers.
 Propositional equality on `Float` is exactly SameValue — every NaN is
