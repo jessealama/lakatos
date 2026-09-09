@@ -16,6 +16,7 @@ deriving Repr, Inhabited, BEq
 
 inductive JsExpr where
   | num (lit : String)
+  | bool (value : Bool)
   | id (name : String)
   | unop (op : String) (operand : JsExpr)
   | binop (op : String) (left right : JsExpr)
@@ -59,11 +60,12 @@ inductive JsExpr where
 deriving Repr, Inhabited
 
 /-- A binding's declared type — a local's or a field's: a number, a
-keyword union, or an instance of a modeled class. As with a parameter's
-union, the tags are the frontend's record of what may be injected — the
-binding's Lean type is `JsVal` regardless of them. -/
+boolean, a keyword union, or an instance of a modeled class. As with a
+parameter's union, the tags are the frontend's record of what may be
+injected — the binding's Lean type is `JsVal` regardless of them. -/
 inductive BindingTy where
   | number
+  | bool
   | union (tags : Array JsTag)
   | cls (name : String) (module : Option String)
 deriving Repr, Inhabited, BEq
@@ -298,6 +300,10 @@ def typeofResults : List String :=
 partial def decodeExpr (j : Json) : Except String JsExpr := do
   match ← getStr j "kind" with
   | "num" => pure (.num (← getStr j "lit"))
+  | "bool" =>
+    match (← j.getObjVal? "value").getBool? with
+    | .ok b => pure (.bool b)
+    | .error _ => throw "field 'value' is not a boolean"
   | "id" => pure (.id (← getStr j "name"))
   | "unop" =>
     pure (.unop (← getStr j "op")
@@ -380,9 +386,13 @@ def decodeBindingTy (j : Json) : Except String BindingTy :=
   match j.getObjVal? "type" with
   | .error _ => pure .number
   | .ok v =>
-    match v.getArr? with
-    | .ok tags => BindingTy.union <$> decodeUnionTags tags "binding"
-    | .error _ => do pure (.cls (← getStr v "class") (← getStrOpt v "module"))
+    match v.getStr? with
+    | .ok "boolean" => pure .bool
+    | .ok other => throw s!"binding type '{other}' is not a keyword the model binds"
+    | .error _ =>
+      match v.getArr? with
+      | .ok tags => BindingTy.union <$> decodeUnionTags tags "binding"
+      | .error _ => do pure (.cls (← getStr v "class") (← getStrOpt v "module"))
 
 partial def decodeStmt (j : Json) : Except String JsStmt := do
   match ← getStr j "kind" with

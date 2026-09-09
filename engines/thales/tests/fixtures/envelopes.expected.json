@@ -408,6 +408,65 @@
       "axioms": []
     }
   ],
+  "engines/thales/tests/conformance/theorem/boolean-local.ts": [
+    {
+      "function": "clip",
+      "property": "named",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_2646615123927305584",
+      "axioms": []
+    },
+    {
+      "function": "flagged",
+      "property": "flag",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_14985616730343954364",
+      "axioms": []
+    },
+    {
+      "function": "gated",
+      "property": "annotated",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_5768392361740938523",
+      "axioms": []
+    },
+    {
+      "function": "strictly",
+      "property": "strict",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_10232556900977345181",
+      "axioms": []
+    },
+    {
+      "function": "sameValued",
+      "property": "sameValue",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_11532376255049967282",
+      "axioms": []
+    },
+    {
+      "function": "combined",
+      "property": "logical",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_2035651931075884090",
+      "axioms": []
+    },
+    {
+      "function": "slotted",
+      "property": "slot",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_14943145407097068635",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/inappropriate/truthiness-local.ts": [
+    {
+      "function": "f",
+      "property": "p",
+      "szs": "Inappropriate",
+      "reason": "'f' could not be modeled: unmapped TypeScript construct 'Identifier' at 7:7"
+    }
+  ],
   "engines/thales/tests/conformance/theorem/const-chain.ts": [
     {
       "function": "affine",
