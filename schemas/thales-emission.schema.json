@@ -457,6 +457,10 @@
         "body": {
           "type": "array",
           "items": { "$ref": "#/definitions/statement" }
+        },
+        "returns": {
+          "const": "boolean",
+          "description": "Present exactly for a boolean-returning declaration; absent means number."
         }
       }
     },
@@ -512,6 +516,10 @@
               "body": {
                 "type": "array",
                 "items": { "$ref": "#/definitions/statement" }
+              },
+              "returns": {
+                "const": "boolean",
+                "description": "Present exactly for a boolean-returning declaration; absent means number."
               }
             }
           }
@@ -532,6 +540,10 @@
               "body": {
                 "type": "array",
                 "items": { "$ref": "#/definitions/statement" }
+              },
+              "returns": {
+                "const": "boolean",
+                "description": "Present exactly for a boolean-returning declaration; absent means number."
               }
             }
           }

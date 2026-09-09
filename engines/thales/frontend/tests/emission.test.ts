@@ -10773,3 +10773,205 @@ describe("boolean parameters (#354)", () => {
     );
   });
 });
+
+describe("boolean return types (#354)", () => {
+  const emit = (src: string) => emitModule(src, "t.ts");
+
+  test("a predicate helper models with a boolean return on the wire", () => {
+    const { emission, classified } = emit(
+      `/** @ensures{p} forall (n: int ∈ [0, 3)) { isSmall(n) } */\n` +
+        `export function isSmall(n: number): boolean {\n  return n < 5;\n}\n`,
+    );
+    expect(classified).toEqual([]);
+    expectValidEmission(emission);
+    const fn = emission.declarations[0];
+    assert(fn?.kind === "function");
+    expect(fn.returns).toBe("boolean");
+    expect(fnBody(fn)[0]).toEqual({
+      kind: "return",
+      expr: {
+        kind: "binop",
+        op: "<",
+        left: { kind: "id", name: "n" },
+        right: { kind: "num", lit: "5" },
+      },
+    });
+    expect(emission.obligations[0]!.payload).toEqual({
+      kind: "structured",
+      binders: [{ name: "n", kind: "range", lo: "0", hi: "3" }],
+      conclusion: {
+        kind: "istrue",
+        expr: {
+          kind: "call",
+          callee: "isSmall",
+          args: [{ kind: "id", name: "n" }],
+        },
+      },
+    });
+  });
+
+  test("a number function carries no returns field", () => {
+    const { emission } = emit(
+      `export function f(n: number): number {\n  return n;\n}\n`,
+    );
+    const fn = emission.declarations[0];
+    assert(fn?.kind === "function");
+    expect("returns" in fn).toBe(false);
+  });
+
+  test("a boolean function must return a boolean", () => {
+    const { classified } = emit(
+      `/** @ensures{p} forall (n: int ∈ [0, 3)) { f(n) } */\n` +
+        `export function f(n: number): boolean {\n  return n;\n}\n`,
+    );
+    expect(classified).toHaveLength(1);
+    expect(classified[0]!.reason).toContain(
+      "identifier 'n' is a number, not a boolean",
+    );
+  });
+
+  test("a call to a boolean callee is a condition, a logical operand, and an equality side", () => {
+    const { emission, classified } = emit(
+      `export function isSmall(n: number): boolean {\n  return n < 5;\n}\n` +
+        `export function clamp(n: number): number {\n` +
+        `  if (isSmall(n)) {\n    return 0;\n  }\n` +
+        `  if (!isSmall(n) && n > 7) {\n    return 1;\n  }\n` +
+        `  if (isSmall(n) === true) {\n    return 2;\n  }\n  return n;\n}\n`,
+    );
+    expect(classified).toEqual([]);
+    const fn = emission.declarations[1];
+    assert(fn?.kind === "function");
+    expect(fnBody(fn)[0]).toMatchObject({
+      kind: "if",
+      cond: { kind: "call", callee: "isSmall" },
+    });
+    expect(fnBody(fn)[1]).toMatchObject({
+      kind: "if",
+      cond: { kind: "binop", op: "&&", left: { kind: "unop", op: "!" } },
+    });
+    expect(fnBody(fn)[2]).toMatchObject({
+      kind: "if",
+      cond: {
+        kind: "jsval-eq",
+        semantics: "strict",
+        left: {
+          kind: "inject",
+          tag: "boolean",
+          expr: { kind: "call", callee: "isSmall" },
+        },
+      },
+    });
+  });
+
+  test("a call to a boolean callee is not a number", () => {
+    const { classified } = emit(
+      `export function isSmall(n: number): boolean {\n  return n < 5;\n}\n` +
+        `/** @ensures{p} forall (n: int ∈ [0, 3)) { f(n) >= 0 } */\n` +
+        `export function f(n: number): number {\n  return isSmall(n);\n}\n`,
+    );
+    expect(classified).toHaveLength(1);
+    expect(classified[0]!.reason).toContain(
+      "a call to 'isSmall' yields a boolean, not a number",
+    );
+  });
+
+  test("a boolean callee inferred into a local binds at boolean", () => {
+    const { emission, classified } = emit(
+      `export function isSmall(n: number): boolean {\n  return n < 5;\n}\n` +
+        `export function f(n: number): number {\n` +
+        `  const s = isSmall(n);\n  if (s) {\n    return 0;\n  }\n  return n;\n}\n`,
+    );
+    expect(classified).toEqual([]);
+    const fn = emission.declarations[1];
+    assert(fn?.kind === "function");
+    expect(fnBody(fn)[0]).toMatchObject({
+      kind: "const",
+      name: "s",
+      type: "boolean",
+    });
+  });
+
+  test("a boolean call as a conclusion side lowers as a strict-equality island", () => {
+    const { emission, classified } = emit(
+      `/** @ensures{p} forall (n: int ∈ [0, 3)) { isSmall(n) === true } */\n` +
+        `export function isSmall(n: number): boolean {\n  return n < 5;\n}\n`,
+    );
+    expect(classified).toEqual([]);
+    expect(emission.obligations[0]!.payload).toMatchObject({
+      kind: "structured",
+      conclusion: {
+        kind: "istrue",
+        expr: {
+          kind: "jsval-eq",
+          semantics: "strict",
+          left: {
+            kind: "inject",
+            tag: "boolean",
+            expr: { kind: "call", callee: "isSmall" },
+          },
+          right: {
+            kind: "inject",
+            tag: "boolean",
+            expr: { kind: "bool", value: true },
+          },
+        },
+      },
+    });
+  });
+
+  test("a method and a getter return boolean, and their reads are conditions", () => {
+    const { emission, classified } = emit(
+      `export class Gate {\n  readonly level: number;\n` +
+        `  constructor(level: number) {\n    this.level = level;\n  }\n` +
+        `  get live(): boolean {\n    return this.level > 0;\n  }\n` +
+        `  isAbove(k: number): boolean {\n    return this.level > k;\n  }\n` +
+        `  pass(n: number): number {\n` +
+        `    if (this.live && this.isAbove(n)) {\n      return n;\n    }\n    return 0;\n  }\n}\n` +
+        `/** @ensures{p} forall (n: int ∈ [1, 5)) { new Gate(n).live } */\n` +
+        `export function passes(n: number): number {\n` +
+        `  if (new Gate(n).isAbove(0)) {\n    return n;\n  }\n  return 0;\n}\n`,
+    );
+    expect(classified).toEqual([]);
+    expectValidEmission(emission);
+    const cls = emission.declarations[0];
+    assert(cls?.kind === "class");
+    expect(cls.getters[0]).toMatchObject({ name: "live", returns: "boolean" });
+    expect(cls.methods[0]).toMatchObject({
+      name: "isAbove",
+      returns: "boolean",
+    });
+    expect("returns" in cls.methods[1]!).toBe(false);
+    expect(cls.methods[1]!.body[0]).toMatchObject({
+      kind: "if",
+      cond: {
+        kind: "binop",
+        op: "&&",
+        left: { kind: "getter-read", name: "live" },
+        right: { kind: "method-call", name: "isAbove" },
+      },
+    });
+    expect(emission.obligations[0]!.payload).toMatchObject({
+      conclusion: {
+        kind: "istrue",
+        expr: { kind: "getter-read", name: "live" },
+      },
+    });
+  });
+
+  test("a boolean method call and getter read are not numbers", () => {
+    const { classified } = emit(
+      `export class Gate {\n  readonly level: number;\n` +
+        `  constructor(level: number) {\n    this.level = level;\n  }\n` +
+        `  get live(): boolean {\n    return this.level > 0;\n  }\n` +
+        `  isAbove(k: number): boolean {\n    return this.level > k;\n  }\n` +
+        `  /** @ensures{pa} forall (n: int ∈ [0, 3)) { new Gate(n).a() >= 0 } */\n` +
+        `  a(): number {\n    return this.live;\n  }\n` +
+        `  /** @ensures{pb} forall (n: int ∈ [0, 3)) { new Gate(n).b() >= 0 } */\n` +
+        `  b(): number {\n    return this.isAbove(1);\n  }\n}\n`,
+    );
+    expect(classified.map((c) => c.reason)).toEqual([
+      expect.stringContaining("a member read yields a boolean, not a number"),
+      expect.stringContaining("a method call yields a boolean, not a number"),
+    ]);
+  });
+});

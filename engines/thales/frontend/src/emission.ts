@@ -153,17 +153,26 @@ export interface EmitFunction {
   /** The declaration's original text, echoed as comments above the def. */
   source: string;
   body: EmitStmt[];
+  /** Present exactly for a boolean-returning declaration; absent means
+   * the number every declaration returned before. */
+  returns?: "boolean";
 }
 
 export interface EmitGetter {
   name: string;
   body: EmitStmt[];
+  /** Present exactly for a boolean-returning declaration; absent means
+   * the number every declaration returned before. */
+  returns?: "boolean";
 }
 
 export interface EmitMethod {
   name: string;
   params: EmitParam[];
   body: EmitStmt[];
+  /** Present exactly for a boolean-returning declaration; absent means
+   * the number every declaration returned before. */
+  returns?: "boolean";
 }
 
 /** A field on the wire: its spelling and, for a union or class field,
@@ -299,27 +308,33 @@ function wireParam(name: string, ty: ValueTy): EmitParam {
   };
 }
 
-/** A callable's signature: its slot types in declaration order and the
+/** What a function, method, or getter returns: the number every callable
+ * returned before, or a boolean. */
+export type ReturnTy = "num" | "bool";
+
+/** A callable's signature: its slot types in declaration order, the
  * fewest arguments a call may supply — one past the last parameter that
- * is neither optional nor defaulted. Everything up to `params.length`
- * fills at the call. */
+ * is neither optional nor defaulted, everything up to `params.length`
+ * filling at the call — and its declared return type. */
 export interface FnSig {
   params: ValueTy[];
   minArgs: number;
+  returns: ReturnTy;
 }
 
-function sigOf(params: WalkedParams): FnSig {
+function sigOf(params: WalkedParams, returns: ReturnTy): FnSig {
   return {
     params: params.map((p) => p.slot),
     minArgs:
       params.map((p) => p.optional || p.init !== undefined).lastIndexOf(false) +
       1,
+    returns,
   };
 }
 
 /** A fixed-arity signature: what a getter has. */
-function exactSig(params: ValueTy[]): FnSig {
-  return { params, minArgs: params.length };
+function exactSig(params: ValueTy[], returns: ReturnTy = "num"): FnSig {
+  return { params, minArgs: params.length, returns };
 }
 
 /** The arity check every call shares. A call may omit arguments the
@@ -387,7 +402,8 @@ function walkCtorArgs(
 export interface ClassShape {
   /** The fields in declaration order with their declared types. */
   fields: ReadonlyMap<string, SlotTy>;
-  getters: ReadonlySet<string>;
+  /** The getters that modeled, each with its declared return type. */
+  getters: ReadonlyMap<string, ReturnTy>;
   /** The slot types a construction fills, in declaration order: a number,
    * an instance, or — for a defaulted parameter — its boundary union. */
   ctorParams: SlotTy[];
@@ -630,14 +646,47 @@ function numericShaped(e: ts.Expression, scope: WalkScope): boolean {
   if (builtin !== undefined) return builtin.ty === "num";
   if (builtinRead(u, scope) !== undefined) return true;
   const member = memberCall(u) ?? memberAccess(u);
-  if (member !== undefined) return receiverShaped(member.receiver, scope);
-  return ts.isCallExpression(u) && ts.isIdentifier(u.expression);
+  if (member !== undefined)
+    return (
+      receiverShaped(member.receiver, scope) && callReturns(u, scope) !== "bool"
+    );
+  return (
+    ts.isCallExpression(u) &&
+    ts.isIdentifier(u.expression) &&
+    callReturns(u, scope) !== "bool"
+  );
+}
+
+/** What a call to a modeled callee — a free function, a method on an
+ * instance place, or a getter read on one — is declared to return;
+ * undefined for anything else, whose own refusal the walk reports. */
+function callReturns(u: ts.Expression, scope: WalkScope): ReturnTy | undefined {
+  if (ts.isCallExpression(u) && ts.isIdentifier(u.expression)) {
+    if (scope.vars.has(u.expression.text)) return undefined;
+    return scope.mapped.get(modelKey(refOf(scope, u.expression.text)))?.returns;
+  }
+  if (
+    builtinCall(u, scope) !== undefined ||
+    builtinRead(u, scope) !== undefined
+  )
+    return undefined;
+  const call = memberCall(u);
+  const member = call ?? memberAccess(u);
+  if (member === undefined) return undefined;
+  const recv = receiverTy(member.receiver, scope);
+  if (recv === undefined || typeof recv === "string" || !("instance" in recv))
+    return undefined;
+  const shape = classView(scope, recv.instance)?.shape;
+  if (shape === undefined) return undefined;
+  return call !== undefined
+    ? shape.methods.get(call.name)?.returns
+    : shape.getters.get(member.name);
 }
 
 /** Whether an expression's own shape can denote a boolean in this slice:
- * a literal, a name bound at boolean, a comparison, a SameValue call, or
- * a logical combination of them. Top-level shape only: deeper offenders
- * keep their own refusals. */
+ * a literal, a name bound at boolean, a comparison, a SameValue call, a
+ * logical combination of them, or a call to a boolean-returning callee.
+ * Top-level shape only: deeper offenders keep their own refusals. */
 function booleanShaped(e: ts.Expression, scope: WalkScope): boolean {
   const u = unwrapParens(e);
   if (booleanLiteral(u) !== undefined) return true;
@@ -653,6 +702,7 @@ function booleanShaped(e: ts.Expression, scope: WalkScope): boolean {
       booleanShaped(u.whenTrue, scope) && booleanShaped(u.whenFalse, scope)
     );
   if (builtinCall(u, scope)?.ty === "bool") return true;
+  if (callReturns(u, scope) === "bool") return true;
   return equationSides(u) !== undefined;
 }
 
@@ -1473,14 +1523,11 @@ function walkTyped(
         );
       }
       checkArity(qualifiedName(mcall.name, ref.name), sig, mcall.args.length);
-      /* v8 ignore start -- no boolean position admits a method call: every
-         one of them is gated on `booleanShaped`. The throw is a defense. */
-      if (expected !== "num") {
+      if (expected !== sig.returns) {
         throw new ModelError(
-          `a method call yields a number, not ${describeTy(expected)}`,
+          `a method call yields ${describeTy(sig.returns)}, not ${describeTy(expected)}`,
         );
       }
-      /* v8 ignore stop */
       return {
         kind: "method-call",
         className: ref.name,
@@ -1504,15 +1551,13 @@ function walkTyped(
       const module = ref.module !== "" ? { module: ref.module } : {};
       // The shape's getter set is live during the class's own walk, so a
       // forward or self-recursive getter read on `this` falls through.
-      if (shape.getters.has(maccess.name)) {
-        /* v8 ignore start -- `booleanShaped` admits no member read, so no
-           boolean position reaches this. */
-        if (expected !== "num") {
+      const getterTy = shape.getters.get(maccess.name);
+      if (getterTy !== undefined) {
+        if (expected !== getterTy) {
           throw new ModelError(
-            `a member read yields a number, not ${describeTy(expected)}`,
+            `a member read yields ${describeTy(getterTy)}, not ${describeTy(expected)}`,
           );
         }
-        /* v8 ignore stop */
         return {
           kind: "getter-read",
           className: ref.name,
@@ -1607,9 +1652,9 @@ function walkTyped(
       throw new ModelError(`no model registered for '${name}'`);
     }
     checkArity(name, sig, e.arguments.length);
-    if (expected !== "num") {
+    if (expected !== sig.returns) {
       throw new ModelError(
-        `a call to '${name}' yields a number, not ${describeTy(expected)}`,
+        `a call to '${name}' yields ${describeTy(sig.returns)}, not ${describeTy(expected)}`,
       );
     }
     const args = walkArgs(e.arguments, sig, scope, sf);
@@ -1997,7 +2042,7 @@ function signatureFailure(
   fn: ts.FunctionDeclaration,
   sf: ts.SourceFile,
   reg: ParamReg,
-): { params: WalkedParams } | FailedDecl {
+): { params: WalkedParams; returns: ReturnTy } | FailedDecl {
   for (const m of fn.modifiers ?? []) {
     if (
       m.kind !== ts.SyntaxKind.ExportKeyword &&
@@ -2012,9 +2057,9 @@ function signatureFailure(
   if (!Array.isArray(params)) return params;
   if (fn.type === undefined || fn.body === undefined)
     return constructAt(fn, fn.kind, sf);
-  if (fn.type.kind !== ts.SyntaxKind.NumberKeyword)
-    return constructAt(fn.type, fn.type.kind, sf);
-  return { params };
+  const returns = declaredReturnTy(fn.type, sf);
+  if (typeof returns !== "string") return returns;
+  return { params, returns };
 }
 
 /** The bindings in scope at a statement, parameters included: whether
@@ -2388,6 +2433,7 @@ function lowerTree(
   k: Cont,
   scope: WalkScope,
   sf: ts.SourceFile,
+  returns: ReturnTy,
 ): EmitStmt[] {
   const walk = (
     e: ts.Expression,
@@ -2402,7 +2448,7 @@ function lowerTree(
   switch (s.t) {
     // A return or a throw ends this path; whatever follows is unreachable.
     case "return":
-      return [{ kind: "return", expr: walk(s.expr, "num", vars) }];
+      return [{ kind: "return", expr: walk(s.expr, returns, vars) }];
     case "throw":
       return [{ kind: "throw", error: s.error }];
     case "decl": {
@@ -2417,6 +2463,7 @@ function lowerTree(
         k,
         scope,
         sf,
+        returns,
       );
       return [
         {
@@ -2433,7 +2480,7 @@ function lowerTree(
       // parameter's or a union local's type included.
       const target = vars.find(([n]) => n === s.name)?.[1] ?? "num";
       const expr = walk(s.expr, target, vars);
-      const tail = lowerTree(rest, vars, k, scope, sf);
+      const tail = lowerTree(rest, vars, k, scope, sf, returns);
       return [{ kind: "assign", name: s.name, expr }, ...tail];
     }
     case "field-set": {
@@ -2441,7 +2488,7 @@ function lowerTree(
       // union field injects, an instance field takes an instance.
       const ty = scope.ctorFields?.get(s.field) ?? "num";
       const expr = walk(s.expr, ty, vars);
-      const tail = lowerTree(rest, vars, k, scope, sf);
+      const tail = lowerTree(rest, vars, k, scope, sf, returns);
       return [{ kind: "field-set", field: s.field, expr }, ...tail];
     }
     /* v8 ignore start -- an opaque statement or condition is unreachable
@@ -2465,7 +2512,7 @@ function lowerTree(
            if that changes. */
         if (tailBuilt) return;
         tailBuilt = true;
-        tail = lowerTree(rest, vars, k, scope, sf);
+        tail = lowerTree(rest, vars, k, scope, sf, returns);
       };
       /* v8 ignore start -- the continuation an arm that leaves can never
          invoke: `stmtsLeave` already proved it returns or throws, so this
@@ -2493,8 +2540,8 @@ function lowerTree(
         thenK = () => {};
         elseK = () => {};
       }
-      const thenIR = lowerTree(s.then, vars, thenK, scope, sf);
-      const elseIR = lowerTree(elseArm, vars, elseK, scope, sf);
+      const thenIR = lowerTree(s.then, vars, thenK, scope, sf, returns);
+      const elseIR = lowerTree(elseArm, vars, elseK, scope, sf, returns);
       const stmt: EmitStmt =
         s.else !== undefined && elseIR.length > 0
           ? { kind: "if", cond, then: thenIR, else: elseIR }
@@ -2823,6 +2870,22 @@ interface ParamReg {
   booleans: boolean;
 }
 
+/** A declared return type: number, or boolean; anything else is the
+ * failure that degrades the declaration. */
+function declaredReturnTy(
+  t: ts.TypeNode,
+  sf: ts.SourceFile,
+): ReturnTy | FailedDecl {
+  if (t.kind === ts.SyntaxKind.NumberKeyword) return "num";
+  if (t.kind === ts.SyntaxKind.BooleanKeyword) return "bool";
+  return constructAt(t, t.kind, sf);
+}
+
+/** The `returns` a declaration carries on the wire: absent for number. */
+function wireReturns(returns: ReturnTy): { returns?: "boolean" } {
+  return returns === "bool" ? { returns: "boolean" } : {};
+}
+
 /** A declared type node's value type — a parameter's or a field's: a
  * number, a boolean (where `reg.booleans` admits it), a class already in
  * the model, or (where `reg.unions` admits it) a keyword union; anything
@@ -3072,6 +3135,7 @@ function walkClass(
   };
   const ctors: ts.ConstructorDeclaration[] = [];
   const getterDecls: ts.GetAccessorDeclaration[] = [];
+  const getterReturns = new Map<string, ReturnTy>();
   const methodDecls: ts.MethodDeclaration[] = [];
   const overloadOnly: string[] = [];
   const memberFailed = new Map<string, FailedDecl>();
@@ -3126,9 +3190,12 @@ function walkClass(
       continue;
     }
     if (ts.isGetAccessorDeclaration(m)) {
-      const failure = getterFailure(m, className, spelling, sf);
-      if (failure !== undefined) memberFailed.set(memberKey(spelling), failure);
-      else getterDecls.push(m);
+      const walked = getterFailure(m, className, spelling, sf);
+      if (!("returns" in walked)) memberFailed.set(memberKey(spelling), walked);
+      else {
+        getterDecls.push(m);
+        getterReturns.set(spelling, walked.returns);
+      }
       continue;
     }
     if (ts.isMethodDeclaration(m)) {
@@ -3259,6 +3326,7 @@ function walkClass(
         () => {},
         ctorScope,
         sf,
+        "num",
       ),
     ];
   } catch (err) {
@@ -3288,7 +3356,7 @@ function walkClass(
 
   // Both registries fill as members render, so a member body sees only
   // the siblings ahead of it: a forward reference degrades the reader.
-  const modeledGetters = new Set<string>();
+  const modeledGetters = new Map<string, ReturnTy>();
   const methodSigs = new Map<string, FnSig>();
   const shape: ClassShape = {
     fields,
@@ -3328,6 +3396,7 @@ function walkClass(
       memberFailed.set(memberKey(spelling), failure);
       continue;
     }
+    const returns = getterReturns.get(spelling)!;
     try {
       getters.push({
         name: spelling,
@@ -3339,9 +3408,11 @@ function walkClass(
           },
           scope,
           sf,
+          returns,
         ),
+        ...wireReturns(returns),
       });
-      modeledGetters.add(spelling);
+      modeledGetters.set(spelling, returns);
     } catch (err) {
       /* v8 ignore next -- the walk throws nothing else */
       if (!(err instanceof ModelError)) throw err;
@@ -3376,6 +3447,7 @@ function walkClass(
       continue;
     }
     const params = walked.params;
+    const returns = walked.returns;
     const scope: WalkScope = {
       ...base,
       vars: new Map(params.map((p) => [p.name, p.ty])),
@@ -3396,6 +3468,7 @@ function walkClass(
       methods.push({
         name: spelling,
         params: params.map((p) => wireParam(p.name, p.slot)),
+        ...wireReturns(returns),
         body: [
           ...openings,
           ...lowerTree(
@@ -3406,10 +3479,11 @@ function walkClass(
             },
             scope,
             sf,
+            returns,
           ),
         ],
       });
-      methodSigs.set(spelling, sigOf(params));
+      methodSigs.set(spelling, sigOf(params, returns));
     } catch (err) {
       /* v8 ignore next -- the walk throws nothing else */
       if (!(err instanceof ModelError)) throw err;
@@ -3444,7 +3518,7 @@ function methodFailure(
   spelling: string,
   sf: ts.SourceFile,
   reg: ParamReg,
-): { params: WalkedParams } | FailedDecl {
+): { params: WalkedParams; returns: ReturnTy } | FailedDecl {
   if (
     ts.isPrivateIdentifier(m.name) ||
     hasModifier(m, ts.SyntaxKind.PrivateKeyword)
@@ -3462,9 +3536,9 @@ function methodFailure(
   const params = walkParams(m.parameters, sf, reg, methodParamFailure);
   if (!Array.isArray(params)) return params;
   if (m.type === undefined) return constructAt(m, m.kind, sf);
-  if (m.type.kind !== ts.SyntaxKind.NumberKeyword)
-    return constructAt(m.type, m.type.kind, sf);
-  return { params };
+  const returns = declaredReturnTy(m.type, sf);
+  if (typeof returns !== "string") return returns;
+  return { params, returns };
 }
 
 /** A getter outside the slice degrades alone: privacy, a signature the
@@ -3474,7 +3548,7 @@ function getterFailure(
   className: string,
   spelling: string,
   sf: ts.SourceFile,
-): FailedDecl | undefined {
+): { returns: ReturnTy } | FailedDecl {
   if (
     ts.isPrivateIdentifier(g.name) ||
     hasModifier(g, ts.SyntaxKind.PrivateKeyword)
@@ -3485,9 +3559,9 @@ function getterFailure(
   if (g.parameters.length > 0 || g.body === undefined)
     return constructAt(g, g.kind, sf);
   if (g.type === undefined) return constructAt(g, g.kind, sf);
-  if (g.type.kind !== ts.SyntaxKind.NumberKeyword)
-    return constructAt(g.type, g.type.kind, sf);
-  return undefined;
+  const returns = declaredReturnTy(g.type, sf);
+  if (typeof returns !== "string") return returns;
+  return { returns };
 }
 
 /** A function declaration's IR, or its failure. The slice covers `const`
@@ -3510,6 +3584,7 @@ function walkFunction(
   });
   if (!("params" in sig)) return sig;
   const params = sig.params;
+  const returns = sig.returns;
   const scope: WalkScope = {
     vars: new Map(params.map((p) => [p.name, p.ty])),
     mapped: c.mapped,
@@ -3540,6 +3615,7 @@ function walkFunction(
         },
         scope,
         sf,
+        returns,
       ),
     ];
     return {
@@ -3548,10 +3624,11 @@ function walkFunction(
         name: fn.name!.text,
         ...(module !== "" ? { module } : {}),
         params: params.map((p) => wireParam(p.name, p.slot)),
+        ...wireReturns(returns),
         source: fn.getText(sf),
         body,
       },
-      sig: sigOf(params),
+      sig: sigOf(params, returns),
     };
   } catch (err) {
     if (err instanceof ModelError) return modelFailure(err);
@@ -4370,8 +4447,8 @@ function walkEmitModule(
           key(qualifiedName("constructor", className)),
           exactSig(walked.shape.ctorParams),
         );
-        for (const g of walked.shape.getters) {
-          c.mapped.set(key(qualifiedName(g, className)), exactSig([]));
+        for (const [g, returns] of walked.shape.getters) {
+          c.mapped.set(key(qualifiedName(g, className)), exactSig([], returns));
         }
         for (const [m, sig] of walked.shape.methods) {
           c.mapped.set(key(qualifiedName(m, className)), sig);
