@@ -328,4 +328,114 @@ theorem key_ceil_finite_ge {s : Sign} {m : Nat} {e : Int} {h : 0 < m}
     exact Int.mul_le_mul_of_nonneg_right (ceil_int_ge s m (-e).toNat)
       (Int.le_of_lt (intPow_pos _))
 
+/-- A shifted mantissa and its successor both fit in 53 bits: `k ≥ 1`
+halves at least once. -/
+theorem shift_succ_le_two53 {m k : Nat} (hm : m < 2 ^ 53) (hk : 1 ≤ k) :
+    m >>> k + 1 ≤ 2 ^ 53 := by
+  have h1 := shift_mul_le m k
+  have h2 : 2 ≤ 2 ^ k := by
+    calc 2 = 2 ^ 1 := rfl
+      _ ≤ 2 ^ k := Nat.pow_le_pow_right (by omega) hk
+  have h3 : (m >>> k) * 2 ≤ (m >>> k) * 2 ^ k := Nat.mul_le_mul_left _ h2
+  omega
+
+/-- Whichever way the arm bumps, the signed mantissa's magnitude stays
+within `2^53`. -/
+theorem natAbs_rounded_le (b : Bool) (s : Sign) {q : Nat} (hq : q + 1 ≤ 2 ^ 53) :
+    (s.apply (if b = true then (q : Int) + 1 else (q : Int))).natAbs ≤ 2 ^ 53 := by
+  cases s <;> cases b <;> simp only [Sign.apply, Int.natAbs_neg, ite_true, ite_false,
+    Bool.false_eq_true] <;> omega
+
+/-- `normalize_shape`'s cap holds for every rounding output: the magnitude
+is at most `2^53` on exponent `0`. -/
+theorem rounding_cap {M : Int} (h : M.natAbs ≤ 2 ^ 53) :
+    totalExponent M.natAbs 0 ≤ 3900 := by
+  unfold totalExponent
+  have : M.natAbs.log2 < 54 := by
+    rcases Nat.eq_zero_or_pos M.natAbs with hz | hp
+    · rw [hz]; decide
+    · exact (Nat.log2_lt (by omega)).mpr (by
+        calc M.natAbs ≤ 2 ^ 53 := h
+          _ < 2 ^ 54 := Nat.pow_lt_pow_right (by omega) (by omega))
+  omega
+
+/-- What every rounding hands to `pack`: a round shape that is not NaN.
+The non-finite arms return the input, which is canonical; the finite arm
+is a `normalize` under the cap. -/
+theorem roundIntegral_shape (dir : RoundDir) {u : UnpackedFloat} (hu : Canonical u)
+    (hn : u ≠ .notANumber) :
+    RoundShape (roundIntegral .binary64 dir u) ∧ roundIntegral .binary64 dir u ≠ .notANumber := by
+  cases hu with
+  | notANumber => exact absurd rfl hn
+  | infinity s => exact ⟨.canonical (.infinity s), fun h => UnpackedFloat.noConfusion h⟩
+  | zero s => exact ⟨.canonical (.zero s), fun h => UnpackedFloat.noConfusion h⟩
+  | subnormal s m hm hmlt =>
+    dsimp only [roundIntegral]
+    split
+    · exact ⟨.canonical (.subnormal s m hm hmlt), fun h => UnpackedFloat.noConfusion h⟩
+    · apply normalize_shape
+      apply rounding_cap
+      exact natAbs_rounded_le _ s
+        (shift_succ_le_two53 (by omega : m < 2 ^ 53) (by omega : 1 ≤ (-(-1074 : Int)).toNat))
+  | normal s m e hm hlo hhi helo hehi =>
+    dsimp only [roundIntegral]
+    split
+    · exact ⟨.canonical (.normal s m e hm hlo hhi helo hehi), fun h => UnpackedFloat.noConfusion h⟩
+    · rename_i he
+      apply normalize_shape
+      apply rounding_cap
+      exact natAbs_rounded_le _ s (shift_succ_le_two53 hhi (by omega : 1 ≤ (-e).toNat))
+
+/-- Unpacking a rounded float is unpacking the pack of the rounded
+unpacking: the spelling `key_unpack_pack_mono` crosses. -/
+theorem unpack_tsFloor (x : Float) :
+    (tsFloor x).toModel.unpack
+      = unpack .binary64 (UnpackedFloat.pack .binary64
+          (roundIntegral .binary64 .towardNegInf x.toModel.unpack)) := rfl
+
+theorem unpack_tsCeil (x : Float) :
+    (tsCeil x).toModel.unpack
+      = unpack .binary64 (UnpackedFloat.pack .binary64
+          (roundIntegral .binary64 .towardPosInf x.toModel.unpack)) := rfl
+
+/-- `Math.floor` never exceeds its input. -/
+theorem tsFloor_le {x : Float} (hx : x.toModel.unpack ≠ .notANumber) :
+    Float.le (tsFloor x) x = true := by
+  have hc : Canonical x.toModel.unpack := canonical_unpack _
+  rw [float_le_unpack, unpack_tsFloor]
+  obtain ⟨hshape, hnn⟩ := roundIntegral_shape .towardNegInf hc hx
+  have hkey : key (roundIntegral .binary64 .towardNegInf x.toModel.unpack)
+      ≤ key x.toModel.unpack := by
+    generalize x.toModel.unpack = u at hc hx ⊢
+    cases hc with
+    | notANumber => exact absurd rfl hx
+    | infinity s => exact Int.le_refl _
+    | zero s => exact Int.le_refl _
+    | subnormal s m hm hmlt => exact key_floor_finite_le (.subnormal s m hm hmlt)
+    | normal s m e hm hlo hhi helo hehi =>
+      exact key_floor_finite_le (.normal s m e hm hlo hhi helo hehi)
+  have hmono := key_unpack_pack_mono hshape (.canonical hc) hnn hx hkey
+  rw [unpack_pack_of_canonical hc] at hmono
+  exact le_of_key (canonical_unpack _) hc (unpack_pack_ne_nan hshape hnn) hx hmono
+
+/-- `Math.ceil` never falls below its input. -/
+theorem tsCeil_ge {x : Float} (hx : x.toModel.unpack ≠ .notANumber) :
+    Float.le x (tsCeil x) = true := by
+  have hc : Canonical x.toModel.unpack := canonical_unpack _
+  rw [float_le_unpack, unpack_tsCeil]
+  obtain ⟨hshape, hnn⟩ := roundIntegral_shape .towardPosInf hc hx
+  have hkey : key x.toModel.unpack
+      ≤ key (roundIntegral .binary64 .towardPosInf x.toModel.unpack) := by
+    generalize x.toModel.unpack = u at hc hx ⊢
+    cases hc with
+    | notANumber => exact absurd rfl hx
+    | infinity s => exact Int.le_refl _
+    | zero s => exact Int.le_refl _
+    | subnormal s m hm hmlt => exact key_ceil_finite_ge (.subnormal s m hm hmlt)
+    | normal s m e hm hlo hhi helo hehi =>
+      exact key_ceil_finite_ge (.normal s m e hm hlo hhi helo hehi)
+  have hmono := key_unpack_pack_mono (.canonical hc) hshape hx hnn hkey
+  rw [unpack_pack_of_canonical hc] at hmono
+  exact le_of_key hc (canonical_unpack _) hx (unpack_pack_ne_nan hshape hnn) hmono
+
 end Js.Number.FloatOpsFacts
