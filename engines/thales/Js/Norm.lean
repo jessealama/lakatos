@@ -430,6 +430,30 @@ theorem tsRound_lo {x : Float} (h : -floatInf < x) : -floatInf < Number.FloatOps
 theorem tsRound_hi {x : Float} (h : x < floatInf) : Number.FloatOps.tsRound x < floatInf :=
   Number.FloatOpsFacts.tsRound_hi h
 
+/-! `Math.round` is bracketed by floor and ceil of the same input, and
+`Math.sign` by the units; the sign's own bounds propagate like the rest. -/
+
+theorem tsFloor_le_tsRound {x : Float} (hx : x.toModel.unpack ≠ .notANumber) :
+    Float.le (Number.FloatOps.tsFloor x) (Number.FloatOps.tsRound x) = true :=
+  Number.FloatOpsFacts.tsFloor_le_tsRound hx
+
+theorem tsRound_le_tsCeil {x : Float} (hx : x.toModel.unpack ≠ .notANumber) :
+    Float.le (Number.FloatOps.tsRound x) (Number.FloatOps.tsCeil x) = true :=
+  Number.FloatOpsFacts.tsRound_le_tsCeil hx
+
+theorem tsSign_le_one {x : Float} (hx : x.toModel.unpack ≠ .notANumber) :
+    Float.le (Number.FloatOps.tsSign x) 1 = true :=
+  Number.FloatOpsFacts.tsSign_le_one hx
+
+theorem tsSign_ge_neg_one {x : Float} (hx : x.toModel.unpack ≠ .notANumber) :
+    Float.le (-1) (Number.FloatOps.tsSign x) = true :=
+  Number.FloatOpsFacts.tsSign_ge_neg_one hx
+
+theorem tsSign_lo {x : Float} (h : -floatInf < x) : -floatInf < Number.FloatOps.tsSign x :=
+  Number.FloatOpsFacts.tsSign_lo h
+theorem tsSign_hi {x : Float} (h : x < floatInf) : Number.FloatOps.tsSign x < floatInf :=
+  Number.FloatOpsFacts.tsSign_hi h
+
 /-! A constructor's guards throw, so what follows a triggered guard never
 runs. These two are what let a successful construction refute the guards
 it passed; both are definitional on `Except`, and neither is derivable
@@ -593,5 +617,11 @@ grind_pattern tsTrunc_lo => Number.FloatOps.tsTrunc x
 grind_pattern tsTrunc_hi => Number.FloatOps.tsTrunc x
 grind_pattern tsRound_lo => Number.FloatOps.tsRound x
 grind_pattern tsRound_hi => Number.FloatOps.tsRound x
+grind_pattern tsFloor_le_tsRound => Number.FloatOps.tsRound x
+grind_pattern tsRound_le_tsCeil => Number.FloatOps.tsRound x
+grind_pattern tsSign_le_one => Number.FloatOps.tsSign x
+grind_pattern tsSign_ge_neg_one => Number.FloatOps.tsSign x
+grind_pattern tsSign_lo => Number.FloatOps.tsSign x
+grind_pattern tsSign_hi => Number.FloatOps.tsSign x
 
 end Js
