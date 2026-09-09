@@ -80,9 +80,9 @@ export type EmitExpr =
   /** Injection into the tagged domain; `expr` is present exactly for the
    * payload-carrying `number` and `boolean` tags. */
   | { kind: "inject"; tag: UnionTag; expr?: EmitExpr }
-  /** A union-typed read at a number position: the model refuses coercion,
-   * so a wrong-tag value throws rather than converting. */
-  | { kind: "project"; tag: "number"; expr: EmitExpr }
+  /** A union-typed read at a number or boolean position: the model
+   * refuses coercion, so a wrong-tag value throws rather than converting. */
+  | { kind: "project"; tag: "number" | "boolean"; expr: EmitExpr }
   /** Injection into an option slot: `some expr` with the operand, `none`
    * without it. */
   | { kind: "option"; expr?: EmitExpr }
@@ -418,13 +418,14 @@ export interface ClassShape {
 }
 
 /** A binder's denoted domain: a finite half-open integer range, the whole
- * int line, the naturals, or a `number` binder — the whole double line,
- * narrowed by whichever bounds its interval carries. These are the shapes
- * `ThalesEmit/Render.lean` renders as ∀ heads. */
+ * int line, the naturals, the two booleans, or a `number` binder — the
+ * whole double line, narrowed by whichever bounds its interval carries.
+ * These are the shapes `ThalesEmit/Render.lean` renders as ∀ heads. */
 export type EmitBinder =
   | { name: string; kind: "range"; lo: string; hi: string }
   | { name: string; kind: "int" }
   | { name: string; kind: "nat" }
+  | { name: string; kind: "boolean" }
   | { name: string; kind: "number"; lower?: FloatBound; upper?: FloatBound }
   | {
       name: string;
@@ -2677,7 +2678,9 @@ function defaultOpenings(
       ? { kind: "option-get", expr: slot }
       : p.ty === "num"
         ? { kind: "project", tag: "number", expr: slot }
-        : slot;
+        : p.ty === "bool"
+          ? { kind: "project", tag: "boolean", expr: slot }
+          : slot;
     out.push({
       kind: assigned.has(p.name) ? "let" : "const",
       name: p.name,
@@ -3900,11 +3903,11 @@ function builtinCall(
 }
 
 /** A binder's emitted domain: a finite half-open range, the whole int
- * line, the naturals, or a bounded `number` — reading the domain the binder
- * *denotes*, so equivalent spellings of one interval fold to the same
- * shape. `bare` covers everything this slice cannot express; a
- * safe-integer clamp reports its offending endpoints instead, for the
- * unsupported-range refusal. */
+ * line, the naturals, the two booleans, or a bounded `number` — reading
+ * the domain the binder *denotes*, so equivalent spellings of one
+ * interval fold to the same shape. `bare` covers everything this slice
+ * cannot express; a safe-integer clamp reports its offending endpoints
+ * instead, for the unsupported-range refusal. */
 function lowerBinder(b: Binder): EmitBinder | "bare" | { clamped: string[] } {
   if (b.domain === "number") {
     // No safe-integer clamp: a number binder denotes binary64 values
@@ -3917,6 +3920,9 @@ function lowerBinder(b: Binder): EmitBinder | "bare" | { clamped: string[] } {
       ...(upper === undefined ? {} : { upper }),
     };
   }
+  // A boolean binder is bare of guards by grammar; its domain is the two
+  // values, which the witness search enumerates.
+  if (b.domain === "boolean") return { name: b.varName, kind: "boolean" };
   if (b.domain !== "int" && b.domain !== "nat") return "bare";
   if (b.range === undefined) {
     return { name: b.varName, kind: b.domain === "nat" ? "nat" : "int" };
@@ -4081,13 +4087,16 @@ function obligationPayload(
     const scope: WalkScope = {
       // A class binder enters the walk as an instance of its class, so
       // its fields, getters, and methods resolve the way a class-typed
-      // parameter's do; every other binder is a number.
+      // parameter's do; a boolean binder enters at boolean; every other
+      // binder is a number.
       vars: new Map(
         loweredBinders.map((b): [string, ValueTy] => [
           b.name,
           b.kind === "class"
             ? { instance: { module: b.module ?? module, name: b.className } }
-            : "num",
+            : b.kind === "boolean"
+              ? "bool"
+              : "num",
         ]),
       ),
       mapped,

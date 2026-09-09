@@ -351,7 +351,6 @@ describe("obligation payload degradations", () => {
       "an unparseable guard atom",
       "forall (x: int ∈ [0, 5)) { 2x >= 0 -> f(x) >= 0 }",
     ],
-    ["a boolean binder", "forall (b: boolean) { f(b) ≡ b }"],
     ["a bigint binder", "forall (b: bigint) { f(b) ≡ b }"],
   ])("%s degrades to a bare payload", (_label, formula) => {
     expect(payloadOf(formula)).toEqual({ kind: "bare" });
@@ -474,6 +473,118 @@ describe("obligation payload degradations", () => {
         { name: "a", kind: "range", lo: "0", hi: "5" },
         { name: "x", kind: "int" },
       ],
+    });
+  });
+});
+
+describe("boolean binders (#354)", () => {
+  const emit = (src: string) => emitModule(src, "t.ts");
+
+  test("a boolean binder lowers to its own kind and binds at boolean", () => {
+    const { emission, classified } = emit(
+      `/** @ensures{p} forall (n: int ∈ [0, 10)) (b: boolean) { pick(n, b) >= 0 } */\n` +
+        `export function pick(n: number, b: boolean): number {\n` +
+        `  if (b) {\n    return n;\n  }\n  return 0;\n}\n`,
+    );
+    expect(classified).toEqual([]);
+    expectValidEmission(emission);
+    expect(emission.obligations[0]!.payload).toEqual({
+      kind: "structured",
+      binders: [
+        { name: "n", kind: "range", lo: "0", hi: "10" },
+        { name: "b", kind: "boolean" },
+      ],
+      conclusion: {
+        kind: "istrue",
+        expr: {
+          kind: "binop",
+          op: ">=",
+          left: {
+            kind: "call",
+            callee: "pick",
+            args: [
+              { kind: "id", name: "n" },
+              { kind: "id", name: "b" },
+            ],
+          },
+          right: { kind: "num", lit: "0" },
+        },
+      },
+    });
+  });
+
+  test("a boolean binder is an island on its own and an equality side", () => {
+    const { emission, classified } = emit(
+      `/** @ensures{alone} forall (b: boolean) { flip(b) === !b } */\n` +
+        `/** @ensures{negated} forall (b: boolean) { flip(flip(b)) === b } */\n` +
+        `export function flip(b: boolean): boolean {\n  return !b;\n}\n`,
+    );
+    expect(classified).toEqual([]);
+    expect(emission.obligations[0]!.payload).toMatchObject({
+      binders: [{ name: "b", kind: "boolean" }],
+      conclusion: {
+        kind: "istrue",
+        expr: {
+          kind: "jsval-eq",
+          semantics: "strict",
+          left: {
+            kind: "inject",
+            tag: "boolean",
+            expr: { kind: "call", callee: "flip" },
+          },
+          right: {
+            kind: "inject",
+            tag: "boolean",
+            expr: { kind: "unop", op: "!" },
+          },
+        },
+      },
+    });
+  });
+
+  test("a boolean binder at a number position is the walk's type error", () => {
+    const { classified } = emit(
+      `/** @ensures{p} forall (b: boolean) { f(b) >= 0 } */\n` +
+        `export function f(n: number): number {\n  return n;\n}\n`,
+    );
+    expect(classified).toEqual([
+      expect.objectContaining({
+        reason: expect.stringContaining(
+          "identifier 'b' is a boolean, not a number",
+        ),
+      }),
+    ]);
+  });
+
+  test("a defaulted boolean parameter opens by projecting the boolean tag", () => {
+    const { emission, classified } = emit(
+      `export function f(n: number, b: boolean = false): number {\n` +
+        `  if (b) {\n    return n;\n  }\n  return 0;\n}\n`,
+    );
+    expect(classified).toEqual([]);
+    expectValidEmission(emission);
+    const fn = emission.declarations[0];
+    assert(fn?.kind === "function");
+    expect(fn.params[1]).toEqual({ name: "b", type: ["boolean", "undefined"] });
+    expect(fnBody(fn)[0]).toEqual({
+      kind: "const",
+      name: "b",
+      type: "boolean",
+      init: {
+        kind: "cond",
+        cond: {
+          kind: "jsval-eq",
+          semantics: "strict",
+          left: { kind: "id", name: "b" },
+          right: { kind: "inject", tag: "undefined" },
+        },
+        then: { kind: "bool", value: false },
+        else: {
+          kind: "project",
+          tag: "boolean",
+          expr: { kind: "id", name: "b" },
+        },
+      },
     });
   });
 });

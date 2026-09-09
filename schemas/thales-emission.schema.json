@@ -366,7 +366,7 @@
           "required": ["kind", "tag", "expr"],
           "properties": {
             "kind": { "const": "project" },
-            "tag": { "const": "number" },
+            "tag": { "enum": ["number", "boolean"] },
             "expr": { "$ref": "#/definitions/expr" }
           }
         },
@@ -685,7 +685,7 @@
                 "kind": { "const": "structured" },
                 "binders": {
                   "type": "array",
-                  "description": "Nested binders, outermost first: a half-open [lo, hi) Int range with decimal-string endpoints, the whole int line, the naturals, or a number binder over the doubles its bounds admit.",
+                  "description": "Nested binders, outermost first: a half-open [lo, hi) Int range with decimal-string endpoints, the whole int line, the naturals, the two booleans, or a number binder over the doubles its bounds admit.",
                   "items": {
                     "oneOf": [
                       {
@@ -705,7 +705,7 @@
                         "required": ["name", "kind"],
                         "properties": {
                           "name": { "$ref": "#/definitions/identifier" },
-                          "kind": { "enum": ["int", "nat"] }
+                          "kind": { "enum": ["int", "nat", "boolean"] }
                         }
                       },
                       {
