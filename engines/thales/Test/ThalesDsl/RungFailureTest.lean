@@ -46,5 +46,5 @@ open ThalesDsl Lean
 open Classical in
 #eval show Elab.Term.TermElabM Bool from do
   let p ← Elab.Term.elabTerm (← `(∀ n : Nat, n < 5 ∨ 5 ≤ n)) (some (mkSort .zero))
-  let r ← attemptNativeDecide ⟨"c.ts", "f", "p"⟩ p (← `((none : Option (List Int)))) []
+  let r ← attemptNativeDecide ⟨"c.ts", "f", "p"⟩ p (← `((none : Option (List WitnessValue)))) []
   return r.isNone

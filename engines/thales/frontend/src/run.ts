@@ -9,13 +9,13 @@ import {
 import { isProveStatus, type ProveStatus } from "../../../../src/szs.js";
 
 /** One #thales_prove verdict line: the contract printed by ThalesDsl.
- * Counterexample values outside the JS safe-integer range travel as
- * decimal strings. */
+ * Counterexample values are integers (outside the JS safe-integer range,
+ * decimal strings) or booleans. */
 export interface LeanVerdict {
   identity: [string, string, string];
   szs: ProveStatus;
   reason: string;
-  counterexample?: Record<string, number | string>;
+  counterexample?: Record<string, number | string | boolean>;
   /** Theorem only: the non-standard axioms the proof depends on. */
   axioms?: string[];
 }
@@ -80,13 +80,18 @@ type Spawn = (
   opts: { cwd: string; encoding: "utf8"; timeout: number },
 ) => SpawnOutcome;
 
-function isCounterexample(c: unknown): c is Record<string, number | string> {
+function isCounterexample(
+  c: unknown,
+): c is Record<string, number | string | boolean> {
   return (
     typeof c === "object" &&
     c !== null &&
     !Array.isArray(c) &&
     Object.values(c).every(
-      (x) => typeof x === "number" || typeof x === "string",
+      (x) =>
+        typeof x === "number" ||
+        typeof x === "string" ||
+        typeof x === "boolean",
     )
   );
 }

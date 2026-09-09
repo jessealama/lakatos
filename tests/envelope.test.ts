@@ -542,6 +542,28 @@ describe("joinProveVerdicts", () => {
     });
   });
 
+  it("a boolean witness value ships in the falsified shape unchanged", () => {
+    const join = joinProveVerdicts(
+      [id("a")],
+      [
+        {
+          ...verdict("a", "CounterSatisfiable", "false on its bounded domain"),
+          counterexample: { n: 1, b: false },
+        },
+      ],
+    );
+    expect(join).toMatchObject({
+      kind: "joined",
+      annotations: [
+        {
+          szs: "CounterSatisfiable",
+          kind: "falsified",
+          counterexample: { n: 1, b: false },
+        },
+      ],
+    });
+  });
+
   it("a CounterSatisfiable verdict without a counterexample is a mismatch", () => {
     const join = joinProveVerdicts(
       [id("a")],
