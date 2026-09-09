@@ -476,15 +476,6 @@ interface FailedDecl {
   reason: string;
 }
 
-/** Operators deliberately left without a model, and why. */
-const REFUSED_OPERATORS = new Map<string, string>([
-  [
-    "**",
-    "'**' is implementation-approximated in JavaScript, so any model would " +
-      "certify results a conforming engine may disagree with",
-  ],
-]);
-
 /** The global number constants the walk models — exact binary64 values,
  * the fallback JavaScript makes them, never keywords. */
 const GLOBAL_NUMBER_ATOMS = new Set(["NaN", "Infinity"]);
@@ -492,6 +483,18 @@ const GLOBAL_NUMBER_ATOMS = new Set(["NaN", "Infinity"]);
 const ARITH_OPERATORS = new Set(["+", "-", "*", "/", "%"]);
 const COMPARISON_OPERATORS = new Set(["<", "<=", ">", ">=", "===", "!=="]);
 const LOGICAL_OPERATORS = new Set(["||", "&&"]);
+
+const modeledOperator = (op: string): boolean =>
+  ARITH_OPERATORS.has(op) ||
+  COMPARISON_OPERATORS.has(op) ||
+  LOGICAL_OPERATORS.has(op);
+
+/** A binary operator outside the model, named the way an unlisted builtin
+ * member is: the source wrote real JavaScript this implementation does
+ * not take yet, which is all the reason can honestly say. */
+function unsupportedOperator(op: string): FailedDecl {
+  return { construct: op, reason: `'${op}' is not supported` };
+}
 
 function unmappedMsg(construct: string, pos: string): string {
   return `unmapped TypeScript construct '${construct}' at ${pos}`;
@@ -749,6 +752,7 @@ function findConstruct(
       return constructAt(tt.typeofNode, tt.typeofNode.kind, sf);
     }
     const op = e.operatorToken.getText();
+    if (!modeledOperator(op)) return unsupportedOperator(op);
     if (LOGICAL_OPERATORS.has(op)) {
       if (!booleanShaped(e.left, scope))
         return nonBooleanOperand(op, "the left operand", e.left, sf);
@@ -840,57 +844,6 @@ function findConstruct(
     return undefined;
   }
   return constructAt(e, e.kind, sf);
-}
-
-/** The first refused operator in tree order, as a failure that names it.
- * Runs after the construct scan: an unmappable construct outranks a
- * refused operator, so the two never race. */
-function findRefusedOp(e: ts.Expression): FailedDecl | undefined {
-  if (ts.isParenthesizedExpression(e)) return findRefusedOp(e.expression);
-  if (isUnaryArith(e) && negatedLiteral(e) === undefined) {
-    return findRefusedOp(e.operand);
-  }
-  if (isPrefixNot(e)) return findRefusedOp(e.operand);
-  if (ts.isConditionalExpression(e)) {
-    return (
-      findRefusedOp(e.condition) ??
-      findRefusedOp(e.whenTrue) ??
-      findRefusedOp(e.whenFalse)
-    );
-  }
-  if (ts.isBinaryExpression(e)) {
-    const op = e.operatorToken.getText();
-    const reason = REFUSED_OPERATORS.get(op);
-    if (reason !== undefined) return { construct: op, reason };
-    return findRefusedOp(e.left) ?? findRefusedOp(e.right);
-  }
-  const mc = memberCall(e);
-  if (mc !== undefined) {
-    const found = findRefusedOp(mc.receiver);
-    if (found !== undefined) return found;
-    for (const a of mc.args) {
-      const inner = findRefusedOp(a);
-      if (inner !== undefined) return inner;
-    }
-    return undefined;
-  }
-  const ma = memberAccess(e);
-  if (ma !== undefined) return findRefusedOp(ma.receiver);
-  const built = newCall(e);
-  if (built !== undefined) {
-    for (const a of built.arguments ?? []) {
-      const found = findRefusedOp(a);
-      if (found !== undefined) return found;
-    }
-    return undefined;
-  }
-  if (ts.isCallExpression(e)) {
-    for (const a of e.arguments) {
-      const found = findRefusedOp(a);
-      if (found !== undefined) return found;
-    }
-  }
-  return undefined;
 }
 
 /** Every identifier-callee name in tree order. */
@@ -1402,19 +1355,20 @@ function walkTyped(
       }
       return { kind: "binop", op, left, right };
     }
-    if (COMPARISON_OPERATORS.has(op)) {
-      if (expected !== "bool") {
-        throw new ModelError(
-          `operator '${op}' yields a boolean, not ${describeTy(expected)}`,
-        );
-      }
-      return { kind: "binop", op, left, right };
+    /* v8 ignore start -- the construct scan names every operator outside
+       the model before the walk reaches one; the guard keeps the walk total
+       in that same voice. */
+    if (!COMPARISON_OPERATORS.has(op)) {
+      const unsupported = unsupportedOperator(op);
+      throw new ModelError(unsupported.reason, unsupported.construct);
     }
-    // A refused operator the pre-scans missed still refuses; anything
-    // else is outside the model, and the operator is the construct.
-    const refused = REFUSED_OPERATORS.get(op);
-    if (refused !== undefined) throw new ModelError(refused);
-    throw new ModelError(`operator '${op}' has no model in this slice`, op);
+    /* v8 ignore stop */
+    if (expected !== "bool") {
+      throw new ModelError(
+        `operator '${op}' yields a boolean, not ${describeTy(expected)}`,
+      );
+    }
+    return { kind: "binop", op, left, right };
   }
   const sides = equationSides(e);
   if (sides !== undefined) {
@@ -1936,15 +1890,14 @@ interface ScanRoot {
 }
 
 /** The pre-scans, in the order that fixes which failure wins — opaque
- * constructs, then refused operators, then construct-failed callees —
- * each across every root before the next begins. */
+ * constructs (unsupported operators among them), then construct-failed
+ * callees — each across every root before the next begins. */
 function prescanFailure(
   roots: readonly ScanRoot[],
   scope: WalkScope,
 ): FailedDecl | undefined {
   const scans = [
     (r: ScanRoot) => findConstruct(r.expr, r.sf, scope),
-    (r: ScanRoot) => findRefusedOp(r.expr),
     (r: ScanRoot) => findFailedCallee(r.expr, scope),
     (r: ScanRoot) => findFailedMemberUse(r.expr, scope),
   ];
@@ -2440,8 +2393,8 @@ function lowerTree(
 }
 
 /** The pre-scans over a whole statement tree, in that same fixed order —
- * opaque constructs, then refused operators, then construct-failed
- * callees — dead code included. */
+ * opaque constructs, then construct-failed callees — dead code
+ * included. */
 function bodyPrescan(
   tree: readonly TStmt[],
   sf: ts.SourceFile,
@@ -2450,10 +2403,6 @@ function bodyPrescan(
   const construct = treeConstruct(tree, sf, scope);
   if (construct !== undefined) return construct;
   const exprs = treeExprs(tree);
-  for (const e of exprs) {
-    const refused = findRefusedOp(e);
-    if (refused !== undefined) return refused;
-  }
   const callee = failedCalleeIn(
     exprs.flatMap((e) => callNames(e, scope)),
     scope,
@@ -2489,7 +2438,6 @@ function exprPrescan(
 ): FailedDecl | undefined {
   return (
     findConstruct(e, sf, scope) ??
-    findRefusedOp(e) ??
     failedCalleeIn(callNames(e, scope), scope) ??
     findFailedMemberUse(e, scope)
   );
@@ -3776,7 +3724,7 @@ type PayloadResult =
 /** The structured reading of an annotation formula: int/nat binders and a
  * top-level implication chain of atoms — guard antecedents around one
  * conclusion atom. Every other connective degrades to bare. A formula
- * the model refuses (an opaque construct, a refused operator, a
+ * the model refuses (an opaque construct, an unsupported operator, a
  * construct-failed callee) classifies `Inappropriate` with the old
  * pipeline's reason; one the typed walk fails classifies `Error` the way a
  * failed property elaboration does. */

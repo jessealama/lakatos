@@ -330,7 +330,7 @@
       "function": "square",
       "property": "nonNegative",
       "szs": "Inappropriate",
-      "reason": "'square' could not be modeled: '**' is implementation-approximated in JavaScript, so any model would certify results a conforming engine may disagree with"
+      "reason": "'square' could not be modeled: '**' is not supported"
     }
   ],
   "engines/thales/tests/conformance/inappropriate/unmodeled-operator.ts": [
@@ -338,7 +338,7 @@
       "function": "masked",
       "property": "stuck",
       "szs": "Inappropriate",
-      "reason": "'masked' could not be modeled: operator '&' has no model in this slice"
+      "reason": "'masked' could not be modeled: '&' is not supported"
     }
   ],
   "engines/thales/tests/conformance/timeout/big-domain.ts": [
@@ -631,7 +631,7 @@
       "function": "keep",
       "property": "guardedPower",
       "szs": "Inappropriate",
-      "reason": "'**' is implementation-approximated in JavaScript, so any model would certify results a conforming engine may disagree with"
+      "reason": "'**' is not supported"
     }
   ],
   "engines/thales/tests/conformance/theorem/or-guard.ts": [
@@ -934,7 +934,7 @@
       "function": "g",
       "property": "p",
       "szs": "Inappropriate",
-      "reason": "'g' could not be modeled: 'pow' could not be modeled: parameter 'y' has a default the model cannot evaluate: '**' is implementation-approximated in JavaScript, so any model would certify results a conforming engine may disagree with"
+      "reason": "'g' could not be modeled: 'pow' could not be modeled: parameter 'y' has a default the model cannot evaluate: '**' is not supported"
     }
   ],
   "engines/thales/tests/conformance/theorem/field-union-undefined.ts": [
@@ -1027,7 +1027,7 @@
       "function": "Pow#square",
       "property": "grows",
       "szs": "Inappropriate",
-      "reason": "'Pow#square' could not be modeled: '**' is implementation-approximated in JavaScript, so any model would certify results a conforming engine may disagree with"
+      "reason": "'Pow#square' could not be modeled: '**' is not supported"
     }
   ],
   "engines/thales/tests/fixtures/class-params.ts": [

@@ -753,27 +753,57 @@ describe("body classification", () => {
     ]);
   });
 
-  test("** refuses with the spec-fidelity reason", () => {
+  test("** is not supported, by name", () => {
     expect(classifications(fnWith("x ** 2"))).toEqual({
       classified: [
-        [
-          "Inappropriate",
-          "'f' could not be modeled: '**' is implementation-approximated " +
-            "in JavaScript, so any model would certify results a conforming " +
-            "engine may disagree with",
-        ],
+        ["Inappropriate", "'f' could not be modeled: '**' is not supported"],
       ],
       obligations: 0,
     });
   });
 
+  test.each(["&", "|", "<<", "??", "=="])(
+    "an operator outside the model names itself: %s",
+    (op) => {
+      expect(classifications(fnWith(`x ${op} 2`))).toEqual({
+        classified: [
+          [
+            "Inappropriate",
+            `'f' could not be modeled: '${op}' is not supported`,
+          ],
+        ],
+        obligations: 0,
+      });
+    },
+  );
+
+  test("an unsupported operator in dead code still refuses the declaration", () => {
+    const src =
+      "/** @ensures{p} forall (x: int ∈ [0, 5)) { f(x) ≡ x } */\n" +
+      "export function f(x: number): number { return x; return x & 7; }\n";
+    expect(classifications(src).classified).toEqual([
+      ["Inappropriate", "'f' could not be modeled: '&' is not supported"],
+    ]);
+  });
+
+  test("an unsupported operator and an opaque construct report in tree order", () => {
+    expect(classifications(fnWith("x ** 2 + x.y")).classified).toEqual([
+      ["Inappropriate", "'f' could not be modeled: '**' is not supported"],
+    ]);
+    expect(classifications(fnWith("x.y + x ** 2")).classified).toEqual([
+      [
+        "Inappropriate",
+        expect.stringMatching(
+          /^'f' could not be modeled: unmapped TypeScript construct 'PropertyAccessExpression' at 2:\d+$/,
+        ),
+      ],
+    ]);
+  });
+
   test("an operator with no model is outside the model", () => {
     expect(classifications(fnWith("x & 7"))).toEqual({
       classified: [
-        [
-          "Inappropriate",
-          "'f' could not be modeled: operator '&' has no model in this slice",
-        ],
+        ["Inappropriate", "'f' could not be modeled: '&' is not supported"],
       ],
       obligations: 0,
     });
@@ -1173,13 +1203,7 @@ describe("formula classification", () => {
         formulaWith("forall (x: int ∈ [0, 5)) { f(x) ** 2 >= 0 }"),
       ),
     ).toEqual({
-      classified: [
-        [
-          "Inappropriate",
-          "'**' is implementation-approximated in JavaScript, so any model " +
-            "would certify results a conforming engine may disagree with",
-        ],
-      ],
+      classified: [["Inappropriate", "'**' is not supported"]],
       obligations: 0,
     });
   });
@@ -1190,13 +1214,7 @@ describe("formula classification", () => {
         formulaWith("forall (x: int ∈ [0, 5)) { x ** 2 >= 0 -> f(x) >= 0 }"),
       ),
     ).toEqual({
-      classified: [
-        [
-          "Inappropriate",
-          "'**' is implementation-approximated in JavaScript, so any model " +
-            "would certify results a conforming engine may disagree with",
-        ],
-      ],
+      classified: [["Inappropriate", "'**' is not supported"]],
       obligations: 0,
     });
   });
@@ -1241,7 +1259,7 @@ describe("formula classification", () => {
     expect(
       classifications(formulaWith("forall (x: int ∈ [0, 5)) { (x & 7) >= 0 }"))
         .classified,
-    ).toEqual([["Inappropriate", "operator '&' has no model in this slice"]]);
+    ).toEqual([["Inappropriate", "'&' is not supported"]]);
   });
 
   test("an unmapped construct is Inappropriate at its atom coordinates", () => {
@@ -2548,7 +2566,7 @@ describe("Math.sqrt models as Float.sqrt", () => {
     ]);
   });
 
-  test("a refused operator inside the argument is still found", () => {
+  test("an unsupported operator inside the argument is still found", () => {
     const src = [
       "/** @ensures{p} forall (n: int ∈ [0, 3)) { f(n) >= 0 } */",
       "export function f(x: number): number {",
@@ -3315,7 +3333,7 @@ describe("builtin member calls model as Float primitives", () => {
     );
   });
 
-  test("a refused operator inside a Math.abs argument is still found", () => {
+  test("an unsupported operator inside a Math.abs argument is still found", () => {
     const src = [
       "/** @ensures{p} forall (n: int ∈ [0, 3)) { f(n) >= 0 } */",
       "export function f(x: number): number {",
@@ -3496,7 +3514,7 @@ describe("logical operators on boolean operands", () => {
     ]);
   });
 
-  test("a refused operator inside a logical operand still refuses as itself", () => {
+  test("an unsupported operator inside a logical operand still refuses as itself", () => {
     const { classified } = emitModule(
       [
         "/** @ensures{p} forall (x: int in [0, 4)) { pick(x) >= 0 } */",
@@ -3512,7 +3530,7 @@ describe("logical operators on boolean operands", () => {
     expect(classified).toEqual([
       expect.objectContaining({
         szs: "Inappropriate",
-        reason: expect.stringContaining("'**' is implementation-approximated"),
+        reason: expect.stringContaining("'**' is not supported"),
       }),
     ]);
   });
@@ -3592,7 +3610,7 @@ describe("conditional expressions", () => {
     ]);
   });
 
-  test("a refused operator in an arm refuses the declaration", () => {
+  test("an unsupported operator in an arm refuses the declaration", () => {
     const { classified } = emitModule(
       [
         "/** @ensures{p} forall (x: number) { Object.is(pick(x), pick(x)) } */",
@@ -3605,10 +3623,7 @@ describe("conditional expressions", () => {
     expect(classified).toEqual([
       expect.objectContaining({
         szs: "Inappropriate",
-        reason:
-          "'pick' could not be modeled: '**' is implementation-approximated " +
-          "in JavaScript, so any model would certify results a conforming " +
-          "engine may disagree with",
+        reason: "'pick' could not be modeled: '**' is not supported",
       }),
     ]);
   });
@@ -4518,7 +4533,7 @@ describe("class-level degrade paths (#129)", () => {
       },
     ],
     [
-      "a refused operator in the constructor",
+      "an unsupported operator in the constructor",
       { ctor: "  constructor(v: number) {\n    this.#v = v ** 2;\n  }" },
     ],
   ])("%s degrades the class", (_label, opts) => {
@@ -4656,7 +4671,7 @@ describe("class member-level degrade paths (#129)", () => {
       "  get bad(): number {\n    return this.other;\n  }",
     ],
     [
-      "a refused operator in a getter",
+      "an unsupported operator in a getter",
       "  get bad(): number {\n    return this.#v ** 2;\n  }",
     ],
     ["a getter that can run off the end", "  get bad(): number {}"],
@@ -4803,9 +4818,9 @@ describe("instance atoms outside the happy path (#129)", () => {
       /unmapped TypeScript construct 'AwaitExpression'/,
     ],
     [
-      "a refused operator in a new argument",
+      "an unsupported operator in a new argument",
       "Object.is(new Box(x ** 2).v, x)",
-      /'\*\*' is implementation-approximated/,
+      /'\*\*' is not supported/,
     ],
     [
       "a qualified constructor name",
@@ -5466,7 +5481,7 @@ ${box}`;
     }
   });
 
-  test("a refused operator inside a call's receiver or arguments refuses", () => {
+  test("an unsupported operator inside a call's receiver or arguments refuses", () => {
     const box = `export class Box {
   #v: number;
   constructor(v: number) {
@@ -6433,9 +6448,7 @@ describe("a body opens by resolving each default", () => {
       [
         "Inappropriate",
         "'f' could not be modeled: parameter 'y' has a default the model " +
-          "cannot evaluate: '**' is implementation-approximated in " +
-          "JavaScript, so any model would certify results a conforming " +
-          "engine may disagree with",
+          "cannot evaluate: '**' is not supported",
       ],
     ]);
   });
@@ -7685,7 +7698,7 @@ describe("module-level const bindings", () => {
     ]);
   });
 
-  test("a call, a builtin, a refused operator, or a mutable read keeps the degradation", () => {
+  test("a call, a builtin, an unsupported operator, or a mutable read keeps the degradation", () => {
     const src = [
       "let base = 2;",
       "const a = base * 3;",
@@ -9376,7 +9389,7 @@ export function g(a: number): number {
     );
   });
 
-  test("a refused operator inside a plain call's argument still names it", () => {
+  test("an unsupported operator inside a plain call's argument still names it", () => {
     const src = `export function h(a: number): number {
   return a;
 }
@@ -9386,9 +9399,7 @@ export function g(a: number): number {
 }
 `;
     const { classified } = emitModule(src, "t.ts");
-    expect(classified[0]!.reason).toContain(
-      "'**' is implementation-approximated",
-    );
+    expect(classified[0]!.reason).toContain("'**' is not supported");
   });
 
   test("the scan reports a construct inside a builtin call's argument", () => {
