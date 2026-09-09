@@ -1967,10 +1967,18 @@ function signatureFailure(
   return { params };
 }
 
-/** Names a body binds itself, and whether each may be assigned. A branch's
- * arm gets its own copy, and a redeclaration of a name from an enclosing
- * scope is refused rather than shadowed. */
-type Locals = Map<string, "const" | "mutable">;
+/** The bindings in scope at a statement, parameters included: whether
+ * each may be assigned and the type it was bound at, so a later declarator
+ * types its initializer off an earlier binding. A branch's arm gets its
+ * own copy, and a redeclaration of a name from an enclosing scope is
+ * refused rather than shadowed. */
+type Locals = Map<string, { mutable: boolean; ty: ValueTy }>;
+
+/** Locals seeded from parameters, which are assignable the way
+ * JavaScript has them. */
+function paramLocals(params: readonly { name: string; ty: ValueTy }[]): Locals {
+  return new Map(params.map((p) => [p.name, { mutable: true, ty: p.ty }]));
+}
 
 /** The types a local binding may carry: the numeric slice, a keyword
  * union riding the same tagged domain a parameter's does, or an instance
@@ -2010,20 +2018,23 @@ function errorKind(e: ts.Expression): string | undefined {
   return inner.expression.text;
 }
 
-/** A local declarator's admitted type: the numeric slice for `number` or
- * no annotation, a class resolved exactly as a field's is (a degraded
- * class is the failure that travels), or a keyword union normalized
- * exactly as a parameter's is (`localValueTy` and `paramValueTy` share
- * `keywordTags` and `normalizedUnion`, so the two spellings can never
- * drift). Anything else — a later-declared class, a lone non-number
- * keyword, a union with a member outside the keywords — keeps the
- * declarator's degradation. */
+/** A local declarator's admitted type: its initializer's static type
+ * when there is no annotation, the numeric slice for `number`, a class
+ * resolved exactly as a field's is (a degraded class is the failure that
+ * travels), or a keyword union normalized exactly as a parameter's is
+ * (`localValueTy` and `paramValueTy` share `keywordTags` and
+ * `normalizedUnion`, so the two spellings can never drift). Anything
+ * else — a later-declared class, a lone non-number keyword, a union with
+ * a member outside the keywords — keeps the declarator's degradation. */
 function localValueTy(
-  t: ts.TypeNode | undefined,
+  d: ts.VariableDeclaration,
   sf: ts.SourceFile,
   reg: ParamReg,
+  scope: WalkScope,
 ): LocalTy | FailedDecl | undefined {
-  if (t === undefined || t.kind === ts.SyntaxKind.NumberKeyword) return "num";
+  const t = d.type;
+  if (t === undefined) return inferredLocalTy(d.initializer!, scope, reg);
+  if (t.kind === ts.SyntaxKind.NumberKeyword) return "num";
   const cls = classRefTy(t, reg);
   if (cls !== undefined) return cls;
   if (!ts.isUnionTypeNode(t)) return undefined;
@@ -2031,6 +2042,26 @@ function localValueTy(
   if (!Array.isArray(tags)) return undefined;
   const ty = normalizedUnion(tags, t, sf);
   return typeof ty === "string" || "union" in ty ? ty : undefined;
+}
+
+/** An unannotated declarator's type: a construction's class, resolved
+ * exactly as an annotation naming it would be (a later class refuses the
+ * statement, a degraded one travels its reason); the class or union any
+ * other place is at — a bound identifier, a field read on an instance
+ * place; and `number` for every other initializer, which the typed walk
+ * then holds to a number. An explicit annotation never comes here. */
+function inferredLocalTy(
+  init: ts.Expression,
+  scope: WalkScope,
+  reg: ParamReg,
+): LocalTy | FailedDecl | undefined {
+  const built = newCall(init);
+  if (built !== undefined)
+    return classNamed((built.expression as ts.Identifier).text, reg);
+  const ty = placeTy(init, scope);
+  /* v8 ignore next 2 -- no place is an option: a bound option is not a
+     place, and no field holds one. */
+  return ty === undefined || isOptionTy(ty) ? "num" : ty;
 }
 
 /** A declaration's `TStmt`s, or undefined when any declarator falls
@@ -2064,7 +2095,13 @@ function declStmts(
   for (const d of s.declarationList.declarations) {
     if (!ts.isIdentifier(d.name)) return undefined;
     if (d.initializer === undefined) return undefined;
-    const ty = localValueTy(d.type, sf, reg);
+    // Each declarator types its initializer off the bindings before it,
+    // the earlier declarators of its own list included.
+    const bound: WalkScope = {
+      ...scope,
+      vars: new Map([...locals].map(([n, l]) => [n, l.ty])),
+    };
+    const ty = localValueTy(d, sf, reg, bound);
     if (ty === undefined) return undefined;
     if (typeof ty !== "string" && "reason" in ty)
       return [{ t: "opaque", failure: ty }];
@@ -2078,7 +2115,7 @@ function declStmts(
       init: d.initializer,
       ty,
     });
-    locals.set(d.name.text, isConst ? "const" : "mutable");
+    locals.set(d.name.text, { mutable: !isConst, ty });
   }
   return stmts;
 }
@@ -2090,7 +2127,7 @@ function assignStmt(e: ts.Expression, locals: Locals): TStmt | undefined {
   if (e.operatorToken.kind !== ts.SyntaxKind.EqualsToken) return undefined;
   const target = unwrapParens(e.left);
   if (!ts.isIdentifier(target)) return undefined;
-  if (locals.get(target.text) !== "mutable") return undefined;
+  if (locals.get(target.text)?.mutable !== true) return undefined;
   return { t: "assign", name: target.text, expr: e.right };
 }
 
@@ -2754,7 +2791,17 @@ function classRefTy(
     t.typeArguments !== undefined
   )
     return undefined;
-  const spelling = t.typeName.text;
+  return classNamed(t.typeName.text, reg);
+}
+
+/** A class spelling resolved under the source-order discipline: the
+ * instance for a class already in the model (`self` included), the
+ * travelling failure for one that degraded, and undefined for a
+ * later-declared one. */
+function classNamed(
+  spelling: string,
+  reg: ParamReg,
+): { instance: ModelRef } | FailedDecl | undefined {
   const ref = reg.names.get(spelling) ?? { module: reg.module, name: spelling };
   if (reg.self !== undefined && sameClass(ref, reg.self))
     return { instance: ref };
@@ -3097,9 +3144,7 @@ function walkClass(
     ctorFields: fields,
   };
   const fieldSet = new Set(fields.keys());
-  const ctorLocals: Locals = new Map(
-    ctorParams.map((p) => [p.name, "mutable" as const]),
-  );
+  const ctorLocals = paramLocals(ctorParams);
   const tree = ctor.body!.statements.flatMap((s) =>
     structureStmt(s, sf, ctorLocals, ctorScope, fieldSet),
   );
@@ -3250,9 +3295,7 @@ function walkClass(
       self,
       selfFailed: memberFailed,
     };
-    const locals: Locals = new Map(
-      params.map((p) => [p.name, "mutable" as const]),
-    );
+    const locals = paramLocals(params);
     const body = m.body!.statements.flatMap((st) =>
       structureStmt(st, sf, locals, scope),
     );
@@ -3389,10 +3432,7 @@ function walkFunction(
     names,
     module,
   };
-  // Parameters are assignable, the way JavaScript has them.
-  const locals: Locals = new Map(
-    params.map((p) => [p.name, "mutable" as const]),
-  );
+  const locals = paramLocals(params);
   const tree = fn.body!.statements.flatMap((s) =>
     structureStmt(s, sf, locals, scope),
   );
