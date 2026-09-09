@@ -7189,7 +7189,7 @@ export class Point {
     );
   });
 
-  test("keeps an unannotated instance-valued local refused", () => {
+  test("binds an unannotated instance-valued local at its class", () => {
     const src = `
 export class Point {
   readonly x: number;
@@ -7203,10 +7203,15 @@ export function f(a: number): number {
   return a;
 }
 `;
-    const { classified } = emitModule(src, "t.ts");
-    expect(classified[0]!.reason).toMatch(
-      /yields an instance of 'Point', not a number/,
-    );
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    const fn = emission.declarations[1];
+    assert(fn?.kind === "function");
+    expect(fnBody(fn)[0]).toMatchObject({
+      kind: "const",
+      name: "p",
+      type: { class: "Point" },
+    });
   });
 
   test("a class-typed parameter shadows the builtin namespace it spells", () => {
@@ -9257,6 +9262,243 @@ describe("class-typed locals (#117)", () => {
         `  const b: Bad = n;\n  return 0;\n}\n`,
     );
     expect(classified[0]!.reason).toMatch(/'Bad' could not be modeled/);
+  });
+});
+
+describe("inferred local types (#339)", () => {
+  const emit = (src: string) => emitModule(src, "t.ts");
+  const PT = `export class Pt {
+  readonly x: number;
+  constructor(x: number) {
+    this.x = x;
+  }
+  twice(): number {
+    return this.x * 2;
+  }
+}
+`;
+
+  test("an unannotated construction binds at its class", () => {
+    const { emission, classified } = emit(
+      `${PT}/** @ensures{p} forall (n: int ∈ [0, 10)) { 0 <= f(n) } */\n` +
+        `export function f(n: number): number {\n` +
+        `  const p = new Pt(n);\n  return n + p.x;\n}\n`,
+    );
+    expect(classified).toEqual([]);
+    expectValidEmission(emission);
+    const fn = emission.declarations[1];
+    assert(fn?.kind === "function");
+    expect(fnBody(fn)[0]).toEqual({
+      kind: "const",
+      name: "p",
+      init: { kind: "new", className: "Pt", args: [{ kind: "id", name: "n" }] },
+      type: { class: "Pt" },
+    });
+  });
+
+  test("an unannotated identifier binds at its parameter's class", () => {
+    const { emission, classified } = emit(
+      `${PT}export function f(q: Pt): number {\n` +
+        `  const p = q;\n  return p.twice();\n}\n`,
+    );
+    expect(classified).toEqual([]);
+    const fn = emission.declarations[1];
+    assert(fn?.kind === "function");
+    expect(fnBody(fn)).toEqual([
+      {
+        kind: "const",
+        name: "p",
+        init: { kind: "id", name: "q" },
+        type: { class: "Pt" },
+      },
+      {
+        kind: "return",
+        expr: {
+          kind: "method-call",
+          className: "Pt",
+          name: "twice",
+          object: { kind: "id", name: "p" },
+          args: [],
+        },
+      },
+    ]);
+  });
+
+  test("an unannotated identifier binds at an earlier local's class", () => {
+    const { emission, classified } = emit(
+      `${PT}export function f(n: number): number {\n` +
+        `  const p = new Pt(n);\n  const r = p;\n  return r.x;\n}\n`,
+    );
+    expect(classified).toEqual([]);
+    const fn = emission.declarations[1];
+    assert(fn?.kind === "function");
+    expect(fnBody(fn)[1]).toEqual({
+      kind: "const",
+      name: "r",
+      init: { kind: "id", name: "p" },
+      type: { class: "Pt" },
+    });
+  });
+
+  test("an unannotated class-typed field read binds at the field's class", () => {
+    const { emission, classified } = emit(
+      `${PT}export class Box {
+  readonly p: Pt;
+  constructor(p: Pt) {
+    this.p = p;
+  }
+}
+export function f(b: Box): number {
+  const q = b.p;
+  return q.x;
+}
+`,
+    );
+    expect(classified).toEqual([]);
+    const fn = emission.declarations[2];
+    assert(fn?.kind === "function");
+    expect(fnBody(fn)[0]).toEqual({
+      kind: "const",
+      name: "q",
+      init: {
+        kind: "field-read",
+        className: "Box",
+        field: "p",
+        object: { kind: "id", name: "b" },
+      },
+      type: { class: "Pt" },
+    });
+  });
+
+  test("an unannotated identifier binds at its parameter's union", () => {
+    const { emission, classified } = emit(
+      `export function f(v: number | string): number {\n` +
+        `  const w = v;\n  return typeof w === "number" ? w : 0;\n}\n`,
+    );
+    expect(classified).toEqual([]);
+    const fn = emission.declarations[0];
+    assert(fn?.kind === "function");
+    expect(fnBody(fn)[0]).toEqual({
+      kind: "const",
+      name: "w",
+      init: { kind: "id", name: "v" },
+      type: ["number", "string"],
+    });
+  });
+
+  test("a number-valued initializer still binds at number", () => {
+    const { emission, classified } = emit(
+      `${PT}export function f(q: Pt): number {\n` +
+        `  const m = q.x + 1;\n  const t = q.twice();\n  return m + t;\n}\n`,
+    );
+    expect(classified).toEqual([]);
+    const fn = emission.declarations[1];
+    assert(fn?.kind === "function");
+    expect(fnBody(fn)[0]).not.toHaveProperty("type");
+    expect(fnBody(fn)[1]).not.toHaveProperty("type");
+  });
+
+  test("an explicit annotation stays authoritative over the initializer", () => {
+    const { classified } = emit(
+      `${PT}/** @ensures{p} forall (q: Pt) { 0 <= f(q) } */\n` +
+        `export function f(q: Pt): number {\n` +
+        `  const m: number = q;\n  return 0;\n}\n`,
+    );
+    expect(classified[0]!.reason).toContain(
+      "identifier 'q' is an instance of 'Pt', not a number",
+    );
+  });
+
+  test("an unannotated mutable local reassigns at its inferred class", () => {
+    const { emission, classified } = emit(
+      `${PT}export function f(n: number): number {\n` +
+        `  let p = new Pt(n);\n  p = new Pt(p.x + 1);\n  return p.x;\n}\n`,
+    );
+    expect(classified).toEqual([]);
+    const fn = emission.declarations[1];
+    assert(fn?.kind === "function");
+    expect(fnBody(fn)[0]).toMatchObject({
+      kind: "let",
+      name: "p",
+      type: { class: "Pt" },
+    });
+    expect(fnBody(fn)[1]).toMatchObject({ kind: "assign", name: "p" });
+  });
+
+  test("an arm's inferred local reads as a place inside the arm", () => {
+    const { emission, classified } = emit(
+      `${PT}export function f(n: number): number {\n` +
+        `  if (n > 0) {\n    const p = new Pt(n);\n    return p.x;\n  }\n` +
+        `  return 0;\n}\n`,
+    );
+    expect(classified).toEqual([]);
+    expectValidEmission(emission);
+  });
+
+  test("a construction at a later-declared class refuses the statement", () => {
+    const { classified } = emit(
+      `/** @ensures{p} forall (n: int ∈ [0, 10)) { 0 <= f(n) } */\n` +
+        `export function f(n: number): number {\n` +
+        `  const p = new Pt(n);\n  return p.x;\n}\n${PT}`,
+    );
+    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
+      [
+        "Inappropriate",
+        "'f' could not be modeled: unmapped TypeScript construct 'VariableStatement' at 3:3",
+      ],
+    ]);
+  });
+
+  test("a construction at a degraded class travels that class's reason", () => {
+    const { classified } = emit(
+      `export abstract class Bad {}\n` +
+        `/** @ensures{p} forall (n: int ∈ [0, 10)) { 0 <= f(n) } */\n` +
+        `export function f(n: number): number {\n` +
+        `  const b = new Bad();\n  return 0;\n}\n`,
+    );
+    expect(classified[0]!.reason).toMatch(/'Bad' could not be modeled/);
+  });
+
+  test("a construction of the class under construction refuses in its constructor", () => {
+    const { classified } = emit(
+      `export class Node {
+  readonly x: number;
+  constructor(x: number) {
+    const me = new Node(x);
+    this.x = x;
+  }
+  /** @ensures{p} forall (a: int ∈ [0, 10)) { 0 <= a } */
+  get v(): number {
+    return this.x;
+  }
+}
+`,
+    );
+    expect(classified[0]!.szs).toBe("Inappropriate");
+    expect(classified[0]!.reason).toContain("'VariableStatement' at 4:5");
+  });
+
+  test("a local bound to this refuses at the initializer", () => {
+    const { classified } = emit(
+      `export class A {
+  readonly x: number;
+  constructor(x: number) {
+    this.x = x;
+  }
+  /** @ensures{p} forall (a: int ∈ [0, 10)) { 0 <= new A(a).m() } */
+  m(): number {
+    const me = this;
+    return me.x;
+  }
+}
+`,
+    );
+    expect(classified.map((c) => [c.szs, c.reason])).toEqual([
+      [
+        "Inappropriate",
+        "'A#m' could not be modeled: unmapped TypeScript construct 'ThisKeyword' at 8:16",
+      ],
+    ]);
   });
 });
 
