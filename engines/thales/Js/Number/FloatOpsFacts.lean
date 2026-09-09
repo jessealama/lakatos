@@ -520,4 +520,181 @@ theorem tsTrunc_eq_tsCeil_of_nonpos {x : Float} (h : Float.le x 0 = true) :
       omega
     | negative => exact roundIntegral_towardZero_eq_posInf_of_negative m e hm
 
+/-! ## Strict bounds propagate through every rounding
+
+A rounding's finite arm has magnitude at most `2^53` on exponent `0`, so
+its key sits between the keys of `∓2^53`, two canonical values built by
+hand. Their keys stay symbolic: evaluating `2^1075` trips the
+exponentiation threshold and the recursion limit. The non-finite arms
+return the input, whose bound is the hypothesis. -/
+
+theorem canonical_two53_pos : Canonical (.finite .positive (2 ^ 52) 1 (Nat.two_pow_pos 52)) :=
+  .normal .positive (2 ^ 52) 1 (Nat.two_pow_pos 52) (Nat.le_refl _) pow52_lt_53 (by decide) (by decide)
+
+theorem canonical_two53_neg : Canonical (.finite .negative (2 ^ 52) 1 (Nat.two_pow_pos 52)) :=
+  .normal .negative (2 ^ 52) 1 (Nat.two_pow_pos 52) (Nat.le_refl _) pow52_lt_53 (by decide) (by decide)
+
+/-- A rounded mantissa of at least `-2^53` normalizes to a key at least
+the negative anchor's. -/
+theorem key_normalize_rounding_ge {M : Int} (hM : -(2 ^ 53 : Int) ≤ M) (z : Sign) :
+    key (.finite .negative (2 ^ 52) 1 (Nat.two_pow_pos 52))
+      ≤ key (UnpackedFloat.normalize .binary64 M 0 z) := by
+  rw [← normalize_canonical_self canonical_two53_neg]
+  apply key_normalize_mono_value _ _ _ (by decide) (by decide)
+  have e1 : ((1 : Int) + 1074).toNat = 1074 + 1 := by decide
+  have e0 : ((0 : Int) + 1074).toNat = 1074 := by decide
+  rw [e1, e0, int_pow_split 1074 1]
+  have : Sign.apply .negative ((2 ^ 52 : Nat) : Int) * (2 ^ 1074 * 2 ^ 1)
+      = (-(2 ^ 53 : Int)) * 2 ^ 1074 := by
+    simp only [Sign.apply]
+    rw [Int.mul_comm (2 ^ 1074) (2 ^ 1), ← Int.mul_assoc]
+    congr 1
+  rw [this]
+  exact Int.mul_le_mul_of_nonneg_right hM (Int.le_of_lt (intPow_pos _))
+
+/-- A rounded mantissa of at most `2^53` normalizes to a key at most the
+positive anchor's. -/
+theorem key_normalize_rounding_le {M : Int} (hM : M ≤ (2 ^ 53 : Int)) (z : Sign) :
+    key (UnpackedFloat.normalize .binary64 M 0 z)
+      ≤ key (.finite .positive (2 ^ 52) 1 (Nat.two_pow_pos 52)) := by
+  rw [← normalize_canonical_self canonical_two53_pos]
+  apply key_normalize_mono_value _ _ _ (by decide) (by decide)
+  have e1 : ((1 : Int) + 1074).toNat = 1074 + 1 := by decide
+  have e0 : ((0 : Int) + 1074).toNat = 1074 := by decide
+  rw [e1, e0, int_pow_split 1074 1]
+  have : Sign.apply .positive ((2 ^ 52 : Nat) : Int) * (2 ^ 1074 * 2 ^ 1)
+      = (2 ^ 53 : Int) * 2 ^ 1074 := by
+    simp only [Sign.apply]
+    rw [Int.mul_comm (2 ^ 1074) (2 ^ 1), ← Int.mul_assoc]
+    congr 1
+  rw [this]
+  exact Int.mul_le_mul_of_nonneg_right hM (Int.le_of_lt (intPow_pos _))
+
+/-- Whichever way the arm bumps, the signed mantissa is within `∓2^53`. -/
+theorem rounded_mantissa_bounds (b : Bool) (s : Sign) {q : Nat} (hq : q + 1 ≤ 2 ^ 53) :
+    -(2 ^ 53 : Int) ≤ s.apply (if b = true then (q : Int) + 1 else (q : Int))
+      ∧ s.apply (if b = true then (q : Int) + 1 else (q : Int)) ≤ 2 ^ 53 := by
+  have h := natAbs_rounded_le b s hq
+  omega
+
+/-- The rounded arm, packed, is strictly above `-∞`. -/
+theorem lt_neg_inf_normalize_rounded (s : Sign) (b : Bool) {q : Nat} (hq : q + 1 ≤ 2 ^ 53) :
+    UnpackedFloat.lt (.infinity .negative)
+      (unpack .binary64 (UnpackedFloat.pack .binary64
+        (UnpackedFloat.normalize .binary64
+          (s.apply (if b = true then (q : Int) + 1 else (q : Int))) 0 s))) = true := by
+  obtain ⟨hsh, hnn⟩ := normalize_shape _ _ _ (rounding_cap (natAbs_rounded_le b s hq))
+  have hb := rounded_mantissa_bounds b s hq
+  have hmono := key_unpack_pack_mono (.canonical canonical_two53_neg) hsh
+    (fun hh => UnpackedFloat.noConfusion hh) hnn (key_normalize_rounding_ge hb.1 s)
+  rw [unpack_pack_of_canonical canonical_two53_neg] at hmono
+  exact lt_of_key (.infinity .negative) (canonical_unpack _)
+    (fun hh => UnpackedFloat.noConfusion hh) (unpack_pack_ne_nan hsh hnn)
+    (Int.lt_of_lt_of_le
+      (key_lt_HUGE canonical_two53_neg (fun _ hh => UnpackedFloat.noConfusion hh)).2 hmono)
+
+/-- The rounded arm, packed, is strictly below `+∞`. -/
+theorem normalize_rounded_lt_pos_inf (s : Sign) (b : Bool) {q : Nat} (hq : q + 1 ≤ 2 ^ 53) :
+    UnpackedFloat.lt
+      (unpack .binary64 (UnpackedFloat.pack .binary64
+        (UnpackedFloat.normalize .binary64
+          (s.apply (if b = true then (q : Int) + 1 else (q : Int))) 0 s)))
+      (.infinity .positive) = true := by
+  obtain ⟨hsh, hnn⟩ := normalize_shape _ _ _ (rounding_cap (natAbs_rounded_le b s hq))
+  have hb := rounded_mantissa_bounds b s hq
+  have hmono := key_unpack_pack_mono hsh (.canonical canonical_two53_pos) hnn
+    (fun hh => UnpackedFloat.noConfusion hh) (key_normalize_rounding_le hb.2 s)
+  rw [unpack_pack_of_canonical canonical_two53_pos] at hmono
+  exact lt_of_key (canonical_unpack _) (.infinity .positive)
+    (unpack_pack_ne_nan hsh hnn) (fun hh => UnpackedFloat.noConfusion hh)
+    (Int.lt_of_le_of_lt hmono
+      (key_lt_HUGE canonical_two53_pos (fun _ hh => UnpackedFloat.noConfusion hh)).1)
+
+/-- Unpacking any rounded float. -/
+theorem unpack_rounded (dir : RoundDir) (x : Float) :
+    (Float.ofModel (Float.Model.pack (roundIntegral .binary64 dir x.toModel.unpack))).toModel.unpack
+      = unpack .binary64 (UnpackedFloat.pack .binary64
+          (roundIntegral .binary64 dir x.toModel.unpack)) := rfl
+
+theorem rounding_lo (dir : RoundDir) {x : Float} (hLo : (-(1.0 / 0.0) : Float) < x) :
+    (-(1.0 / 0.0) : Float)
+      < Float.ofModel (Float.Model.pack (roundIntegral .binary64 dir x.toModel.unpack)) := by
+  have h : Float.lt (-(1.0 / 0.0)) x = true := hLo
+  rw [float_lt_unpack,
+    show ((-(1.0 / 0.0) : Float)).toModel.unpack = UnpackedFloat.infinity .negative from rfl] at h
+  have hx := lt_ne_nan_right h
+  have hc : Canonical x.toModel.unpack := canonical_unpack _
+  show Float.lt _ _ = true
+  rw [float_lt_unpack, unpack_rounded,
+    show ((-(1.0 / 0.0) : Float)).toModel.unpack = UnpackedFloat.infinity .negative from rfl]
+  generalize x.toModel.unpack = u at hc hx h ⊢
+  cases hc with
+  | notANumber => exact absurd rfl hx
+  | infinity s =>
+    cases s
+    · exact absurd h (by decide)
+    · dsimp only [roundIntegral]; decide
+  | zero s => cases s <;> (dsimp only [roundIntegral]; decide)
+  | subnormal s m hm hmlt =>
+    dsimp only [roundIntegral]
+    split
+    · rw [unpack_pack_of_canonical (.subnormal s m hm hmlt)]; exact h
+    · exact lt_neg_inf_normalize_rounded s _ (shift_succ_le_two53 (by omega) (by omega))
+  | normal s m e hm hlo hhi helo hehi =>
+    dsimp only [roundIntegral]
+    split
+    · rw [unpack_pack_of_canonical (.normal s m e hm hlo hhi helo hehi)]; exact h
+    · exact lt_neg_inf_normalize_rounded s _ (shift_succ_le_two53 hhi (by omega))
+
+theorem rounding_hi (dir : RoundDir) {x : Float} (hHi : x < (1.0 / 0.0 : Float)) :
+    Float.ofModel (Float.Model.pack (roundIntegral .binary64 dir x.toModel.unpack))
+      < (1.0 / 0.0 : Float) := by
+  have h : Float.lt x (1.0 / 0.0) = true := hHi
+  rw [float_lt_unpack,
+    show ((1.0 / 0.0 : Float)).toModel.unpack = UnpackedFloat.infinity .positive from rfl] at h
+  have hx := lt_ne_nan_left h
+  have hc : Canonical x.toModel.unpack := canonical_unpack _
+  show Float.lt _ _ = true
+  rw [float_lt_unpack, unpack_rounded,
+    show ((1.0 / 0.0 : Float)).toModel.unpack = UnpackedFloat.infinity .positive from rfl]
+  generalize x.toModel.unpack = u at hc hx h ⊢
+  cases hc with
+  | notANumber => exact absurd rfl hx
+  | infinity s =>
+    cases s
+    · dsimp only [roundIntegral]; decide
+    · exact absurd h (by decide)
+  | zero s => cases s <;> (dsimp only [roundIntegral]; decide)
+  | subnormal s m hm hmlt =>
+    dsimp only [roundIntegral]
+    split
+    · rw [unpack_pack_of_canonical (.subnormal s m hm hmlt)]; exact h
+    · exact normalize_rounded_lt_pos_inf s _ (shift_succ_le_two53 (by omega) (by omega))
+  | normal s m e hm hlo hhi helo hehi =>
+    dsimp only [roundIntegral]
+    split
+    · rw [unpack_pack_of_canonical (.normal s m e hm hlo hhi helo hehi)]; exact h
+    · exact normalize_rounded_lt_pos_inf s _ (shift_succ_le_two53 hhi (by omega))
+
+theorem tsFloor_lo {x : Float} (h : (-(1.0 / 0.0) : Float) < x) :
+    (-(1.0 / 0.0) : Float) < tsFloor x :=
+  rounding_lo .towardNegInf h
+theorem tsFloor_hi {x : Float} (h : x < (1.0 / 0.0 : Float)) : tsFloor x < (1.0 / 0.0 : Float) :=
+  rounding_hi .towardNegInf h
+theorem tsCeil_lo {x : Float} (h : (-(1.0 / 0.0) : Float) < x) :
+    (-(1.0 / 0.0) : Float) < tsCeil x :=
+  rounding_lo .towardPosInf h
+theorem tsCeil_hi {x : Float} (h : x < (1.0 / 0.0 : Float)) : tsCeil x < (1.0 / 0.0 : Float) :=
+  rounding_hi .towardPosInf h
+theorem tsTrunc_lo {x : Float} (h : (-(1.0 / 0.0) : Float) < x) :
+    (-(1.0 / 0.0) : Float) < tsTrunc x :=
+  rounding_lo .towardZero h
+theorem tsTrunc_hi {x : Float} (h : x < (1.0 / 0.0 : Float)) : tsTrunc x < (1.0 / 0.0 : Float) :=
+  rounding_hi .towardZero h
+theorem tsRound_lo {x : Float} (h : (-(1.0 / 0.0) : Float) < x) :
+    (-(1.0 / 0.0) : Float) < tsRound x :=
+  rounding_lo .nearestHalfUp h
+theorem tsRound_hi {x : Float} (h : x < (1.0 / 0.0 : Float)) : tsRound x < (1.0 / 0.0 : Float) :=
+  rounding_hi .nearestHalfUp h
+
 end Js.Number.FloatOpsFacts
