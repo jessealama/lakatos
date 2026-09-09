@@ -236,7 +236,12 @@ const MEMBER_FIXTURES = [
   `${CONFORMANCE}/theorem/min-of-three.ts`,
   `${CONFORMANCE}/theorem/integral-scale.ts`,
   `${CONFORMANCE}/theorem/beyond-safe-integer.ts`,
+  `${CONFORMANCE}/theorem/epsilon-scale.ts`,
+  `${CONFORMANCE}/theorem/safe-integer-bound.ts`,
+  `${CONFORMANCE}/theorem/infinity-spelled.ts`,
   `${CONFORMANCE}/inappropriate/math-log.ts`,
+  `${CONFORMANCE}/inappropriate/number-length.ts`,
+  `${CONFORMANCE}/inappropriate/math-sqrt-local-alias.ts`,
 ];
 
 const fixtures =

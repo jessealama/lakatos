@@ -1578,12 +1578,55 @@
       "axioms": []
     }
   ],
+  "engines/thales/tests/conformance/theorem/epsilon-scale.ts": [
+    {
+      "function": "tiny",
+      "property": "nonNegative",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_6316605364473587067",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/safe-integer-bound.ts": [
+    {
+      "function": "keep",
+      "property": "bounded",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_14305630265078764008",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/infinity-spelled.ts": [
+    {
+      "function": "shrink",
+      "property": "vanishes",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_16343456677024528816",
+      "axioms": []
+    }
+  ],
   "engines/thales/tests/conformance/inappropriate/math-log.ts": [
     {
       "function": "integerLog",
       "property": "nonNegative",
       "szs": "Inappropriate",
       "reason": "'integerLog' could not be modeled: 'Math.log' is not supported"
+    }
+  ],
+  "engines/thales/tests/conformance/inappropriate/number-length.ts": [
+    {
+      "function": "arity",
+      "property": "nonNegative",
+      "szs": "Inappropriate",
+      "reason": "'arity' could not be modeled: 'Number.length' is not supported"
+    }
+  ],
+  "engines/thales/tests/conformance/inappropriate/math-sqrt-local-alias.ts": [
+    {
+      "function": "root",
+      "property": "nonNegative",
+      "szs": "Inappropriate",
+      "reason": "'root' could not be modeled: 'Math.sqrt' is modeled only as a callee"
     }
   ]
 }
