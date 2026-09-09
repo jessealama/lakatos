@@ -150,4 +150,69 @@ theorem tsMax_lub {a b c : Float} (ha : Float.le a c = true) (hb : Float.le b c 
     · exact hb
     · exact ha
 
+/-! ## Strict bounds propagate through `min` and `max`
+
+The result is one of the operands whenever neither is NaN, and a strict
+infinity bound on an operand already excludes NaN on that operand. -/
+
+theorem tsMin_lo {a b : Float} (haLo : (-(1.0 / 0.0) : Float) < a)
+    (hbLo : (-(1.0 / 0.0) : Float) < b) : (-(1.0 / 0.0) : Float) < tsMin a b := by
+  have ha : Float.lt (-(1.0 / 0.0)) a = true := haLo
+  have hb : Float.lt (-(1.0 / 0.0)) b = true := hbLo
+  rw [float_lt_unpack] at ha hb
+  unfold tsMin
+  split
+  · exact absurd ‹_› (lt_ne_nan_right ha)
+  · exact absurd ‹_› (lt_ne_nan_right hb)
+  · exact haLo
+  · exact hbLo
+  · split
+    · exact haLo
+    · exact hbLo
+
+theorem tsMin_hi {a b : Float} (haHi : a < (1.0 / 0.0 : Float))
+    (hbHi : b < (1.0 / 0.0 : Float)) : tsMin a b < (1.0 / 0.0 : Float) := by
+  have ha : Float.lt a (1.0 / 0.0) = true := haHi
+  have hb : Float.lt b (1.0 / 0.0) = true := hbHi
+  rw [float_lt_unpack] at ha hb
+  unfold tsMin
+  split
+  · exact absurd ‹_› (lt_ne_nan_left ha)
+  · exact absurd ‹_› (lt_ne_nan_left hb)
+  · exact haHi
+  · exact hbHi
+  · split
+    · exact haHi
+    · exact hbHi
+
+theorem tsMax_lo {a b : Float} (haLo : (-(1.0 / 0.0) : Float) < a)
+    (hbLo : (-(1.0 / 0.0) : Float) < b) : (-(1.0 / 0.0) : Float) < tsMax a b := by
+  have ha : Float.lt (-(1.0 / 0.0)) a = true := haLo
+  have hb : Float.lt (-(1.0 / 0.0)) b = true := hbLo
+  rw [float_lt_unpack] at ha hb
+  unfold tsMax
+  split
+  · exact absurd ‹_› (lt_ne_nan_right ha)
+  · exact absurd ‹_› (lt_ne_nan_right hb)
+  · exact haLo
+  · exact hbLo
+  · split
+    · exact hbLo
+    · exact haLo
+
+theorem tsMax_hi {a b : Float} (haHi : a < (1.0 / 0.0 : Float))
+    (hbHi : b < (1.0 / 0.0 : Float)) : tsMax a b < (1.0 / 0.0 : Float) := by
+  have ha : Float.lt a (1.0 / 0.0) = true := haHi
+  have hb : Float.lt b (1.0 / 0.0) = true := hbHi
+  rw [float_lt_unpack] at ha hb
+  unfold tsMax
+  split
+  · exact absurd ‹_› (lt_ne_nan_left ha)
+  · exact absurd ‹_› (lt_ne_nan_left hb)
+  · exact haHi
+  · exact hbHi
+  · split
+    · exact hbHi
+    · exact haHi
+
 end Js.Number.FloatOpsFacts
