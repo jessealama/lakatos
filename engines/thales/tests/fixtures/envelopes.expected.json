@@ -1265,6 +1265,27 @@
       "szs": "Theorem",
       "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_4672349895282863036",
       "axioms": []
+    },
+    {
+      "function": "diagonal",
+      "property": "nonNegative",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_15743218023071547581",
+      "axioms": []
+    },
+    {
+      "function": "shrink",
+      "property": "nonNegative",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_15608764981390155211",
+      "axioms": []
+    },
+    {
+      "function": "nudge",
+      "property": "nonNegative",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_5711952237535301684",
+      "axioms": []
     }
   ],
   "engines/thales/tests/conformance/theorem/module-const-scale.ts": [
@@ -1307,6 +1328,31 @@
       "property": "nonNegative",
       "szs": "Theorem",
       "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_16982873862515653733",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/initializers.ts": [
+    {
+      "function": "diagonal",
+      "property": "nonNegative",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_10904502840955390271",
+      "axioms": []
+    },
+    {
+      "function": "shrink",
+      "property": "nonNegative",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_5507470128438272180",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/theorem/const-epsilon-read.ts": [
+    {
+      "function": "nudge",
+      "property": "nonNegative",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_8856698680001601505",
       "axioms": []
     }
   ],
