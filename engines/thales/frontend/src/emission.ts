@@ -3662,26 +3662,44 @@ function builtinRead(
   return spelled === undefined ? undefined : BUILTIN_MEMBER_READS.get(spelled);
 }
 
-/** A standard-library member call the model cannot take: one the
- * whitelist does not cover, or a listed one called at an arity it does
- * not admit. Either way the failure names the member: the source wrote a
- * real API, not an arbitrary construct, and a count the whitelist knows
- * is worth saying out loud rather than degrading to a syntax kind. */
+/** A standard-library member the model cannot take, named: a call of a
+ * member the calls table does not cover, a listed call at an arity it
+ * does not admit, a read of a member the reads table does not cover —
+ * and, across the tables, a call member read as a value or a read member
+ * called. The source wrote a real API, so the failure says which, rather
+ * than degrading to a syntax kind. */
 function unsupportedBuiltin(
   e: ts.Expression,
   scope: WalkScope,
 ): FailedDecl | undefined {
-  if (!ts.isCallExpression(e)) return undefined;
-  const spelled = builtinSpelling(e.expression, bodyBinds(scope));
-  if (spelled === undefined) return undefined;
-  const entry = BUILTIN_MEMBER_CALLS.get(spelled);
-  if (entry === undefined) {
-    return { construct: spelled, reason: `'${spelled}' is not supported` };
+  const binds = bodyBinds(scope);
+  if (ts.isCallExpression(e)) {
+    const spelled = builtinSpelling(e.expression, binds);
+    if (spelled === undefined) return undefined;
+    const entry = BUILTIN_MEMBER_CALLS.get(spelled);
+    if (entry === undefined) {
+      return {
+        construct: spelled,
+        reason: BUILTIN_MEMBER_READS.has(spelled)
+          ? `'${spelled}' is modeled only as a read`
+          : `'${spelled}' is not supported`,
+      };
+    }
+    if (admitsArity(entry.arity, e.arguments.length)) return undefined;
+    return {
+      construct: spelled,
+      reason: `'${spelled}' ${arityPhrase(entry.arity)}`,
+    };
   }
-  if (admitsArity(entry.arity, e.arguments.length)) return undefined;
+  const spelled = builtinSpelling(e, binds);
+  if (spelled === undefined || BUILTIN_MEMBER_READS.has(spelled)) {
+    return undefined;
+  }
   return {
     construct: spelled,
-    reason: `'${spelled}' ${arityPhrase(entry.arity)}`,
+    reason: BUILTIN_MEMBER_CALLS.has(spelled)
+      ? `'${spelled}' is modeled only as a callee`
+      : `'${spelled}' is not supported`,
   };
 }
 

@@ -4427,6 +4427,85 @@ describe("builtin member reads model as the library's constants", () => {
       },
     ]);
   });
+
+  test("an unlisted member read reports itself by name", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 3)) { arity(n) >= 0 } */",
+      "export function arity(x: number): number {",
+      "  return x * Number.length;",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason:
+          "'arity' could not be modeled: 'Number.length' is not supported",
+      }),
+    ]);
+  });
+
+  test("an unlisted member read in a formula atom reports itself from the walk", () => {
+    expect(
+      classifications(
+        formulaWith("forall (x: int ∈ [0, 5)) { f(x) <= Number.length }"),
+      ).classified,
+    ).toEqual([["Inappropriate", "'Number.length' is not supported"]]);
+  });
+
+  test("a call member in value position is modeled only as a callee", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 3)) { root(n) >= 0 } */",
+      "export function root(x: number): number {",
+      "  const sqrt = Math.sqrt;",
+      "  return sqrt(x);",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason:
+          "'root' could not be modeled: 'Math.sqrt' is modeled only as a callee",
+      }),
+    ]);
+  });
+
+  test("a read member called is modeled only as a read", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 3)) { circle(n) >= 0 } */",
+      "export function circle(x: number): number {",
+      "  return x * Math.PI();",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason:
+          "'circle' could not be modeled: 'Math.PI' is modeled only as a read",
+      }),
+    ]);
+  });
+
+  test("an unlisted read as a branch condition still names itself", () => {
+    const src = [
+      "/** @ensures{p} forall (n: int ∈ [0, 3)) { flag(n) >= 0 } */",
+      "export function flag(x: number): number {",
+      "  if (Number.length) {",
+      "    return 1;",
+      "  }",
+      "  return 0;",
+      "}",
+    ].join("\n");
+    const { classified } = emitModule(src, FILE);
+    expect(classified).toEqual([
+      expect.objectContaining({
+        szs: "Inappropriate",
+        reason: "'flag' could not be modeled: 'Number.length' is not supported",
+      }),
+    ]);
+  });
 });
 
 describe("new and member access in atoms (#129)", () => {
