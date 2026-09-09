@@ -217,8 +217,8 @@ export const UNION_TAGS = [
 export type UnionTag = (typeof UNION_TAGS)[number];
 
 /** A value's type in the walk: a number, a keyword union, or an instance
- * of a modeled class. Only parameters can carry the union and instance
- * types; locals, fields, and returns are numbers. */
+ * of a modeled class. Parameters, locals, and fields carry all three;
+ * returns are numbers. */
 export type ValueTy =
   | "num"
   | { instance: ModelRef }
@@ -2003,10 +2003,10 @@ function signatureFailure(
  * scope is refused rather than shadowed. */
 type Locals = Map<string, "const" | "mutable">;
 
-/** The types a local binding may carry: the numeric slice, or a keyword
- * union riding the same tagged domain a parameter's does. Instances stay
- * out: a class-valued local keeps its refusal. */
-type LocalTy = "num" | { union: UnionTag[] };
+/** The types a local binding may carry: the numeric slice, a keyword
+ * union riding the same tagged domain a parameter's does, or an instance
+ * of a class already in the model. */
+type LocalTy = "num" | { union: UnionTag[] } | { instance: ModelRef };
 
 /** The body as a tree of mapped statements, their expressions still tsc
  * nodes, each unmappable statement replaced by the opaque failure that
@@ -2042,16 +2042,21 @@ function errorKind(e: ts.Expression): string | undefined {
 }
 
 /** A local declarator's admitted type: the numeric slice for `number` or
- * no annotation, or a keyword union normalized exactly as a parameter's
- * is (`localValueTy` and `paramValueTy` share `keywordTags` and
- * `normalizedUnion`, so the two spellings can never drift). Anything
- * else — a class, a lone non-number keyword, a union with a member
- * outside the keywords — keeps the declarator's degradation. */
+ * no annotation, a class resolved exactly as a field's is (a degraded
+ * class is the failure that travels), or a keyword union normalized
+ * exactly as a parameter's is (`localValueTy` and `paramValueTy` share
+ * `keywordTags` and `normalizedUnion`, so the two spellings can never
+ * drift). Anything else — a later-declared class, a lone non-number
+ * keyword, a union with a member outside the keywords — keeps the
+ * declarator's degradation. */
 function localValueTy(
   t: ts.TypeNode | undefined,
   sf: ts.SourceFile,
-): LocalTy | undefined {
+  reg: ParamReg,
+): LocalTy | FailedDecl | undefined {
   if (t === undefined || t.kind === ts.SyntaxKind.NumberKeyword) return "num";
+  const cls = classRefTy(t, reg);
+  if (cls !== undefined) return cls;
   if (!ts.isUnionTypeNode(t)) return undefined;
   const tags = keywordTags(t);
   if (!Array.isArray(tags)) return undefined;
@@ -2061,14 +2066,16 @@ function localValueTy(
 
 /** A declaration's `TStmt`s, or undefined when any declarator falls
  * outside the slice — `var`, `using`, destructuring, an uninitialized
- * `let`, a type annotation that is neither `number` nor a keyword union,
- * or a redeclaration of a name already bound here. Locals set for
- * earlier declarators persist even when a later one fails, so the scans
- * that follow still see them. */
+ * `let`, a type annotation that is neither `number`, a modeled class, nor
+ * a keyword union, or a redeclaration of a name already bound here. A
+ * declarator at a degraded class is instead the opaque statement carrying
+ * that class's own failure. Locals set for earlier declarators persist
+ * even when a later one fails, so the scans that follow still see them. */
 function declStmts(
   s: ts.VariableStatement,
   locals: Locals,
   sf: ts.SourceFile,
+  scope: WalkScope,
 ): TStmt[] | undefined {
   const flags = s.declarationList.flags;
   const isConst = (flags & ts.NodeFlags.Const) !== 0;
@@ -2076,12 +2083,22 @@ function declStmts(
   if (!isConst && !isLet) return undefined;
   if ((flags & ts.NodeFlags.Using) !== 0) return undefined;
   if (s.declarationList.declarations.length === 0) return undefined;
+  const reg: ParamReg = {
+    classes: scope.classes,
+    failed: scope.failed,
+    names: scope.names,
+    module: scope.module,
+    ...(scope.self !== undefined ? { self: scope.self.ref } : {}),
+    unions: true,
+  };
   const stmts: TStmt[] = [];
   for (const d of s.declarationList.declarations) {
     if (!ts.isIdentifier(d.name)) return undefined;
     if (d.initializer === undefined) return undefined;
-    const ty = localValueTy(d.type, sf);
+    const ty = localValueTy(d.type, sf, reg);
     if (ty === undefined) return undefined;
+    if (typeof ty !== "string" && "reason" in ty)
+      return [{ t: "opaque", failure: ty }];
     // Shadowing a name already bound here would make a join ambiguous: an
     // arm's own binding is what the tail would read back.
     if (locals.has(d.name.text)) return undefined;
@@ -2142,7 +2159,7 @@ function structureStmt(
     if (kind !== undefined) return [{ t: "throw", error: kind }];
   }
   if (ts.isVariableStatement(s)) {
-    const stmts = declStmts(s, locals, sf);
+    const stmts = declStmts(s, locals, sf, scope);
     if (stmts !== undefined) return stmts;
   }
   if (ts.isExpressionStatement(s)) {
@@ -2326,8 +2343,8 @@ function lowerTree(
     case "decl": {
       // A binding whose scope is the rest of the list; a bind rather than
       // a substitution, so an unused initializer still evaluates. A union
-      // local's initializer meets its declared type as a slot, exactly as
-      // an argument meets a union parameter's.
+      // or class local's initializer meets its declared type as a slot,
+      // exactly as an argument meets such a parameter's.
       const init = walk(s.init, s.ty, vars);
       const tail = lowerTree(
         rest,
@@ -2341,7 +2358,7 @@ function lowerTree(
           kind: s.mutable ? "let" : "const",
           name: s.name,
           init,
-          ...(s.ty !== "num" ? { type: [...s.ty.union] } : {}),
+          ...bindingTy(s.ty),
         },
         ...tail,
       ];
@@ -2746,29 +2763,8 @@ function declaredValueTy(
   reg: ParamReg,
 ): ValueTy | FailedDecl {
   if (t.kind === ts.SyntaxKind.NumberKeyword) return "num";
-  if (
-    ts.isTypeReferenceNode(t) &&
-    ts.isIdentifier(t.typeName) &&
-    t.typeArguments === undefined
-  ) {
-    const spelling = t.typeName.text;
-    const ref = reg.names.get(spelling) ?? {
-      module: reg.module,
-      name: spelling,
-    };
-    if (reg.self !== undefined && sameClass(ref, reg.self))
-      return { instance: ref };
-    if (reg.classes.has(modelKey(ref))) return { instance: ref };
-    const failed = reg.failed.get(modelKey(ref));
-    if (failed !== undefined) {
-      return {
-        ...(failed.construct !== undefined
-          ? { construct: failed.construct }
-          : {}),
-        reason: `'${displayName(ref)}' could not be modeled: ${failed.reason}`,
-      };
-    }
-  }
+  const cls = classRefTy(t, reg);
+  if (cls !== undefined) return cls;
   // A keyword union normalizes to its deduplicated tags; a member outside
   // the keywords refuses at that member, not at the union.
   if (ts.isUnionTypeNode(t) && reg.unions) {
@@ -2777,6 +2773,34 @@ function declaredValueTy(
     return normalizedUnion(tags, t, sf);
   }
   return constructAt(t, t.kind, sf);
+}
+
+/** A bare type reference resolved as a class under the source-order
+ * discipline: the instance for a class already in the model (`self`
+ * included), the travelling failure for one that degraded, and undefined
+ * for anything else — a later-declared class, a type argument, a
+ * non-reference node — which the caller refuses in its own terms. */
+function classRefTy(
+  t: ts.TypeNode,
+  reg: ParamReg,
+): { instance: ModelRef } | FailedDecl | undefined {
+  if (
+    !ts.isTypeReferenceNode(t) ||
+    !ts.isIdentifier(t.typeName) ||
+    t.typeArguments !== undefined
+  )
+    return undefined;
+  const spelling = t.typeName.text;
+  const ref = reg.names.get(spelling) ?? { module: reg.module, name: spelling };
+  if (reg.self !== undefined && sameClass(ref, reg.self))
+    return { instance: ref };
+  if (reg.classes.has(modelKey(ref))) return { instance: ref };
+  const failed = reg.failed.get(modelKey(ref));
+  if (failed === undefined) return undefined;
+  return {
+    ...(failed.construct !== undefined ? { construct: failed.construct } : {}),
+    reason: `'${displayName(ref)}' could not be modeled: ${failed.reason}`,
+  };
 }
 
 /** A parameter's declared type, or the failure that degrades the

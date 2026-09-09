@@ -547,6 +547,32 @@ describe("class-typed parameters across modules", () => {
     });
   });
 
+  test("a local at an imported class binds under the class's module", () => {
+    const main = [
+      'import { Box } from "./box.mjs";',
+      "/** @ensures{reads} forall (x: int ∈ [0, 10)) { unwrap(new Box(x)) === x } */",
+      "export function unwrap(b: Box): number {",
+      "  const held: Box = b;",
+      "  return held.v;",
+      "}",
+      "",
+    ].join("\n");
+    const { emission, classified } = emitModule(
+      main,
+      "main.mts",
+      reader({ "box.mts": BOX }),
+    );
+    expect(classified).toEqual([]);
+    const unwrap = emission.declarations.find((d) => d.name === "unwrap")!;
+    assert(unwrap.kind === "function");
+    expect(unwrap.body[0]).toEqual({
+      kind: "const",
+      name: "held",
+      init: { kind: "id", name: "b" },
+      type: { class: "Box", module: "box.mts" },
+    });
+  });
+
   test("a method call on an imported class carries its module", () => {
     const box = [
       "export class Box {",
