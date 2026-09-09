@@ -236,6 +236,7 @@ const MEMBER_FIXTURES = [
   `${CONFORMANCE}/theorem/min-of-three.ts`,
   `${CONFORMANCE}/theorem/integral-scale.ts`,
   `${CONFORMANCE}/theorem/beyond-safe-integer.ts`,
+  `${CONFORMANCE}/theorem/unbounded-clamp.ts`,
   `${CONFORMANCE}/inappropriate/math-log.ts`,
 ];
 

@@ -1578,6 +1578,29 @@
       "axioms": []
     }
   ],
+  "engines/thales/tests/conformance/theorem/unbounded-clamp.ts": [
+    {
+      "function": "clamp",
+      "property": "atMost",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_609593344721741901",
+      "axioms": []
+    },
+    {
+      "function": "clamp",
+      "property": "atLeast",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_8384504518921046319",
+      "axioms": []
+    },
+    {
+      "function": "capAt1",
+      "property": "noBigger",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_951271163676996204",
+      "axioms": []
+    }
+  ],
   "engines/thales/tests/conformance/inappropriate/math-log.ts": [
     {
       "function": "integerLog",
