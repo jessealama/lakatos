@@ -45,6 +45,34 @@ theorem float_le_of_not_lt_of_ne_nan {x y : Float}
   have := lt_of_key (canonical_unpack _) (canonical_unpack _) hx hy hk
   exact Bool.noConfusion (this.symm.trans h)
 
+/-! ## IEEE equality at the `Float` layer
+
+`beq` is key equality away from NaN, so it is reflexive there, transitive,
+and antisymmetry's conclusion: the currency the emitter's `===` uses. -/
+
+theorem float_beq_refl_of_ne_nan {a : Float} (ha : a.toModel.unpack ≠ .notANumber) :
+    Float.beq a a = true := by
+  rw [float_beq_unpack]
+  exact beq_of_key (canonical_unpack _) (canonical_unpack _) ha ha rfl
+
+theorem float_beq_trans {a b c : Float} (h1 : Float.beq a b = true)
+    (h2 : Float.beq b c = true) : Float.beq a c = true := by
+  rw [float_beq_unpack] at h1 h2 ⊢
+  exact beq_of_key (canonical_unpack _) (canonical_unpack _) (beq_ne_nan_left h1)
+    (beq_ne_nan_right h2)
+    ((key_of_beq (canonical_unpack _) (canonical_unpack _) h1).trans
+      (key_of_beq (canonical_unpack _) (canonical_unpack _) h2))
+
+/-- Two floats that compare `≤` both ways are IEEE-equal. -/
+theorem float_beq_of_le_of_le {a b : Float} (h1 : Float.le a b = true)
+    (h2 : Float.le b a = true) : Float.beq a b = true := by
+  rw [float_le_unpack] at h1 h2
+  rw [float_beq_unpack]
+  exact beq_of_key (canonical_unpack _) (canonical_unpack _) (le_ne_nan_left h1)
+    (le_ne_nan_right h1)
+    (Int.le_antisymm (key_of_le (canonical_unpack _) (canonical_unpack _) h1)
+      (key_of_le (canonical_unpack _) (canonical_unpack _) h2))
+
 /-! ## `Math.min` and `Math.max`
 
 Each model is a five-arm match: two NaN arms the hypotheses exclude, two
@@ -149,6 +177,92 @@ theorem tsMax_lub {a b c : Float} (ha : Float.le a c = true) (hb : Float.le b c 
   · split
     · exact hb
     · exact ha
+
+/-! ## `min` and `max` return an operand
+
+Inside its range a clamp is the identity. The conclusion is IEEE equality
+rather than `=`: on `+0 ≤ -0` the model returns `-0`, which is `beq` to
+`+0` but not the same float. In the ordinary arm the result is the operand
+the comparison picked, and when the comparison came back false the two
+operands compare `≤` both ways. -/
+
+/-- `min` is its left operand when that is at most the right one. -/
+theorem tsMin_beq_left_of_le {a b : Float} (h : Float.le a b = true) :
+    Float.beq (tsMin a b) a = true := by
+  have hab := h
+  rw [float_le_unpack] at hab
+  have ha := le_ne_nan_left hab
+  have hb := le_ne_nan_right hab
+  unfold tsMin
+  split
+  · exact absurd ‹_› ha
+  · exact absurd ‹_› hb
+  · exact float_beq_refl_of_ne_nan ha
+  · rename_i sgn _ ha' hb'
+    rw [float_beq_unpack, hb', ha']
+    cases sgn <;> rfl
+  · split
+    · exact float_beq_refl_of_ne_nan ha
+    · exact float_beq_of_le_of_le
+        (float_le_of_not_lt_of_ne_nan ha hb (Bool.eq_false_iff.mpr ‹_›)) h
+
+/-- `min` is its right operand when that is at most the left one. -/
+theorem tsMin_beq_right_of_le {a b : Float} (h : Float.le b a = true) :
+    Float.beq (tsMin a b) b = true := by
+  have hba := h
+  rw [float_le_unpack] at hba
+  have hb := le_ne_nan_left hba
+  have ha := le_ne_nan_right hba
+  unfold tsMin
+  split
+  · exact absurd ‹_› ha
+  · exact absurd ‹_› hb
+  · rename_i ha' hb'
+    rw [float_beq_unpack, ha', hb']
+    rename_i s; cases s <;> rfl
+  · exact float_beq_refl_of_ne_nan hb
+  · split
+    · exact float_beq_of_le_of_le (float_le_of_lt ‹_›) h
+    · exact float_beq_refl_of_ne_nan hb
+
+/-- `max` is its right operand when the left one is at most it. -/
+theorem tsMax_beq_right_of_le {a b : Float} (h : Float.le a b = true) :
+    Float.beq (tsMax a b) b = true := by
+  have hab := h
+  rw [float_le_unpack] at hab
+  have ha := le_ne_nan_left hab
+  have hb := le_ne_nan_right hab
+  unfold tsMax
+  split
+  · exact absurd ‹_› ha
+  · exact absurd ‹_› hb
+  · rename_i ha' hb'
+    rw [float_beq_unpack, ha', hb']
+    rename_i s; cases s <;> rfl
+  · exact float_beq_refl_of_ne_nan hb
+  · split
+    · exact float_beq_refl_of_ne_nan hb
+    · exact float_beq_of_le_of_le h
+        (float_le_of_not_lt_of_ne_nan ha hb (Bool.eq_false_iff.mpr ‹_›))
+
+/-- `max` is its left operand when the right one is at most it. -/
+theorem tsMax_beq_left_of_le {a b : Float} (h : Float.le b a = true) :
+    Float.beq (tsMax a b) a = true := by
+  have hba := h
+  rw [float_le_unpack] at hba
+  have hb := le_ne_nan_left hba
+  have ha := le_ne_nan_right hba
+  unfold tsMax
+  split
+  · exact absurd ‹_› ha
+  · exact absurd ‹_› hb
+  · exact float_beq_refl_of_ne_nan ha
+  · rename_i sgn _ ha' hb'
+    rw [float_beq_unpack, hb', ha']
+    cases sgn <;> rfl
+  · split
+    · exact float_beq_of_le_of_le h (float_le_of_lt ‹_›)
+    · exact float_beq_refl_of_ne_nan ha
 
 /-! ## Strict bounds propagate through `min` and `max`
 
@@ -438,6 +552,164 @@ theorem tsCeil_ge {x : Float} (hx : x.toModel.unpack ≠ .notANumber) :
   rw [unpack_pack_of_canonical hc] at hmono
   exact le_of_key hc (canonical_unpack _) hx (unpack_pack_ne_nan hshape hnn) hmono
 
+/-! `Math.round` sits between floor and ceil. All three arms shift the same
+mantissa; only the bump differs, and round's bump implies the inexactness
+ceil's bump reads on the side where floor never bumps, and conversely. At
+exponent `0` the value comparison is the bare mantissa comparison. -/
+
+theorem floor_int_le_round_int (s : Sign) (m k : Nat) :
+    s.apply (if (match RoundDir.towardNegInf, s with
+        | .towardZero, _ => false
+        | .towardNegInf, .negative => (m % 2 ^ k != 0)
+        | .towardNegInf, .positive => false
+        | .towardPosInf, .positive => (m % 2 ^ k != 0)
+        | .towardPosInf, .negative => false
+        | .nearestHalfUp, .positive => decide (2 ^ (k - 1) ≤ m % 2 ^ k)
+        | .nearestHalfUp, .negative => decide (2 ^ (k - 1) < m % 2 ^ k))
+      then ((m >>> k : Nat) : Int) + 1 else ((m >>> k : Nat) : Int))
+    ≤ s.apply (if (match RoundDir.nearestHalfUp, s with
+        | .towardZero, _ => false
+        | .towardNegInf, .negative => (m % 2 ^ k != 0)
+        | .towardNegInf, .positive => false
+        | .towardPosInf, .positive => (m % 2 ^ k != 0)
+        | .towardPosInf, .negative => false
+        | .nearestHalfUp, .positive => decide (2 ^ (k - 1) ≤ m % 2 ^ k)
+        | .nearestHalfUp, .negative => decide (2 ^ (k - 1) < m % 2 ^ k))
+      then ((m >>> k : Nat) : Int) + 1 else ((m >>> k : Nat) : Int)) := by
+  cases s with
+  | positive =>
+    simp only [Sign.apply, Bool.false_eq_true, ite_false]
+    split
+    · exact Int.le_add_one (Int.le_refl _)
+    · exact Int.le_refl _
+  | negative =>
+    simp only [Sign.apply]
+    apply Int.neg_le_neg
+    split
+    · rename_i hR
+      split
+      · exact Int.le_refl _
+      · rename_i hF
+        exfalso
+        have hhalf := Nat.two_pow_pos (k - 1)
+        simp only [bne_iff_ne, ne_eq, decide_eq_true_eq] at hF hR
+        omega
+    · split
+      · exact Int.le_add_one (Int.le_refl _)
+      · exact Int.le_refl _
+
+theorem round_int_le_ceil_int (s : Sign) (m k : Nat) :
+    s.apply (if (match RoundDir.nearestHalfUp, s with
+        | .towardZero, _ => false
+        | .towardNegInf, .negative => (m % 2 ^ k != 0)
+        | .towardNegInf, .positive => false
+        | .towardPosInf, .positive => (m % 2 ^ k != 0)
+        | .towardPosInf, .negative => false
+        | .nearestHalfUp, .positive => decide (2 ^ (k - 1) ≤ m % 2 ^ k)
+        | .nearestHalfUp, .negative => decide (2 ^ (k - 1) < m % 2 ^ k))
+      then ((m >>> k : Nat) : Int) + 1 else ((m >>> k : Nat) : Int))
+    ≤ s.apply (if (match RoundDir.towardPosInf, s with
+        | .towardZero, _ => false
+        | .towardNegInf, .negative => (m % 2 ^ k != 0)
+        | .towardNegInf, .positive => false
+        | .towardPosInf, .positive => (m % 2 ^ k != 0)
+        | .towardPosInf, .negative => false
+        | .nearestHalfUp, .positive => decide (2 ^ (k - 1) ≤ m % 2 ^ k)
+        | .nearestHalfUp, .negative => decide (2 ^ (k - 1) < m % 2 ^ k))
+      then ((m >>> k : Nat) : Int) + 1 else ((m >>> k : Nat) : Int)) := by
+  cases s with
+  | positive =>
+    simp only [Sign.apply]
+    split
+    · rename_i hR
+      split
+      · exact Int.le_refl _
+      · rename_i hC
+        exfalso
+        have hhalf := Nat.two_pow_pos (k - 1)
+        simp only [bne_iff_ne, ne_eq, decide_eq_true_eq] at hR hC
+        omega
+    · split
+      · exact Int.le_add_one (Int.le_refl _)
+      · exact Int.le_refl _
+  | negative =>
+    simp only [Sign.apply, Bool.false_eq_true, ite_false]
+    apply Int.neg_le_neg
+    split
+    · exact Int.le_add_one (Int.le_refl _)
+    · exact Int.le_refl _
+
+/-- The finite floor arm's key is at most the finite round arm's. -/
+theorem key_floor_finite_le_round (s : Sign) (m : Nat) (e : Int) (h : 0 < m) :
+    key (roundIntegral .binary64 .towardNegInf (.finite s m e h))
+      ≤ key (roundIntegral .binary64 .nearestHalfUp (.finite s m e h)) := by
+  dsimp only [roundIntegral]
+  by_cases he : e ≥ 0
+  · simp only [he, ↓reduceIte]
+    exact Int.le_refl _
+  · simp only [he, ↓reduceIte]
+    apply key_normalize_mono_value _ _ _ (by decide) (by decide)
+    exact Int.mul_le_mul_of_nonneg_right (floor_int_le_round_int s m (-e).toNat)
+      (Int.le_of_lt (intPow_pos _))
+
+/-- The finite round arm's key is at most the finite ceil arm's. -/
+theorem key_round_finite_le_ceil (s : Sign) (m : Nat) (e : Int) (h : 0 < m) :
+    key (roundIntegral .binary64 .nearestHalfUp (.finite s m e h))
+      ≤ key (roundIntegral .binary64 .towardPosInf (.finite s m e h)) := by
+  dsimp only [roundIntegral]
+  by_cases he : e ≥ 0
+  · simp only [he, ↓reduceIte]
+    exact Int.le_refl _
+  · simp only [he, ↓reduceIte]
+    apply key_normalize_mono_value _ _ _ (by decide) (by decide)
+    exact Int.mul_le_mul_of_nonneg_right (round_int_le_ceil_int s m (-e).toNat)
+      (Int.le_of_lt (intPow_pos _))
+
+theorem unpack_tsRound (x : Float) :
+    (tsRound x).toModel.unpack
+      = unpack .binary64 (UnpackedFloat.pack .binary64
+          (roundIntegral .binary64 .nearestHalfUp x.toModel.unpack)) := rfl
+
+/-- `Math.round` never falls below `Math.floor` of the same input. -/
+theorem tsFloor_le_tsRound {x : Float} (hx : x.toModel.unpack ≠ .notANumber) :
+    Float.le (tsFloor x) (tsRound x) = true := by
+  have hc : Canonical x.toModel.unpack := canonical_unpack _
+  rw [float_le_unpack, unpack_tsFloor, unpack_tsRound]
+  obtain ⟨hshapeF, hnnF⟩ := roundIntegral_shape .towardNegInf hc hx
+  obtain ⟨hshapeR, hnnR⟩ := roundIntegral_shape .nearestHalfUp hc hx
+  have hkey : key (roundIntegral .binary64 .towardNegInf x.toModel.unpack)
+      ≤ key (roundIntegral .binary64 .nearestHalfUp x.toModel.unpack) := by
+    generalize x.toModel.unpack = u at hc hx ⊢
+    cases hc with
+    | notANumber => exact absurd rfl hx
+    | infinity s => exact Int.le_refl _
+    | zero s => exact Int.le_refl _
+    | subnormal s m hm hmlt => exact key_floor_finite_le_round s m _ hm
+    | normal s m e hm hlo hhi helo hehi => exact key_floor_finite_le_round s m e hm
+  have hmono := key_unpack_pack_mono hshapeF hshapeR hnnF hnnR hkey
+  exact le_of_key (canonical_unpack _) (canonical_unpack _)
+    (unpack_pack_ne_nan hshapeF hnnF) (unpack_pack_ne_nan hshapeR hnnR) hmono
+
+/-- `Math.round` never exceeds `Math.ceil` of the same input. -/
+theorem tsRound_le_tsCeil {x : Float} (hx : x.toModel.unpack ≠ .notANumber) :
+    Float.le (tsRound x) (tsCeil x) = true := by
+  have hc : Canonical x.toModel.unpack := canonical_unpack _
+  rw [float_le_unpack, unpack_tsRound, unpack_tsCeil]
+  obtain ⟨hshapeR, hnnR⟩ := roundIntegral_shape .nearestHalfUp hc hx
+  obtain ⟨hshapeC, hnnC⟩ := roundIntegral_shape .towardPosInf hc hx
+  have hkey : key (roundIntegral .binary64 .nearestHalfUp x.toModel.unpack)
+      ≤ key (roundIntegral .binary64 .towardPosInf x.toModel.unpack) := by
+    generalize x.toModel.unpack = u at hc hx ⊢
+    cases hc with
+    | notANumber => exact absurd rfl hx
+    | infinity s => exact Int.le_refl _
+    | zero s => exact Int.le_refl _
+    | subnormal s m hm hmlt => exact key_round_finite_le_ceil s m _ hm
+    | normal s m e hm hlo hhi helo hehi => exact key_round_finite_le_ceil s m e hm
+  have hmono := key_unpack_pack_mono hshapeR hshapeC hnnR hnnC hkey
+  exact le_of_key (canonical_unpack _) (canonical_unpack _)
+    (unpack_pack_ne_nan hshapeR hnnR) (unpack_pack_ne_nan hshapeC hnnC) hmono
+
 /-! `Math.trunc` is floor on the non-negative side and ceil on the
 non-positive side — not an inequality but an equation, so the floor and
 ceil facts carry over. On a positive-signed input trunc's and floor's
@@ -519,6 +791,67 @@ theorem tsTrunc_eq_tsCeil_of_nonpos {x : Float} (h : Float.le x 0 = true) :
       simp only [Sign.apply, key] at hk
       omega
     | negative => exact roundIntegral_towardZero_eq_posInf_of_negative m e hm
+
+/-! ## `Math.sign` is a unit
+
+Every arm of the model is `±1`, the input when that is a zero, or the NaN
+the hypothesis excludes. -/
+
+theorem tsSign_le_one {x : Float} (hx : x.toModel.unpack ≠ .notANumber) :
+    Float.le (tsSign x) 1 = true := by
+  unfold tsSign
+  split
+  · exact absurd ‹_› hx
+  · rename_i s hs
+    rw [float_le_unpack, hs]
+    cases s <;> decide
+  · decide
+  · decide
+  · decide
+  · decide
+
+theorem tsSign_ge_neg_one {x : Float} (hx : x.toModel.unpack ≠ .notANumber) :
+    Float.le (-1) (tsSign x) = true := by
+  unfold tsSign
+  split
+  · exact absurd ‹_› hx
+  · rename_i s hs
+    rw [float_le_unpack, hs]
+    cases s <;> decide
+  · decide
+  · decide
+  · decide
+  · decide
+
+theorem tsSign_lo {x : Float} (h : (-(1.0 / 0.0) : Float) < x) :
+    (-(1.0 / 0.0) : Float) < tsSign x := by
+  have h' : Float.lt (-(1.0 / 0.0)) x = true := h
+  rw [float_lt_unpack] at h'
+  have hx := lt_ne_nan_right h'
+  show Float.lt _ _ = true
+  unfold tsSign
+  split
+  · exact absurd ‹_› hx
+  · exact h
+  · decide
+  · decide
+  · decide
+  · decide
+
+theorem tsSign_hi {x : Float} (h : x < (1.0 / 0.0 : Float)) :
+    tsSign x < (1.0 / 0.0 : Float) := by
+  have h' : Float.lt x (1.0 / 0.0) = true := h
+  rw [float_lt_unpack] at h'
+  have hx := lt_ne_nan_left h'
+  show Float.lt _ _ = true
+  unfold tsSign
+  split
+  · exact absurd ‹_› hx
+  · exact h
+  · decide
+  · decide
+  · decide
+  · decide
 
 /-! ## Strict bounds propagate through every rounding
 

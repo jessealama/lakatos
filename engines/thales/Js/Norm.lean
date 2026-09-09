@@ -122,6 +122,16 @@ grind too, so it can open them without a simp pass first. -/
     ballIco lo hi p ↔ ∀ x : Int, lo ≤ x → x < hi → p x :=
   Iff.rfl
 
+/-! The Prop order on `Float` is the Bool comparison by definition, but
+grind sees two atoms unless told. Both spellings occur in a residual:
+binder and infinity bounds are Props, property atoms are Bools. -/
+
+@[grind _=_] theorem float_le_prop_eq_bool (a b : Float) :
+    (a ≤ b) = (Float.le a b = true) := rfl
+
+@[grind _=_] theorem float_lt_prop_eq_bool (a b : Float) :
+    (a < b) = (Float.lt a b = true) := rfl
+
 /-! The four monotonicity facts and the negation facts they lean on,
 restated on `floatInf` so their bound hypotheses match the strict
 infinity bounds a finite `JsNumber` carries (`-floatInf < x`,
@@ -340,6 +350,30 @@ theorem tsMax_lub {a b c : Float} (ha : Float.le a c = true) (hb : Float.le b c 
     Float.le (Number.FloatOps.tsMax a b) c = true :=
   Number.FloatOpsFacts.tsMax_lub ha hb
 
+/-! The equation facts, in the emitter's currency for `===`: inside its
+range a clamp returns its input, up to IEEE equality. A two-sided clamp
+chains two of them, which is what the transitivity fact is for. -/
+
+theorem tsMin_beq_left_of_le {a b : Float} (h : Float.le a b = true) :
+    Float.beq (Number.FloatOps.tsMin a b) a = true :=
+  Number.FloatOpsFacts.tsMin_beq_left_of_le h
+
+theorem tsMin_beq_right_of_le {a b : Float} (h : Float.le b a = true) :
+    Float.beq (Number.FloatOps.tsMin a b) b = true :=
+  Number.FloatOpsFacts.tsMin_beq_right_of_le h
+
+theorem tsMax_beq_right_of_le {a b : Float} (h : Float.le a b = true) :
+    Float.beq (Number.FloatOps.tsMax a b) b = true :=
+  Number.FloatOpsFacts.tsMax_beq_right_of_le h
+
+theorem tsMax_beq_left_of_le {a b : Float} (h : Float.le b a = true) :
+    Float.beq (Number.FloatOps.tsMax a b) a = true :=
+  Number.FloatOpsFacts.tsMax_beq_left_of_le h
+
+theorem float_beq_trans {a b c : Float} (h1 : Float.beq a b = true)
+    (h2 : Float.beq b c = true) : Float.beq a c = true :=
+  Number.FloatOpsFacts.float_beq_trans h1 h2
+
 /-- Strict bounds on both operands bound the result: what lets `min` or
 `max` feed a branch condition or another member. -/
 theorem tsMin_lo {a b : Float} (haLo : -floatInf < a) (hbLo : -floatInf < b) :
@@ -395,6 +429,30 @@ theorem tsRound_lo {x : Float} (h : -floatInf < x) : -floatInf < Number.FloatOps
   Number.FloatOpsFacts.tsRound_lo h
 theorem tsRound_hi {x : Float} (h : x < floatInf) : Number.FloatOps.tsRound x < floatInf :=
   Number.FloatOpsFacts.tsRound_hi h
+
+/-! `Math.round` is bracketed by floor and ceil of the same input, and
+`Math.sign` by the units; the sign's own bounds propagate like the rest. -/
+
+theorem tsFloor_le_tsRound {x : Float} (hx : x.toModel.unpack ≠ .notANumber) :
+    Float.le (Number.FloatOps.tsFloor x) (Number.FloatOps.tsRound x) = true :=
+  Number.FloatOpsFacts.tsFloor_le_tsRound hx
+
+theorem tsRound_le_tsCeil {x : Float} (hx : x.toModel.unpack ≠ .notANumber) :
+    Float.le (Number.FloatOps.tsRound x) (Number.FloatOps.tsCeil x) = true :=
+  Number.FloatOpsFacts.tsRound_le_tsCeil hx
+
+theorem tsSign_le_one {x : Float} (hx : x.toModel.unpack ≠ .notANumber) :
+    Float.le (Number.FloatOps.tsSign x) 1 = true :=
+  Number.FloatOpsFacts.tsSign_le_one hx
+
+theorem tsSign_ge_neg_one {x : Float} (hx : x.toModel.unpack ≠ .notANumber) :
+    Float.le (-1) (Number.FloatOps.tsSign x) = true :=
+  Number.FloatOpsFacts.tsSign_ge_neg_one hx
+
+theorem tsSign_lo {x : Float} (h : -floatInf < x) : -floatInf < Number.FloatOps.tsSign x :=
+  Number.FloatOpsFacts.tsSign_lo h
+theorem tsSign_hi {x : Float} (h : x < floatInf) : Number.FloatOps.tsSign x < floatInf :=
+  Number.FloatOpsFacts.tsSign_hi h
 
 /-! A constructor's guards throw, so what follows a triggered guard never
 runs. These two are what let a successful construction refute the guards
@@ -538,6 +596,11 @@ grind_pattern tsMax_ge_left => Number.FloatOps.tsMax a b
 grind_pattern tsMax_ge_right => Number.FloatOps.tsMax a b
 grind_pattern tsMin_glb => Float.le c (Number.FloatOps.tsMin a b)
 grind_pattern tsMax_lub => Float.le (Number.FloatOps.tsMax a b) c
+grind_pattern tsMin_beq_left_of_le => Number.FloatOps.tsMin a b
+grind_pattern tsMin_beq_right_of_le => Number.FloatOps.tsMin a b
+grind_pattern tsMax_beq_right_of_le => Number.FloatOps.tsMax a b
+grind_pattern tsMax_beq_left_of_le => Number.FloatOps.tsMax a b
+grind_pattern float_beq_trans => Float.beq a b, Float.beq b c
 grind_pattern tsMin_lo => Number.FloatOps.tsMin a b
 grind_pattern tsMin_hi => Number.FloatOps.tsMin a b
 grind_pattern tsMax_lo => Number.FloatOps.tsMax a b
@@ -554,5 +617,11 @@ grind_pattern tsTrunc_lo => Number.FloatOps.tsTrunc x
 grind_pattern tsTrunc_hi => Number.FloatOps.tsTrunc x
 grind_pattern tsRound_lo => Number.FloatOps.tsRound x
 grind_pattern tsRound_hi => Number.FloatOps.tsRound x
+grind_pattern tsFloor_le_tsRound => Number.FloatOps.tsRound x
+grind_pattern tsRound_le_tsCeil => Number.FloatOps.tsRound x
+grind_pattern tsSign_le_one => Number.FloatOps.tsSign x
+grind_pattern tsSign_ge_neg_one => Number.FloatOps.tsSign x
+grind_pattern tsSign_lo => Number.FloatOps.tsSign x
+grind_pattern tsSign_hi => Number.FloatOps.tsSign x
 
 end Js

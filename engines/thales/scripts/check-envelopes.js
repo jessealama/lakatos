@@ -240,6 +240,8 @@ const MEMBER_FIXTURES = [
   `${CONFORMANCE}/theorem/beyond-safe-integer.ts`,
   `${CONFORMANCE}/theorem/unbounded-clamp.ts`,
   `${CONFORMANCE}/theorem/unbounded-rounding.ts`,
+  `${CONFORMANCE}/theorem/unbounded-round-sign.ts`,
+  `${CONFORMANCE}/theorem/clamp-identity.ts`,
   `${CONFORMANCE}/inappropriate/math-log.ts`,
 ];
 

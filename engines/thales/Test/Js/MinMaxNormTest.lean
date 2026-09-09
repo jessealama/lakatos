@@ -35,3 +35,26 @@ example : ∀ (x : JsNumber), -10 ≤ x → x ≤ 10 → (tsMin (tsMax x 0) 5).l
 example : ∀ (x : JsNumber), Float.isFinite x = true →
     Float.lt (tsMin x 1) 0 = false → Float.le 0 (tsMin x 1) = true := by
   intro x h hb; grind
+
+/-! The equation facts: inside its range a clamp is the identity. The
+emitter spells `===` as `Float.beq`, so that is the currency. -/
+
+-- The issue's residual: a cap below its bound returns the input.
+example : ∀ (x : JsNumber), Float.isFinite x = true → Float.le x 5 = true →
+    (tsMin x 5).beq x = true := by
+  intro x h hle; grind
+
+-- The operands flipped, and the max mirror.
+example : ∀ (x : JsNumber), Float.isFinite x = true → Float.le x 5 = true →
+    (tsMin 5 x).beq x = true := by
+  intro x h hle; grind
+
+example : ∀ (x : JsNumber), Float.isFinite x = true → Float.le 0 x = true →
+    (tsMax x 0).beq x = true := by
+  intro x h hle; grind
+
+-- A two-sided clamp is the identity on its range: the inner `max` returns
+-- the input, the outer `min` then compares the input with its bound.
+example : ∀ (x : JsNumber), Float.isFinite x = true → Float.le 0 x = true →
+    Float.le x 5 = true → (tsMin (tsMax x 0) 5).beq x = true := by
+  intro x h h0 h5; grind
