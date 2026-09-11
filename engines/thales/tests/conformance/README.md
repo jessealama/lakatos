@@ -31,7 +31,9 @@ no bucket here.
 
 ## Buckets
 
-- `theorem/` — every annotation proves (`Theorem`).
+- `theorem/` — every annotation proves (`Theorem`). A residual site in a
+  branch the property never takes does not stop a proof: the model reaches
+  the site only on paths the domain or a guard rules out.
 - `countersatisfiable/` — a false bounded claim: decide establishes falsity
   and the prover extracts a concrete witness (`CounterSatisfiable`).
 - `gaveup/` — the proof ladder exhausts (`GaveUp`): an unbounded claim, for
@@ -44,14 +46,19 @@ no bucket here.
   for, a connective the reading has no text for: `↔`, or a `→` nested
   under another connective), or a range endpoint exceeds the safe integer
   range.
-- `inappropriate/` — the annotation is outside the model: the function uses
-  a construct the pipeline cannot map, an operator the model does not cover
-  (`&`, `??`, ...), an operator the model refuses on the merits (`**`), a
-  standard-library member the whitelist does not cover — a call (`Math.log`)
-  or a read (`Number.length`) — or a whitelisted call member read as a
-  value (`const sqrt = Math.sqrt`), or a well-typed call shape the model
-  does not follow (a widened union, a default whose initializer is outside
-  the slice) (`Inappropriate`).
+- `inappropriate/` — the annotation is outside the model (`Inappropriate`),
+  by either of two routes. The frontend classifies it when the
+  declaration's signature or one of its statements uses a construct the
+  pipeline cannot map, when a class fault carries no construct, or when the
+  property itself mentions such a declaration or a refused operator. The
+  prover reports it when the property's path reaches an unmodelable
+  _expression_ — an unlisted standard-library member (a call like
+  `Math.log`, a read like `Number.length`, a whitelisted call member read
+  as a value), an operator the model does not cover (`&`, `??`, ...) or
+  refuses on the merits (`**`), a call to a declaration outside the model,
+  or a condition with no boolean reading — which the artifact carries as a
+  residual site the prover cannot see through, and the reason names the
+  site's construct.
 - `timeout/` — every annotation must report `Timeout` under the reduced
   heartbeat budget the harness sets via `LAKATOS_PROVE_HEARTBEATS`; the
   bucket runs as its own prove invocation so the rest of the corpus keeps
