@@ -128,6 +128,7 @@ describe("emitModule on the tracer fixture", () => {
     [
       "engines/thales/tests/conformance/theorem/class-binder-equality-guards.ts",
     ],
+    ["engines/thales/tests/conformance/theorem/boolean-classes.ts"],
   ])("the emission for %s validates against the schema", (fixture) => {
     expectValidEmission(
       emitModule(fs.readFileSync(fixture, "utf8"), fixture).emission,
@@ -175,6 +176,10 @@ describe("emitModule on the tracer fixture", () => {
     [
       "engines/thales/tests/conformance/theorem/class-binder-equality-guards.ts",
       "class-binder-equality-guards.emission.json",
+    ],
+    [
+      "engines/thales/tests/conformance/theorem/boolean-classes.ts",
+      "boolean-classes.emission.json",
     ],
   ])(
     "the pinned emission for %s is exactly what the frontend emits",
