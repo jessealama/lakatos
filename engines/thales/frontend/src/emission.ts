@@ -1328,7 +1328,9 @@ function residualAt(
   scope: WalkScope,
 ): EmitExpr {
   const sink = scope.residuals!;
-  const site = sink.sites.length + 1;
+  // Numbered within the owner, though a class's members share one array so
+  // the declarations keep the order the members were walked in.
+  const site = sink.sites.filter((r) => r.owner === sink.owner).length + 1;
   const vars = [...scope.vars].map(([n, ty]) => wireParam(n, ty));
   const params = sink.self !== undefined ? [sink.self.param, ...vars] : vars;
   const module = sink.module !== "" ? { module: sink.module } : {};
@@ -2511,93 +2513,6 @@ function structureStmt(
   return [{ t: "opaque", failure: constructAt(s, s.kind, sf) }];
 }
 
-/** The mapped expressions of a statement tree in tree order — the order
- * the pre-scans see them in the source text. An opaque statement
- * contributes nothing: its whole subtree was replaced. The scan goes into
- * branches, dead code included. */
-function treeExprs(
-  stmts: readonly TStmt[],
-  into: ts.Expression[] = [],
-): ts.Expression[] {
-  for (const s of stmts) {
-    switch (s.t) {
-      case "return":
-        into.push(s.expr);
-        break;
-      case "decl":
-        into.push(s.init);
-        break;
-      case "assign":
-      case "field-set":
-        into.push(s.expr);
-        break;
-      case "if":
-        // An opaque condition never reaches this scan: the construct scan
-        // runs first and returns it as the declaration's failure.
-        if ("expr" in s.cond) into.push(s.cond.expr);
-        treeExprs(s.then, into);
-        if (s.else !== undefined) treeExprs(s.else, into);
-        break;
-      default:
-        break;
-    }
-  }
-  return into;
-}
-
-/** The first opaque node in the statement tree, in tree order: an opaque
- * statement, an opaque condition, or an unmapped construct inside a mapped
- * expression — whichever comes first in tree order. Each decl
- * binds the rest of its list — an arm its own copy — mirroring the
- * lowering's scoping, so the scan types an identifier (a typeof test over
- * a union local, say) off the same binding the walk will. */
-function treeConstruct(
-  stmts: readonly TStmt[],
-  sf: ts.SourceFile,
-  scope: WalkScope,
-): FailedDecl | undefined {
-  let current = scope;
-  for (const s of stmts) {
-    switch (s.t) {
-      case "opaque":
-        return s.failure;
-      case "return": {
-        const found = findConstruct(s.expr, sf, current);
-        if (found !== undefined) return found;
-        break;
-      }
-      case "decl": {
-        const found = findConstruct(s.init, sf, current);
-        if (found !== undefined) return found;
-        const vars = new Map(current.vars);
-        vars.set(s.name, s.ty);
-        current = { ...current, vars };
-        break;
-      }
-      case "assign":
-      case "field-set": {
-        const found = findConstruct(s.expr, sf, current);
-        if (found !== undefined) return found;
-        break;
-      }
-      case "if": {
-        if ("opaque" in s.cond) return s.cond.opaque;
-        const found =
-          findConstruct(s.cond.expr, sf, current) ??
-          treeConstruct(s.then, sf, current) ??
-          (s.else !== undefined
-            ? treeConstruct(s.else, sf, current)
-            : undefined);
-        if (found !== undefined) return found;
-        break;
-      }
-      case "throw":
-        break;
-    }
-  }
-  return undefined;
-}
-
 /** Whether every path through a statement leaves the function — the old
  * lowering's `stmtLeaves`/`stmtsLeave`, verbatim. */
 function stmtLeaves(s: TStmt): boolean {
@@ -2802,19 +2717,6 @@ function assignedIn(
   return into;
 }
 
-/** The pre-scans a body runs, over one initializer expression. */
-function exprPrescan(
-  e: ts.Expression,
-  sf: ts.SourceFile,
-  scope: WalkScope,
-): FailedDecl | undefined {
-  return (
-    findConstruct(e, sf, scope) ??
-    failedCalleeIn(callNames(e, scope), scope) ??
-    findFailedMemberUse(e, scope)
-  );
-}
-
 function defaultFailure(name: string, reason: string): string {
   return `parameter '${name}' has a default the model cannot evaluate: ${reason}`;
 }
@@ -2852,14 +2754,17 @@ function defaultOpenings(
     const initScope: WalkScope = {
       ...scope,
       vars: new Map(params.slice(0, i).map((q) => [q.name, q.ty])),
+      // The same sink, so a default's site numbers in sequence with the
+      // body's, and its text reads as the parameter's failure.
+      ...(scope.residuals === undefined
+        ? {}
+        : {
+            residuals: {
+              ...scope.residuals,
+              wrap: (reason: string) => defaultFailure(p.name, reason),
+            },
+          }),
     };
-    const failed = exprPrescan(p.init, sf, initScope);
-    if (failed !== undefined) {
-      throw new ModelError(
-        defaultFailure(p.name, failed.reason),
-        failed.construct,
-      );
-    }
     let init: EmitExpr;
     try {
       init = walkTyped(p.init, p.ty, initScope, sf);
@@ -3295,6 +3200,9 @@ interface ClassWalk {
   shape: ClassShape;
   /** Members that degrade alone, by their full model key. */
   memberFailed: Map<string, FailedDecl>;
+  /** Every member's residual sites, in the order the members are walked:
+   * the constructor's, then each getter's, then each method's. */
+  residuals: EmitResidualDecl[];
 }
 
 /** A class declaration's IR, or the failure that degrades the whole
@@ -3489,10 +3397,33 @@ function walkClass(
     names,
     module: qualifier,
   };
+  const residuals: EmitResidualDecl[] = [];
+  /** A member's sink. `self` is set for a getter or a method, whose sites
+   * take the receiver first; a constructor has no instance yet. */
+  const sinkFor = (member: string, receiver: boolean): ResidualSink => ({
+    owner: qualifiedName(member, className),
+    module: qualifier,
+    sites: residuals,
+    ...(receiver
+      ? {
+          self: {
+            param: {
+              name: "self",
+              type: {
+                class: className,
+                ...(qualifier !== "" ? { module: qualifier } : {}),
+              },
+            },
+            expr: { kind: "self" },
+          },
+        }
+      : {}),
+  });
   const ctorScope: WalkScope = {
     ...base,
     vars: new Map(ctorParams.map((p) => [p.name, p.ty])),
     ctorFields: fields,
+    residuals: sinkFor("constructor", false),
   };
   const fieldSet = new Set(fields.keys());
   const ctorLocals = paramLocals(ctorParams);
@@ -3590,6 +3521,7 @@ function walkClass(
       vars: new Map(),
       self,
       selfFailed: memberFailed,
+      residuals: sinkFor(spelling, true),
     };
     const body = g.body!.statements.flatMap((st) =>
       structureStmt(st, sf, new Map(), scope),
@@ -3656,6 +3588,7 @@ function walkClass(
       vars: new Map(params.map((p) => [p.name, p.ty])),
       self,
       selfFailed: memberFailed,
+      residuals: sinkFor(spelling, true),
     };
     const locals = paramLocals(params);
     const body = m.body!.statements.flatMap((st) =>
@@ -3709,6 +3642,7 @@ function walkClass(
     },
     shape,
     memberFailed,
+    residuals,
   };
 }
 
@@ -4662,7 +4596,8 @@ function walkEmitModule(
       const className = stmt.name.text;
       const walked = walkClass(stmt, sf, c, names, qualifier);
       if ("emit" in walked) {
-        c.declarations.push(walked.emit);
+        // A site is declared before the owner that applies it.
+        c.declarations.push(...walked.residuals, walked.emit);
         c.classes.set(key(className), walked.shape);
         c.mapped.set(
           key(qualifiedName("constructor", className)),

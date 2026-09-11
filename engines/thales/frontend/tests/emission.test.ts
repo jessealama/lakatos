@@ -11647,3 +11647,81 @@ describe("residual sites in function bodies", () => {
     ]);
   });
 });
+
+describe("residual sites in defaults and members", () => {
+  test("a default outside the slice is a residual over the earlier parameters, wrapped", () => {
+    const src =
+      "export function pow(x: number, y: number = 2 ** 3): number { return x + y; }\n" +
+      "/** @ensures{p} forall (a: int ∈ [0, 5)) { g(a) >= 0 } */\n" +
+      "export function g(a: number): number { return pow(a, 1); }\n";
+    const { emission, classified } = emitModule(src, "r.ts");
+    expect(classified).toEqual([]);
+    expect(emission.declarations[0]).toMatchObject({
+      kind: "residual",
+      owner: "pow",
+      site: 1,
+      construct:
+        "parameter 'y' has a default the model cannot evaluate: '**' is not supported",
+      params: [{ name: "x", type: "number" }],
+      type: "number",
+    });
+    expect(emission.obligations).toHaveLength(1);
+  });
+
+  test("a method's site takes the receiver first", () => {
+    const src =
+      "export class Pow {\n  #v: number;\n  constructor(v: number) { this.#v = v; }\n" +
+      "  /** @ensures{grows} forall (x: number) { 1 <= new Pow(x).square() } */\n" +
+      "  square(): number { return this.#v ** 2; }\n}\n";
+    const [r] = residualsOf(src);
+    expect(r).toMatchObject({
+      owner: "Pow#square",
+      site: 1,
+      construct: "'**' is not supported",
+      params: [{ name: "self", type: { class: "Pow" } }],
+      type: "number",
+    });
+    const cls = emitModule(src, "r.ts").emission.declarations[1];
+    assert(cls?.kind === "class");
+    expect(cls.methods[0]?.body[0]).toMatchObject({
+      kind: "return",
+      expr: {
+        kind: "residual",
+        owner: "Pow#square",
+        site: 1,
+        args: [{ kind: "self" }],
+      },
+    });
+  });
+
+  test("a getter and a constructor own their own sites", () => {
+    const src =
+      "export class Box {\n  readonly v: number;\n" +
+      "  constructor(v: number) { this.v = Math.log(v); }\n" +
+      "  /** @ensures{p} forall (x: number) { new Box(x).twice >= 0 } */\n" +
+      "  get twice(): number { return Math.log(this.v); }\n}\n";
+    expect(
+      residualsOf(src).map((r) =>
+        r.kind === "residual"
+          ? [r.owner, r.site, r.params.map((p) => p.name)]
+          : [],
+      ),
+    ).toEqual([
+      ["Box#constructor", 1, ["v"]],
+      ["Box#twice", 1, ["self"]],
+    ]);
+  });
+
+  test("a member failing on its structure still degrades alone", () => {
+    const src =
+      "export class Pair {\n  #a: number;\n  constructor(a: number) { this.#a = a; }\n" +
+      "  /** @ensures{p} forall (x: number) { Object.is(new Pair(x).a, x) } */\n" +
+      "  get a(): number { return this.#a; }\n" +
+      "  bump(): number { this.#a = 1; return this.#a; }\n}\n";
+    const { classified, emission } = emitModule(src, "r.ts");
+    expect(classified).toEqual([]);
+    expect(emission.declarations.filter((d) => d.kind === "residual")).toEqual(
+      [],
+    );
+  });
+});
