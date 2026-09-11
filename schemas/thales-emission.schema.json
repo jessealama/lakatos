@@ -101,7 +101,7 @@
       }
     },
     "ctorParamNode": {
-      "description": "One constructor parameter of a class binder's class. A class-typed parameter carries its own parameters, so the tree bottoms out in numbers; the constructor-parameter graph is acyclic, so it terminates.",
+      "description": "One constructor parameter of a class binder's class. A class-typed parameter carries its own parameters, so the tree bottoms out in numbers and booleans; the constructor-parameter graph is acyclic, so it terminates.",
       "oneOf": [
         {
           "type": "object",
@@ -110,6 +110,16 @@
           "properties": {
             "name": { "$ref": "#/definitions/identifier" },
             "kind": { "const": "number" },
+            "defaulted": { "const": true }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "kind"],
+          "properties": {
+            "name": { "$ref": "#/definitions/identifier" },
+            "kind": { "const": "boolean" },
             "defaulted": { "const": true }
           }
         },

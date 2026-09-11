@@ -243,10 +243,6 @@ export type ValueTy =
    * which the tagged domain cannot hold, so it is Lean's `Option`. */
   | { option: ModelRef };
 
-/** What a constructor slot may be typed at: every value type but a
- * boolean, which a constructor does not bind yet. */
-export type SlotTy = Exclude<ValueTy, "bool">;
-
 function isOptionTy(t: Expected): t is { option: ModelRef } {
   return typeof t !== "string" && "option" in t;
 }
@@ -404,8 +400,9 @@ export interface ClassShape {
   /** The getters that modeled, each with its declared return type. */
   getters: ReadonlyMap<string, ReturnTy>;
   /** The slot types a construction fills, in declaration order: a number,
-   * an instance, or — for a defaulted parameter — its boundary union. */
-  ctorParams: SlotTy[];
+   * a boolean, an instance, or — for a defaulted parameter — its boundary
+   * union. */
+  ctorParams: ValueTy[];
   /** The constructor parameters' source spellings, positionally aligned
    * with `ctorParams`. A class binder quantifies over them by name. */
   ctorParamNames: string[];
@@ -435,11 +432,12 @@ export type EmitBinder =
     };
 
 /** One constructor parameter of a class binder's class. A class-typed one
- * carries its own parameters, so the tree bottoms out in numbers. A
- * defaulted one is quantified at its declared type and injected into its
- * boundary slot at the construct call. */
+ * carries its own parameters, so the tree bottoms out in numbers and
+ * booleans. A defaulted one is quantified at its declared type and
+ * injected into its boundary slot at the construct call. */
 export type EmitCtorParam =
   | { name: string; kind: "number"; defaulted?: true }
+  | { name: string; kind: "boolean"; defaulted?: true }
   | {
       name: string;
       kind: "class";
@@ -2994,7 +2992,7 @@ function normalizedUnion(
   tags: UnionTag[],
   t: ts.TypeNode,
   sf: ts.SourceFile,
-): SlotTy | FailedDecl {
+): ValueTy | FailedDecl {
   const union = UNION_TAGS.filter((tag) => tags.includes(tag));
   if (union.length >= 2) return { union: [...union] };
   if (union[0] === "number") return "num";
@@ -3269,7 +3267,7 @@ function walkClass(
     names,
     module: qualifier,
     unions: false,
-    booleans: false,
+    booleans: true,
   };
   const ctorParams = walkParams(ctor.parameters, sf, ctorReg, ctorParamFailure);
   if (!Array.isArray(ctorParams)) return ctorParams;
@@ -3337,19 +3335,14 @@ function walkClass(
     return modelFailure(err);
   }
 
-  // `ctorReg` bans declared unions and booleans, so this restates both
-  // bans where the shape is recorded rather than trusting the flags
-  // everywhere downstream. A defaulted parameter's slot is a union all
-  // the same: the ban is on what the source declares, not on the
-  // boundary. The p.slot test also narrows p.slot to SlotTy for the push.
-  const shapeCtorParams: SlotTy[] = [];
+  // `ctorReg` bans declared unions, so this restates the ban where the
+  // shape is recorded rather than trusting the flag everywhere
+  // downstream. A defaulted parameter's slot is a union all the same:
+  // the ban is on what the source declares, not on the boundary.
+  const shapeCtorParams: ValueTy[] = [];
   for (const p of ctorParams) {
-    /* v8 ignore start -- unreachable: ctorReg refused the union and the boolean first. */
-    if (
-      (typeof p.ty !== "string" && "union" in p.ty) ||
-      p.ty === "bool" ||
-      p.slot === "bool"
-    )
+    /* v8 ignore start -- unreachable: ctorReg refused the union first. */
+    if (typeof p.ty !== "string" && "union" in p.ty)
       return constructAt(ctor, ctor.kind, sf);
     /* v8 ignore stop */
     shapeCtorParams.push(p.slot);
@@ -3984,9 +3977,14 @@ function lowerCtorParams(
   return shape.ctorParams.map((slot, i) => {
     const name = shape.ctorParamNames[i]!;
     if (slot === "num") return { name, kind: "number" };
+    if (slot === "bool") return { name, kind: "boolean" };
     // A constructor admits no declared union, so a union slot is exactly
-    // a defaulted number; an option slot is a defaulted class.
-    if ("union" in slot) return { name, kind: "number", defaulted: true };
+    // a defaulted number or boolean, told apart by the tag beside
+    // `undefined`; an option slot is a defaulted class.
+    if ("union" in slot)
+      return slot.union.includes("boolean")
+        ? { name, kind: "boolean", defaulted: true }
+        : { name, kind: "number", defaulted: true };
     const ref = "option" in slot ? slot.option : slot.instance;
     const inner = classes.get(modelKey(ref))!;
     return {
