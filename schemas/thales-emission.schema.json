@@ -43,8 +43,9 @@
       "properties": {
         "name": { "$ref": "#/definitions/fieldName" },
         "type": {
-          "description": "Present exactly for a union-typed or class-typed field; absent means number, the rule a local statement follows.",
+          "description": "Present exactly for a boolean, union-typed, or class-typed field; absent means number, the rule a local statement follows.",
           "oneOf": [
+            { "const": "boolean" },
             { "$ref": "#/definitions/unionTags" },
             { "$ref": "#/definitions/classRef" }
           ]
@@ -466,7 +467,7 @@
     },
     "class": {
       "type": "object",
-      "description": "A class: a structure over its fields, each a number, a keyword union, or an instance of an earlier class, a constructor assigning each exactly once on every path, and one function per modeled getter or method.",
+      "description": "A class: a structure over its fields, each a number, a boolean, a keyword union, or an instance of an earlier class, a constructor assigning each exactly once on every path, and one function per modeled getter or method.",
       "additionalProperties": false,
       "required": [
         "kind",

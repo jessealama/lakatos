@@ -175,11 +175,11 @@ export interface EmitMethod {
   returns?: "boolean";
 }
 
-/** A field on the wire: its spelling and, for a union or class field,
- * its type — absent means number, the rule a local statement follows. */
+/** A field on the wire: its spelling and, for a boolean, union, or class
+ * field, its type — absent means number, the rule a local statement follows. */
 export interface EmitField {
   name: string;
-  type?: UnionTag[] | { class: string; module?: string };
+  type?: UnionTag[] | { class: string; module?: string } | "boolean";
 }
 
 /** A class as the emitter renders it: a structure over its fields, a
@@ -243,9 +243,8 @@ export type ValueTy =
    * which the tagged domain cannot hold, so it is Lean's `Option`. */
   | { option: ModelRef };
 
-/** What a field or a constructor slot may be typed at: every value type
- * but a boolean, which only locals and free-function/method parameters
- * bind at so far. */
+/** What a constructor slot may be typed at: every value type but a
+ * boolean, which a constructor does not bind yet. */
 export type SlotTy = Exclude<ValueTy, "bool">;
 
 function isOptionTy(t: Expected): t is { option: ModelRef } {
@@ -401,7 +400,7 @@ function walkCtorArgs(
  * the getters that modeled, and its constructor's signature. */
 export interface ClassShape {
   /** The fields in declaration order with their declared types. */
-  fields: ReadonlyMap<string, SlotTy>;
+  fields: ReadonlyMap<string, ValueTy>;
   /** The getters that modeled, each with its declared return type. */
   getters: ReadonlyMap<string, ReturnTy>;
   /** The slot types a construction fills, in declaration order: a number,
@@ -707,6 +706,9 @@ function booleanShaped(e: ts.Expression, scope: WalkScope): boolean {
     );
   if (builtinCall(u, scope)?.ty === "bool") return true;
   if (callReturns(u, scope) === "bool") return true;
+  // A boolean field read on an instance place is a boolean, as a bound
+  // name is; the place resolver types it off the field's declaration.
+  if (memberAccess(u) !== undefined) return placeTy(u, scope) === "bool";
   return equationSides(u) !== undefined;
 }
 
@@ -2611,14 +2613,8 @@ function defaultFailure(name: string, reason: string): string {
 }
 
 /** The `type` a binding at `ty` carries on the wire: absent for the
- * numeric slice, `"boolean"` for a boolean local, the tag array for a
- * union, the class for an instance. A slot never spells `"boolean"`. */
-function bindingTy(ty: SlotTy): {
-  type?: UnionTag[] | { class: string; module?: string };
-};
-function bindingTy(ty: ValueTy): {
-  type?: UnionTag[] | { class: string; module?: string } | "boolean";
-};
+ * numeric slice, `"boolean"` for a boolean, the tag array for a union,
+ * the class for an instance. */
 function bindingTy(ty: ValueTy): {
   type?: UnionTag[] | { class: string; module?: string } | "boolean";
 } {
@@ -3127,7 +3123,7 @@ function walkClass(
     }
   }
 
-  const fields = new Map<string, SlotTy>();
+  const fields = new Map<string, ValueTy>();
   // A field's type resolves as a parameter's does, the class itself not
   // yet registered, so a self-typed field refuses like a self-typed
   // constructor parameter.
@@ -3137,7 +3133,7 @@ function walkClass(
     names,
     module: qualifier,
     unions: true,
-    booleans: false,
+    booleans: true,
   };
   const ctors: ts.ConstructorDeclaration[] = [];
   const getterDecls: ts.GetAccessorDeclaration[] = [];
@@ -3186,8 +3182,6 @@ function walkClass(
       if (m.type === undefined) return constructAt(m, m.kind, sf);
       const ty = declaredValueTy(m.type, sf, fieldReg);
       if (typeof ty !== "string" && "reason" in ty) return ty;
-      /* v8 ignore next -- unreachable: fieldReg refused the boolean first. */
-      if (ty === "bool") return constructAt(m.type, m.type.kind, sf);
       if (RESERVED_MEMBERS.has(spelling))
         return memberNameFailure(className, spelling, "reserves the name");
       if (fields.has(spelling))

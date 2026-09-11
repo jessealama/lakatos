@@ -10883,27 +10883,71 @@ describe("boolean parameters (#354)", () => {
     ]);
   });
 
-  test("a constructor parameter and a field at boolean keep their refusal", () => {
-    const read =
-      `  /** @ensures{p} forall (n: int ∈ [0, 3)) { new F(n).read() >= 0 } */\n` +
-      `  read(): number {\n    return 0;\n  }\n}\n`;
-    const ctor = emit(
+  test("a constructor parameter at boolean keeps its refusal", () => {
+    const { classified } = emit(
       `export class F {\n  readonly n: number;\n` +
         `  constructor(on: boolean) {\n    this.n = 0;\n  }\n` +
-        read,
+        `  /** @ensures{p} forall (n: int ∈ [0, 3)) { new F(n).read() >= 0 } */\n` +
+        `  read(): number {\n    return 0;\n  }\n}\n`,
     );
-    expect(ctor.classified).toHaveLength(1);
-    expect(ctor.classified[0]!.reason).toContain(
+    expect(classified).toHaveLength(1);
+    expect(classified[0]!.reason).toContain(
       "unmapped TypeScript construct 'BooleanKeyword'",
     );
-    const field = emit(
-      `export class F {\n  readonly on: boolean;\n` +
-        `  constructor(n: number) {\n    this.on = n > 0;\n  }\n` +
-        read,
+  });
+});
+
+describe("booleans in classes (#355)", () => {
+  const emit = (src: string) => emitModule(src, "t.ts");
+  const flag =
+    `export class Flag {\n  readonly on: boolean;\n` +
+    `  constructor(n: number) {\n    this.on = n > 0;\n  }\n` +
+    `  /** @ensures{p} forall (n: int ∈ [0, 3)) { new Flag(n).level() >= 0 } */\n` +
+    `  level(): number {\n    if (this.on) {\n      return 1;\n    }\n    return 0;\n  }\n}\n`;
+
+  test("a boolean field rides the wire as its keyword and its write is typed at it", () => {
+    const { classified, emission } = emit(flag);
+    expect(classified).toEqual([]);
+    expectValidEmission(emission);
+    const cls = emission.declarations[0];
+    assert(cls?.kind === "class");
+    expect(cls.fields).toEqual([{ name: "on", type: "boolean" }]);
+    expect(cls.ctor.body).toMatchObject([
+      { kind: "field-set", field: "on", expr: { kind: "binop", op: ">" } },
+    ]);
+    expect(cls.methods[0]!.body[0]).toMatchObject({
+      kind: "if",
+      cond: { kind: "field-read" },
+    });
+  });
+
+  test("a boolean field on an instance place is a condition, an operand, and an inferred local", () => {
+    const { classified, emission } = emit(
+      flag +
+        `export function pick(f: Flag): number {\n` +
+        `  const on = f.on;\n  const off = !on;\n` +
+        `  if (f.on && !off) {\n    return 1;\n  }\n  return 0;\n}\n`,
     );
-    expect(field.classified).toHaveLength(1);
-    expect(field.classified[0]!.reason).toContain(
-      "unmapped TypeScript construct 'BooleanKeyword'",
+    expect(classified).toEqual([]);
+    const fn = emission.declarations[1];
+    assert(fn?.kind === "function");
+    expect(fnBody(fn)[0]).toMatchObject({
+      kind: "const",
+      name: "on",
+      type: "boolean",
+      init: { kind: "field-read" },
+    });
+  });
+
+  test("a boolean field is not a number", () => {
+    const { classified } = emit(
+      flag +
+        `/** @ensures{q} forall (n: int ∈ [0, 3)) { count(new Flag(n)) >= 0 } */\n` +
+        `export function count(f: Flag): number {\n  return f.on;\n}\n`,
+    );
+    expect(classified).toHaveLength(1);
+    expect(classified[0]!.reason).toContain(
+      "field 'on' is a boolean, not a number",
     );
   });
 });
