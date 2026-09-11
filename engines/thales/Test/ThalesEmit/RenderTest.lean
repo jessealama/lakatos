@@ -97,6 +97,7 @@ def b1 (object member x : String) : JsExpr := .builtin object member #[.id x]
 #guard rendersAs (v (b1 "Math" "ceil" "x")) `(Number.FloatOps.tsCeil x)
 #guard rendersAs (v (b1 "Math" "round" "x")) `(Number.FloatOps.tsRound x)
 #guard rendersAs (v (b1 "Math" "sign" "x")) `(Number.FloatOps.tsSign x)
+#guard rendersAs (v (b1 "Math" "fround" "x")) `(Number.FloatOps.tsFround x)
 #guard rendersAs (v (b1 "Number" "isFinite" "x")) `(Float.isFinite x)
 #guard rendersAs (v (b1 "Number" "isNaN" "x")) `(Float.isNaN x)
 #guard rendersAs (v (b1 "Number" "isInteger" "x"))
