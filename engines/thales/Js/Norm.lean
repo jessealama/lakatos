@@ -53,6 +53,21 @@ of splitting. -/
     ((bif c then a else b) = true) ↔ ((c = true → a = true) ∧ (c = false → b = true)) := by
   cases c <;> simp
 
+/-- The `ite` spelling of the same floating: a do-notation `if` whose arm
+is not a throw or a pure value — a call, a residual — has no other route
+to the split below. -/
+@[js_norm] theorem jsm_ite_bind {α β : Type} (c : Bool)
+    (x y : JsM α) (f : α → JsM β) :
+    ((if c = true then x else y) >>= f) =
+      if c = true then (x >>= f) else (y >>= f) := by
+  cases c <;> rfl
+
+/-- One goal per arm, each under its condition, for the `ite` spelling. -/
+@[js_norm] theorem jsm_ite_eq {α : Type} (c : Bool) (x y z : JsM α) :
+    ((if c = true then x else y) = z) ↔
+      ((c = true → x = z) ∧ (c = false → y = z)) := by
+  cases c <;> simp
+
 -- Once jsm_pure_inj has stripped the `pure`, `decide P = true` becomes `P`.
 attribute [js_norm] decide_eq_true_eq
 
@@ -70,14 +85,14 @@ however many copies of the continuation sit under the throw. The `throw`
 stays spelled as it was: the facts grind brings to a guard it could not
 refute are keyed on that spelling, and normalizing it away puts them out
 of reach. -/
-@[js_norm] theorem jsm_ite_throw_ok_iff {α : Type} (c : Bool) (e : JsError)
+@[js_norm high] theorem jsm_ite_throw_ok_iff {α : Type} (c : Bool) (e : JsError)
     (r : JsM α) (v : α) :
     ((if c = true then (throw e : JsM α) else r) = Except.ok v) ↔
       (c = false ∧ r = Except.ok v) := by
   cases c <;> simp
 
 /-- The same, for the guard that has statements after it. -/
-@[js_norm] theorem jsm_ite_throw_bind_ok_iff {α β : Type} (c : Bool) (e : JsError)
+@[js_norm high] theorem jsm_ite_throw_bind_ok_iff {α β : Type} (c : Bool) (e : JsError)
     (k : β → JsM α) (r : JsM α) (v : α) :
     ((if c = true then ((throw e : JsM β) >>= k) else r) = Except.ok v) ↔
       (c = false ∧ r = Except.ok v) := by
