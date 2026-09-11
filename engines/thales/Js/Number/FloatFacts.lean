@@ -840,6 +840,105 @@ theorem roundWA_eq (s : Sign) (m : Nat) (e : Int) (num den : Nat)
       Int.natCast_zero, Int.add_zero]
     rw [ite_eq_right (by omega : ¬rnShiftF m ((grid m e - e).toNat) num den = 2 ^ 53)]
 
+/-! ## The same rounding, for any IEEE format
+
+The lemmas above fix binary64 by writing its mantissa width and minimum
+exponent as literals. The ones below take the format as a parameter, so
+`Math.fround`'s binary32 narrowing can use them. `P` names the mantissa
+width less its implicit bit, which keeps the overflow bump's `2 ^ (P + 1)`
+and `2 ^ P` syntactically related. -/
+
+/-- The grid, for any format: the format's own target exponent. -/
+def gridF (spec : Format) (m : Nat) (e : Int) : Int :=
+  spec.targetExponent (totalExponent m e)
+
+/-- `roundWithAccuracy`'s contract, for any format. -/
+def WellPlacedF (spec : Format) (m : Nat) (e : Int) : Prop := e ≤ gridF spec m e
+
+theorem gridF_binary64 (m : Nat) (e : Int) : gridF .binary64 m e = grid m e := rfl
+
+theorem wellPlacedF_binary64 (m : Nat) (e : Int) :
+    WellPlacedF .binary64 m e = WellPlaced m e := rfl
+
+theorem gridF_ge (spec : Format) (m : Nat) (e : Int) : spec.minExponent ≤ gridF spec m e := by
+  simp only [gridF, Format.targetExponent]; omega
+
+theorem rnShiftF_leF (spec : Format) (m : Nat) (e : Int) (num den : Nat)
+    (hw : WellPlacedF spec m e) :
+    rnShiftF m ((gridF spec m e - e).toNat) num den ≤ 2 ^ spec.mantissaBits := by
+  have h2 := (rnShiftF_bounds m ((gridF spec m e - e).toNat) num den).2
+  have hlog : m < 2 ^ (m.log2 + 1) := Nat.lt_log2_self
+  have hn : m.log2 + 1 ≤ (gridF spec m e - e).toNat + spec.mantissaBits := by
+    simp only [WellPlacedF, gridF, Format.targetExponent, totalExponent] at hw ⊢; omega
+  have hm : m < 2 ^ spec.mantissaBits * 2 ^ (gridF spec m e - e).toNat := by
+    calc m < 2 ^ (m.log2 + 1) := hlog
+      _ ≤ 2 ^ ((gridF spec m e - e).toNat + spec.mantissaBits) :=
+          Nat.pow_le_pow_right (by omega) hn
+      _ = 2 ^ spec.mantissaBits * 2 ^ (gridF spec m e - e).toNat := by
+          rw [← Nat.pow_add, Nat.add_comm]
+  have hq : m / 2 ^ (gridF spec m e - e).toNat < 2 ^ spec.mantissaBits := by
+    rw [Nat.div_lt_iff_lt_mul (Nat.two_pow_pos _)]; omega
+  omega
+
+/-- The closed form of rounding, for any format. -/
+theorem roundWA_eqF (spec : Format) (P : Nat) (hp : spec.mantissaBits = P + 1)
+    (s : Sign) (m : Nat) (e : Int) (num den : Nat)
+    (hw : WellPlacedF spec m e) (hden : 0 < den) (hnum : num < den) :
+    roundWithAccuracy spec s m e (accuracyOfFraction num den) =
+      if rnShiftF m ((gridF spec m e - e).toNat) num den = 2 ^ (P + 1) then
+        .finite s (2 ^ P) (gridF spec m e + 1) (Nat.two_pow_pos P)
+      else if h : rnShiftF m ((gridF spec m e - e).toNat) num den = 0 then .zero s
+      else .finite s (rnShiftF m ((gridF spec m e - e).toNat) num den) (gridF spec m e)
+        (Nat.pos_of_ne_zero h) := by
+  have hr_le := rnShiftF_leF spec m e num den hw
+  rw [hp] at hr_le
+  have htgt : spec.targetExponent (totalExponent m e) = gridF spec m e := rfl
+  have he₁ : e + ((gridF spec m e - e).toNat : Int) = gridF spec m e := by
+    simp only [WellPlacedF] at hw; omega
+  rw [roundWA_unfold]
+  simp only [htgt, he₁,
+    roundedMantissa_ofFraction m ((gridF spec m e - e).toNat) num den hden hnum]
+  rcases Nat.eq_or_lt_of_le hr_le with hovf | hlt
+  · simp only [hovf]
+    have hlog : (2 ^ (P + 1) : Nat).log2 = P + 1 := by
+      have h1 : P + 1 ≤ (2 ^ (P + 1) : Nat).log2 :=
+        (Nat.le_log2 (Nat.pos_iff_ne_zero.mp (Nat.two_pow_pos _))).mpr (Nat.le_refl _)
+      have h2 : (2 ^ (P + 1) : Nat).log2 < P + 2 :=
+        (Nat.log2_lt (Nat.pos_iff_ne_zero.mp (Nat.two_pow_pos _))).mpr
+          (Nat.pow_lt_pow_right (by omega) (by omega))
+      omega
+    have htgt₂ : spec.targetExponent (totalExponent (2 ^ (P + 1)) (gridF spec m e))
+        = gridF spec m e + 1 := by
+      rw [Format.targetExponent, totalExponent, hlog, hp]
+      have := gridF_ge spec m e
+      omega
+    have hn₂ : (gridF spec m e + 1 - gridF spec m e).toNat = 1 := by omega
+    have hshift : (Nat.repeat ExtendedMantissa.shiftRightOne 1
+        (ExtendedMantissa.ofMantissaAndAccuracy (2 ^ (P + 1)) .exact)).mantissa = 2 ^ P := by
+      simp only [ExtendedMantissa.ofMantissaAndAccuracy, Nat.repeat,
+        ExtendedMantissa.shiftRightOne, Nat.pow_succ]
+      omega
+    simp only [htgt₂, hn₂, hshift, Int.natCast_one]
+    rw [dite_eq_right (Nat.pos_iff_ne_zero.mp (Nat.two_pow_pos P)), ite_eq_left trivial]
+  · have hlog : (rnShiftF m ((gridF spec m e - e).toNat) num den).log2 ≤ P := by
+      rcases Nat.eq_zero_or_pos (rnShiftF m ((gridF spec m e - e).toNat) num den) with h0 | h0
+      · rw [h0]; exact Nat.le_of_lt_succ (by rw [show Nat.log2 0 = 0 from rfl]; omega)
+      · exact Nat.le_of_lt_succ ((Nat.log2_lt (by omega)).mpr hlt)
+    have htgt₂ : spec.targetExponent
+        (totalExponent (rnShiftF m ((gridF spec m e - e).toNat) num den) (gridF spec m e))
+        ≤ gridF spec m e := by
+      rw [Format.targetExponent, totalExponent, hp]
+      have := gridF_ge spec m e
+      omega
+    have hn₂ : (spec.targetExponent
+        (totalExponent (rnShiftF m ((gridF spec m e - e).toNat) num den) (gridF spec m e))
+        - gridF spec m e).toNat = 0 := by omega
+    simp only [hn₂, Nat.repeat, ExtendedMantissa.ofMantissaAndAccuracy,
+      Int.natCast_zero, Int.add_zero]
+    rw [ite_eq_right
+      (by omega : ¬rnShiftF m ((gridF spec m e - e).toNat) num den = 2 ^ (P + 1))]
+
+
 /-! ## Value semantics -/
 
 /-- Larger than any value binary64 rounding can produce from the operations
