@@ -4695,6 +4695,117 @@ function walkEmitModule(
  * carrying their module; `file` locates the entry against the module tree
  * `reader` reads, and labels the annotations.
  */
+/** Marks every callable whose body reaches a residual site, directly or
+ * through a callee that does. Declarations arrive in dependency order — a
+ * callee is walked before its caller, a class's constructor before its
+ * getters, getters before methods — so one pass sees each callee's flag
+ * before the uses that inherit it. */
+function markNoncomputable(declarations: readonly EmitDecl[]): void {
+  const tainted = new Set<string>();
+  const keyOf = (module: string | undefined, name: string) =>
+    modelKey({ module: module ?? "", name });
+  const memberKeyOf = (
+    module: string | undefined,
+    cls: string,
+    member: string,
+  ) => keyOf(module, qualifiedName(member, cls));
+  const reaches = (e: EmitExpr): boolean => {
+    switch (e.kind) {
+      case "residual":
+        return true;
+      case "call":
+        return tainted.has(keyOf(e.module, e.callee)) || e.args.some(reaches);
+      case "new":
+        return (
+          tainted.has(memberKeyOf(e.module, e.className, "constructor")) ||
+          e.args.some(reaches)
+        );
+      case "getter-read":
+        return (
+          tainted.has(memberKeyOf(e.module, e.className, e.name)) ||
+          reaches(e.object)
+        );
+      case "method-call":
+        return (
+          tainted.has(memberKeyOf(e.module, e.className, e.name)) ||
+          reaches(e.object) ||
+          e.args.some(reaches)
+        );
+      case "field-read":
+        return reaches(e.object);
+      case "unop":
+        return reaches(e.operand);
+      case "binop":
+      case "same-value":
+      case "jsval-eq":
+        return reaches(e.left) || reaches(e.right);
+      case "cond":
+        return reaches(e.cond) || reaches(e.then) || reaches(e.else);
+      case "builtin":
+        return e.args.some(reaches);
+      case "project":
+      case "option-test":
+      case "option-get":
+      case "typeof-test":
+        return reaches(e.expr);
+      case "inject":
+      case "option":
+        return e.expr !== undefined && reaches(e.expr);
+      // A literal, an identifier, the receiver, and a constant or builtin
+      // read reach nothing.
+      default:
+        return false;
+    }
+  };
+  const bodyReaches = (stmts: readonly EmitStmt[]): boolean =>
+    stmts.some((st) => {
+      switch (st.kind) {
+        case "return":
+        case "assign":
+        case "field-set":
+        case "discard":
+          return reaches(st.expr);
+        case "const":
+        case "let":
+          return reaches(st.init);
+        case "if":
+          return (
+            reaches(st.cond) ||
+            bodyReaches(st.then) ||
+            (st.else !== undefined && bodyReaches(st.else))
+          );
+        // A throw carries only its error's name.
+        default:
+          return false;
+      }
+    });
+  for (const d of declarations) {
+    if (d.kind === "function") {
+      if (bodyReaches(d.body)) {
+        d.noncomputable = true;
+        tainted.add(keyOf(d.module, d.name));
+      }
+    } else if (d.kind === "class") {
+      if (bodyReaches(d.ctor.body)) {
+        d.ctor.noncomputable = true;
+        tainted.add(memberKeyOf(d.module, d.name, "constructor"));
+      }
+      for (const g of d.getters) {
+        if (bodyReaches(g.body)) {
+          g.noncomputable = true;
+          tainted.add(memberKeyOf(d.module, d.name, g.name));
+        }
+      }
+      for (const m of d.methods) {
+        if (bodyReaches(m.body)) {
+          m.noncomputable = true;
+          tainted.add(memberKeyOf(d.module, d.name, m.name));
+        }
+      }
+    }
+  }
+}
+
 export function emitModule(
   text: string,
   file: string,
@@ -4717,6 +4828,7 @@ export function emitModule(
   // The entry's qualifier is empty: its names are the ones annotations
   // are written about, so they keep their source spelling.
   const names = walkEmitModule(entry, file, text, "", closure);
+  markNoncomputable(closure.declarations);
   const { declarations, mapped, failed } = closure;
   const module = "";
   const key = (name: string) => modelKey({ module, name });

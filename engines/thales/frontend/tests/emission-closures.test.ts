@@ -823,3 +823,51 @@ describe("imported module constants", () => {
     });
   });
 });
+
+describe("residual sites across a module boundary", () => {
+  const UNMODELED = [
+    "export function h(x: number): number {",
+    "  return Math.log(x);",
+    "}",
+    "",
+  ].join("\n");
+
+  const CALLER = [
+    'import { h } from "./helper.mjs";',
+    "/** @ensures{p} forall (x: int ∈ [0, 5)) { uses(x) >= 0 } */",
+    "export function uses(x: number): number {",
+    "  return h(x);",
+    "}",
+    "",
+  ].join("\n");
+
+  test("a dependency's site is declared under its own module and taints the entry", () => {
+    const { emission, classified } = emitModule(
+      CALLER,
+      "main.mts",
+      reader({ "helper.mts": UNMODELED }),
+    );
+    expect(classified).toEqual([]);
+    expect(emission.declarations.map((d) => [d.module, declName(d)])).toEqual([
+      ["helper.mts", "h#residual_1"],
+      ["helper.mts", "h"],
+      [undefined, "uses"],
+    ]);
+    const site = emission.declarations[0]!;
+    assert(site.kind === "residual");
+    expect(site).toMatchObject({
+      owner: "h",
+      module: "helper.mts",
+      site: 1,
+      construct: "'Math.log' is not supported",
+      params: [{ name: "x", type: "number" }],
+    });
+    const dep = emission.declarations[1]!;
+    assert(dep.kind === "function");
+    expect(dep.noncomputable).toBe(true);
+    const entry = emission.declarations[2]!;
+    assert(entry.kind === "function");
+    expect(entry.noncomputable).toBe(true);
+    expect(emission.obligations).toHaveLength(1);
+  });
+});

@@ -11725,3 +11725,77 @@ describe("residual sites in defaults and members", () => {
     );
   });
 });
+
+describe("the noncomputable taint", () => {
+  const fnNamed = (src: string, name: string) => {
+    const d = emitModule(src, "r.ts").emission.declarations.find(
+      (dd) => dd.kind === "function" && dd.name === name,
+    );
+    assert(d?.kind === "function");
+    return d;
+  };
+
+  test("an owner with a site is noncomputable; a caller inherits it; a bystander does not", () => {
+    const src =
+      "export function a(x: number): number { return Math.log(x); }\n" +
+      "export function b(x: number): number { return a(x) + 1; }\n" +
+      "export function c(x: number): number { return b(x) * 2; }\n" +
+      "/** @ensures{p} forall (x: int ∈ [0, 5)) { d(x) >= 0 } */\n" +
+      "export function d(x: number): number { return x; }\n";
+    expect(fnNamed(src, "a").noncomputable).toBe(true);
+    expect(fnNamed(src, "b").noncomputable).toBe(true);
+    expect(fnNamed(src, "c").noncomputable).toBe(true);
+    expect(fnNamed(src, "d")).not.toHaveProperty("noncomputable");
+  });
+
+  test("a class taints through its constructor, getters, and methods", () => {
+    const src =
+      "export class Box {\n  readonly v: number;\n" +
+      "  constructor(v: number) { this.v = Math.log(v); }\n" +
+      "  get twice(): number { return this.v * 2; }\n" +
+      "  plain(): number { return 1; }\n}\n" +
+      "/** @ensures{p} forall (x: number) { use(x) >= 0 } */\n" +
+      "export function use(x: number): number { return new Box(x).twice; }\n" +
+      "export function reads(b: Box): number { return b.twice; }\n" +
+      "export function calls(b: Box): number { return b.plain(); }\n";
+    const decls = emitModule(src, "r.ts").emission.declarations;
+    const cls = decls.find((d) => d.kind === "class");
+    assert(cls?.kind === "class");
+    expect(cls.ctor.noncomputable).toBe(true);
+    expect(cls.getters[0]).not.toHaveProperty("noncomputable");
+    expect(cls.methods[0]).not.toHaveProperty("noncomputable");
+    expect(fnNamed(src, "use").noncomputable).toBe(true);
+    expect(fnNamed(src, "reads")).not.toHaveProperty("noncomputable");
+    expect(fnNamed(src, "calls")).not.toHaveProperty("noncomputable");
+  });
+
+  test("a getter with its own site taints the functions reading it", () => {
+    const src =
+      "export class Box {\n  readonly v: number;\n" +
+      "  constructor(v: number) { this.v = v; }\n" +
+      "  get logged(): number { return Math.log(this.v); }\n}\n" +
+      "/** @ensures{p} forall (x: number) { use(x) >= 0 } */\n" +
+      "export function use(x: number): number { return new Box(x).logged; }\n";
+    const decls = emitModule(src, "r.ts").emission.declarations;
+    const cls = decls.find((d) => d.kind === "class");
+    assert(cls?.kind === "class");
+    expect(cls.ctor).not.toHaveProperty("noncomputable");
+    expect(cls.getters[0]?.noncomputable).toBe(true);
+    expect(fnNamed(src, "use").noncomputable).toBe(true);
+  });
+
+  test("a discarded site taints its owner too", () => {
+    const src =
+      "declare function log(n: number): void;\n" +
+      "/** @ensures{p} forall (x: int ∈ [0, 5)) { f(x) >= 0 } */\n" +
+      "export function f(x: number): number { log(x); return x; }\n";
+    expect(fnNamed(src, "f").noncomputable).toBe(true);
+  });
+
+  test("a site in an arm taints through the branch", () => {
+    const src =
+      "/** @ensures{p} forall (x: int ∈ [0, 5)) { f(x) >= 0 } */\n" +
+      "export function f(x: number): number { if (x < 0) { return Math.log(x); } return x; }\n";
+    expect(fnNamed(src, "f").noncomputable).toBe(true);
+  });
+});
