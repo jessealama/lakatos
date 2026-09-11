@@ -101,6 +101,15 @@ export type EmitExpr =
       semantics: "strict" | "same-value";
       left: EmitExpr;
       right: EmitExpr;
+    }
+  /** An unmodelable site inside its owner: the opaque the artifact
+   * declares for it, applied to the variables in scope there. */
+  | {
+      kind: "residual";
+      owner: string;
+      module?: string;
+      site: number;
+      args: EmitExpr[];
     };
 
 /** A statement in the shapes the plain-Lean emitter renders as Lean
@@ -129,7 +138,9 @@ export type EmitStmt =
     }
   | { kind: "assign"; name: string; expr: EmitExpr }
   | { kind: "if"; cond: EmitExpr; then: EmitStmt[]; else?: EmitStmt[] }
-  | { kind: "field-set"; field: string; expr: EmitExpr };
+  | { kind: "field-set"; field: string; expr: EmitExpr }
+  /** An expression statement: evaluated for its effect, value dropped. */
+  | { kind: "discard"; expr: EmitExpr };
 
 /** A parameter on the wire: its name and its declared type — a
  * TypeScript number, a boolean, a keyword union's normalized tags, or an
@@ -156,6 +167,10 @@ export interface EmitFunction {
   /** Present exactly for a boolean-returning declaration; absent means
    * the number every declaration returned before. */
   returns?: "boolean";
+  /** Present exactly when the body reaches a residual site, directly or
+   * through a callee that does. A valueless opaque compiles to `pure`, so
+   * without this the evaluation rung would prove straight through one. */
+  noncomputable?: true;
 }
 
 export interface EmitGetter {
@@ -164,6 +179,7 @@ export interface EmitGetter {
   /** Present exactly for a boolean-returning declaration; absent means
    * the number every declaration returned before. */
   returns?: "boolean";
+  noncomputable?: true;
 }
 
 export interface EmitMethod {
@@ -173,6 +189,7 @@ export interface EmitMethod {
   /** Present exactly for a boolean-returning declaration; absent means
    * the number every declaration returned before. */
   returns?: "boolean";
+  noncomputable?: true;
 }
 
 /** A field on the wire: its spelling and, for a boolean, union, or class
@@ -193,7 +210,7 @@ export interface EmitClass {
   /** Fields in declaration order; a private one keeps its '#'. */
   fields: EmitField[];
   source: string;
-  ctor: { params: EmitParam[]; body: EmitStmt[] };
+  ctor: { params: EmitParam[]; body: EmitStmt[]; noncomputable?: true };
   getters: EmitGetter[];
   methods: EmitMethod[];
 }
@@ -218,7 +235,30 @@ export interface EmitConstant {
   source: string;
 }
 
-export type EmitDecl = EmitFunction | EmitClass | EmitConstant;
+/** One residual site: the opaque its owner declares — one component below
+ * the owner's model name, numbered from 1 in source order within that
+ * owner — over the modeled variables in scope where the site arose, with
+ * the refusal text that names the construct as its docstring. Emitted
+ * ahead of its owner, so the artifact declares a site before using it. */
+export interface EmitResidualDecl {
+  kind: "residual";
+  /** The qualified name of the callable that owns the site: `f`, or
+   * `C#member` with `constructor` for a constructor's own. */
+  owner: string;
+  /** The defining module's entry-relative path; absent for the entry. */
+  module?: string;
+  site: number;
+  /** The refusal's reason text, which names the construct. */
+  construct: string;
+  /** The receiver first inside a member, then the variables in scope. */
+  params: EmitParam[];
+  /** The codomain; the renderer wraps it in `JsM`, since unmodeled code
+   * may throw. */
+  type: EmitParam["type"];
+}
+
+export type EmitDecl =
+  EmitFunction | EmitClass | EmitConstant | EmitResidualDecl;
 
 /** The union member tags the model admits, in normalization order. */
 export const UNION_TAGS = [

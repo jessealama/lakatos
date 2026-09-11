@@ -1,7 +1,13 @@
 import { assert, describe, expect, test } from "vitest";
 import * as path from "node:path";
-import { emitModule } from "../src/emission.js";
+import { type EmitDecl, emitModule } from "../src/emission.js";
 import { type ModuleReader } from "../src/module-graph.js";
+
+/** A declaration's own name. A residual site is named by its owner and
+ * index, so a list assertion stays total rather than hiding one. */
+function declName(d: EmitDecl): string {
+  return d.kind === "residual" ? `${d.owner}#residual_${d.site}` : d.name;
+}
 
 /** An in-memory module tree, keyed the way the walk resolves: absolute
  * paths against the importing file's directory. */
@@ -36,7 +42,7 @@ describe("emission import closures", () => {
       reader({ "helper.mts": HELPER }),
     );
     expect(classified).toEqual([]);
-    expect(emission.declarations.map((d) => [d.module, d.name])).toEqual([
+    expect(emission.declarations.map((d) => [d.module, declName(d)])).toEqual([
       ["helper.mts", "double"],
       [undefined, "twice"],
     ]);
@@ -48,7 +54,7 @@ describe("emission import closures", () => {
       "main.mts",
       reader({ "helper.mts": HELPER }),
     );
-    const twice = emission.declarations.find((d) => d.name === "twice")!;
+    const twice = emission.declarations.find((d) => declName(d) === "twice")!;
     assert(twice.kind === "function");
     const ret = twice.body[0]!;
     expect(ret.kind).toBe("return");
@@ -219,7 +225,7 @@ describe("emission import closures", () => {
       reader({ "pt.mts": pt }),
     );
     expect(classified).toEqual([]);
-    const shift = emission.declarations.find((d) => d.name === "shift")!;
+    const shift = emission.declarations.find((d) => declName(d) === "shift")!;
     assert(shift.kind === "function");
     expect(shift.params[1]).toEqual({
       name: "p",
@@ -358,7 +364,7 @@ describe("emission import closures", () => {
       "main.mts",
       reader({ "helper.mts": mid, "base.ts": base }),
     );
-    expect(emission.declarations.map((d) => [d.module, d.name])).toEqual([
+    expect(emission.declarations.map((d) => [d.module, declName(d)])).toEqual([
       ["base.ts", "base"],
       ["helper.mts", "double"],
       [undefined, "twice"],
@@ -394,7 +400,7 @@ describe("emission import closures", () => {
       }),
     );
     expect(classified).toEqual([]);
-    expect(emission.declarations.map((d) => [d.module, d.name])).toEqual([
+    expect(emission.declarations.map((d) => [d.module, declName(d)])).toEqual([
       ["base.ts", "base"],
       ["a.ts", "a"],
       ["b.ts", "b"],
@@ -530,7 +536,7 @@ describe("class-typed parameters across modules", () => {
       reader({ "box.mts": BOX }),
     );
     expect(classified).toEqual([]);
-    const unwrap = emission.declarations.find((d) => d.name === "unwrap")!;
+    const unwrap = emission.declarations.find((d) => declName(d) === "unwrap")!;
     assert(unwrap.kind === "function");
     expect(unwrap.params).toEqual([
       { name: "b", type: { class: "Box", module: "box.mts" } },
@@ -563,7 +569,7 @@ describe("class-typed parameters across modules", () => {
       reader({ "box.mts": BOX }),
     );
     expect(classified).toEqual([]);
-    const unwrap = emission.declarations.find((d) => d.name === "unwrap")!;
+    const unwrap = emission.declarations.find((d) => declName(d) === "unwrap")!;
     assert(unwrap.kind === "function");
     expect(unwrap.body[0]).toEqual({
       kind: "const",
@@ -600,7 +606,7 @@ describe("class-typed parameters across modules", () => {
       reader({ "box.mts": box }),
     );
     expect(classified).toEqual([]);
-    const unwrap = emission.declarations.find((d) => d.name === "unwrap")!;
+    const unwrap = emission.declarations.find((d) => declName(d) === "unwrap")!;
     assert(unwrap.kind === "function");
     expect(unwrap.body[0]).toEqual({
       kind: "return",

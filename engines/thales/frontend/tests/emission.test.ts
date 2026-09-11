@@ -11,6 +11,12 @@ import {
 } from "../src/emission.js";
 import { annotationKey, LemmaError } from "../../../../lemma/src/index.js";
 
+/** A declaration's own name. A residual site is named by its owner and
+ * index, so a list assertion stays total rather than hiding one. */
+function declName(d: EmitDecl): string {
+  return d.kind === "residual" ? `${d.owner}#residual_${d.site}` : d.name;
+}
+
 /** A function declaration's body, narrowed out of the declaration union. */
 function fnBody(d: EmitDecl): EmitStmt[] {
   assert(d.kind === "function");
@@ -1574,7 +1580,7 @@ describe("class-valued binders lower to a binder IR", () => {
       ],
     ]);
     expect(emission.obligations).toEqual([]);
-    expect(emission.declarations.map((d) => d.name)).toEqual(["scale"]);
+    expect(emission.declarations.map((d) => declName(d))).toEqual(["scale"]);
   });
 
   test("a binder whose class takes a class-typed parameter lowers recursively", () => {
@@ -4862,7 +4868,7 @@ describe("new and member access in atoms (#129)", () => {
     ].join("\n");
     const { emission, classified } = emitModule(src, "t.ts");
     expect(classified).toEqual([]);
-    const g = emission.declarations.find((d) => d.name === "g")!;
+    const g = emission.declarations.find((d) => declName(d) === "g")!;
     expect(fnBody(g)).toEqual([
       {
         kind: "return",
@@ -5379,7 +5385,7 @@ describe("instance atoms outside the happy path (#129)", () => {
     ].join("\n");
     const { emission, classified } = emitModule(src, "t.ts");
     expect(classified).toEqual([]);
-    const pick = emission.declarations.find((d) => d.name === "pick")!;
+    const pick = emission.declarations.find((d) => declName(d) === "pick")!;
     expect(JSON.stringify(fnBody(pick))).toContain('"kind":"getter-read"');
   });
 
@@ -11357,5 +11363,108 @@ describe("boolean return types (#354)", () => {
       expect.stringContaining("a member read yields a boolean, not a number"),
       expect.stringContaining("a method call yields a boolean, not a number"),
     ]);
+  });
+});
+
+describe("residual IR on the wire", () => {
+  test("a residual declaration, expression, and discard validate", () => {
+    expectValidEmission({
+      file: "r.ts",
+      declarations: [
+        {
+          kind: "residual",
+          owner: "f",
+          site: 1,
+          construct: "'Math.log' is not supported",
+          params: [{ name: "x", type: "number" }],
+          type: "number",
+        },
+        {
+          kind: "function",
+          name: "f",
+          params: [{ name: "x", type: "number" }],
+          source: "",
+          noncomputable: true,
+          body: [
+            {
+              kind: "discard",
+              expr: {
+                kind: "residual",
+                owner: "f",
+                site: 1,
+                args: [{ kind: "id", name: "x" }],
+              },
+            },
+            { kind: "return", expr: { kind: "id", name: "x" } },
+          ],
+        },
+      ],
+      obligations: [],
+    });
+  });
+
+  test("a member's site names its owner and its class carries the flag", () => {
+    expectValidEmission({
+      file: "r.ts",
+      declarations: [
+        {
+          kind: "residual",
+          owner: "C#constructor",
+          module: "helper.mts",
+          site: 2,
+          construct: "'**' is not supported",
+          params: [{ name: "self", type: { class: "C" } }],
+          type: "boolean",
+        },
+        {
+          kind: "class",
+          name: "C",
+          fields: [],
+          source: "",
+          ctor: { params: [], body: [], noncomputable: true },
+          getters: [{ name: "g", body: [], noncomputable: true }],
+          methods: [{ name: "m", params: [], body: [], noncomputable: true }],
+        },
+      ],
+      obligations: [],
+    });
+  });
+
+  test("a site numbered below 1 is a schema violation", () => {
+    expect(() =>
+      expectValidEmission({
+        file: "r.ts",
+        declarations: [
+          {
+            kind: "residual",
+            owner: "f",
+            site: 0,
+            construct: "'Math.log' is not supported",
+            params: [],
+            type: "number",
+          },
+        ],
+        obligations: [],
+      }),
+    ).toThrow();
+  });
+
+  test("an owner spelled outside f or C#member is a schema violation", () => {
+    expect(() =>
+      expectValidEmission({
+        file: "r.ts",
+        declarations: [
+          {
+            kind: "residual",
+            owner: "C.m",
+            site: 1,
+            construct: "'Math.log' is not supported",
+            params: [],
+            type: "number",
+          },
+        ],
+        obligations: [],
+      }),
+    ).toThrow();
   });
 });
