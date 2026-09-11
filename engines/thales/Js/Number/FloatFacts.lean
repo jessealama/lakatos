@@ -745,101 +745,6 @@ exceed the grid, so no significant bits sit below the input's own
 granularity. Every call site below satisfies it. -/
 def WellPlaced (m : Nat) (e : Int) : Prop := e ≤ grid m e
 
-theorem rnShiftF_le (m : Nat) (e : Int) (num den : Nat) (hw : WellPlaced m e) :
-    rnShiftF m ((grid m e - e).toNat) num den ≤ 2 ^ 53 := by
-  have h2 := (rnShiftF_bounds m ((grid m e - e).toNat) num den).2
-  have hlog : m < 2 ^ (m.log2 + 1) := Nat.lt_log2_self
-  have hn : m.log2 + 1 ≤ (grid m e - e).toNat + 53 := by
-    simp only [WellPlaced, grid, totalExponent] at hw
-    simp only [grid, totalExponent]
-    omega
-  have hm : m < 2 ^ 53 * 2 ^ (grid m e - e).toNat := by
-    calc m < 2 ^ (m.log2 + 1) := hlog
-      _ ≤ 2 ^ ((grid m e - e).toNat + 53) := Nat.pow_le_pow_right (by omega) hn
-      _ = 2 ^ 53 * 2 ^ (grid m e - e).toNat := by rw [← Nat.pow_add, Nat.add_comm]
-  have hq : m / 2 ^ (grid m e - e).toNat < 2 ^ 53 := by
-    rw [Nat.div_lt_iff_lt_mul (Nat.two_pow_pos _)]
-    omega
-  omega
-
-theorem targetExponent_binary64 (t : Int) :
-    Format.binary64.targetExponent t = max (t - 53) (-1074) := by
-  rw [Format.targetExponent]
-  have h1 : ((Format.binary64.mantissaBits : Nat) : Int) = 53 := by decide
-  have h2 : Format.binary64.minExponent = -1074 := by decide
-  rw [h1, h2]
-
-/-- `roundWithAccuracy`, definitionally, with every pipeline stage named. -/
-theorem roundWA_unfold (spec : Format) (s : Sign) (m : Nat) (e : Int) (a : Accuracy) :
-    roundWithAccuracy spec s m e a =
-      (let n₁ := (spec.targetExponent (totalExponent m e) - e).toNat
-      let r := (Nat.repeat ExtendedMantissa.shiftRightOne n₁
-        (ExtendedMantissa.ofMantissaAndAccuracy m a)).roundedMantissa
-      let e₁ := e + n₁
-      let n₂ := (spec.targetExponent (totalExponent r e₁) - e₁).toNat
-      let fm := (Nat.repeat ExtendedMantissa.shiftRightOne n₂
-        (ExtendedMantissa.ofMantissaAndAccuracy r .exact)).mantissa
-      if h : fm = 0 then .zero s
-      else .finite s fm (e₁ + n₂) (Nat.pos_of_ne_zero h)) := rfl
-
-/-- The second shift of the pipeline only fires on mantissa overflow, and
-then it is exact: the value it drops is a zero bit. -/
-theorem roundWA_eq (s : Sign) (m : Nat) (e : Int) (num den : Nat)
-    (hw : WellPlaced m e) (hden : 0 < den) (hnum : num < den) :
-    roundWithAccuracy .binary64 s m e (accuracyOfFraction num den) =
-      if rnShiftF m ((grid m e - e).toNat) num den = 2 ^ 53 then
-        .finite s (2 ^ 52) (grid m e + 1) (by simp)
-      else if h : rnShiftF m ((grid m e - e).toNat) num den = 0 then .zero s
-      else .finite s (rnShiftF m ((grid m e - e).toNat) num den) (grid m e)
-        (Nat.pos_of_ne_zero h) := by
-  have hG := grid_ge m e
-  have hr_le := rnShiftF_le m e num den hw
-  have htgt : Format.binary64.targetExponent (totalExponent m e) = grid m e := by
-    rw [targetExponent_binary64, grid]
-  have he₁ : e + ((grid m e - e).toNat : Int) = grid m e := by
-    simp only [WellPlaced] at hw
-    omega
-  rw [roundWA_unfold]
-  simp only [htgt, he₁,
-    roundedMantissa_ofFraction m ((grid m e - e).toNat) num den hden hnum]
-  rcases Nat.eq_or_lt_of_le hr_le with hovf | hlt
-  · -- Overflow: the rounded mantissa is exactly 2^53; one exact shift
-    -- carries it into the next binade.
-    simp only [hovf]
-    have hlog : (2 ^ 53 : Nat).log2 = 53 := by
-      have h1 : 53 ≤ (2 ^ 53 : Nat).log2 := (Nat.le_log2 (by omega)).mpr (Nat.le_refl _)
-      have h2 : (2 ^ 53 : Nat).log2 < 54 :=
-        (Nat.log2_lt (by omega)).mpr (Nat.pow_lt_pow_right (by omega) (by omega))
-      omega
-    have htgt₂ : Format.binary64.targetExponent (totalExponent (2 ^ 53) (grid m e))
-        = grid m e + 1 := by
-      rw [targetExponent_binary64, totalExponent, hlog]
-      omega
-    have hn₂ : (grid m e + 1 - grid m e).toNat = 1 := by omega
-    have hshift : (Nat.repeat ExtendedMantissa.shiftRightOne 1
-        (ExtendedMantissa.ofMantissaAndAccuracy (2 ^ 53) .exact)).mantissa = 2 ^ 52 := by
-      simp only [ExtendedMantissa.ofMantissaAndAccuracy, Nat.repeat,
-        ExtendedMantissa.shiftRightOne]
-    simp only [htgt₂, hn₂, hshift, Int.natCast_one]
-    rw [dite_eq_right (Nat.pos_iff_ne_zero.mp (Nat.two_pow_pos 52)), ite_eq_left trivial]
-  · -- No overflow: the second shift is the identity.
-    have hlog : (rnShiftF m ((grid m e - e).toNat) num den).log2 ≤ 52 := by
-      rcases Nat.eq_zero_or_pos (rnShiftF m ((grid m e - e).toNat) num den) with h0 | h0
-      · rw [h0]
-        exact Nat.le_of_lt_succ (by rw [show Nat.log2 0 = 0 from rfl]; omega)
-      · exact Nat.le_of_lt_succ ((Nat.log2_lt (by omega)).mpr hlt)
-    have htgt₂ : Format.binary64.targetExponent
-        (totalExponent (rnShiftF m ((grid m e - e).toNat) num den) (grid m e))
-        ≤ grid m e := by
-      rw [targetExponent_binary64, totalExponent]
-      omega
-    have hn₂ : (Format.binary64.targetExponent
-        (totalExponent (rnShiftF m ((grid m e - e).toNat) num den) (grid m e))
-        - grid m e).toNat = 0 := by omega
-    simp only [hn₂, Nat.repeat, ExtendedMantissa.ofMantissaAndAccuracy,
-      Int.natCast_zero, Int.add_zero]
-    rw [ite_eq_right (by omega : ¬rnShiftF m ((grid m e - e).toNat) num den = 2 ^ 53)]
-
 /-! ## The same rounding, for any IEEE format
 
 The lemmas above fix binary64 by writing its mantissa width and minimum
@@ -879,6 +784,30 @@ theorem rnShiftF_leF (spec : Format) (m : Nat) (e : Int) (num den : Nat)
   have hq : m / 2 ^ (gridF spec m e - e).toNat < 2 ^ spec.mantissaBits := by
     rw [Nat.div_lt_iff_lt_mul (Nat.two_pow_pos _)]; omega
   omega
+
+theorem rnShiftF_le (m : Nat) (e : Int) (num den : Nat) (hw : WellPlaced m e) :
+    rnShiftF m ((grid m e - e).toNat) num den ≤ 2 ^ 53 :=
+  rnShiftF_leF .binary64 m e num den hw
+
+theorem targetExponent_binary64 (t : Int) :
+    Format.binary64.targetExponent t = max (t - 53) (-1074) := by
+  rw [Format.targetExponent]
+  have h1 : ((Format.binary64.mantissaBits : Nat) : Int) = 53 := by decide
+  have h2 : Format.binary64.minExponent = -1074 := by decide
+  rw [h1, h2]
+
+/-- `roundWithAccuracy`, definitionally, with every pipeline stage named. -/
+theorem roundWA_unfold (spec : Format) (s : Sign) (m : Nat) (e : Int) (a : Accuracy) :
+    roundWithAccuracy spec s m e a =
+      (let n₁ := (spec.targetExponent (totalExponent m e) - e).toNat
+      let r := (Nat.repeat ExtendedMantissa.shiftRightOne n₁
+        (ExtendedMantissa.ofMantissaAndAccuracy m a)).roundedMantissa
+      let e₁ := e + n₁
+      let n₂ := (spec.targetExponent (totalExponent r e₁) - e₁).toNat
+      let fm := (Nat.repeat ExtendedMantissa.shiftRightOne n₂
+        (ExtendedMantissa.ofMantissaAndAccuracy r .exact)).mantissa
+      if h : fm = 0 then .zero s
+      else .finite s fm (e₁ + n₂) (Nat.pos_of_ne_zero h)) := rfl
 
 /-- The closed form of rounding, for any format. -/
 theorem roundWA_eqF (spec : Format) (P : Nat) (hp : spec.mantissaBits = P + 1)
@@ -939,6 +868,18 @@ theorem roundWA_eqF (spec : Format) (P : Nat) (hp : spec.mantissaBits = P + 1)
       (by omega : ¬rnShiftF m ((gridF spec m e - e).toNat) num den = 2 ^ (P + 1))]
 
 
+/-- The second shift of the pipeline only fires on mantissa overflow, and
+then it is exact: the value it drops is a zero bit. -/
+theorem roundWA_eq (s : Sign) (m : Nat) (e : Int) (num den : Nat)
+    (hw : WellPlaced m e) (hden : 0 < den) (hnum : num < den) :
+    roundWithAccuracy .binary64 s m e (accuracyOfFraction num den) =
+      if rnShiftF m ((grid m e - e).toNat) num den = 2 ^ 53 then
+        .finite s (2 ^ 52) (grid m e + 1) (by simp)
+      else if h : rnShiftF m ((grid m e - e).toNat) num den = 0 then .zero s
+      else .finite s (rnShiftF m ((grid m e - e).toNat) num den) (grid m e)
+        (Nat.pos_of_ne_zero h) :=
+  roundWA_eqF .binary64 52 (by decide) s m e num den hw hden hnum
+
 /-! ## Value semantics -/
 
 /-- Larger than any value binary64 rounding can produce from the operations
@@ -954,50 +895,6 @@ def key : UnpackedFloat → Int
   | .infinity s => s.apply HUGE
   | .zero _ => 0
   | .finite s m e _ => s.apply (m * 2 ^ (e + 1074).toNat)
-
-/-- The key of a positive rounding, in closed form. -/
-theorem key_roundWA_pos (m : Nat) (e : Int) (num den : Nat)
-    (hw : WellPlaced m e) (hden : 0 < den) (hnum : num < den) :
-    key (roundWithAccuracy .binary64 .positive m e (accuracyOfFraction num den)) =
-      rnShiftF m ((grid m e - e).toNat) num den * 2 ^ (grid m e + 1074).toNat := by
-  have hG := grid_ge m e
-  rw [roundWA_eq .positive m e num den hw hden hnum]
-  by_cases hovf : rnShiftF m ((grid m e - e).toNat) num den = 2 ^ 53
-  · rw [ite_eq_left hovf, hovf]
-    simp only [key, Sign.apply]
-    have ha : (grid m e + 1 + 1074).toNat = (grid m e + 1074).toNat + 1 := by omega
-    rw [ha]
-    have hnat : (2 : Nat) ^ 53 * 2 ^ (grid m e + 1074).toNat
-        = 2 ^ 52 * 2 ^ ((grid m e + 1074).toNat + 1) := by
-      rw [Nat.pow_succ]
-      grind
-    have hcast2 : (2 : Int) = ((2 : Nat) : Int) := rfl
-    rw [hcast2, ← Int.natCast_pow, ← Int.natCast_pow, ← Int.natCast_mul, ← Int.natCast_mul]
-    omega
-  · rw [ite_eq_right hovf]
-    rcases Nat.eq_zero_or_pos (rnShiftF m ((grid m e - e).toNat) num den) with h0 | h0
-    · rw [dite_eq_left h0, h0]
-      simp [key]
-    · rw [dite_eq_right (Nat.pos_iff_ne_zero.mp h0)]
-      simp [key, Sign.apply]
-
-/-- Rounding only threads the sign through, so the negative key mirrors the
-positive one. -/
-theorem key_roundWA_neg (m : Nat) (e : Int) (num den : Nat)
-    (hw : WellPlaced m e) (hden : 0 < den) (hnum : num < den) :
-    key (roundWithAccuracy .binary64 .negative m e (accuracyOfFraction num den)) =
-      -key (roundWithAccuracy .binary64 .positive m e (accuracyOfFraction num den)) := by
-  rw [roundWA_eq .negative m e num den hw hden hnum,
-    roundWA_eq .positive m e num den hw hden hnum]
-  by_cases hovf : rnShiftF m ((grid m e - e).toNat) num den = 2 ^ 53
-  · rw [ite_eq_left hovf, ite_eq_left hovf]
-    simp [key, Sign.apply]
-  · rw [ite_eq_right hovf, ite_eq_right hovf]
-    rcases Nat.eq_zero_or_pos (rnShiftF m ((grid m e - e).toNat) num den) with h0 | h0
-    · rw [dite_eq_left h0, dite_eq_left h0]
-      simp [key]
-    · rw [dite_eq_right (Nat.pos_iff_ne_zero.mp h0), dite_eq_right (Nat.pos_iff_ne_zero.mp h0)]
-      simp [key, Sign.apply]
 
 /-! The key closed form and the master monotonicity theorem, for any
 format. `key` measures in the binary64 quantum `2 ^ -1074`, so these ask
@@ -1047,6 +944,21 @@ theorem key_roundWA_negF (spec : Format) (P : Nat) (hp : spec.mantissaBits = P +
         dite_eq_right (Nat.pos_iff_ne_zero.mp h0)]
       simp [key, Sign.apply]
 
+
+/-- The key of a positive rounding, in closed form. -/
+theorem key_roundWA_pos (m : Nat) (e : Int) (num den : Nat)
+    (hw : WellPlaced m e) (hden : 0 < den) (hnum : num < den) :
+    key (roundWithAccuracy .binary64 .positive m e (accuracyOfFraction num den)) =
+      rnShiftF m ((grid m e - e).toNat) num den * 2 ^ (grid m e + 1074).toNat :=
+  key_roundWA_posF .binary64 52 (by decide) (by decide) m e num den hw hden hnum
+
+/-- Rounding only threads the sign through, so the negative key mirrors the
+positive one. -/
+theorem key_roundWA_neg (m : Nat) (e : Int) (num den : Nat)
+    (hw : WellPlaced m e) (hden : 0 < den) (hnum : num < den) :
+    key (roundWithAccuracy .binary64 .negative m e (accuracyOfFraction num den)) =
+      -key (roundWithAccuracy .binary64 .positive m e (accuracyOfFraction num den)) :=
+  key_roundWA_negF .binary64 52 (by decide) m e num den hw hden hnum
 
 /-! ## The master monotonicity theorem
 
@@ -1275,102 +1187,9 @@ theorem key_roundWA_mono {m₁ m₂ num₁ num₂ den : Nat} {e₁ e₂ : Int}
     (h : (m₁ * den + num₁) * 2 ^ (e₁ - min e₁ e₂).toNat
        ≤ (m₂ * den + num₂) * 2 ^ (e₂ - min e₁ e₂).toNat) :
     key (roundWithAccuracy .binary64 .positive m₁ e₁ (accuracyOfFraction num₁ den))
-      ≤ key (roundWithAccuracy .binary64 .positive m₂ e₂ (accuracyOfFraction num₂ den)) := by
-  rw [key_roundWA_pos m₁ e₁ num₁ den hw₁ hden hnum₁,
-    key_roundWA_pos m₂ e₂ num₂ den hw₂ hden hnum₂]
-  have hcast : ∀ a b : Nat, a ≤ b → (a : Int) ≤ (b : Int) := fun _ _ => Int.ofNat_le.mpr
-  apply hcast
-  rcases Int.lt_trichotomy (grid m₁ e₁) (grid m₂ e₂) with hG | hG | hG
-  · -- Coarser grid on the left: the right result clears a whole binade
-    -- above everything the left grid can express.
-    have hle₁ : rnShiftF m₁ ((grid m₁ e₁ - e₁).toNat) num₁ den ≤ 2 ^ 53 :=
-      rnShiftF_le m₁ e₁ num₁ den hw₁
-    have hb₂ := rnShiftF_bounds m₂ ((grid m₂ e₂ - e₂).toNat) num₂ den
-    have hlog₂ : 52 ≤ m₂.log2 ∧ (grid m₂ e₂ - e₂).toNat = m₂.log2 - 52 := by
-      have hG' := hG
-      have hw := hw₂
-      simp only [WellPlaced, grid, totalExponent] at hG' hw ⊢
-      omega
-    have hm₂ : m₂ ≠ 0 := by
-      intro h0
-      have hl0 : Nat.log2 0 = 0 := rfl
-      rw [h0, hl0] at hlog₂
-      omega
-    have hq₂ : 2 ^ 52 ≤ m₂ / 2 ^ (grid m₂ e₂ - e₂).toNat := by
-      rw [Nat.le_div_iff_mul_le (Nat.two_pow_pos _), ← Nat.pow_add]
-      have h52 : 52 + (grid m₂ e₂ - e₂).toNat = m₂.log2 := by omega
-      rw [h52]
-      exact Nat.log2_self_le hm₂
-    have hexp : (grid m₁ e₁ + 1074).toNat + 53 ≤ (grid m₂ e₂ + 1074).toNat + 52 := by
-      have hg1 := grid_ge m₁ e₁
-      have hg2 := grid_ge m₂ e₂
-      omega
-    calc rnShiftF m₁ ((grid m₁ e₁ - e₁).toNat) num₁ den * 2 ^ (grid m₁ e₁ + 1074).toNat
-        ≤ 2 ^ 53 * 2 ^ (grid m₁ e₁ + 1074).toNat := Nat.mul_le_mul_right _ hle₁
-      _ = 2 ^ ((grid m₁ e₁ + 1074).toNat + 53) := by rw [← Nat.pow_add, Nat.add_comm]
-      _ ≤ 2 ^ ((grid m₂ e₂ + 1074).toNat + 52) := Nat.pow_le_pow_right (by omega) hexp
-      _ = 2 ^ 52 * 2 ^ (grid m₂ e₂ + 1074).toNat := by rw [← Nat.pow_add, Nat.add_comm]
-      _ ≤ rnShiftF m₂ ((grid m₂ e₂ - e₂).toNat) num₂ den * 2 ^ (grid m₂ e₂ + 1074).toNat :=
-          Nat.mul_le_mul_right _ (Nat.le_trans hq₂ hb₂.1)
-  · -- Same grid: the scaled core theorem decides.
-    rw [hG]
-    apply Nat.mul_le_mul_right
-    apply rnShiftF_mono_scaled hden hnum₁ hnum₂ _ h
-    have hw1 := hw₁
-    have hw2 := hw₂
-    simp only [WellPlaced] at hw1 hw2
-    omega
-  · -- Coarser grid on the right would need the left value to reach a
-    -- higher binade than the right value bounds.
-    exfalso
-    have hlog₁ : 52 ≤ m₁.log2 := by
-      have hG' := hG
-      have hw := hw₁
-      simp only [WellPlaced, grid, totalExponent] at hG' hw
-      omega
-    have hm₁ : m₁ ≠ 0 := by
-      intro h0
-      have hl0 : Nat.log2 0 = 0 := rfl
-      rw [h0, hl0] at hlog₁
-      omega
-    have hlow : 2 ^ (m₁.log2 + (e₁ - min e₁ e₂).toNat) * den
-        ≤ (m₁ * den + num₁) * 2 ^ (e₁ - min e₁ e₂).toNat := by
-      have h1 : 2 ^ m₁.log2 * den ≤ m₁ * den + num₁ := by
-        have := Nat.mul_le_mul_right den (Nat.log2_self_le hm₁)
-        omega
-      calc 2 ^ (m₁.log2 + (e₁ - min e₁ e₂).toNat) * den
-          = 2 ^ m₁.log2 * den * 2 ^ (e₁ - min e₁ e₂).toNat := by
-            rw [Nat.pow_add]
-            grind
-        _ ≤ (m₁ * den + num₁) * 2 ^ (e₁ - min e₁ e₂).toNat :=
-            Nat.mul_le_mul_right _ h1
-    have hhigh : (m₂ * den + num₂) * 2 ^ (e₂ - min e₁ e₂).toNat
-        < 2 ^ (m₂.log2 + 1 + (e₂ - min e₁ e₂).toNat) * den := by
-      have h1 : m₂ * den + num₂ < 2 ^ (m₂.log2 + 1) * den := by
-        have := Nat.mul_le_mul_right den (Nat.lt_log2_self (n := m₂))
-        have h2 : (m₂ + 1) * den = m₂ * den + den := by grind
-        have h3 : m₂ + 1 ≤ 2 ^ (m₂.log2 + 1) := Nat.lt_log2_self
-        have h4 := Nat.mul_le_mul_right den h3
-        omega
-      calc (m₂ * den + num₂) * 2 ^ (e₂ - min e₁ e₂).toNat
-          < 2 ^ (m₂.log2 + 1) * den * 2 ^ (e₂ - min e₁ e₂).toNat :=
-            (Nat.mul_lt_mul_right (Nat.two_pow_pos _)).mpr h1
-        _ = 2 ^ (m₂.log2 + 1 + (e₂ - min e₁ e₂).toNat) * den := by
-            rw [Nat.pow_add]
-            grind
-    have hexp : m₁.log2 + (e₁ - min e₁ e₂).toNat < m₂.log2 + 1 + (e₂ - min e₁ e₂).toNat := by
-      rcases Nat.lt_or_ge (m₁.log2 + (e₁ - min e₁ e₂).toNat)
-          (m₂.log2 + 1 + (e₂ - min e₁ e₂).toNat) with hlt | hge
-      · exact hlt
-      · exfalso
-        have hpk : 2 ^ (m₂.log2 + 1 + (e₂ - min e₁ e₂).toNat) * den
-            ≤ 2 ^ (m₁.log2 + (e₁ - min e₁ e₂).toNat) * den :=
-          Nat.mul_le_mul_right den (Nat.pow_le_pow_right (by omega) hge)
-        omega
-    have hG' := hG
-    have hw := hw₁
-    simp only [WellPlaced, grid, totalExponent] at hG' hw
-    omega
+      ≤ key (roundWithAccuracy .binary64 .positive m₂ e₂ (accuracyOfFraction num₂ den)) :=
+  key_roundWA_monoF .binary64 52 (by decide) (by decide) (by decide)
+    hden hnum₁ hnum₂ hw₁ hw₂ h
 
 /-! ## Compare agrees with key on canonical floats -/
 
