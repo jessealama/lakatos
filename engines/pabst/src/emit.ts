@@ -16,6 +16,12 @@ import type { PropertySpec } from "./ir.js";
 
 const SRC_EXT = /\.(ts|tsx|mts|cts|js|mjs|cjs)$/;
 
+/** Runs a sampled property gets. fast-check's 100 is a unit-test default;
+ * a refutation attempt is a deliberate run, and guarded properties whose
+ * counterexamples 100 runs find half the time, 1,000 find every time. The
+ * discard ceiling scales with it (100 skips per run). */
+export const SAMPLE_RUNS = 1000;
+
 export function emit(
   specs: PropertySpec[],
   sourceFile: string,
@@ -118,7 +124,7 @@ function emitProp(
     ? `, [${shapes.map((c) => JSON.stringify(c)).join(", ")}]`
     : "";
   const reporter = `(d) => ${REPORT_ALIAS}(${file}, ${fn}, ${name}, [${varNames}], d${ctors})`;
-  const params = `{ seed: ${seed}, reporter: ${reporter} }`;
+  const params = `{ seed: ${seed}, numRuns: ${SAMPLE_RUNS}, reporter: ${reporter} }`;
   const out: string[] = [];
   out.push(`${indent}test.prop([${arbs}], ${params})(${name}, (${vars}) => {`);
   for (const b of s.binders) {

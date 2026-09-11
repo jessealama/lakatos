@@ -29,8 +29,14 @@ describe("emit", () => {
     expect(out).toContain('describe("pabst", () => {');
     expect(out).toContain('describe("foo", () => {');
     expect(out).toContain(
-      'test.prop([fc.integer(), fc.double()], { seed: 42, reporter: (d) => __pabstReport("foo.ts", "foo", "nonzero", ["x", "y"], d) })("nonzero", (x, y) => {',
+      'test.prop([fc.integer(), fc.double()], { seed: 42, numRuns: 1000, reporter: (d) => __pabstReport("foo.ts", "foo", "nonzero", ["x", "y"], d) })("nonzero", (x, y) => {',
     );
+  });
+
+  it("states the sampling budget in the generated test", () => {
+    // fast-check's own default (100 runs) is a coin flip on guarded
+    // properties whose counterexamples 1,000 runs find every time.
+    expect(out).toContain("numRuns: 1000,");
   });
 
   it("lifts preconditions and returns the body without a redundant typeof guard", () => {
@@ -42,7 +48,7 @@ describe("emit", () => {
 
   it("passes a reporter that names the property and binds the counterexample", () => {
     expect(out).toContain(
-      'test.prop([fc.integer(), fc.double()], { seed: 42, reporter: (d) => __pabstReport("foo.ts", "foo", "nonzero", ["x", "y"], d) })("nonzero", (x, y) => {',
+      'test.prop([fc.integer(), fc.double()], { seed: 42, numRuns: 1000, reporter: (d) => __pabstReport("foo.ts", "foo", "nonzero", ["x", "y"], d) })("nonzero", (x, y) => {',
     );
   });
 

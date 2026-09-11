@@ -543,6 +543,24 @@ export function keep(n: number): number {
 `,
       "utf8",
     );
+    // Three guards discard ~88% of samples; an infinite factor makes the
+    // conclusion NaN. Under seed 2 fast-check's default 100 runs pass
+    // cleanly, so this pins the larger budget refute runs with.
+    fs.mkdirSync(path.join(workDir, "guarded"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workDir, "guarded", "conv.ts"),
+      `/**
+ * @ensures{naiveMonotone} forall (x y sf so tf to: number) {
+ *   0 < sf → 0 < tf → x <= y →
+ *     conv(x, sf, so, tf, to) <= conv(y, sf, so, tf, to)
+ * }
+ */
+export function conv(v: number, sf: number, so: number, tf: number, to: number): number {
+  return (v * sf + so - to) / tf;
+}
+`,
+      "utf8",
+    );
     process.chdir(workDir);
   });
   afterAll(() => {
@@ -571,6 +589,28 @@ export function keep(n: number): number {
       );
       expect(byProperty).toEqual({ p: "InputError", q: "Theorem" });
       expect(env.generated).toBe(1);
+    },
+  );
+
+  it(
+    "refute falsifies a guarded property that 100 runs would pass",
+    { timeout: 60000 },
+    async () => {
+      const { code, stdout } = await runMain([
+        "refute",
+        "--seed",
+        "2",
+        "guarded/conv.ts",
+      ]);
+      expect(code).toBe(1);
+      const env = JSON.parse(stdout[0]!);
+      expectValidEnvelope(env);
+      expect(env.annotations).toHaveLength(1);
+      expect(env.annotations[0]).toMatchObject({
+        property: "naiveMonotone",
+        szs: "CounterSatisfiable",
+        kind: "falsified",
+      });
     },
   );
 

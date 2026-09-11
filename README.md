@@ -87,9 +87,9 @@ status:
 it, so a clean pass over such a domain is a `Theorem` with
 `kind: "enumerated"` and `cases`, the number of tuples evaluated; a walk
 that outruns its wall-clock budget is a `Timeout` with `kind: "budget"`.
-Larger domains are sampled, and the two sampled `GaveUp` cases are
-distinguished by the `kind` field: present (`"exhausted"`) when generation
-gave up, absent when every run passed.
+Larger domains are sampled, 1,000 runs per property, and the two sampled
+`GaveUp` cases are distinguished by the `kind` field: present
+(`"exhausted"`) when generation gave up, absent when every run passed.
 
 `NotTried` also covers unhealthy runs: when the underlying engine run
 fails outright — the test runner dies before reporting, a generated test
