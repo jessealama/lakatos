@@ -10145,12 +10145,15 @@ export function f(b: B): number {
     });
   });
 
-  test("a union carrying no boolean still refuses at a boolean position", () => {
-    const { classified } = emitModule(
-      unionField("if (this.x) {\n      return 1;\n    }\n    return 0;"),
-      "t.ts",
+  test("a union carrying no boolean records its site at a boolean position", () => {
+    // Truthiness has no model for a union that cannot hold a boolean, so
+    // the condition becomes a site naming the read it could not map.
+    const src = unionField(
+      "if (this.x) {\n      return 1;\n    }\n    return 0;",
     );
-    expect(classified[0]!.reason).toContain("PropertyAccessExpression");
+    expect(residualConstructs(src)).toEqual([
+      expect.stringContaining("PropertyAccessExpression"),
+    ]);
   });
 
   test("a local inferred from a boolean-carrying union place keeps the union", () => {
