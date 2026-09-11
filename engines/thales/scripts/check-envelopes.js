@@ -134,7 +134,7 @@ const CLASS_FIXTURES = [
   `${CONFORMANCE}/theorem/fn-default-explicit-undefined.ts`,
   `${CONFORMANCE}/theorem/fn-default-leading.ts`,
   `${CONFORMANCE}/theorem/fn-default-calls.ts`,
-  `${CONFORMANCE}/inappropriate/fn-default-outside-slice.ts`,
+  `${CONFORMANCE}/theorem/fn-default-outside-slice.ts`,
   `${CONFORMANCE}/theorem/field-union-undefined.ts`,
   `${CONFORMANCE}/theorem/field-class-nested.ts`,
   `${CONFORMANCE}/inappropriate/field-later-class.ts`,
