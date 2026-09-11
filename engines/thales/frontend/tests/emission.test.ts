@@ -11468,3 +11468,182 @@ describe("residual IR on the wire", () => {
     ).toThrow();
   });
 });
+
+/** The residual declarations of a module's emission, in order. */
+function residualsOf(src: string, file = "r.ts") {
+  return emitModule(src, file).emission.declarations.filter(
+    (d) => d.kind === "residual",
+  );
+}
+
+describe("residual sites in function bodies", () => {
+  test("an unlisted builtin call becomes a residual over the in-scope variables", () => {
+    const { emission, classified } = emitModule(fnWith("Math.log(x)"), "r.ts");
+    expect(classified).toEqual([]);
+    expect(emission.declarations).toEqual([
+      {
+        kind: "residual",
+        owner: "f",
+        site: 1,
+        construct: "'Math.log' is not supported",
+        params: [{ name: "x", type: "number" }],
+        type: "number",
+      },
+      expect.objectContaining({
+        kind: "function",
+        name: "f",
+        body: [
+          {
+            kind: "return",
+            expr: {
+              kind: "residual",
+              owner: "f",
+              site: 1,
+              args: [{ kind: "id", name: "x" }],
+            },
+          },
+        ],
+      }),
+    ]);
+    expect(emission.obligations).toHaveLength(1);
+  });
+
+  test("the residual is the outermost unmodelable node, modeled context kept", () => {
+    const { emission } = emitModule(fnWith("x.y + 1"), "r.ts");
+    expect(emission.declarations[0]).toMatchObject({
+      kind: "residual",
+      site: 1,
+      construct: expect.stringMatching(
+        /^unmapped TypeScript construct 'PropertyAccessExpression' at 2:\d+$/,
+      ),
+    });
+    const fn = emission.declarations[1];
+    assert(fn?.kind === "function");
+    expect(fn.body[0]).toMatchObject({
+      kind: "return",
+      expr: {
+        kind: "binop",
+        op: "+",
+        left: { kind: "residual", site: 1 },
+        right: { kind: "num", lit: "1" },
+      },
+    });
+  });
+
+  test("sites number in source order and never share a symbol", () => {
+    const rs = residualsOf(fnWith("(x ** 2) + (x ** 2)"));
+    expect(rs.map((r) => (r.kind === "residual" ? r.site : 0))).toEqual([1, 2]);
+    expect(rs.map((r) => (r.kind === "residual" ? r.construct : ""))).toEqual([
+      "'**' is not supported",
+      "'**' is not supported",
+    ]);
+  });
+
+  test("a local bound before the site is one of its arguments", () => {
+    const src =
+      "/** @ensures{p} forall (x: int ∈ [0, 5)) { f(x) >= 0 } */\n" +
+      "export function f(x: number): number { const y = x + 1; return Math.log(y); }\n";
+    const [r] = residualsOf(src);
+    expect(r).toMatchObject({
+      params: [
+        { name: "x", type: "number" },
+        { name: "y", type: "number" },
+      ],
+    });
+  });
+
+  test("a call to a failed declaration is a residual naming the callee's construct", () => {
+    const src =
+      "declare function probe(n: number): number;\n" +
+      "/** @ensures{p} forall (x: int ∈ [0, 5)) { f(x) >= 0 } */\n" +
+      "export function f(x: number): number { if (x < 0) { return probe(x); } return x; }\n";
+    const [r] = residualsOf(src);
+    expect(r).toMatchObject({
+      construct:
+        "'probe' could not be modeled: unmapped TypeScript construct 'DeclareKeyword' at 1:1",
+    });
+  });
+
+  test("a truthiness condition is a boolean residual", () => {
+    const src =
+      "/** @ensures{p} forall (x: int ∈ [0, 5)) { f(x) >= 0 } */\n" +
+      "export function f(x: number): number { if (x) { return 1; } return 0; }\n";
+    const [r] = residualsOf(src);
+    expect(r).toMatchObject({
+      type: "boolean",
+      construct: expect.stringContaining("Identifier"),
+    });
+  });
+
+  test("an expression statement is discarded, its residual kept for its effect", () => {
+    const src =
+      "declare function log(n: number): void;\n" +
+      "/** @ensures{p} forall (x: int ∈ [0, 5)) { f(x) >= 0 } */\n" +
+      "export function f(x: number): number { log(x); return x; }\n";
+    const decls = emitModule(src, "r.ts").emission.declarations;
+    const fn = decls[1];
+    assert(fn?.kind === "function");
+    expect(fn.body[0]).toMatchObject({
+      kind: "discard",
+      expr: { kind: "residual", site: 1 },
+    });
+  });
+
+  test("an expression that assigns inside a residual still fails the declaration", () => {
+    const src =
+      "declare function probe(n: number): number;\n" +
+      "/** @ensures{p} forall (x: int ∈ [0, 5)) { f(x) >= 0 } */\n" +
+      "export function f(x: number): number { let y = x; return probe((y = 2)); }\n";
+    expect(classifications(src).classified).toEqual([
+      [
+        "Inappropriate",
+        expect.stringContaining(
+          "'f' could not be modeled: an assignment at 3:",
+        ),
+      ],
+    ]);
+  });
+
+  test("a compound assignment statement still fails the declaration", () => {
+    const src =
+      "/** @ensures{p} forall (x: int ∈ [0, 5)) { f(x) >= 0 } */\n" +
+      "export function f(x: number): number { let y = x; y += 1; return y; }\n";
+    expect(classifications(src).classified).toEqual([
+      [
+        "Inappropriate",
+        expect.stringContaining(
+          "'f' could not be modeled: an assignment at 2:",
+        ),
+      ],
+    ]);
+  });
+
+  test("a statement outside the slice still fails the declaration", () => {
+    const src =
+      "/** @ensures{p} forall (x: int ∈ [0, 5)) { f(x) >= 0 } */\n" +
+      "export function f(x: number): number { for (;;) { return x; } }\n";
+    expect(classifications(src).classified).toEqual([
+      [
+        "Inappropriate",
+        expect.stringMatching(
+          /^'f' could not be modeled: unmapped TypeScript construct 'ForStatement'/,
+        ),
+      ],
+    ]);
+  });
+
+  test("a construct-less failure stays an Error, not a residual", () => {
+    expect(classifications(fnWith("y")).classified).toEqual([
+      ["Error", "'f' could not be modeled: unbound identifier 'y'"],
+    ]);
+  });
+
+  test("the formula side never residualizes", () => {
+    const src =
+      "/** @ensures{p} forall (x: int ∈ [0, 5)) { f(x) >= x ** 2 } */\n" +
+      "export function f(x: number): number { return x; }\n";
+    expect(classifications(src).classified).toEqual([
+      ["Inappropriate", "'**' is not supported"],
+    ]);
+  });
+});

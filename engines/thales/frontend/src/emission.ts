@@ -1051,6 +1051,10 @@ interface WalkScope {
   /** Set inside a constructor body: the fields a `this.F = e` may set,
    * each with the type its right side is walked at. */
   ctorFields?: ReadonlyMap<string, ValueTy>;
+  /** Set exactly while a body or a default initializer is walked, never on
+   * the formula side: where an unmodelable expression becomes a site
+   * instead of failing its declaration. */
+  residuals?: ResidualSink;
 }
 
 /** Whether the module itself binds a spelling: a top-level declaration or
@@ -1266,6 +1270,87 @@ class ModelError extends Error {
   }
 }
 
+/** A refusal a residual may not absorb: the site would hide a mutation of
+ * the modeled scope. A residual stands for a deterministic, possibly
+ * throwing function of the variables in scope; an expression that assigns
+ * to one is not that, so it degrades its declaration as before. */
+class HardRefusal extends ModelError {}
+
+/** The first assignment, update, or delete anywhere inside an expression. */
+function containsMutation(e: ts.Node): ts.Node | undefined {
+  if (
+    (ts.isBinaryExpression(e) &&
+      e.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+      e.operatorToken.kind <= ts.SyntaxKind.LastAssignment) ||
+    ((ts.isPrefixUnaryExpression(e) || ts.isPostfixUnaryExpression(e)) &&
+      (e.operator === ts.SyntaxKind.PlusPlusToken ||
+        e.operator === ts.SyntaxKind.MinusMinusToken)) ||
+    ts.isDeleteExpression(e)
+  ) {
+    return e;
+  }
+  return ts.forEachChild(e, containsMutation);
+}
+
+function mutationRefusal(node: ts.Node, sf: ts.SourceFile): HardRefusal {
+  const { line, character } = sf.getLineAndCharacterOfPosition(
+    node.getStart(sf),
+  );
+  return new HardRefusal(
+    `an assignment at ${line + 1}:${character + 1} is inside an ` +
+      `expression the model cannot follow`,
+    "assignment",
+  );
+}
+
+/** Where a body's residual sites accumulate while it is walked: one sink
+ * per callable, shared by every scope derived from that walk, so the
+ * numbering is the source order in which the sites arose. */
+interface ResidualSink {
+  /** The owning callable, as the opaque's name is built from: `f`, or
+   * `C#member` with `constructor` for a constructor's own. */
+  owner: string;
+  /** The owner's module qualifier; empty for the entry. */
+  module: string;
+  sites: EmitResidualDecl[];
+  /** Set inside a member, whose sites take the receiver first. */
+  self?: { param: EmitParam; expr: EmitExpr };
+  /** Set while a default initializer is walked, which reports its refusals
+   * as the parameter's rather than bare. */
+  wrap?: (reason: string) => string;
+}
+
+/** One unmodelable site: the owner's next opaque, over the variables in
+ * scope where it arose, at the type the position expects. */
+function residualAt(
+  err: ModelError,
+  expected: Expected,
+  scope: WalkScope,
+): EmitExpr {
+  const sink = scope.residuals!;
+  const site = sink.sites.length + 1;
+  const vars = [...scope.vars].map(([n, ty]) => wireParam(n, ty));
+  const params = sink.self !== undefined ? [sink.self.param, ...vars] : vars;
+  const module = sink.module !== "" ? { module: sink.module } : {};
+  sink.sites.push({
+    kind: "residual",
+    owner: sink.owner,
+    ...module,
+    site,
+    construct: sink.wrap !== undefined ? sink.wrap(err.message) : err.message,
+    params,
+    type: wireParam("_", expected).type,
+  });
+  const args: EmitExpr[] = vars.map((pa) => ({ kind: "id", name: pa.name }));
+  return {
+    kind: "residual",
+    owner: sink.owner,
+    ...module,
+    site,
+    args: sink.self !== undefined ? [sink.self.expr, ...args] : args,
+  };
+}
+
 /** A caught walk failure as a `FailedDecl`, construct preserved. */
 function modelFailure(err: ModelError): FailedDecl {
   return err.construct !== undefined
@@ -1299,10 +1384,39 @@ function shapeOfRef(scope: WalkScope, ref: ModelRef): ClassShape {
   return classShapeOf(scope, ref);
 }
 
+/** The typed walk with residuals: a construct-bearing refusal at an
+ * expression inside a body becomes that site's opaque instead of failing
+ * the declaration. An engine fault, the formula side, and a site that
+ * would swallow an assignment still throw. Every recursive call inside
+ * `walkStrict` lands here, so the site is the innermost expression that
+ * refused and the modeled context above it survives. */
+function walkTyped(
+  e: ts.Expression,
+  expected: Expected,
+  scope: WalkScope,
+  sf: ts.SourceFile,
+): EmitExpr {
+  try {
+    return walkStrict(e, expected, scope, sf);
+  } catch (err) {
+    if (
+      !(err instanceof ModelError) ||
+      err instanceof HardRefusal ||
+      err.construct === undefined ||
+      scope.residuals === undefined
+    ) {
+      throw err;
+    }
+    const mutated = containsMutation(e);
+    if (mutated !== undefined) throw mutationRefusal(mutated, sf);
+    return residualAt(err, expected, scope);
+  }
+}
+
 /** The typed walk: operand types are checked in tree order, so which
  * failure a declaration reports — and with what message — is fixed by the
  * source rather than by walk order. */
-function walkTyped(
+function walkStrict(
   e: ts.Expression,
   expected: Expected,
   scope: WalkScope,
@@ -1704,6 +1818,14 @@ function walkTyped(
     if (sig === undefined) {
       const failed = scope.failed.get(key);
       if (failed !== undefined) {
+        // A callee whose own declaration named a construct travels that
+        // refusal, so the call is outside the model rather than broken.
+        if (failed.construct !== undefined) {
+          throw new ModelError(
+            `'${name}' could not be modeled: ${failed.reason}`,
+            failed.construct,
+          );
+        }
         throw new ModelError(`'${name}' has no model: ${failed.reason}`);
       }
       throw new ModelError(`no model registered for '${name}'`);
@@ -1728,17 +1850,15 @@ function walkTyped(
     const failed = constructAt(e, e.kind, sf);
     throw new ModelError(failed.reason, failed.construct);
   }
-  // An unlisted standard-library member the pre-scans did not reach still
-  // names itself; anything else is outside the model and degrades like an
-  // opaque node.
-  /* v8 ignore start -- the construct scan reaches every call before the
-     walk does; kept so the walk's refusal cannot drift from the scan's. */
+  // An unlisted standard-library member names itself; anything else is
+  // outside the model. Both carry their construct, which is what lets a
+  // body absorb them as a site rather than degrade.
   const unsupported = unsupportedBuiltin(e, scope);
   if (unsupported !== undefined) {
     throw new ModelError(unsupported.reason, unsupported.construct);
   }
-  /* v8 ignore stop */
-  throw new ModelError(constructAt(e, e.kind, sf).reason);
+  const failed = constructAt(e, e.kind, sf);
+  throw new ModelError(failed.reason, failed.construct);
 }
 
 /** A member access `recv.name`. A `#`-private is a member access only
@@ -2161,6 +2281,8 @@ type TStmt =
     }
   | { t: "assign"; name: string; expr: ts.Expression }
   | { t: "field-set"; field: string; expr: ts.Expression }
+  /** An expression statement: evaluated for its effect, value dropped. */
+  | { t: "expr"; expr: ts.Expression }
   | {
       t: "if";
       cond: { expr: ts.Expression } | { opaque: FailedDecl };
@@ -2342,6 +2464,15 @@ function structureStmt(
     }
     const stmt = assignStmt(s.expression, locals);
     if (stmt !== undefined) return [stmt];
+    // A statement that assigns is not a site: the model would lose the
+    // write. Anything else runs for its effect, value dropped.
+    const mutated = containsMutation(s.expression);
+    if (mutated !== undefined) {
+      return [
+        { t: "opaque", failure: modelFailure(mutationRefusal(mutated, sf)) },
+      ];
+    }
+    return [{ t: "expr", expr: s.expression }];
   }
   if (ts.isIfStatement(s)) {
     const inner = unwrapParens(s.expression);
@@ -2559,16 +2690,36 @@ function lowerTree(
       const tail = lowerTree(rest, vars, k, scope, sf, returns);
       return [{ kind: "field-set", field: s.field, expr }, ...tail];
     }
-    /* v8 ignore start -- an opaque statement or condition is unreachable
-       here: the construct scan already degraded the declaration. The throw
-       is a defense, so a scan regression becomes a contained failure
-       rather than a bad artifact. */
+    /* v8 ignore start -- an opaque statement is unreachable here: the
+       statement scan already degraded the declaration. The throw is a
+       defense, so a scan regression becomes a contained failure rather
+       than a bad artifact. */
     case "opaque":
-      throw new ModelError(s.failure.reason);
+      throw new ModelError(s.failure.reason, s.failure.construct);
+    /* v8 ignore stop */
+    case "expr": {
+      // The value is dropped, the effect is not. The position expects
+      // whatever the expression's own shape suggests, since there is no
+      // unit codomain to type it at.
+      const bound: WalkScope = { ...scope, vars: new Map(vars) };
+      const expected: Expected = booleanShaped(s.expr, bound)
+        ? "bool"
+        : (callReturns(s.expr, bound) ?? "num");
+      const expr = walk(s.expr, expected, vars);
+      const tail = lowerTree(rest, vars, k, scope, sf, returns);
+      return [{ kind: "discard", expr }, ...tail];
+    }
     case "if": {
-      if ("opaque" in s.cond) throw new ModelError(s.cond.opaque.reason);
-      /* v8 ignore stop */
-      const cond = walk(s.cond.expr, "bool", vars);
+      // A condition the model cannot read is a site like any other: it is
+      // evaluated on every path, and it may throw.
+      const cond: EmitExpr =
+        "opaque" in s.cond
+          ? residualAt(
+              new ModelError(s.cond.opaque.reason, s.cond.opaque.construct),
+              "bool",
+              { ...scope, vars: new Map(vars) },
+            )
+          : walk(s.cond.expr, "bool", vars);
       const elseArm = s.else ?? [];
       // What an arm that falls through continues into: the rest of this
       // list, and only then the enclosing continuation.
@@ -2619,25 +2770,19 @@ function lowerTree(
   }
 }
 
-/** The pre-scans over a whole statement tree, in that same fixed order —
- * opaque constructs, then construct-failed callees — dead code
- * included. */
-function bodyPrescan(
-  tree: readonly TStmt[],
-  sf: ts.SourceFile,
-  scope: WalkScope,
-): FailedDecl | undefined {
-  const construct = treeConstruct(tree, sf, scope);
-  if (construct !== undefined) return construct;
-  const exprs = treeExprs(tree);
-  const callee = failedCalleeIn(
-    exprs.flatMap((e) => callNames(e, scope)),
-    scope,
-  );
-  if (callee !== undefined) return callee;
-  for (const e of exprs) {
-    const found = findFailedMemberUse(e, scope);
-    if (found !== undefined) return found;
+/** The first statement outside the slice, arms included — the one failure
+ * a body still degrades on, now that its expressions carry their own as
+ * residual sites. Dead code counts: a statement the model cannot map is
+ * not made mappable by being unreachable. */
+function treeStatementFailure(stmts: readonly TStmt[]): FailedDecl | undefined {
+  for (const s of stmts) {
+    if (s.t === "opaque") return s.failure;
+    if (s.t === "if") {
+      const found =
+        treeStatementFailure(s.then) ??
+        (s.else !== undefined ? treeStatementFailure(s.else) : undefined);
+      if (found !== undefined) return found;
+    }
   }
   return undefined;
 }
@@ -3375,7 +3520,7 @@ function walkClass(
         };
       }
     }
-    const failure = bodyPrescan(tree, sf, ctorScope);
+    const failure = treeStatementFailure(tree);
     if (failure !== undefined) return failure;
     // Falling off the end is a constructor's normal exit: the renderer
     // appends the instance return.
@@ -3449,7 +3594,7 @@ function walkClass(
     const body = g.body!.statements.flatMap((st) =>
       structureStmt(st, sf, new Map(), scope),
     );
-    const failure = bodyPrescan(body, sf, scope);
+    const failure = treeStatementFailure(body);
     if (failure !== undefined) {
       memberFailed.set(memberKey(spelling), failure);
       continue;
@@ -3516,7 +3661,7 @@ function walkClass(
     const body = m.body!.statements.flatMap((st) =>
       structureStmt(st, sf, locals, scope),
     );
-    const prescan = bodyPrescan(body, sf, scope);
+    const prescan = treeStatementFailure(body);
     if (prescan !== undefined) {
       memberFailed.set(memberKey(spelling), prescan);
       continue;
@@ -3631,7 +3776,9 @@ function walkFunction(
   c: EmitClosure,
   names: ReadonlyMap<string, ModelRef>,
   module: string,
-): { emit: EmitFunction; sig: FnSig } | FailedDecl {
+):
+  | { emit: EmitFunction; sig: FnSig; residuals: EmitResidualDecl[] }
+  | FailedDecl {
   const sig = signatureFailure(fn, sf, {
     classes: c.classes,
     failed: c.failed,
@@ -3643,6 +3790,7 @@ function walkFunction(
   if (!("params" in sig)) return sig;
   const params = sig.params;
   const returns = sig.returns;
+  const residuals: EmitResidualDecl[] = [];
   const scope: WalkScope = {
     vars: new Map(params.map((p) => [p.name, p.ty])),
     mapped: c.mapped,
@@ -3652,13 +3800,14 @@ function walkFunction(
     aliases: c.aliases,
     names,
     module,
+    residuals: { owner: fn.name!.text, module, sites: residuals },
   };
   const locals = paramLocals(params);
   const tree = fn.body!.statements.flatMap((s) =>
     structureStmt(s, sf, locals, scope),
   );
-  const prescan = bodyPrescan(tree, sf, scope);
-  if (prescan !== undefined) return prescan;
+  const statementFailure = treeStatementFailure(tree);
+  if (statementFailure !== undefined) return statementFailure;
   try {
     const openings = defaultOpenings(params, tree, scope, sf);
     const body = [
@@ -3687,6 +3836,7 @@ function walkFunction(
         body,
       },
       sig: sigOf(params, returns),
+      residuals,
     };
   } catch (err) {
     if (err instanceof ModelError) return modelFailure(err);
@@ -4499,7 +4649,8 @@ function walkEmitModule(
       if (stmt.name === undefined) continue;
       const walked = walkFunction(stmt, sf, c, names, qualifier);
       if ("emit" in walked) {
-        c.declarations.push(walked.emit);
+        // A site is declared before the owner that applies it.
+        c.declarations.push(...walked.residuals, walked.emit);
         c.mapped.set(key(stmt.name.text), walked.sig);
       } else {
         c.failed.set(key(stmt.name.text), walked);
