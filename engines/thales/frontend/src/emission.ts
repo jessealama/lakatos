@@ -820,12 +820,12 @@ function nonBooleanOperand(
   };
 }
 
-/** A member access chain is shaped when its root is: `this` inside a
- * member, an identifier bound at a class, or a construction (whose
- * arguments are scanned). Which members exist is the walk's question,
- * as it always was for `this.x`. An unshaped root is reported at `at`,
- * the whole member expression, which is where the scan always reported
- * a member read or call it could not map. */
+/** A member access chain is shaped when its root is an identifier bound at
+ * a class or a construction (whose arguments are scanned). Which members
+ * exist is the walk's question. An unshaped root is reported at `at`, the
+ * whole member expression, which is where the scan always reported a member
+ * read or call it could not map. A property binds no receiver, so `this` is
+ * simply unshaped here. */
 function receiverConstruct(
   e: ts.Expression,
   at: ts.Expression,
@@ -833,8 +833,6 @@ function receiverConstruct(
   scope: WalkScope,
 ): FailedDecl | undefined {
   const u = unwrapParens(e);
-  if (u.kind === ts.SyntaxKind.ThisKeyword)
-    return scope.self !== undefined ? undefined : constructAt(at, at.kind, sf);
   if (ts.isIdentifier(u)) {
     const ty = scope.vars.get(u.text);
     return ty !== undefined && typeof ty !== "string" && "instance" in ty
@@ -871,6 +869,9 @@ function findConstruct(
   if (ts.isBinaryExpression(e)) {
     const tt = typeofTest(e);
     if (tt !== undefined) {
+      /* v8 ignore next -- a property's binders are int, nat, number,
+         boolean or class-valued, so no operand in one is a union place;
+         the check stays for the day a property can name one. */
       if (validTypeofTest(tt, scope)) return undefined;
       return constructAt(tt.typeofNode, tt.typeofNode.kind, sf);
     }
@@ -1133,6 +1134,8 @@ function memberTravel(
   member: string,
 ): FailedDecl | undefined {
   const view = classView(scope, cls);
+  /* v8 ignore next -- the walk resolved this ref's shape before asking
+     which of its members failed, so the view is never absent here. */
   if (view === undefined) return undefined;
   return travelFrom(view.failed, {
     module: cls.module,
@@ -1172,8 +1175,6 @@ function findFailedMemberUse(
   e: ts.Expression,
   scope: WalkScope,
 ): FailedDecl | undefined {
-  // A bare `this` names no declaration this function classifies.
-  if (e.kind === ts.SyntaxKind.ThisKeyword) return undefined;
   if (ts.isParenthesizedExpression(e))
     return findFailedMemberUse(e.expression, scope);
   if (isUnaryArith(e) || isPrefixNot(e))
@@ -1213,8 +1214,8 @@ function findFailedMemberUse(
     const ty = receiverTy(mc.receiver, scope);
     if (ty !== undefined && typeof ty !== "string" && "instance" in ty) {
       const view = classView(scope, ty.instance);
-      // The live registry holds only already-walked siblings, so a
-      // forward call still falls to the typed walk, as source order demands.
+      /* v8 ignore next -- a receiver typed at an instance names a
+         registered class, so the view is never absent in a property. */
       if (view !== undefined) {
         const known =
           call !== undefined
@@ -2834,15 +2835,12 @@ function defaultOpenings(
       ...scope,
       vars: new Map(params.slice(0, i).map((q) => [q.name, q.ty])),
       // The same sink, so a default's site numbers in sequence with the
-      // body's, and its text reads as the parameter's failure.
-      ...(scope.residuals === undefined
-        ? {}
-        : {
-            residuals: {
-              ...scope.residuals,
-              wrap: (reason: string) => defaultFailure(p.name, reason),
-            },
-          }),
+      // body's, and its text reads as the parameter's failure. Every body
+      // walk carries one, which is the only place a default is resolved.
+      residuals: {
+        ...scope.residuals!,
+        wrap: (reason: string) => defaultFailure(p.name, reason),
+      },
     };
     let init: EmitExpr;
     try {

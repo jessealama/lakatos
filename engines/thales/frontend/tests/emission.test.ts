@@ -11654,3 +11654,210 @@ describe("the noncomputable taint", () => {
     expect(fnNamed(src, "f").noncomputable).toBe(true);
   });
 });
+
+describe("the formula side is the construct scan's only caller", () => {
+  // A body carries its own refusals as residual sites now, so every arm of
+  // the pre-scan answers for a property's own text and nothing else.
+  const formula = (atom: string, body = "return x;") =>
+    `/** @ensures{p} forall (x: int ∈ [0, 5)) { ${atom} } */\n` +
+    `export function f(x: number): number { ${body} }\n`;
+
+  test("truthiness in an atom refuses at the operator it sits under", () => {
+    expect(
+      classifications(formula("f((x === 0) && 1) >= 0")).classified,
+    ).toEqual([
+      [
+        "Inappropriate",
+        expect.stringContaining(
+          "'&&' models boolean operands only; the right operand is not a boolean",
+        ),
+      ],
+    ]);
+    expect(classifications(formula("f(!x) >= 0")).classified).toEqual([
+      [
+        "Inappropriate",
+        expect.stringContaining(
+          "'!' models boolean operands only; the operand is not a boolean",
+        ),
+      ],
+    ]);
+    expect(classifications(formula("f(x ? 0 : 1) >= 0")).classified).toEqual([
+      [
+        "Inappropriate",
+        expect.stringContaining(
+          "'?:' models boolean operands only; the condition is not a boolean",
+        ),
+      ],
+    ]);
+  });
+
+  test("a typeof outside a comparison refuses in an atom too", () => {
+    expect(classifications(formula("f(typeof x) >= 0")).classified).toEqual([
+      [
+        "Inappropriate",
+        expect.stringContaining(
+          "unmapped TypeScript construct 'TypeOfExpression'",
+        ),
+      ],
+    ]);
+  });
+
+  test("null in an atom is an atom, not a construct", () => {
+    // `null` is a value the tagged domain holds, so the scan passes it over
+    // and the typed walk decides whether the position admits it.
+    const src =
+      `/** @ensures{p} forall (x: int ∈ [0, 5)) { Object.is(f(x), null) } */\n` +
+      `export function f(x: number): number { return x; }\n`;
+    const { classified, obligations } = classifications(src);
+    expect(classified).toEqual([]);
+    expect(obligations).toBe(1);
+  });
+
+  test("a receiver the scan cannot shape refuses at the whole member read", () => {
+    // `this` outside a member, a call as a receiver, and a literal receiver:
+    // none is a root the scan can shape, and each reports at the read.
+    for (const atom of ["this.v >= 0", "f(x).v >= 0", "(1).v >= 0"]) {
+      const { classified } = classifications(formula(atom));
+      expect(classified).toEqual([
+        [
+          "Inappropriate",
+          expect.stringContaining("unmapped TypeScript construct"),
+        ],
+      ]);
+    }
+  });
+
+  test("a construct inside a builtin call's argument is found in an atom", () => {
+    expect(classifications(formula("Math.abs(x.y) >= 0")).classified).toEqual([
+      [
+        "Inappropriate",
+        expect.stringContaining(
+          "unmapped TypeScript construct 'PropertyAccessExpression'",
+        ),
+      ],
+    ]);
+  });
+
+  test("a degraded member reached through an atom's builtin argument travels", () => {
+    const src =
+      "export class Box {\n  readonly v: number;\n" +
+      "  constructor(v: number) { this.v = v; }\n" +
+      "  bad(): number { for (;;) {} }\n}\n" +
+      "/** @ensures{p} forall (x: int ∈ [0, 5)) { Math.abs(new Box(x).bad()) >= 0 } */\n" +
+      "export function f(x: number): number { return x; }\n";
+    expect(classifications(src).classified).toEqual([
+      [
+        "Inappropriate",
+        expect.stringContaining("'Box#bad' could not be modeled"),
+      ],
+    ]);
+  });
+
+  test("a degraded member under a negation or a conditional travels too", () => {
+    const cls =
+      "export class Box {\n  readonly v: number;\n" +
+      "  constructor(v: number) { this.v = v; }\n" +
+      "  bad(): number { for (;;) {} }\n}\n";
+    for (const atom of [
+      "Object.is(-new Box(x).bad(), 0)",
+      "Object.is(x === 0 ? new Box(x).bad() : 0, 0)",
+    ]) {
+      const src =
+        cls +
+        `/** @ensures{p} forall (x: int ∈ [0, 5)) { ${atom} } */\n` +
+        "export function f(x: number): number { return x; }\n";
+      expect(classifications(src).classified).toEqual([
+        ["Inappropriate", expect.stringContaining("could not be modeled")],
+      ]);
+    }
+  });
+});
+
+describe("statements the slice admits without a model of their own", () => {
+  test("a stray semicolon is not a class element the walk sees", () => {
+    // It binds nothing and declares nothing, so the class models around it.
+    const src =
+      "export class Box {\n  ;\n  readonly v: number;\n" +
+      "  constructor(v: number) { this.v = v; }\n" +
+      "  /** @ensures{p} forall (x: int ∈ [0, 5)) { new Box(x).twice >= 0 } */\n" +
+      "  get twice(): number { return this.v * 2; }\n}\n";
+    const { classified, emission } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    const cls = emission.declarations.find((d) => d.kind === "class");
+    assert(cls?.kind === "class");
+    expect(cls.getters.map((g) => g.name)).toEqual(["twice"]);
+  });
+
+  test("a boolean-shaped expression statement is discarded at boolean", () => {
+    // There is no unit codomain, so a discard is typed at the shape its own
+    // expression suggests rather than at number by default.
+    const src =
+      "/** @ensures{p} forall (x: int ∈ [0, 5)) { f(x) >= 0 } */\n" +
+      "export function f(x: number): number { Number.isFinite(x); return x; }\n";
+    const decls = emitModule(src, "t.ts").emission.declarations;
+    const fn = decls.find((d) => d.kind === "function");
+    assert(fn?.kind === "function");
+    expect(fn.body[0]).toEqual({
+      kind: "discard",
+      expr: {
+        kind: "builtin",
+        object: "Number",
+        member: "isFinite",
+        args: [{ kind: "id", name: "x" }],
+      },
+    });
+    expect(fn).not.toHaveProperty("noncomputable");
+  });
+
+  test("a call statement to a modeled callee is discarded at its return type", () => {
+    const src =
+      "export function flag(n: number): boolean { return n > 0; }\n" +
+      "/** @ensures{p} forall (x: int ∈ [0, 5)) { f(x) >= 0 } */\n" +
+      "export function f(x: number): number { flag(x); return x; }\n";
+    const decls = emitModule(src, "t.ts").emission.declarations;
+    const fn = decls.find((d) => d.kind === "function" && d.name === "f");
+    assert(fn?.kind === "function");
+    expect(fn.body[0]).toEqual({
+      kind: "discard",
+      expr: { kind: "call", callee: "flag", args: [{ kind: "id", name: "x" }] },
+    });
+  });
+});
+
+describe("typeof narrowing in a property's own text", () => {
+  const unionFn =
+    "export function pick(v: number | string): number {\n" +
+    "  if (typeof v === 'number') {\n    return v;\n  }\n  return 0;\n}\n";
+
+  test("a typeof test the scan admits leaves the atom to the typed walk", () => {
+    const src =
+      unionFn +
+      "/** @ensures{p} forall (x: int ∈ [0, 5)) { pick(x) >= 0 } */\n" +
+      "export function f(x: number): number { return pick(x); }\n";
+    const { classified, obligations } = classifications(src);
+    expect(classified).toEqual([]);
+    expect(obligations).toBe(1);
+  });
+
+  // A `&&` at a property's top level is lemma's own error, so a test in an
+  // atom has to sit where a boolean is expected: a boolean callee's argument.
+  const boolFn =
+    "export function holds(b: boolean): number {\n  return b ? 1 : 0;\n}\n";
+
+  test("a typeof test on a non-union operand refuses in an atom", () => {
+    // The scan admits only a test over a union place; anything else is the
+    // construct it reports, and only a property can still reach that arm.
+    const src =
+      boolFn +
+      "/** @ensures{p} forall (x: int ∈ [0, 5)) { holds(typeof x === 'number') >= 0 } */\n" +
+      "export function f(x: number): number { return x; }\n";
+    expect(classifications(src).classified).toEqual([
+      [
+        "Inappropriate",
+        expect.stringContaining(
+          "unmapped TypeScript construct 'TypeOfExpression'",
+        ),
+      ],
+    ]);
+  });
+});
