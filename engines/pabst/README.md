@@ -135,7 +135,8 @@ ascending per binder and lexicographic across binders, so a clean pass
 reports `Theorem` and a failure reports the least tuple. A class binder is
 walked over its constructor's argument tuples; a tuple the constructor
 rejects is skipped but still counted. Number and string binders, and any
-class with a number or string slot, always sample.
+class with a number or string slot, always sample: 1,000 runs per property,
+with up to 100 discarded samples per run before generation gives up.
 
 The process exits `0` when nothing was flagged, `1` when at least one
 annotation was, and `2` on usage errors — including annotation errors such
