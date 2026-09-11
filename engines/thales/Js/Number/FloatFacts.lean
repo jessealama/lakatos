@@ -1708,20 +1708,110 @@ theorem round_unfold (spec : Format) (s : Sign) (m : Nat) (e : Int) :
         (m <<< (e - spec.targetExponent (totalExponent m e)).toNat)
         (e - ((e - spec.targetExponent (totalExponent m e)).toNat : Int)) .exact := rfl
 
+/-! The `round` entry point, for any format. `round` pre-shifts the
+mantissa down to the grid exactly, which restores the rounding contract
+for any input, so everything proven about `roundWithAccuracy` applies. -/
+
+theorem round_eq_roundWAF (spec : Format) (s : Sign) (m : Nat) (e : Int) :
+    UnpackedFloat.round spec s m e =
+      roundWithAccuracy spec s (m * 2 ^ (e - gridF spec m e).toNat)
+        (e - ((e - gridF spec m e).toNat : Int)) (accuracyOfFraction 0 1) := by
+  rw [round_unfold, Nat.shiftLeft_eq,
+    show accuracyOfFraction 0 1 = Accuracy.exact from rfl]
+  simp only [gridF]
+
+theorem wellPlaced_round_inputF (spec : Format) {m : Nat} (hm : 0 < m) (e : Int) :
+    WellPlacedF spec (m * 2 ^ (e - gridF spec m e).toNat)
+      (e - ((e - gridF spec m e).toNat : Int)) := by
+  simp only [WellPlacedF, gridF, Format.targetExponent, totalExponent]
+  rw [log2_mul_pow hm]
+  omega
+
+theorem key_round_negF (spec : Format) (P : Nat) (hp : spec.mantissaBits = P + 1)
+    {m : Nat} (hm : 0 < m) (E : Int) :
+    key (UnpackedFloat.round spec .negative m E)
+      = -key (UnpackedFloat.round spec .positive m E) := by
+  rw [round_eq_roundWAF, round_eq_roundWAF]
+  exact key_roundWA_negF spec P hp _ _ 0 1 (wellPlaced_round_inputF spec hm E)
+    Nat.one_pos Nat.zero_lt_one
+
+theorem key_round_pos_monoF (spec : Format) (P : Nat) (hp : spec.mantissaBits = P + 1)
+    (hP : 0 < P) (hmin : (-1074 : Int) ≤ spec.minExponent)
+    {m₁ m₂ : Nat} {E₁ E₂ : Int} (h₁ : 0 < m₁) (h₂ : 0 < m₂)
+    (h : m₁ * 2 ^ (E₁ - min E₁ E₂).toNat ≤ m₂ * 2 ^ (E₂ - min E₁ E₂).toNat) :
+    key (UnpackedFloat.round spec .positive m₁ E₁)
+      ≤ key (UnpackedFloat.round spec .positive m₂ E₂) := by
+  rw [round_eq_roundWAF, round_eq_roundWAF]
+  apply key_roundWA_monoF spec P hp hP hmin Nat.one_pos Nat.zero_lt_one Nat.zero_lt_one
+    (wellPlaced_round_inputF spec h₁ E₁) (wellPlaced_round_inputF spec h₂ E₂)
+  simp only [Nat.mul_one, Nat.add_zero]
+  -- Exponent bookkeeping: both sides re-express the original scaled values
+  -- at the finer common exponent.
+  have hexp₁ : (E₁ - gridF spec m₁ E₁).toNat
+        + ((E₁ - ((E₁ - gridF spec m₁ E₁).toNat : Int))
+          - min (E₁ - ((E₁ - gridF spec m₁ E₁).toNat : Int))
+                (E₂ - ((E₂ - gridF spec m₂ E₂).toNat : Int))).toNat
+      = (E₁ - min E₁ E₂).toNat
+        + (min E₁ E₂ - min (E₁ - ((E₁ - gridF spec m₁ E₁).toNat : Int))
+            (E₂ - ((E₂ - gridF spec m₂ E₂).toNat : Int))).toNat := by
+    omega
+  have hexp₂ : (E₂ - gridF spec m₂ E₂).toNat
+        + ((E₂ - ((E₂ - gridF spec m₂ E₂).toNat : Int))
+          - min (E₁ - ((E₁ - gridF spec m₁ E₁).toNat : Int))
+                (E₂ - ((E₂ - gridF spec m₂ E₂).toNat : Int))).toNat
+      = (E₂ - min E₁ E₂).toNat
+        + (min E₁ E₂ - min (E₁ - ((E₁ - gridF spec m₁ E₁).toNat : Int))
+            (E₂ - ((E₂ - gridF spec m₂ E₂).toNat : Int))).toNat := by
+    omega
+  have hstep := Nat.mul_le_mul_right
+    (2 ^ (min E₁ E₂ - min (E₁ - ((E₁ - gridF spec m₁ E₁).toNat : Int))
+      (E₂ - ((E₂ - gridF spec m₂ E₂).toNat : Int))).toNat) h
+  calc m₁ * 2 ^ (E₁ - gridF spec m₁ E₁).toNat
+        * 2 ^ ((E₁ - ((E₁ - gridF spec m₁ E₁).toNat : Int))
+            - min (E₁ - ((E₁ - gridF spec m₁ E₁).toNat : Int))
+              (E₂ - ((E₂ - gridF spec m₂ E₂).toNat : Int))).toNat
+      = m₁ * 2 ^ (E₁ - min E₁ E₂).toNat
+        * 2 ^ (min E₁ E₂ - min (E₁ - ((E₁ - gridF spec m₁ E₁).toNat : Int))
+            (E₂ - ((E₂ - gridF spec m₂ E₂).toNat : Int))).toNat := by
+        rw [Nat.mul_assoc, Nat.mul_assoc, ← Nat.pow_add, ← Nat.pow_add, hexp₁]
+    _ ≤ m₂ * 2 ^ (E₂ - min E₁ E₂).toNat
+        * 2 ^ (min E₁ E₂ - min (E₁ - ((E₁ - gridF spec m₁ E₁).toNat : Int))
+            (E₂ - ((E₂ - gridF spec m₂ E₂).toNat : Int))).toNat := hstep
+    _ = m₂ * 2 ^ (E₂ - gridF spec m₂ E₂).toNat
+        * 2 ^ ((E₂ - ((E₂ - gridF spec m₂ E₂).toNat : Int))
+            - min (E₁ - ((E₁ - gridF spec m₁ E₁).toNat : Int))
+              (E₂ - ((E₂ - gridF spec m₂ E₂).toNat : Int))).toNat := by
+        rw [Nat.mul_assoc, Nat.mul_assoc, ← Nat.pow_add, ← Nat.pow_add, hexp₂]
+
+/-! Binary32, the format `Math.fround` narrows to. Its side conditions are
+ground, so they discharge once here. -/
+
+theorem binary32_mantissaBits : Format.binary32.mantissaBits = 23 + 1 := by decide
+
+theorem binary32_minExponent : (-1074 : Int) ≤ Format.binary32.minExponent := by decide
+
+theorem key_round32_pos_mono {m₁ m₂ : Nat} {E₁ E₂ : Int} (h₁ : 0 < m₁) (h₂ : 0 < m₂)
+    (h : m₁ * 2 ^ (E₁ - min E₁ E₂).toNat ≤ m₂ * 2 ^ (E₂ - min E₁ E₂).toNat) :
+    key (UnpackedFloat.round .binary32 .positive m₁ E₁)
+      ≤ key (UnpackedFloat.round .binary32 .positive m₂ E₂) :=
+  key_round_pos_monoF .binary32 23 binary32_mantissaBits (by decide) binary32_minExponent h₁ h₂ h
+
+theorem key_round32_neg {m : Nat} (hm : 0 < m) (E : Int) :
+    key (UnpackedFloat.round .binary32 .negative m E)
+      = -key (UnpackedFloat.round .binary32 .positive m E) :=
+  key_round_negF .binary32 23 binary32_mantissaBits hm E
+
+
 theorem round_eq_roundWA (s : Sign) (m : Nat) (e : Int) :
     UnpackedFloat.round .binary64 s m e =
       roundWithAccuracy .binary64 s (m * 2 ^ (e - grid m e).toNat)
-        (e - ((e - grid m e).toNat : Int)) (accuracyOfFraction 0 1) := by
-  rw [round_unfold, Nat.shiftLeft_eq,
-    show accuracyOfFraction 0 1 = Accuracy.exact from rfl]
-  simp only [targetExponent_binary64, grid]
+        (e - ((e - grid m e).toNat : Int)) (accuracyOfFraction 0 1) :=
+  round_eq_roundWAF .binary64 s m e
 
 /-- The pre-shifted input satisfies the rounding contract. -/
 theorem wellPlaced_round_input {m : Nat} (hm : 0 < m) (e : Int) :
-    WellPlaced (m * 2 ^ (e - grid m e).toNat) (e - ((e - grid m e).toNat : Int)) := by
-  simp only [WellPlaced, grid, totalExponent]
-  rw [log2_mul_pow hm]
-  omega
+    WellPlaced (m * 2 ^ (e - grid m e).toNat) (e - ((e - grid m e).toNat : Int)) :=
+  wellPlaced_round_inputF .binary64 hm e
 
 theorem natCast_mul_intPow_nonneg (a b : Nat) : (0 : Int) ≤ (a : Int) * 2 ^ b := by
   have h1 : ((a * 2 ^ b : Nat) : Int) = (a : Int) * 2 ^ b := by
@@ -1737,56 +1827,15 @@ theorem key_round_pos_nonneg (m : Nat) (hm : 0 < m) (E : Int) :
 
 theorem key_round_neg (m : Nat) (hm : 0 < m) (E : Int) :
     key (UnpackedFloat.round .binary64 .negative m E)
-      = -key (UnpackedFloat.round .binary64 .positive m E) := by
-  rw [round_eq_roundWA, round_eq_roundWA]
-  exact key_roundWA_neg _ _ 0 1 (wellPlaced_round_input hm E) Nat.one_pos Nat.zero_lt_one
+      = -key (UnpackedFloat.round .binary64 .positive m E) :=
+  key_round_negF .binary64 52 (by decide) hm E
 
 /-- Monotonicity of positive `round` on scaled values. -/
 theorem key_round_pos_mono {m₁ m₂ : Nat} {E₁ E₂ : Int} (h₁ : 0 < m₁) (h₂ : 0 < m₂)
     (h : m₁ * 2 ^ (E₁ - min E₁ E₂).toNat ≤ m₂ * 2 ^ (E₂ - min E₁ E₂).toNat) :
     key (UnpackedFloat.round .binary64 .positive m₁ E₁)
-      ≤ key (UnpackedFloat.round .binary64 .positive m₂ E₂) := by
-  rw [round_eq_roundWA, round_eq_roundWA]
-  apply key_roundWA_mono Nat.one_pos Nat.zero_lt_one Nat.zero_lt_one
-    (wellPlaced_round_input h₁ E₁) (wellPlaced_round_input h₂ E₂)
-  simp only [Nat.mul_one, Nat.add_zero]
-  -- Exponent bookkeeping: both sides re-express the original scaled values
-  -- at the finer common exponent.
-  have hexp₁ : (E₁ - grid m₁ E₁).toNat
-        + ((E₁ - ((E₁ - grid m₁ E₁).toNat : Int))
-          - min (E₁ - ((E₁ - grid m₁ E₁).toNat : Int))
-                (E₂ - ((E₂ - grid m₂ E₂).toNat : Int))).toNat
-      = (E₁ - min E₁ E₂).toNat
-        + (min E₁ E₂ - min (E₁ - ((E₁ - grid m₁ E₁).toNat : Int))
-            (E₂ - ((E₂ - grid m₂ E₂).toNat : Int))).toNat := by
-    omega
-  have hexp₂ : (E₂ - grid m₂ E₂).toNat
-        + ((E₂ - ((E₂ - grid m₂ E₂).toNat : Int))
-          - min (E₁ - ((E₁ - grid m₁ E₁).toNat : Int))
-                (E₂ - ((E₂ - grid m₂ E₂).toNat : Int))).toNat
-      = (E₂ - min E₁ E₂).toNat
-        + (min E₁ E₂ - min (E₁ - ((E₁ - grid m₁ E₁).toNat : Int))
-            (E₂ - ((E₂ - grid m₂ E₂).toNat : Int))).toNat := by
-    omega
-  have hstep := Nat.mul_le_mul_right
-    (2 ^ (min E₁ E₂ - min (E₁ - ((E₁ - grid m₁ E₁).toNat : Int))
-      (E₂ - ((E₂ - grid m₂ E₂).toNat : Int))).toNat) h
-  calc m₁ * 2 ^ (E₁ - grid m₁ E₁).toNat
-        * 2 ^ ((E₁ - ((E₁ - grid m₁ E₁).toNat : Int))
-            - min (E₁ - ((E₁ - grid m₁ E₁).toNat : Int))
-              (E₂ - ((E₂ - grid m₂ E₂).toNat : Int))).toNat
-      = m₁ * 2 ^ (E₁ - min E₁ E₂).toNat
-        * 2 ^ (min E₁ E₂ - min (E₁ - ((E₁ - grid m₁ E₁).toNat : Int))
-            (E₂ - ((E₂ - grid m₂ E₂).toNat : Int))).toNat := by
-        rw [Nat.mul_assoc, Nat.mul_assoc, ← Nat.pow_add, ← Nat.pow_add, hexp₁]
-    _ ≤ m₂ * 2 ^ (E₂ - min E₁ E₂).toNat
-        * 2 ^ (min E₁ E₂ - min (E₁ - ((E₁ - grid m₁ E₁).toNat : Int))
-            (E₂ - ((E₂ - grid m₂ E₂).toNat : Int))).toNat := hstep
-    _ = m₂ * 2 ^ (E₂ - grid m₂ E₂).toNat
-        * 2 ^ ((E₂ - ((E₂ - grid m₂ E₂).toNat : Int))
-            - min (E₁ - ((E₁ - grid m₁ E₁).toNat : Int))
-              (E₂ - ((E₂ - grid m₂ E₂).toNat : Int))).toNat := by
-        rw [Nat.mul_assoc, Nat.mul_assoc, ← Nat.pow_add, ← Nat.pow_add, hexp₂]
+      ≤ key (UnpackedFloat.round .binary64 .positive m₂ E₂) :=
+  key_round_pos_monoF .binary64 52 (by decide) (by decide) (by decide) h₁ h₂ h
 
 /-! ## `normalize`: the signed entry point `add` and `sub` use -/
 
