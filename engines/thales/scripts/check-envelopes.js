@@ -257,6 +257,7 @@ const MEMBER_FIXTURES = [
   `${CONFORMANCE}/theorem/unbounded-clamp.ts`,
   `${CONFORMANCE}/theorem/unbounded-rounding.ts`,
   `${CONFORMANCE}/theorem/unbounded-round-sign.ts`,
+  `${CONFORMANCE}/theorem/unbounded-fround.ts`,
   `${CONFORMANCE}/theorem/clamp-identity.ts`,
   `${CONFORMANCE}/inappropriate/math-log.ts`,
   `${CONFORMANCE}/inappropriate/number-length.ts`,
