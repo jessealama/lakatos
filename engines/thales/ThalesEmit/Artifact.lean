@@ -50,6 +50,7 @@ def renderEmission (e : Emission) : CoreM String := do
   for d in e.declarations do
     let module := match d with
       | .fn f => f.module | .cls c => c.module | .const c => c.module
+      | .residual r => r.module
     if module != fromModule then
       fromModule := module
       if let some m := module then
@@ -76,6 +77,7 @@ def renderEmission (e : Emission) : CoreM String := do
       for m in c.methods do
         blocks := blocks.push
           (prettyLines (← ppCommand (← rendered (methodCommand c m))))
+    | .residual _ => throwError "residual rendering lands with the next task"
   for o in e.obligations do
     let cmd ← rendered (obligationCommand e o)
     let text := prettyLines (← ppCommand cmd)

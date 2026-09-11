@@ -516,3 +516,42 @@ def payloadShell (guards : Json) : Json :=
 -- NaN is a num lit like Infinity already is: no decoder change, only a
 -- renderer one.
 #guard (decodeExpr (Json.mkObj [("kind", "num"), ("lit", "NaN")])) matches .ok (.num "NaN")
+
+-- A residual site: the opaque its owner declares, and the expression that
+-- applies it. Both decode strictly; a site below 1 is a schema violation.
+#guard
+  (decodeExpr (Json.mkObj
+    [("kind", "residual"), ("owner", "f"), ("site", 2),
+     ("args", Json.arr #[Json.mkObj [("kind", "id"), ("name", "x")]])]))
+  matches .ok (.residual "f" none 2 #[.id "x"])
+#guard
+  (decodeExpr (Json.mkObj
+    [("kind", "residual"), ("owner", "f"), ("site", 0), ("args", Json.arr #[])]))
+  matches .error _
+#guard
+  (decodeStmt (Json.mkObj
+    [("kind", "discard"),
+     ("expr", Json.mkObj [("kind", "residual"), ("owner", "f"), ("site", 1),
+       ("args", Json.arr #[])])]))
+  matches .ok (.discard (.residual "f" none 1 #[]))
+#guard
+  (decodeDecl (Json.mkObj
+    [("kind", "residual"), ("owner", "C#m"), ("site", 1),
+     ("construct", "'Math.log' is not supported"),
+     ("params", Json.arr #[numParamJson "x"]), ("type", "number")]))
+  |>.toOption.any fun d => match d with
+    | .residual r =>
+      r.owner == "C#m" && r.module == none && r.site == 1 &&
+        r.construct == "'Math.log' is not supported" && r.params.size == 1 &&
+        r.params[0]!.name == "x" && r.params[0]!.ty == .number && r.ty == .number
+    | _ => false
+-- The taint flag is optional and defaults off.
+#guard
+  (decodeFn (Json.mkObj
+    [("name", "f"), ("params", Json.arr #[]), ("source", "s"), ("body", Json.arr #[]),
+     ("noncomputable", true)]))
+  matches .ok { name := "f", tainted := true, .. }
+#guard
+  (decodeFn (Json.mkObj
+    [("name", "f"), ("params", Json.arr #[]), ("source", "s"), ("body", Json.arr #[])]))
+  matches .ok { name := "f", tainted := false, .. }

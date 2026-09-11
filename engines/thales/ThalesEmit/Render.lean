@@ -345,6 +345,7 @@ partial def valueTerm (coerced : String → Bool) : JsExpr → RenderM Rendered
   | .optionGet e => do
     let ⟨t, _⟩ ← valueTerm coerced e
     return ⟨← `((← Js.optionGet $t)), true⟩
+  | .residual .. => throw "residual rendering lands with the next task"
 
 /-- A call as the `JsM` value it denotes, its arguments still
 value-level. -/
@@ -439,6 +440,7 @@ partial def stmtDoElem (straight : Option (List (String × BindingTy))) :
     match fields.lookup f with
     | some ty => `(doElem| let $x:ident : $(← bindingTyTerm ty) := $(← bodyTerm e))
     | none => `(doElem| $x:ident := $(← bodyTerm e))
+  | .discard _ => throw "residual rendering lands with the next task"
 
 /-- An `if` statement. An else arm that is itself exactly one `if` joins
 the chain as `else if`, the way the source spells it: the nested doIf's
