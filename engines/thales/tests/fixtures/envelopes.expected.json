@@ -1303,12 +1303,34 @@
       "axioms": []
     }
   ],
-  "engines/thales/tests/conformance/inappropriate/boolean-field.ts": [
+  "engines/thales/tests/conformance/theorem/boolean-classes.ts": [
     {
-      "function": "Flag#read",
-      "property": "p",
-      "szs": "Inappropriate",
-      "reason": "'Flag#read' could not be modeled: unmapped TypeScript construct 'BooleanKeyword' at 5:16"
+      "function": "Flag#level",
+      "property": "reads",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_4714808576493611066",
+      "axioms": []
+    },
+    {
+      "function": "pick",
+      "property": "branches",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_13032838288971169877",
+      "axioms": []
+    },
+    {
+      "function": "read",
+      "property": "literal",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_13101641837206401354",
+      "axioms": []
+    },
+    {
+      "function": "Switch#level",
+      "property": "defaulted",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_8617464229707660555",
+      "axioms": []
     }
   ],
   "engines/thales/tests/fixtures/degradations.ts": [

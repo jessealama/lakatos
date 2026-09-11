@@ -153,13 +153,13 @@ const METHOD_FIXTURES = [
 
 /** The class-typed-parameter slice: a parameter at its own class, one at
  * an earlier class through a constructor, a free function over a class,
- * and the two ways a parameter's type can refuse. */
+ * the two ways a parameter's type can refuse, and booleans in classes. */
 const PARAM_FIXTURES = [
   "engines/thales/tests/fixtures/class-params.ts",
   `${CONFORMANCE}/theorem/class-param-gap.ts`,
   `${CONFORMANCE}/inappropriate/class-param-interface.ts`,
   `${CONFORMANCE}/theorem/boolean-param.ts`,
-  `${CONFORMANCE}/inappropriate/boolean-field.ts`,
+  `${CONFORMANCE}/theorem/boolean-classes.ts`,
 ];
 
 /** The degradation slice (#151): unsupported ranges and the names

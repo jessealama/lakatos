@@ -646,6 +646,7 @@ partial def classBinderSpine (pi : Ident) (path className : String)
   let args ← (ctorParams.zip names).mapM fun (p, a) => do
     match p with
     | .number _ true => `(JsVal.num $a)
+    | .bool _ true => `(JsVal.bool $a)
     | .cls _ _ _ _ true => `(some $a)
     | _ => pure (a : Term)
   let mut body ← `($ctor $args* = .ok $pi → $acc)
@@ -655,6 +656,7 @@ partial def classBinderSpine (pi : Ident) (path className : String)
   for (p, a) in (ctorParams.zip names).reverse do
     match p with
     | .number _ _ => body ← `(∀ ($a : JsNumber), $body)
+    | .bool _ _ => body ← `(∀ ($a : Bool), $body)
     | .cls n c m ps _ =>
       body ← classBinderSpine a (path ++ "." ++ n) c m ps body
   pure body

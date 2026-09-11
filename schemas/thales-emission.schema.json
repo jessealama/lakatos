@@ -43,8 +43,9 @@
       "properties": {
         "name": { "$ref": "#/definitions/fieldName" },
         "type": {
-          "description": "Present exactly for a union-typed or class-typed field; absent means number, the rule a local statement follows.",
+          "description": "Present exactly for a boolean, union-typed, or class-typed field; absent means number, the rule a local statement follows.",
           "oneOf": [
+            { "const": "boolean" },
             { "$ref": "#/definitions/unionTags" },
             { "$ref": "#/definitions/classRef" }
           ]
@@ -100,7 +101,7 @@
       }
     },
     "ctorParamNode": {
-      "description": "One constructor parameter of a class binder's class. A class-typed parameter carries its own parameters, so the tree bottoms out in numbers; the constructor-parameter graph is acyclic, so it terminates.",
+      "description": "One constructor parameter of a class binder's class. A class-typed parameter carries its own parameters, so the tree bottoms out in numbers and booleans; the constructor-parameter graph is acyclic, so it terminates.",
       "oneOf": [
         {
           "type": "object",
@@ -109,6 +110,16 @@
           "properties": {
             "name": { "$ref": "#/definitions/identifier" },
             "kind": { "const": "number" },
+            "defaulted": { "const": true }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "kind"],
+          "properties": {
+            "name": { "$ref": "#/definitions/identifier" },
+            "kind": { "const": "boolean" },
             "defaulted": { "const": true }
           }
         },
@@ -466,7 +477,7 @@
     },
     "class": {
       "type": "object",
-      "description": "A class: a structure over its fields, each a number, a keyword union, or an instance of an earlier class, a constructor assigning each exactly once on every path, and one function per modeled getter or method.",
+      "description": "A class: a structure over its fields, each a number, a boolean, a keyword union, or an instance of an earlier class, a constructor assigning each exactly once on every path, and one function per modeled getter or method.",
       "additionalProperties": false,
       "required": [
         "kind",

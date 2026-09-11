@@ -169,23 +169,26 @@ inductive Decl where
   | const (c : EmitConstant)
 deriving Repr, Inhabited
 
-/-- One constructor parameter of a class binder's class: a number, or an
-instance of a class carrying its own parameters. The graph is acyclic, so
-the tree bottoms out in numbers. -/
+/-- One constructor parameter of a class binder's class: a number, a
+boolean, or an instance of a class carrying its own parameters. The graph
+is acyclic, so the tree bottoms out in numbers and booleans. -/
 inductive CtorParamIR where
   | number (name : String) (defaulted : Bool)
+  | bool (name : String) (defaulted : Bool)
   | cls (name className : String) (module : Option String)
       (ctorParams : Array CtorParamIR) (defaulted : Bool)
 deriving Repr, Inhabited
 
 def CtorParamIR.name : CtorParamIR → String
   | .number n _ => n
+  | .bool n _ => n
   | .cls n .. => n
 
 /-- Whether the parameter carries a default, so a construction fills its
 boundary slot rather than passing the quantified value straight in. -/
 def CtorParamIR.defaulted : CtorParamIR → Bool
   | .number _ d => d
+  | .bool _ d => d
   | .cls _ _ _ _ d => d
 
 /-- The comparison a `number` binder's bound carries: the schema's
@@ -539,6 +542,7 @@ partial def decodeCtorParam (j : Json) : Except String CtorParamIR := do
   let defaulted ← getBoolOpt j "defaulted"
   match ← getStr j "kind" with
   | "number" => pure (.number name defaulted)
+  | "boolean" => pure (.bool name defaulted)
   | "class" =>
     let params ← (← getArr j "ctorParams").mapM decodeCtorParam
     pure (.cls name (← getStr j "className") (← getStrOpt j "module") params

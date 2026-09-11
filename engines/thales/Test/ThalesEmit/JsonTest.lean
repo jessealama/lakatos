@@ -237,6 +237,8 @@ def numParamJson (name : String) : Json :=
 #guard
   (decodeField (Json.mkObj [("name", "inner"), ("type", Json.mkObj [("class", "Inner")])]))
   matches .ok { name := "inner", ty := .cls "Inner" none }
+#guard (decodeField (Json.mkObj [("name", "on"), ("type", "boolean")]))
+  matches .ok { name := "on", ty := .bool }
 #guard
   (decodeField (Json.mkObj
     [("name", "inner"), ("type", Json.mkObj [("class", "Inner"), ("module", "dep.mts")])]))
@@ -386,6 +388,14 @@ def ctorParamJson (n : String) : Json :=
 #guard
   (decodeCtorParam (Json.mkObj [("name", "x"), ("kind", "number")]))
   matches .ok (.number "x" false)
+-- A boolean parameter is its own kind, defaulted or not.
+#guard
+  (decodeCtorParam (Json.mkObj [("name", "on"), ("kind", "boolean")]))
+  matches .ok (.bool "on" false)
+#guard
+  (decodeCtorParam (Json.mkObj
+    [("name", "on"), ("kind", "boolean"), ("defaulted", true)]))
+  matches .ok (.bool "on" true)
 -- A class-typed parameter carries its own parameters, so the tree bottoms
 -- out in numbers.
 #guard

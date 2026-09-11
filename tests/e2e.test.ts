@@ -128,6 +128,21 @@ describe.runIf(enabled)("lakatos prove end-to-end (tracer)", () => {
       ),
       path.join(dir, "small.ts"),
     );
+    // Engine parity over a class binder whose constructor takes a boolean:
+    // the prover proves it over the constructor's image, the refuter
+    // enumerates the two constructions, and both say Theorem.
+    fs.copyFileSync(
+      path.join(
+        repoRoot,
+        "engines",
+        "thales",
+        "tests",
+        "conformance",
+        "theorem",
+        "boolean-classes.ts",
+      ),
+      path.join(dir, "flag.ts"),
+    );
   });
 
   it(
@@ -310,6 +325,28 @@ describe.runIf(enabled)("lakatos prove end-to-end (tracer)", () => {
         kind: "enumerated",
         cases: 9,
       });
+    },
+  );
+
+  it(
+    "prove and refute agree on a class binder over a boolean constructor parameter",
+    { timeout: proveTimeoutMs(1) },
+    async () => {
+      const proveEnv = await runForEnvelope(["prove", "flag.ts"]);
+      const refuteEnv = await runForEnvelope(["refute", "flag.ts"]);
+      const by = (e: Envelope) =>
+        new Map(e.annotations.map((a) => [`${a.function}/${a.property}`, a]));
+      const proved = by(proveEnv);
+      const walked = by(refuteEnv);
+      expect([...walked.keys()].sort()).toEqual([...proved.keys()].sort());
+      for (const key of ["Flag#level/reads", "pick/branches"]) {
+        expect(proved.get(key)).toMatchObject({ szs: "Theorem", axioms: [] });
+        expect(walked.get(key)).toMatchObject({
+          szs: "Theorem",
+          kind: "enumerated",
+          cases: 2,
+        });
+      }
     },
   );
 });
