@@ -69,7 +69,10 @@ def extractWitness (names : List String) (searchStx : TSyntax `term) :
         let s ← Term.elabTerm (← `(($searchStx : Option (List WitnessValue)))) none
         Term.synthesizeSyntheticMVarsNoPostponing
         instantiateMVars s
-      let r ← Meta.reduce s (explicitOnly := false) (skipTypes := true) (skipProofs := true)
+      -- A model that shifts through the binary32 round trip reduces deeper
+      -- than the default depth allows; the search stays best-effort.
+      let r ← withAtLeastMaxRecDepth 4096 <|
+        Meta.reduce s (explicitOnly := false) (skipTypes := true) (skipProofs := true)
       if r.isAppOfArity ``Option.some 2 then
         if let some vals := readWitnessList (r.getArg! 1) then
           if vals.length == names.length then

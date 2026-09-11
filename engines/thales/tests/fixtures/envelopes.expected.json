@@ -1846,6 +1846,33 @@
       "axioms": []
     }
   ],
+  "engines/thales/tests/conformance/theorem/fround-narrows.ts": [
+    {
+      "function": "narrow",
+      "property": "nonNegative",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_9632455077141041727",
+      "axioms": []
+    },
+    {
+      "function": "narrow",
+      "property": "exactOnSmallIntegers",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_8382876876031166216",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/countersatisfiable/fround-ties-to-even.ts": [
+    {
+      "function": "narrow",
+      "property": "exactPastTwo24",
+      "szs": "CounterSatisfiable",
+      "reason": "the property is false on its bounded domain",
+      "counterexample": {
+        "n": 16777217
+      }
+    }
+  ],
   "engines/thales/tests/conformance/theorem/clamp-to-range.ts": [
     {
       "function": "clamp",

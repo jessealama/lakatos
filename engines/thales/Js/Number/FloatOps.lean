@@ -4,8 +4,8 @@ import Init.Data.Float.Model.Float
 
 /-!
 Binary64 operations JavaScript has and Lean does not: `%`, the integral
-roundings Lean ships only as opaque externs, the sign unit, and the
-ordered minimum and maximum.
+roundings Lean ships only as opaque externs, the sign unit, the ordered
+minimum and maximum, and the binary32 narrowing behind `Math.fround`.
 
 Lean ships no float remainder at all — no `Float.mod`, no `Mod Float`
 instance — so `%` has nothing to map to. It is built here from
@@ -17,6 +17,11 @@ There is likewise no `Float.min` or `Float.max`: only the order-derived
 generic `min`/`max`, which disagree with ECMA-262 on both a NaN operand
 and the ordering of the two zeros, and disagree differently depending on
 which argument comes first. So those are built here too.
+
+Core has `Float.toFloat32` and `Float32.toFloat`, but both are `opaque`
+with no logical model, so a model built on them would not reduce in the
+kernel. `Math.fround` is built from `Float.Model` instead, at the
+`binary32` format the model already carries.
 -/
 
 namespace Js.Number.FloatOps
@@ -122,6 +127,27 @@ def tsSign (a : Float) : Float :=
   | .infinity .positive => 1.0
   | .finite .negative _ _ _ => -1.0
   | .finite .positive _ _ _ => 1.0
+
+/-- Narrow a finite value to binary32 and widen it back. `round` produces
+binary32's canonical form but never overflows: the exponent too large to
+fit becomes an infinity only in `pack`, so the value is packed and
+unpacked at `binary32`. Underflow to a binary32 subnormal or a zero of the
+input's sign falls out of `round`'s exponent capping. The survivor is in
+binary32 canonical form, not binary64's, so it is rounded once more —
+exactly, every binary32 value being a binary64 value — before the
+binary64 pack. -/
+def froundUnpacked : UnpackedFloat → UnpackedFloat
+  | .notANumber => .notANumber
+  | .infinity s => .infinity s
+  | .zero s => .zero s
+  | .finite s m e _ =>
+    match unpack Format.binary32 (pack Format.binary32 (round Format.binary32 s m e)) with
+    | .finite s' m' e' _ => round Format.binary64 s' m' e'
+    | narrowed => narrowed
+
+/-- `Math.fround`: to binary32 with roundTiesToEven and back. -/
+def tsFround (a : Float) : Float :=
+  .ofModel (.pack (froundUnpacked a.toModel.unpack))
 
 /-! `Math.min` and `Math.max` are binary here; the emitter folds a call
 site's arguments over them, and the identities `+∞` and `-∞` cover the

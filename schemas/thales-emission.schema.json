@@ -245,7 +245,7 @@
         },
         {
           "type": "object",
-          "description": "A whitelisted standard-library member call, by the object and member the source names: Math.sqrt, Math.abs, Math.trunc, Math.floor, Math.ceil, Math.round, Math.sign, Math.min, Math.max, Number.isFinite, Number.isNaN, Number.isInteger, Number.isSafeInteger. The arguments are the call site's, so a variadic member carries as many as it was written with; the renderer owns what each pair means and how it folds them.",
+          "description": "A whitelisted standard-library member call, by the object and member the source names: Math.sqrt, Math.abs, Math.trunc, Math.floor, Math.ceil, Math.round, Math.sign, Math.fround, Math.min, Math.max, Number.isFinite, Number.isNaN, Number.isInteger, Number.isSafeInteger. The arguments are the call site's, so a variadic member carries as many as it was written with; the renderer owns what each pair means and how it folds them.",
           "additionalProperties": false,
           "required": ["kind", "object", "member", "args"],
           "properties": {

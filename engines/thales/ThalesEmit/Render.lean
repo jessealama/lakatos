@@ -158,6 +158,7 @@ def builtinTerm (object member : String) (args : Array (TSyntax `term)) :
     | "Math", "ceil" => `(Number.FloatOps.tsCeil $a)
     | "Math", "round" => `(Number.FloatOps.tsRound $a)
     | "Math", "sign" => `(Number.FloatOps.tsSign $a)
+    | "Math", "fround" => `(Number.FloatOps.tsFround $a)
     | "Number", "isFinite" => `(Float.isFinite $a)
     | "Number", "isNaN" => `(Float.isNaN $a)
     | "Number", "isInteger" => `(Number.FloatOps.tsIsInteger $a)
