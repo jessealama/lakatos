@@ -331,6 +331,22 @@ def obl (binders : Array BinderIR) (guards : Array JsExpr) (c : Conclusion) :
         TsModel.Point.construct «s.p.x» = .ok «s.p» →
           ∀ (s : TsModel.Span), TsModel.Span.construct (some «s.p») = .ok s →
             (pure (TsModel.Span.w s) : JsM JsNumber) = pure (TsModel.Span.w s))
+-- A boolean constructor argument heads the spine at Bool; a defaulted
+-- one is injected at the boolean tag.
+#guard rendersSyntax
+  (obl #[.cls "f" "Flag" none #[.bool "on" false]] #[]
+    (.istrue (.binop "<=" (.num "0") (.methodCall "Flag" none "level" (.id "f") #[]))))
+  `(#thales_prove "t.ts" "f" "p" :=
+      ∀ («f.on» : Bool), ∀ (f : TsModel.Flag),
+        TsModel.Flag.construct «f.on» = .ok f →
+          ((do return Float.le 0 (← TsModel.Flag.level f)) : JsM Bool) = pure true)
+#guard rendersSyntax
+  (obl #[.cls "f" "Flag" none #[.bool "on" true]] #[]
+    (.istrue (.binop "<=" (.num "0") (.methodCall "Flag" none "level" (.id "f") #[]))))
+  `(#thales_prove "t.ts" "f" "p" :=
+      ∀ («f.on» : Bool), ∀ (f : TsModel.Flag),
+        TsModel.Flag.construct (JsVal.bool «f.on») = .ok f →
+          ((do return Float.le 0 (← TsModel.Flag.level f)) : JsM Bool) = pure true)
 -- A binder named after the callee still renders the qualified call.
 #guard rendersSyntax (obl #[.int "bump"] #[] (.eq (call1 "bump" "bump") (call1 "bump" "bump")))
   `(#thales_prove "t.ts" "f" "p" :=
@@ -541,6 +557,39 @@ def outer : EmitClass :=
       if Float.lt v 0 then «this.x» := JsVal.undef else «this.x» := JsVal.num v
       let «this.inner» : TsModel.Inner := i
       return TsModel.Outer.mk «this.x» «this.inner»)
+
+/-- A class over a boolean field set from a boolean constructor parameter. -/
+def flag : EmitClass :=
+  { name := "Flag", source := "",
+    fields := #[{ name := "on", ty := .bool }],
+    ctorParams := #[{ name := "on", ty := .bool }],
+    ctorBody := #[.fieldSet "on" (.id "on")],
+    getters := #[], methods := #[] }
+
+#guard rendersSyntax (structCommand flag)
+  `(structure TsModel.Flag where
+      on : Bool
+      deriving Inhabited)
+#guard rendersSyntax (ctorCommand flag)
+  `(@[js_norm, grind] def TsModel.Flag.construct (on : Bool) : JsM TsModel.Flag := do
+      let «this.on» : Bool := on
+      return TsModel.Flag.mk «this.on»)
+
+/-- A boolean field assigned on both arms of a branch takes the `default` prelude. -/
+def toggle : EmitClass :=
+  { name := "Toggle", source := "",
+    fields := #[{ name := "on", ty := .bool }],
+    ctorParams := #[{ name := "n", ty := .number }],
+    ctorBody := #[.ite (.binop "<" (.id "n") (.num "0"))
+                    #[.fieldSet "on" (.bool false)]
+                    (some #[.fieldSet "on" (.bool true)])],
+    getters := #[], methods := #[] }
+
+#guard rendersSyntax (ctorCommand toggle)
+  `(@[js_norm, grind] def TsModel.Toggle.construct (n : JsNumber) : JsM TsModel.Toggle := do
+      let mut «this.on» : Bool := default
+      if Float.lt n 0 then «this.on» := false else «this.on» := true
+      return TsModel.Toggle.mk «this.on»)
 
 -- What the lift barrier buys, written out by hand: the arm the condition
 -- passed over does not run, so its throw does not escape.

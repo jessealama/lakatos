@@ -20,6 +20,7 @@ def spineOf (bs : Array BinderIR) : List SpineBinder :=
   == [.unbounded "«p.x»", .unbounded "«p.y»", .opaque "p"]
 #guard spineOf #[.cls "s" "Span" none #[.cls "p" "Point" none #[.number "x" false] false]]
   == [.unbounded "«s.p.x»", .opaque "«s.p»", .opaque "s"]
+#guard spineOf #[.cls "f" "Flag" none #[.bool "on" false]] == [.bool "«f.on»", .opaque "f"]
 
 -- A binder whose own bounds print as implications is read past them,
 -- so the binders under it are expected too.

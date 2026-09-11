@@ -17,6 +17,7 @@ partial def ctorSpine (path : String) (ps : Array CtorParamIR) :
     let arg := (← fieldComponent (path ++ "." ++ p.name)).toString
     match p with
     | .number .. => out := out ++ [.unbounded arg]
+    | .bool .. => out := out ++ [.bool arg]
     | .cls n _ _ inner _ =>
       out := out ++ (← ctorSpine (path ++ "." ++ n) inner) ++ [.opaque arg]
   return out

@@ -32,6 +32,17 @@ def spineKinds (t : TSyntax `term) : List String :=
     throwError "an opaque binder was reported bounded"
 
 #eval show CoreM Unit from do
+  -- A boolean constructor argument is a Bool head; the instance stays
+  -- opaque, so the spine is still never enumerable.
+  let t := Unhygienic.run `(∀ («f.on» : Bool), ∀ (f : TsModel.Flag),
+    TsModel.Flag.construct «f.on» = .ok f → ((pure true : JsM Bool) = pure true))
+  let kinds := spineKinds t
+  unless kinds == ["bool «f.on»", "opaque f"] do
+    throwError "the boolean class-binder spine is {kinds}"
+  unless (propSpine t).domains?.isNone do
+    throwError "an opaque binder was reported bounded"
+
+#eval show CoreM Unit from do
   -- The numeric heads keep their own readings; the constructor-image arm
   -- sits after them and must not claim an `Int` binder whose body is an
   -- implication.
