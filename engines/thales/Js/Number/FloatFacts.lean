@@ -999,6 +999,55 @@ theorem key_roundWA_neg (m : Nat) (e : Int) (num den : Nat)
     · rw [dite_eq_right (Nat.pos_iff_ne_zero.mp h0), dite_eq_right (Nat.pos_iff_ne_zero.mp h0)]
       simp [key, Sign.apply]
 
+/-! The key closed form and the master monotonicity theorem, for any
+format. `key` measures in the binary64 quantum `2 ^ -1074`, so these ask
+that the format's own minimum exponent be no lower; binary32's `-149`
+satisfies it. -/
+
+/-- The key of a positive rounding, in closed form, for any format. -/
+theorem key_roundWA_posF (spec : Format) (P : Nat) (hp : spec.mantissaBits = P + 1)
+    (hmin : (-1074 : Int) ≤ spec.minExponent)
+    (m : Nat) (e : Int) (num den : Nat)
+    (hw : WellPlacedF spec m e) (hden : 0 < den) (hnum : num < den) :
+    key (roundWithAccuracy spec .positive m e (accuracyOfFraction num den)) =
+      rnShiftF m ((gridF spec m e - e).toNat) num den * 2 ^ (gridF spec m e + 1074).toNat := by
+  have hG : (-1074 : Int) ≤ gridF spec m e := Int.le_trans hmin (gridF_ge spec m e)
+  rw [roundWA_eqF spec P hp .positive m e num den hw hden hnum]
+  by_cases hovf : rnShiftF m ((gridF spec m e - e).toNat) num den = 2 ^ (P + 1)
+  · rw [ite_eq_left hovf, hovf]
+    simp only [key, Sign.apply]
+    have ha : (gridF spec m e + 1 + 1074).toNat = (gridF spec m e + 1074).toNat + 1 := by omega
+    rw [ha]
+    have hnat : (2 : Nat) ^ (P + 1) * 2 ^ (gridF spec m e + 1074).toNat
+        = 2 ^ P * 2 ^ ((gridF spec m e + 1074).toNat + 1) := by
+      rw [Nat.pow_succ]; grind
+    have hcast2 : (2 : Int) = ((2 : Nat) : Int) := rfl
+    rw [hcast2, ← Int.natCast_pow, ← Int.natCast_pow, ← Int.natCast_mul, ← Int.natCast_mul]
+    omega
+  · rw [ite_eq_right hovf]
+    rcases Nat.eq_zero_or_pos (rnShiftF m ((gridF spec m e - e).toNat) num den) with h0 | h0
+    · rw [dite_eq_left h0, h0]; simp [key]
+    · rw [dite_eq_right (Nat.pos_iff_ne_zero.mp h0)]; simp [key, Sign.apply]
+
+/-- Rounding only threads the sign through, so the negative key mirrors
+the positive one. -/
+theorem key_roundWA_negF (spec : Format) (P : Nat) (hp : spec.mantissaBits = P + 1)
+    (m : Nat) (e : Int) (num den : Nat)
+    (hw : WellPlacedF spec m e) (hden : 0 < den) (hnum : num < den) :
+    key (roundWithAccuracy spec .negative m e (accuracyOfFraction num den))
+      = -key (roundWithAccuracy spec .positive m e (accuracyOfFraction num den)) := by
+  rw [roundWA_eqF spec P hp .negative m e num den hw hden hnum,
+    roundWA_eqF spec P hp .positive m e num den hw hden hnum]
+  by_cases hovf : rnShiftF m ((gridF spec m e - e).toNat) num den = 2 ^ (P + 1)
+  · rw [ite_eq_left hovf, ite_eq_left hovf]; simp [key, Sign.apply]
+  · rw [ite_eq_right hovf, ite_eq_right hovf]
+    rcases Nat.eq_zero_or_pos (rnShiftF m ((gridF spec m e - e).toNat) num den) with h0 | h0
+    · rw [dite_eq_left h0, dite_eq_left h0]; simp [key]
+    · rw [dite_eq_right (Nat.pos_iff_ne_zero.mp h0),
+        dite_eq_right (Nat.pos_iff_ne_zero.mp h0)]
+      simp [key, Sign.apply]
+
+
 /-! ## The master monotonicity theorem
 
 Rounding is monotone on real values. The two inputs may sit on different
@@ -1111,6 +1160,114 @@ theorem rnShiftF_mono_scaled
       omega
   · -- Strictly larger quotient: the +1 rounding slack cannot cross it.
     omega
+
+/-- Rounding is monotone on real values, for any format. The two inputs
+may sit on different grids; the hypothesis compares the exact values at
+the common exponent, cross-multiplied by `den` to stay in `Nat`. -/
+theorem key_roundWA_monoF (spec : Format) (P : Nat) (hp : spec.mantissaBits = P + 1)
+    (hP : 0 < P) (hmin : (-1074 : Int) ≤ spec.minExponent)
+    {m₁ m₂ num₁ num₂ den : Nat} {e₁ e₂ : Int}
+    (hden : 0 < den) (hnum₁ : num₁ < den) (hnum₂ : num₂ < den)
+    (hw₁ : WellPlacedF spec m₁ e₁) (hw₂ : WellPlacedF spec m₂ e₂)
+    (h : (m₁ * den + num₁) * 2 ^ (e₁ - min e₁ e₂).toNat
+       ≤ (m₂ * den + num₂) * 2 ^ (e₂ - min e₁ e₂).toNat) :
+    key (roundWithAccuracy spec .positive m₁ e₁ (accuracyOfFraction num₁ den))
+      ≤ key (roundWithAccuracy spec .positive m₂ e₂ (accuracyOfFraction num₂ den)) := by
+  rw [key_roundWA_posF spec P hp hmin m₁ e₁ num₁ den hw₁ hden hnum₁,
+    key_roundWA_posF spec P hp hmin m₂ e₂ num₂ den hw₂ hden hnum₂]
+  have hcast : ∀ a b : Nat, a ≤ b → (a : Int) ≤ (b : Int) := fun _ _ => Int.ofNat_le.mpr
+  apply hcast
+  have hG₁ : (-1074 : Int) ≤ gridF spec m₁ e₁ := Int.le_trans hmin (gridF_ge spec m₁ e₁)
+  have hG₂ : (-1074 : Int) ≤ gridF spec m₂ e₂ := Int.le_trans hmin (gridF_ge spec m₂ e₂)
+  rcases Int.lt_trichotomy (gridF spec m₁ e₁) (gridF spec m₂ e₂) with hG | hG | hG
+  · -- Coarser grid on the left: the right result clears a whole binade
+    -- above everything the left grid can express.
+    have hle₁ : rnShiftF m₁ ((gridF spec m₁ e₁ - e₁).toNat) num₁ den ≤ 2 ^ (P + 1) := by
+      have := rnShiftF_leF spec m₁ e₁ num₁ den hw₁; rw [hp] at this; exact this
+    have hb₂ := rnShiftF_bounds m₂ ((gridF spec m₂ e₂ - e₂).toNat) num₂ den
+    have hlog₂ : P ≤ m₂.log2 ∧ (gridF spec m₂ e₂ - e₂).toNat = m₂.log2 - P := by
+      have hG' := hG
+      have hw := hw₂
+      simp only [WellPlacedF, gridF, Format.targetExponent, totalExponent, hp] at hG' hw ⊢
+      omega
+    have hm₂ : m₂ ≠ 0 := by
+      intro h0
+      have hl0 : Nat.log2 0 = 0 := rfl
+      have hlt := hlog₂.1
+      rw [h0, hl0] at hlt
+      omega
+    have hq₂ : 2 ^ P ≤ m₂ / 2 ^ (gridF spec m₂ e₂ - e₂).toNat := by
+      rw [Nat.le_div_iff_mul_le (Nat.two_pow_pos _), ← Nat.pow_add]
+      have hPe : P + (gridF spec m₂ e₂ - e₂).toNat = m₂.log2 := by omega
+      rw [hPe]
+      exact Nat.log2_self_le hm₂
+    have hexp : (gridF spec m₁ e₁ + 1074).toNat + (P + 1)
+        ≤ (gridF spec m₂ e₂ + 1074).toNat + P := by omega
+    calc rnShiftF m₁ ((gridF spec m₁ e₁ - e₁).toNat) num₁ den
+            * 2 ^ (gridF spec m₁ e₁ + 1074).toNat
+        ≤ 2 ^ (P + 1) * 2 ^ (gridF spec m₁ e₁ + 1074).toNat := Nat.mul_le_mul_right _ hle₁
+      _ = 2 ^ ((gridF spec m₁ e₁ + 1074).toNat + (P + 1)) := by rw [← Nat.pow_add, Nat.add_comm]
+      _ ≤ 2 ^ ((gridF spec m₂ e₂ + 1074).toNat + P) := Nat.pow_le_pow_right (by omega) hexp
+      _ = 2 ^ P * 2 ^ (gridF spec m₂ e₂ + 1074).toNat := by rw [← Nat.pow_add, Nat.add_comm]
+      _ ≤ rnShiftF m₂ ((gridF spec m₂ e₂ - e₂).toNat) num₂ den
+            * 2 ^ (gridF spec m₂ e₂ + 1074).toNat :=
+          Nat.mul_le_mul_right _ (Nat.le_trans hq₂ hb₂.1)
+  · -- Same grid: the scaled core theorem decides.
+    rw [hG]
+    apply Nat.mul_le_mul_right
+    apply rnShiftF_mono_scaled hden hnum₁ hnum₂ _ h
+    have hw1 := hw₁
+    have hw2 := hw₂
+    simp only [WellPlacedF] at hw1 hw2
+    omega
+  · -- Coarser grid on the right would need the left value to reach a
+    -- higher binade than the right value bounds.
+    exfalso
+    have hlog₁ : P ≤ m₁.log2 := by
+      have hG' := hG
+      have hw := hw₁
+      simp only [WellPlacedF, gridF, Format.targetExponent, totalExponent, hp] at hG' hw
+      omega
+    have hm₁ : m₁ ≠ 0 := by
+      intro h0
+      have hl0 : Nat.log2 0 = 0 := rfl
+      have hlt := hlog₁
+      rw [h0, hl0] at hlt
+      omega
+    have hlow : 2 ^ (m₁.log2 + (e₁ - min e₁ e₂).toNat) * den
+        ≤ (m₁ * den + num₁) * 2 ^ (e₁ - min e₁ e₂).toNat := by
+      have h1 : 2 ^ m₁.log2 * den ≤ m₁ * den + num₁ := by
+        have := Nat.mul_le_mul_right den (Nat.log2_self_le hm₁)
+        omega
+      calc 2 ^ (m₁.log2 + (e₁ - min e₁ e₂).toNat) * den
+          = 2 ^ m₁.log2 * den * 2 ^ (e₁ - min e₁ e₂).toNat := by rw [Nat.pow_add]; grind
+        _ ≤ (m₁ * den + num₁) * 2 ^ (e₁ - min e₁ e₂).toNat := Nat.mul_le_mul_right _ h1
+    have hhigh : (m₂ * den + num₂) * 2 ^ (e₂ - min e₁ e₂).toNat
+        < 2 ^ (m₂.log2 + 1 + (e₂ - min e₁ e₂).toNat) * den := by
+      have h1 : m₂ * den + num₂ < 2 ^ (m₂.log2 + 1) * den := by
+        have := Nat.mul_le_mul_right den (Nat.lt_log2_self (n := m₂))
+        have h2 : (m₂ + 1) * den = m₂ * den + den := by grind
+        have h3 : m₂ + 1 ≤ 2 ^ (m₂.log2 + 1) := Nat.lt_log2_self
+        have h4 := Nat.mul_le_mul_right den h3
+        omega
+      calc (m₂ * den + num₂) * 2 ^ (e₂ - min e₁ e₂).toNat
+          < 2 ^ (m₂.log2 + 1) * den * 2 ^ (e₂ - min e₁ e₂).toNat :=
+            (Nat.mul_lt_mul_right (Nat.two_pow_pos _)).mpr h1
+        _ = 2 ^ (m₂.log2 + 1 + (e₂ - min e₁ e₂).toNat) * den := by rw [Nat.pow_add]; grind
+    have hexp : m₁.log2 + (e₁ - min e₁ e₂).toNat < m₂.log2 + 1 + (e₂ - min e₁ e₂).toNat := by
+      rcases Nat.lt_or_ge (m₁.log2 + (e₁ - min e₁ e₂).toNat)
+          (m₂.log2 + 1 + (e₂ - min e₁ e₂).toNat) with hlt | hge
+      · exact hlt
+      · exfalso
+        have hpk : 2 ^ (m₂.log2 + 1 + (e₂ - min e₁ e₂).toNat) * den
+            ≤ 2 ^ (m₁.log2 + (e₁ - min e₁ e₂).toNat) * den :=
+          Nat.mul_le_mul_right den (Nat.pow_le_pow_right (by omega) hge)
+        omega
+    have hG' := hG
+    have hw := hw₁
+    simp only [WellPlacedF, gridF, Format.targetExponent, totalExponent, hp] at hG' hw
+    omega
+
 
 theorem key_roundWA_mono {m₁ m₂ num₁ num₂ den : Nat} {e₁ e₂ : Int}
     (hden : 0 < den) (hnum₁ : num₁ < den) (hnum₂ : num₂ < den)
