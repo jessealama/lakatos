@@ -77,7 +77,8 @@ def renderEmission (e : Emission) : CoreM String := do
       for m in c.methods do
         blocks := blocks.push
           (prettyLines (← ppCommand (← rendered (methodCommand c m))))
-    | .residual _ => throwError "residual rendering lands with the next task"
+    | .residual r =>
+      blocks := blocks.push (prettyLines (← ppCommand (← rendered (residualCommand r))))
   for o in e.obligations do
     let cmd ← rendered (obligationCommand e o)
     let text := prettyLines (← ppCommand cmd)

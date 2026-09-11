@@ -604,3 +604,67 @@ private def barrier (c : Bool) : JsM JsNumber := do
 #guard (barrier true) matches .ok _
 #guard (barrier false) matches .error _
 end
+
+-- A residual applies its opaque to the in-scope variables as a lift; the
+-- receiver renders as `self`, an ordinary variable as itself.
+#guard rendersLifted (v (.residual "f" none 1 #[.id "x", .id "y"])) true
+  `((← TsModel.f.residual_1 x y))
+#guard rendersLifted (v (.residual "C#m" none 2 #[.selfRef, .id "x"])) true
+  `((← TsModel.C.m.residual_2 self x))
+#guard rendersLifted (v (.residual "C#constructor" none 1 #[.id "a"])) true
+  `((← TsModel.C.construct.residual_1 a))
+#guard rendersLifted (v (.residual "f" (some "helper.mts") 1 #[])) true
+  `((← TsModel.«helper.mts».f.residual_1))
+#guard renderFails (v (.residual "C.m" none 1 #[]))
+#guard renderFails (v (.residual "f" none 0 #[]))
+
+-- The opaque a site declares: docstringed, noncomputable, a pi type over
+-- the in-scope variables into JsM.
+#guard rendersSyntax (residualCommand
+    { owner := "f", site := 1, construct := "'Math.log' is not supported",
+      params := #[{ name := "n", ty := .number }], ty := .number })
+  `(/-- 'Math.log' is not supported -/
+    noncomputable opaque TsModel.f.residual_1 : (n : JsNumber) → JsM JsNumber)
+#guard rendersSyntax (residualCommand
+    { owner := "C#m", site := 1, construct := "'**' is not supported",
+      params := #[{ name := "self", ty := .cls "C" none }, { name := "b", ty := .bool }],
+      ty := .bool })
+  -- A pi binder is primed like any other, so a parameter spelled like the
+  -- artifact's own vocabulary cannot capture a later type.
+  `(/-- '**' is not supported -/
+    noncomputable opaque TsModel.C.m.residual_1 :
+      (self' : TsModel.C) → (b : Bool) → JsM Bool)
+#guard renderFails (residualCommand
+    { owner := "f", site := 1, construct := "closes -/ early",
+      params := #[], ty := .number })
+
+-- A tainted owner is a noncomputable def; an untainted one is unchanged.
+#guard rendersSyntax (fnCommand
+    { name := "f", params := nums #["x"], source := "", tainted := true,
+      body := #[.ret (.residual "f" none 1 #[.id "x"])] })
+  `(@[js_norm, grind] noncomputable def TsModel.f (x : JsNumber) : JsM JsNumber := do
+      return (← TsModel.f.residual_1 x))
+#guard rendersSyntax (ctorCommand
+    { name := "C", source := "", fields := #[{ name := "v", ty := .number }],
+      ctorParams := nums #["v"],
+      ctorBody := #[.fieldSet "v" (.residual "C#constructor" none 1 #[.id "v"])],
+      getters := #[], methods := #[], ctorTainted := true })
+  `(@[js_norm, grind] noncomputable def TsModel.C.construct (v : JsNumber) :
+      JsM TsModel.C := do
+      let «this.v» : JsNumber := (← TsModel.C.construct.residual_1 v)
+      return TsModel.C.mk «this.v»)
+#guard rendersSyntax (getterCommand
+    { name := "C", source := "", fields := #[], ctorParams := #[], ctorBody := #[],
+      getters := #[], methods := #[] }
+    { name := "g", body := #[.ret (.residual "C#g" none 1 #[.selfRef])], tainted := true })
+  `(@[js_norm, grind] noncomputable def TsModel.C.g (self : TsModel.C) :
+      JsM JsNumber := do
+      return (← TsModel.C.g.residual_1 self))
+
+-- A discarded expression evaluates for its effect alone.
+#guard rendersSyntax (fnCommand
+    { name := "f", params := nums #["x"], source := "",
+      body := #[.discard (.residual "f" none 1 #[.id "x"]), .ret (.id "x")] })
+  `(@[js_norm, grind] def TsModel.f (x : JsNumber) : JsM JsNumber := do
+      let _ ← TsModel.f.residual_1 x
+      return x)
