@@ -4,6 +4,7 @@ import Js.Number.Basic
 import Js.Number.FloatFacts
 import Js.Number.FloatOps
 import Js.Number.FloatOpsFacts
+import Js.Number.FroundFacts
 import Js.Runtime
 import Js.Binders
 
@@ -454,6 +455,36 @@ theorem tsSign_lo {x : Float} (h : -floatInf < x) : -floatInf < Number.FloatOps.
 theorem tsSign_hi {x : Float} (h : x < floatInf) : Number.FloatOps.tsSign x < floatInf :=
   Number.FloatOpsFacts.tsSign_hi h
 
+/-! `Math.fround` narrows to binary32 and back. It is monotone, and every
+fact below is that one theorem at the claim's own constant, which grind
+evaluates. The two-term keys draw the constant from a hypothesis: in the
+finiteness facts the goal's own bound is an infinity, and `fround` of an
+infinity is that infinity. -/
+
+theorem tsFround_mono {x y : Float} (h : Float.le x y = true) :
+    Float.le (Number.FloatOps.tsFround x) (Number.FloatOps.tsFround y) = true :=
+  Number.FroundFacts.tsFround_mono h
+
+theorem tsFround_le_of_le_const {x c : Float} (h : Float.le x c = true)
+    (hc : Float.le (Number.FloatOps.tsFround c) c = true) :
+    Float.le (Number.FloatOps.tsFround x) c = true :=
+  Number.FroundFacts.tsFround_le_of_le_const h hc
+
+theorem tsFround_ge_of_ge_const {x c : Float} (h : Float.le c x = true)
+    (hc : Float.le c (Number.FloatOps.tsFround c) = true) :
+    Float.le c (Number.FloatOps.tsFround x) = true :=
+  Number.FroundFacts.tsFround_ge_of_ge_const h hc
+
+theorem tsFround_hi_of_le {x c : Float} (h : Float.le x c = true)
+    (hc : Number.FloatOps.tsFround c < floatInf) :
+    Number.FloatOps.tsFround x < floatInf :=
+  Number.FroundFacts.tsFround_hi_of_le h hc
+
+theorem tsFround_lo_of_ge {x c : Float} (h : Float.le c x = true)
+    (hc : -floatInf < Number.FloatOps.tsFround c) :
+    -floatInf < Number.FloatOps.tsFround x :=
+  Number.FroundFacts.tsFround_lo_of_ge h hc
+
 /-! A constructor's guards throw, so what follows a triggered guard never
 runs. These two are what let a successful construction refute the guards
 it passed; both are definitional on `Except`, and neither is derivable
@@ -623,5 +654,11 @@ grind_pattern tsSign_le_one => Number.FloatOps.tsSign x
 grind_pattern tsSign_ge_neg_one => Number.FloatOps.tsSign x
 grind_pattern tsSign_lo => Number.FloatOps.tsSign x
 grind_pattern tsSign_hi => Number.FloatOps.tsSign x
+
+grind_pattern tsFround_mono => Number.FloatOps.tsFround x, Number.FloatOps.tsFround y
+grind_pattern tsFround_le_of_le_const => Float.le (Number.FloatOps.tsFround x) c
+grind_pattern tsFround_ge_of_ge_const => Float.le c (Number.FloatOps.tsFround x)
+grind_pattern tsFround_hi_of_le => Number.FloatOps.tsFround x, Float.le x c
+grind_pattern tsFround_lo_of_ge => Number.FloatOps.tsFround x, Float.le c x
 
 end Js

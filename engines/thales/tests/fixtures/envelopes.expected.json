@@ -2063,6 +2063,22 @@
       "axioms": []
     }
   ],
+  "engines/thales/tests/conformance/theorem/unbounded-fround.ts": [
+    {
+      "function": "narrow",
+      "property": "keepsSign",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_313637222193623637",
+      "axioms": []
+    },
+    {
+      "function": "capped",
+      "property": "staysUnderCap",
+      "szs": "Theorem",
+      "reason": "proved by generic proof search, kernel-checked as TsProof.thm_17214121736609950422",
+      "axioms": []
+    }
+  ],
   "engines/thales/tests/conformance/theorem/clamp-identity.ts": [
     {
       "function": "capAt5",
