@@ -128,21 +128,23 @@ def tsSign (a : Float) : Float :=
   | .finite .negative _ _ _ => -1.0
   | .finite .positive _ _ _ => 1.0
 
-/-- Narrow a finite value to binary32 and widen it back. `round` produces
-binary32's canonical form but never overflows: the exponent too large to
-fit becomes an infinity only in `pack`, so the value is packed and
-unpacked at `binary32`. Underflow to a binary32 subnormal or a zero of the
-input's sign falls out of `round`'s exponent capping. The survivor is in
-binary32 canonical form, not binary64's, so it is rounded once more —
-exactly, every binary32 value being a binary64 value — before the
-binary64 pack. -/
+/-- Narrow a finite value to binary32 and widen it back. `round` at
+binary32 never overflows: it caps the exponent but leaves the result
+finite, and only packing turns a too-large exponent into an infinity.
+Packing at binary32 biases by `127 + 23` against a 255 ceiling, so an
+exponent of 105 or more is overflow and nothing else. Below that the
+survivor carries at most 24 significant bits, which binary64 rounds
+exactly; that second rounding is what restores binary64 canonical form
+for the final pack. Underflow to a binary32 subnormal or a zero of the
+input's sign falls out of `round`'s exponent capping. -/
 def froundUnpacked : UnpackedFloat → UnpackedFloat
   | .notANumber => .notANumber
   | .infinity s => .infinity s
   | .zero s => .zero s
   | .finite s m e _ =>
-    match unpack Format.binary32 (pack Format.binary32 (round Format.binary32 s m e)) with
-    | .finite s' m' e' _ => round Format.binary64 s' m' e'
+    match round Format.binary32 s m e with
+    | .finite s' m' e' _ =>
+      if 105 ≤ e' then .infinity s' else round Format.binary64 s' m' e'
     | narrowed => narrowed
 
 /-- `Math.fround`: to binary32 with roundTiesToEven and back. -/

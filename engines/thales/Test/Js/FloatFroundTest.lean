@@ -78,3 +78,36 @@ example : (tsFround 16777219.0).toBits = 0x4170000040000000 := by decide
    1e-45, -1e-50, Float.ofBits 1, 16777217.0, 16777219.0,
    2.5e-45, -7.0e-40, 123456.789, 3.0e38, -1.0e-38, 1.0e-39].all
     fun x => (tsFround x).toBits == (Float.toFloat32 x).toFloat.toBits
+
+/-! Generated sweeps against core's compiled conversion. Random 64-bit
+patterns barely reach the bands that matter, so the exponent field is
+pinned and the mantissa varied. -/
+
+private def lcg (s : UInt64) : UInt64 := s * 6364136223846793005 + 1442695040888963407
+private def rnd (i : Nat) : UInt64 := Nat.rec 7 (fun _ s => lcg s) (i + 1)
+
+private def band (ex : Nat) (n : Nat) : List Float :=
+  (List.range n).map fun i =>
+    let mant := (rnd i).toNat % (2 ^ 52)
+    let sign := if i % 2 == 0 then 0 else 2 ^ 63
+    Float.ofBits (UInt64.ofNat (sign + ex * 2 ^ 52 + mant))
+
+-- The overflow boundary, the subnormal boundary, and the normal middle.
+private def bands : List Float :=
+  ((List.range 40).flatMap fun k => band (1130 + k) 60)
+  ++ ((List.range 40).flatMap fun k => band (860 + k) 60)
+  ++ ((List.range 60).flatMap fun k => band (960 + k) 30)
+
+#guard bands.length == 6600
+#guard bands.all fun x => (tsFround x).toBits == (Float.toFloat32 x).toFloat.toBits
+
+-- The top binade, where rounding up is what overflows.
+private def topBinade : List Float :=
+  (List.range 400).map fun i => Float.ofBits (UInt64.ofNat (0x47EFFFFF00000000 + i * 0x1000000))
+
+#guard topBinade.all fun x => (tsFround x).toBits == (Float.toFloat32 x).toFloat.toBits
+
+-- The ties band at 2^24, where a naive narrowing goes wrong.
+private def ties : List Float := (List.range 200).map fun i => Float.ofNat (16777216 + i)
+
+#guard ties.all fun x => (tsFround x).toBits == (Float.toFloat32 x).toFloat.toBits
