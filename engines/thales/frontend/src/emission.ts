@@ -101,6 +101,15 @@ export type EmitExpr =
       semantics: "strict" | "same-value";
       left: EmitExpr;
       right: EmitExpr;
+    }
+  /** An unmodelable site inside its owner: the opaque the artifact
+   * declares for it, applied to the variables in scope there. */
+  | {
+      kind: "residual";
+      owner: string;
+      module?: string;
+      site: number;
+      args: EmitExpr[];
     };
 
 /** A statement in the shapes the plain-Lean emitter renders as Lean
@@ -129,7 +138,9 @@ export type EmitStmt =
     }
   | { kind: "assign"; name: string; expr: EmitExpr }
   | { kind: "if"; cond: EmitExpr; then: EmitStmt[]; else?: EmitStmt[] }
-  | { kind: "field-set"; field: string; expr: EmitExpr };
+  | { kind: "field-set"; field: string; expr: EmitExpr }
+  /** An expression statement: evaluated for its effect, value dropped. */
+  | { kind: "discard"; expr: EmitExpr };
 
 /** A parameter on the wire: its name and its declared type — a
  * TypeScript number, a boolean, a keyword union's normalized tags, or an
@@ -156,6 +167,10 @@ export interface EmitFunction {
   /** Present exactly for a boolean-returning declaration; absent means
    * the number every declaration returned before. */
   returns?: "boolean";
+  /** Present exactly when the body reaches a residual site, directly or
+   * through a callee that does. A valueless opaque compiles to `pure`, so
+   * without this the evaluation rung would prove straight through one. */
+  noncomputable?: true;
 }
 
 export interface EmitGetter {
@@ -164,6 +179,7 @@ export interface EmitGetter {
   /** Present exactly for a boolean-returning declaration; absent means
    * the number every declaration returned before. */
   returns?: "boolean";
+  noncomputable?: true;
 }
 
 export interface EmitMethod {
@@ -173,6 +189,7 @@ export interface EmitMethod {
   /** Present exactly for a boolean-returning declaration; absent means
    * the number every declaration returned before. */
   returns?: "boolean";
+  noncomputable?: true;
 }
 
 /** A field on the wire: its spelling and, for a boolean, union, or class
@@ -193,7 +210,7 @@ export interface EmitClass {
   /** Fields in declaration order; a private one keeps its '#'. */
   fields: EmitField[];
   source: string;
-  ctor: { params: EmitParam[]; body: EmitStmt[] };
+  ctor: { params: EmitParam[]; body: EmitStmt[]; noncomputable?: true };
   getters: EmitGetter[];
   methods: EmitMethod[];
 }
@@ -218,7 +235,30 @@ export interface EmitConstant {
   source: string;
 }
 
-export type EmitDecl = EmitFunction | EmitClass | EmitConstant;
+/** One residual site: the opaque its owner declares — one component below
+ * the owner's model name, numbered from 1 in source order within that
+ * owner — over the modeled variables in scope where the site arose, with
+ * the refusal text that names the construct as its docstring. Emitted
+ * ahead of its owner, so the artifact declares a site before using it. */
+export interface EmitResidualDecl {
+  kind: "residual";
+  /** The qualified name of the callable that owns the site: `f`, or
+   * `C#member` with `constructor` for a constructor's own. */
+  owner: string;
+  /** The defining module's entry-relative path; absent for the entry. */
+  module?: string;
+  site: number;
+  /** The refusal's reason text, which names the construct. */
+  construct: string;
+  /** The receiver first inside a member, then the variables in scope. */
+  params: EmitParam[];
+  /** The codomain; the renderer wraps it in `JsM`, since unmodeled code
+   * may throw. */
+  type: EmitParam["type"];
+}
+
+export type EmitDecl =
+  EmitFunction | EmitClass | EmitConstant | EmitResidualDecl;
 
 /** The union member tags the model admits, in normalization order. */
 export const UNION_TAGS = [
@@ -780,12 +820,12 @@ function nonBooleanOperand(
   };
 }
 
-/** A member access chain is shaped when its root is: `this` inside a
- * member, an identifier bound at a class, or a construction (whose
- * arguments are scanned). Which members exist is the walk's question,
- * as it always was for `this.x`. An unshaped root is reported at `at`,
- * the whole member expression, which is where the scan always reported
- * a member read or call it could not map. */
+/** A member access chain is shaped when its root is an identifier bound at
+ * a class or a construction (whose arguments are scanned). Which members
+ * exist is the walk's question. An unshaped root is reported at `at`, the
+ * whole member expression, which is where the scan always reported a member
+ * read or call it could not map. A property binds no receiver, so `this` is
+ * simply unshaped here. */
 function receiverConstruct(
   e: ts.Expression,
   at: ts.Expression,
@@ -793,8 +833,6 @@ function receiverConstruct(
   scope: WalkScope,
 ): FailedDecl | undefined {
   const u = unwrapParens(e);
-  if (u.kind === ts.SyntaxKind.ThisKeyword)
-    return scope.self !== undefined ? undefined : constructAt(at, at.kind, sf);
   if (ts.isIdentifier(u)) {
     const ty = scope.vars.get(u.text);
     return ty !== undefined && typeof ty !== "string" && "instance" in ty
@@ -831,6 +869,9 @@ function findConstruct(
   if (ts.isBinaryExpression(e)) {
     const tt = typeofTest(e);
     if (tt !== undefined) {
+      /* v8 ignore next -- a property's binders are int, nat, number,
+         boolean or class-valued, so no operand in one is a union place;
+         the check stays for the day a property can name one. */
       if (validTypeofTest(tt, scope)) return undefined;
       return constructAt(tt.typeofNode, tt.typeofNode.kind, sf);
     }
@@ -1011,6 +1052,10 @@ interface WalkScope {
   /** Set inside a constructor body: the fields a `this.F = e` may set,
    * each with the type its right side is walked at. */
   ctorFields?: ReadonlyMap<string, ValueTy>;
+  /** Set exactly while a body or a default initializer is walked, never on
+   * the formula side: where an unmodelable expression becomes a site
+   * instead of failing its declaration. */
+  residuals?: ResidualSink;
 }
 
 /** Whether the module itself binds a spelling: a top-level declaration or
@@ -1078,6 +1123,26 @@ function travelFailure(
   return travelFrom(scope.failed, ref);
 }
 
+/** A degraded member's refusal, read off whichever registry the receiver's
+ * class resolves against — the live one during that class's own walk. The
+ * walk consults this where a member is missing from the shape, so a use of
+ * a member that degraded travels that member's own construct instead of
+ * reporting the engine broken. */
+function memberTravel(
+  scope: WalkScope,
+  cls: ModelRef,
+  member: string,
+): FailedDecl | undefined {
+  const view = classView(scope, cls);
+  /* v8 ignore next -- the walk resolved this ref's shape before asking
+     which of its members failed, so the view is never absent here. */
+  if (view === undefined) return undefined;
+  return travelFrom(view.failed, {
+    module: cls.module,
+    name: qualifiedName(member, cls.name),
+  });
+}
+
 /** The shape and failure registry a class ref resolves against: the
  * closure's for a registered class, the walk-in-progress ones when the
  * ref names the class currently being walked. */
@@ -1110,8 +1175,6 @@ function findFailedMemberUse(
   e: ts.Expression,
   scope: WalkScope,
 ): FailedDecl | undefined {
-  // A bare `this` names no declaration this function classifies.
-  if (e.kind === ts.SyntaxKind.ThisKeyword) return undefined;
   if (ts.isParenthesizedExpression(e))
     return findFailedMemberUse(e.expression, scope);
   if (isUnaryArith(e) || isPrefixNot(e))
@@ -1151,8 +1214,8 @@ function findFailedMemberUse(
     const ty = receiverTy(mc.receiver, scope);
     if (ty !== undefined && typeof ty !== "string" && "instance" in ty) {
       const view = classView(scope, ty.instance);
-      // The live registry holds only already-walked siblings, so a
-      // forward call still falls to the typed walk, as source order demands.
+      /* v8 ignore next -- a receiver typed at an instance names a
+         registered class, so the view is never absent in a property. */
       if (view !== undefined) {
         const known =
           call !== undefined
@@ -1226,6 +1289,89 @@ class ModelError extends Error {
   }
 }
 
+/** A refusal a residual may not absorb: the site would hide a mutation of
+ * the modeled scope. A residual stands for a deterministic, possibly
+ * throwing function of the variables in scope; an expression that assigns
+ * to one is not that, so it degrades its declaration as before. */
+class HardRefusal extends ModelError {}
+
+/** The first assignment, update, or delete anywhere inside an expression. */
+function containsMutation(e: ts.Node): ts.Node | undefined {
+  if (
+    (ts.isBinaryExpression(e) &&
+      e.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+      e.operatorToken.kind <= ts.SyntaxKind.LastAssignment) ||
+    ((ts.isPrefixUnaryExpression(e) || ts.isPostfixUnaryExpression(e)) &&
+      (e.operator === ts.SyntaxKind.PlusPlusToken ||
+        e.operator === ts.SyntaxKind.MinusMinusToken)) ||
+    ts.isDeleteExpression(e)
+  ) {
+    return e;
+  }
+  return ts.forEachChild(e, containsMutation);
+}
+
+function mutationRefusal(node: ts.Node, sf: ts.SourceFile): HardRefusal {
+  const { line, character } = sf.getLineAndCharacterOfPosition(
+    node.getStart(sf),
+  );
+  return new HardRefusal(
+    `an assignment at ${line + 1}:${character + 1} is inside an ` +
+      `expression the model cannot follow`,
+    "assignment",
+  );
+}
+
+/** Where a body's residual sites accumulate while it is walked: one sink
+ * per callable, shared by every scope derived from that walk, so the
+ * numbering is the source order in which the sites arose. */
+interface ResidualSink {
+  /** The owning callable, as the opaque's name is built from: `f`, or
+   * `C#member` with `constructor` for a constructor's own. */
+  owner: string;
+  /** The owner's module qualifier; empty for the entry. */
+  module: string;
+  sites: EmitResidualDecl[];
+  /** Set inside a member, whose sites take the receiver first. */
+  self?: { param: EmitParam; expr: EmitExpr };
+  /** Set while a default initializer is walked, which reports its refusals
+   * as the parameter's rather than bare. */
+  wrap?: (reason: string) => string;
+}
+
+/** One unmodelable site: the owner's next opaque, over the variables in
+ * scope where it arose, at the type the position expects. */
+function residualAt(
+  err: ModelError,
+  expected: Expected,
+  scope: WalkScope,
+): EmitExpr {
+  const sink = scope.residuals!;
+  // Numbered within the owner, though a class's members share one array so
+  // the declarations keep the order the members were walked in.
+  const site = sink.sites.filter((r) => r.owner === sink.owner).length + 1;
+  const vars = [...scope.vars].map(([n, ty]) => wireParam(n, ty));
+  const params = sink.self !== undefined ? [sink.self.param, ...vars] : vars;
+  const module = sink.module !== "" ? { module: sink.module } : {};
+  sink.sites.push({
+    kind: "residual",
+    owner: sink.owner,
+    ...module,
+    site,
+    construct: sink.wrap !== undefined ? sink.wrap(err.message) : err.message,
+    params,
+    type: wireParam("_", expected).type,
+  });
+  const args: EmitExpr[] = vars.map((pa) => ({ kind: "id", name: pa.name }));
+  return {
+    kind: "residual",
+    owner: sink.owner,
+    ...module,
+    site,
+    args: sink.self !== undefined ? [sink.self.expr, ...args] : args,
+  };
+}
+
 /** A caught walk failure as a `FailedDecl`, construct preserved. */
 function modelFailure(err: ModelError): FailedDecl {
   return err.construct !== undefined
@@ -1241,6 +1387,10 @@ function classShapeOf(scope: WalkScope, ref: ModelRef): ClassShape {
   const name = displayName(ref);
   if (scope.vars.has(ref.name) || scope.mapped.has(modelKey(ref))) {
     throw new ModelError(`'${name}' is not a class; 'new' has no model for it`);
+  }
+  const travelled = travelFailure(scope, ref);
+  if (travelled !== undefined) {
+    throw new ModelError(travelled.reason, travelled.construct);
   }
   const failed = scope.failed.get(modelKey(ref));
   if (failed !== undefined) {
@@ -1259,10 +1409,39 @@ function shapeOfRef(scope: WalkScope, ref: ModelRef): ClassShape {
   return classShapeOf(scope, ref);
 }
 
+/** The typed walk with residuals: a construct-bearing refusal at an
+ * expression inside a body becomes that site's opaque instead of failing
+ * the declaration. An engine fault, the formula side, and a site that
+ * would swallow an assignment still throw. Every recursive call inside
+ * `walkStrict` lands here, so the site is the innermost expression that
+ * refused and the modeled context above it survives. */
+function walkTyped(
+  e: ts.Expression,
+  expected: Expected,
+  scope: WalkScope,
+  sf: ts.SourceFile,
+): EmitExpr {
+  try {
+    return walkStrict(e, expected, scope, sf);
+  } catch (err) {
+    if (
+      !(err instanceof ModelError) ||
+      err instanceof HardRefusal ||
+      err.construct === undefined ||
+      scope.residuals === undefined
+    ) {
+      throw err;
+    }
+    const mutated = containsMutation(e);
+    if (mutated !== undefined) throw mutationRefusal(mutated, sf);
+    return residualAt(err, expected, scope);
+  }
+}
+
 /** The typed walk: operand types are checked in tree order, so which
  * failure a declaration reports — and with what message — is fixed by the
  * source rather than by walk order. */
-function walkTyped(
+function walkStrict(
   e: ts.Expression,
   expected: Expected,
   scope: WalkScope,
@@ -1387,6 +1566,10 @@ function walkTyped(
     return { kind: "unop", op, operand };
   }
   if (isPrefixNot(e)) {
+    if (!booleanShaped(e.operand, scope)) {
+      const failed = nonBooleanOperand("!", "the operand", e.operand, sf);
+      throw new ModelError(failed.reason, failed.construct);
+    }
     const operand = walkTyped(e.operand, "bool", scope, sf);
     if (expected !== "bool") {
       throw new ModelError(
@@ -1398,6 +1581,10 @@ function walkTyped(
   if (ts.isConditionalExpression(e)) {
     // Both arms answer at the position's own type, so a conditional is
     // whatever type its context asks for; only the condition is pinned.
+    if (!booleanShaped(e.condition, scope)) {
+      const failed = nonBooleanOperand("?:", "the condition", e.condition, sf);
+      throw new ModelError(failed.reason, failed.construct);
+    }
     const cond = walkTyped(e.condition, "bool", scope, sf);
     const whenTrue = walkTyped(e.whenTrue, expected, scope, sf);
     const whenFalse = walkTyped(e.whenFalse, expected, scope, sf);
@@ -1428,6 +1615,17 @@ function walkTyped(
     }
     const op = e.operatorToken.getText(sf);
     if (LOGICAL_OPERATORS.has(op)) {
+      // Truthiness has no model, and that is the input's limit, not the
+      // engine's: the refusal names the operator so a body can carry it
+      // as a site.
+      if (!booleanShaped(e.left, scope)) {
+        const failed = nonBooleanOperand(op, "the left operand", e.left, sf);
+        throw new ModelError(failed.reason, failed.construct);
+      }
+      if (!booleanShaped(e.right, scope)) {
+        const failed = nonBooleanOperand(op, "the right operand", e.right, sf);
+        throw new ModelError(failed.reason, failed.construct);
+      }
       const left = walkTyped(e.left, "bool", scope, sf);
       const right = walkTyped(e.right, "bool", scope, sf);
       if (expected !== "bool") {
@@ -1484,6 +1682,25 @@ function walkTyped(
       }
       return sv;
     }
+    // An operand outside the values the model holds is refused, never
+    // absorbed: a site here would have to be typed at the position — a
+    // number — and stand for a string, which SameValue is false against
+    // for every number there is.
+    const admits = (t: ts.Expression) =>
+      numericShaped(t, scope) || taggedOperand(t, scope);
+    const offender = sides.findIndex((t) => !admits(t));
+    if (offender !== -1) {
+      const arg = unwrapParens(sides[offender]!);
+      const { line, character } = sf.getLineAndCharacterOfPosition(
+        arg.getStart(sf),
+      );
+      throw new HardRefusal(
+        `'Object.is' admits numbers, booleans, union values, ` +
+          `'undefined', and 'null'; argument ${offender + 1} is not one ` +
+          `(${kindName(arg.kind)} at ${line + 1}:${character + 1})`,
+        "Object.is",
+      );
+    }
     // Operands are typed before the position is, mirroring the binops.
     const left = walkTyped(sides[0], "num", scope, sf);
     const right = walkTyped(sides[1], "num", scope, sf);
@@ -1532,6 +1749,10 @@ function walkTyped(
       const shape = shapeOfRef(scope, ref);
       const sig = shape.methods.get(mcall.name);
       if (sig === undefined) {
+        const travelled = memberTravel(scope, ref, mcall.name);
+        if (travelled !== undefined) {
+          throw new ModelError(travelled.reason, travelled.construct);
+        }
         throw new ModelError(
           recv.expr.kind === "self"
             ? `'this.${mcall.name}' does not name a modeled method of ` +
@@ -1585,6 +1806,10 @@ function walkTyped(
       }
       const fty = shape.fields.get(maccess.name);
       if (fty === undefined) {
+        const travelled = memberTravel(scope, ref, maccess.name);
+        if (travelled !== undefined) {
+          throw new ModelError(travelled.reason, travelled.construct);
+        }
         throw new ModelError(
           recv.expr.kind === "self"
             ? `'this.${maccess.name}' does not name a field or a modeled ` +
@@ -1660,10 +1885,29 @@ function walkTyped(
         );
       }
     }
+    if (scope.vars.has(e.expression.text)) {
+      // The model holds numbers, booleans, tagged values and instances —
+      // never a callable — so calling a bound name is a shape it does not
+      // follow, not a model it could not find.
+      const failed = constructAt(e, e.kind, sf);
+      throw new ModelError(
+        `'${e.expression.text}' is a bound value, not a callable the ` +
+          `model follows (${failed.reason})`,
+        failed.construct,
+      );
+    }
     const sig = scope.mapped.get(key);
     if (sig === undefined) {
       const failed = scope.failed.get(key);
       if (failed !== undefined) {
+        // A callee whose own declaration named a construct travels that
+        // refusal, so the call is outside the model rather than broken.
+        if (failed.construct !== undefined) {
+          throw new ModelError(
+            `'${name}' could not be modeled: ${failed.reason}`,
+            failed.construct,
+          );
+        }
         throw new ModelError(`'${name}' has no model: ${failed.reason}`);
       }
       throw new ModelError(`no model registered for '${name}'`);
@@ -1688,17 +1932,15 @@ function walkTyped(
     const failed = constructAt(e, e.kind, sf);
     throw new ModelError(failed.reason, failed.construct);
   }
-  // An unlisted standard-library member the pre-scans did not reach still
-  // names itself; anything else is outside the model and degrades like an
-  // opaque node.
-  /* v8 ignore start -- the construct scan reaches every call before the
-     walk does; kept so the walk's refusal cannot drift from the scan's. */
+  // An unlisted standard-library member names itself; anything else is
+  // outside the model. Both carry their construct, which is what lets a
+  // body absorb them as a site rather than degrade.
   const unsupported = unsupportedBuiltin(e, scope);
   if (unsupported !== undefined) {
     throw new ModelError(unsupported.reason, unsupported.construct);
   }
-  /* v8 ignore stop */
-  throw new ModelError(constructAt(e, e.kind, sf).reason);
+  const failed = constructAt(e, e.kind, sf);
+  throw new ModelError(failed.reason, failed.construct);
 }
 
 /** A member access `recv.name`. A `#`-private is a member access only
@@ -2121,6 +2363,8 @@ type TStmt =
     }
   | { t: "assign"; name: string; expr: ts.Expression }
   | { t: "field-set"; field: string; expr: ts.Expression }
+  /** An expression statement: evaluated for its effect, value dropped. */
+  | { t: "expr"; expr: ts.Expression }
   | {
       t: "if";
       cond: { expr: ts.Expression } | { opaque: FailedDecl };
@@ -2302,6 +2546,15 @@ function structureStmt(
     }
     const stmt = assignStmt(s.expression, locals);
     if (stmt !== undefined) return [stmt];
+    // A statement that assigns is not a site: the model would lose the
+    // write. Anything else runs for its effect, value dropped.
+    const mutated = containsMutation(s.expression);
+    if (mutated !== undefined) {
+      return [
+        { t: "opaque", failure: modelFailure(mutationRefusal(mutated, sf)) },
+      ];
+    }
+    return [{ t: "expr", expr: s.expression }];
   }
   if (ts.isIfStatement(s)) {
     const inner = unwrapParens(s.expression);
@@ -2338,93 +2591,6 @@ function structureStmt(
     return [{ t: "if", cond, then: thenArm, else: arm(s.elseStatement) }];
   }
   return [{ t: "opaque", failure: constructAt(s, s.kind, sf) }];
-}
-
-/** The mapped expressions of a statement tree in tree order — the order
- * the pre-scans see them in the source text. An opaque statement
- * contributes nothing: its whole subtree was replaced. The scan goes into
- * branches, dead code included. */
-function treeExprs(
-  stmts: readonly TStmt[],
-  into: ts.Expression[] = [],
-): ts.Expression[] {
-  for (const s of stmts) {
-    switch (s.t) {
-      case "return":
-        into.push(s.expr);
-        break;
-      case "decl":
-        into.push(s.init);
-        break;
-      case "assign":
-      case "field-set":
-        into.push(s.expr);
-        break;
-      case "if":
-        // An opaque condition never reaches this scan: the construct scan
-        // runs first and returns it as the declaration's failure.
-        if ("expr" in s.cond) into.push(s.cond.expr);
-        treeExprs(s.then, into);
-        if (s.else !== undefined) treeExprs(s.else, into);
-        break;
-      default:
-        break;
-    }
-  }
-  return into;
-}
-
-/** The first opaque node in the statement tree, in tree order: an opaque
- * statement, an opaque condition, or an unmapped construct inside a mapped
- * expression — whichever comes first in tree order. Each decl
- * binds the rest of its list — an arm its own copy — mirroring the
- * lowering's scoping, so the scan types an identifier (a typeof test over
- * a union local, say) off the same binding the walk will. */
-function treeConstruct(
-  stmts: readonly TStmt[],
-  sf: ts.SourceFile,
-  scope: WalkScope,
-): FailedDecl | undefined {
-  let current = scope;
-  for (const s of stmts) {
-    switch (s.t) {
-      case "opaque":
-        return s.failure;
-      case "return": {
-        const found = findConstruct(s.expr, sf, current);
-        if (found !== undefined) return found;
-        break;
-      }
-      case "decl": {
-        const found = findConstruct(s.init, sf, current);
-        if (found !== undefined) return found;
-        const vars = new Map(current.vars);
-        vars.set(s.name, s.ty);
-        current = { ...current, vars };
-        break;
-      }
-      case "assign":
-      case "field-set": {
-        const found = findConstruct(s.expr, sf, current);
-        if (found !== undefined) return found;
-        break;
-      }
-      case "if": {
-        if ("opaque" in s.cond) return s.cond.opaque;
-        const found =
-          findConstruct(s.cond.expr, sf, current) ??
-          treeConstruct(s.then, sf, current) ??
-          (s.else !== undefined
-            ? treeConstruct(s.else, sf, current)
-            : undefined);
-        if (found !== undefined) return found;
-        break;
-      }
-      case "throw":
-        break;
-    }
-  }
-  return undefined;
 }
 
 /** Whether every path through a statement leaves the function — the old
@@ -2519,16 +2685,36 @@ function lowerTree(
       const tail = lowerTree(rest, vars, k, scope, sf, returns);
       return [{ kind: "field-set", field: s.field, expr }, ...tail];
     }
-    /* v8 ignore start -- an opaque statement or condition is unreachable
-       here: the construct scan already degraded the declaration. The throw
-       is a defense, so a scan regression becomes a contained failure
-       rather than a bad artifact. */
+    /* v8 ignore start -- an opaque statement is unreachable here: the
+       statement scan already degraded the declaration. The throw is a
+       defense, so a scan regression becomes a contained failure rather
+       than a bad artifact. */
     case "opaque":
-      throw new ModelError(s.failure.reason);
+      throw new ModelError(s.failure.reason, s.failure.construct);
+    /* v8 ignore stop */
+    case "expr": {
+      // The value is dropped, the effect is not. The position expects
+      // whatever the expression's own shape suggests, since there is no
+      // unit codomain to type it at.
+      const bound: WalkScope = { ...scope, vars: new Map(vars) };
+      const expected: Expected = booleanShaped(s.expr, bound)
+        ? "bool"
+        : (callReturns(s.expr, bound) ?? "num");
+      const expr = walk(s.expr, expected, vars);
+      const tail = lowerTree(rest, vars, k, scope, sf, returns);
+      return [{ kind: "discard", expr }, ...tail];
+    }
     case "if": {
-      if ("opaque" in s.cond) throw new ModelError(s.cond.opaque.reason);
-      /* v8 ignore stop */
-      const cond = walk(s.cond.expr, "bool", vars);
+      // A condition the model cannot read is a site like any other: it is
+      // evaluated on every path, and it may throw.
+      const cond: EmitExpr =
+        "opaque" in s.cond
+          ? residualAt(
+              new ModelError(s.cond.opaque.reason, s.cond.opaque.construct),
+              "bool",
+              { ...scope, vars: new Map(vars) },
+            )
+          : walk(s.cond.expr, "bool", vars);
       const elseArm = s.else ?? [];
       // What an arm that falls through continues into: the rest of this
       // list, and only then the enclosing continuation.
@@ -2579,25 +2765,19 @@ function lowerTree(
   }
 }
 
-/** The pre-scans over a whole statement tree, in that same fixed order —
- * opaque constructs, then construct-failed callees — dead code
- * included. */
-function bodyPrescan(
-  tree: readonly TStmt[],
-  sf: ts.SourceFile,
-  scope: WalkScope,
-): FailedDecl | undefined {
-  const construct = treeConstruct(tree, sf, scope);
-  if (construct !== undefined) return construct;
-  const exprs = treeExprs(tree);
-  const callee = failedCalleeIn(
-    exprs.flatMap((e) => callNames(e, scope)),
-    scope,
-  );
-  if (callee !== undefined) return callee;
-  for (const e of exprs) {
-    const found = findFailedMemberUse(e, scope);
-    if (found !== undefined) return found;
+/** The first statement outside the slice, arms included — the one failure
+ * a body still degrades on, now that its expressions carry their own as
+ * residual sites. Dead code counts: a statement the model cannot map is
+ * not made mappable by being unreachable. */
+function treeStatementFailure(stmts: readonly TStmt[]): FailedDecl | undefined {
+  for (const s of stmts) {
+    if (s.t === "opaque") return s.failure;
+    if (s.t === "if") {
+      const found =
+        treeStatementFailure(s.then) ??
+        (s.else !== undefined ? treeStatementFailure(s.else) : undefined);
+      if (found !== undefined) return found;
+    }
   }
   return undefined;
 }
@@ -2615,19 +2795,6 @@ function assignedIn(
     }
   }
   return into;
-}
-
-/** The pre-scans a body runs, over one initializer expression. */
-function exprPrescan(
-  e: ts.Expression,
-  sf: ts.SourceFile,
-  scope: WalkScope,
-): FailedDecl | undefined {
-  return (
-    findConstruct(e, sf, scope) ??
-    failedCalleeIn(callNames(e, scope), scope) ??
-    findFailedMemberUse(e, scope)
-  );
 }
 
 function defaultFailure(name: string, reason: string): string {
@@ -2667,14 +2834,14 @@ function defaultOpenings(
     const initScope: WalkScope = {
       ...scope,
       vars: new Map(params.slice(0, i).map((q) => [q.name, q.ty])),
+      // The same sink, so a default's site numbers in sequence with the
+      // body's, and its text reads as the parameter's failure. Every body
+      // walk carries one, which is the only place a default is resolved.
+      residuals: {
+        ...scope.residuals!,
+        wrap: (reason: string) => defaultFailure(p.name, reason),
+      },
     };
-    const failed = exprPrescan(p.init, sf, initScope);
-    if (failed !== undefined) {
-      throw new ModelError(
-        defaultFailure(p.name, failed.reason),
-        failed.construct,
-      );
-    }
     let init: EmitExpr;
     try {
       init = walkTyped(p.init, p.ty, initScope, sf);
@@ -3110,6 +3277,9 @@ interface ClassWalk {
   shape: ClassShape;
   /** Members that degrade alone, by their full model key. */
   memberFailed: Map<string, FailedDecl>;
+  /** Every member's residual sites, in the order the members are walked:
+   * the constructor's, then each getter's, then each method's. */
+  residuals: EmitResidualDecl[];
 }
 
 /** A class declaration's IR, or the failure that degrades the whole
@@ -3304,10 +3474,33 @@ function walkClass(
     names,
     module: qualifier,
   };
+  const residuals: EmitResidualDecl[] = [];
+  /** A member's sink. `self` is set for a getter or a method, whose sites
+   * take the receiver first; a constructor has no instance yet. */
+  const sinkFor = (member: string, receiver: boolean): ResidualSink => ({
+    owner: qualifiedName(member, className),
+    module: qualifier,
+    sites: residuals,
+    ...(receiver
+      ? {
+          self: {
+            param: {
+              name: "self",
+              type: {
+                class: className,
+                ...(qualifier !== "" ? { module: qualifier } : {}),
+              },
+            },
+            expr: { kind: "self" },
+          },
+        }
+      : {}),
+  });
   const ctorScope: WalkScope = {
     ...base,
     vars: new Map(ctorParams.map((p) => [p.name, p.ty])),
     ctorFields: fields,
+    residuals: sinkFor("constructor", false),
   };
   const fieldSet = new Set(fields.keys());
   const ctorLocals = paramLocals(ctorParams);
@@ -3335,7 +3528,7 @@ function walkClass(
         };
       }
     }
-    const failure = bodyPrescan(tree, sf, ctorScope);
+    const failure = treeStatementFailure(tree);
     if (failure !== undefined) return failure;
     // Falling off the end is a constructor's normal exit: the renderer
     // appends the instance return.
@@ -3405,11 +3598,12 @@ function walkClass(
       vars: new Map(),
       self,
       selfFailed: memberFailed,
+      residuals: sinkFor(spelling, true),
     };
     const body = g.body!.statements.flatMap((st) =>
       structureStmt(st, sf, new Map(), scope),
     );
-    const failure = bodyPrescan(body, sf, scope);
+    const failure = treeStatementFailure(body);
     if (failure !== undefined) {
       memberFailed.set(memberKey(spelling), failure);
       continue;
@@ -3471,12 +3665,13 @@ function walkClass(
       vars: new Map(params.map((p) => [p.name, p.ty])),
       self,
       selfFailed: memberFailed,
+      residuals: sinkFor(spelling, true),
     };
     const locals = paramLocals(params);
     const body = m.body!.statements.flatMap((st) =>
       structureStmt(st, sf, locals, scope),
     );
-    const prescan = bodyPrescan(body, sf, scope);
+    const prescan = treeStatementFailure(body);
     if (prescan !== undefined) {
       memberFailed.set(memberKey(spelling), prescan);
       continue;
@@ -3524,6 +3719,7 @@ function walkClass(
     },
     shape,
     memberFailed,
+    residuals,
   };
 }
 
@@ -3591,7 +3787,9 @@ function walkFunction(
   c: EmitClosure,
   names: ReadonlyMap<string, ModelRef>,
   module: string,
-): { emit: EmitFunction; sig: FnSig } | FailedDecl {
+):
+  | { emit: EmitFunction; sig: FnSig; residuals: EmitResidualDecl[] }
+  | FailedDecl {
   const sig = signatureFailure(fn, sf, {
     classes: c.classes,
     failed: c.failed,
@@ -3603,6 +3801,7 @@ function walkFunction(
   if (!("params" in sig)) return sig;
   const params = sig.params;
   const returns = sig.returns;
+  const residuals: EmitResidualDecl[] = [];
   const scope: WalkScope = {
     vars: new Map(params.map((p) => [p.name, p.ty])),
     mapped: c.mapped,
@@ -3612,13 +3811,14 @@ function walkFunction(
     aliases: c.aliases,
     names,
     module,
+    residuals: { owner: fn.name!.text, module, sites: residuals },
   };
   const locals = paramLocals(params);
   const tree = fn.body!.statements.flatMap((s) =>
     structureStmt(s, sf, locals, scope),
   );
-  const prescan = bodyPrescan(tree, sf, scope);
-  if (prescan !== undefined) return prescan;
+  const statementFailure = treeStatementFailure(tree);
+  if (statementFailure !== undefined) return statementFailure;
   try {
     const openings = defaultOpenings(params, tree, scope, sf);
     const body = [
@@ -3647,6 +3847,7 @@ function walkFunction(
         body,
       },
       sig: sigOf(params, returns),
+      residuals,
     };
   } catch (err) {
     if (err instanceof ModelError) return modelFailure(err);
@@ -4459,7 +4660,8 @@ function walkEmitModule(
       if (stmt.name === undefined) continue;
       const walked = walkFunction(stmt, sf, c, names, qualifier);
       if ("emit" in walked) {
-        c.declarations.push(walked.emit);
+        // A site is declared before the owner that applies it.
+        c.declarations.push(...walked.residuals, walked.emit);
         c.mapped.set(key(stmt.name.text), walked.sig);
       } else {
         c.failed.set(key(stmt.name.text), walked);
@@ -4471,7 +4673,8 @@ function walkEmitModule(
       const className = stmt.name.text;
       const walked = walkClass(stmt, sf, c, names, qualifier);
       if ("emit" in walked) {
-        c.declarations.push(walked.emit);
+        // A site is declared before the owner that applies it.
+        c.declarations.push(...walked.residuals, walked.emit);
         c.classes.set(key(className), walked.shape);
         c.mapped.set(
           key(qualifiedName("constructor", className)),
@@ -4569,6 +4772,117 @@ function walkEmitModule(
  * carrying their module; `file` locates the entry against the module tree
  * `reader` reads, and labels the annotations.
  */
+/** Marks every callable whose body reaches a residual site, directly or
+ * through a callee that does. Declarations arrive in dependency order — a
+ * callee is walked before its caller, a class's constructor before its
+ * getters, getters before methods — so one pass sees each callee's flag
+ * before the uses that inherit it. */
+function markNoncomputable(declarations: readonly EmitDecl[]): void {
+  const tainted = new Set<string>();
+  const keyOf = (module: string | undefined, name: string) =>
+    modelKey({ module: module ?? "", name });
+  const memberKeyOf = (
+    module: string | undefined,
+    cls: string,
+    member: string,
+  ) => keyOf(module, qualifiedName(member, cls));
+  const reaches = (e: EmitExpr): boolean => {
+    switch (e.kind) {
+      case "residual":
+        return true;
+      case "call":
+        return tainted.has(keyOf(e.module, e.callee)) || e.args.some(reaches);
+      case "new":
+        return (
+          tainted.has(memberKeyOf(e.module, e.className, "constructor")) ||
+          e.args.some(reaches)
+        );
+      case "getter-read":
+        return (
+          tainted.has(memberKeyOf(e.module, e.className, e.name)) ||
+          reaches(e.object)
+        );
+      case "method-call":
+        return (
+          tainted.has(memberKeyOf(e.module, e.className, e.name)) ||
+          reaches(e.object) ||
+          e.args.some(reaches)
+        );
+      case "field-read":
+        return reaches(e.object);
+      case "unop":
+        return reaches(e.operand);
+      case "binop":
+      case "same-value":
+      case "jsval-eq":
+        return reaches(e.left) || reaches(e.right);
+      case "cond":
+        return reaches(e.cond) || reaches(e.then) || reaches(e.else);
+      case "builtin":
+        return e.args.some(reaches);
+      case "project":
+      case "option-test":
+      case "option-get":
+      case "typeof-test":
+        return reaches(e.expr);
+      case "inject":
+      case "option":
+        return e.expr !== undefined && reaches(e.expr);
+      // A literal, an identifier, the receiver, and a constant or builtin
+      // read reach nothing.
+      default:
+        return false;
+    }
+  };
+  const bodyReaches = (stmts: readonly EmitStmt[]): boolean =>
+    stmts.some((st) => {
+      switch (st.kind) {
+        case "return":
+        case "assign":
+        case "field-set":
+        case "discard":
+          return reaches(st.expr);
+        case "const":
+        case "let":
+          return reaches(st.init);
+        case "if":
+          return (
+            reaches(st.cond) ||
+            bodyReaches(st.then) ||
+            (st.else !== undefined && bodyReaches(st.else))
+          );
+        // A throw carries only its error's name.
+        default:
+          return false;
+      }
+    });
+  for (const d of declarations) {
+    if (d.kind === "function") {
+      if (bodyReaches(d.body)) {
+        d.noncomputable = true;
+        tainted.add(keyOf(d.module, d.name));
+      }
+    } else if (d.kind === "class") {
+      if (bodyReaches(d.ctor.body)) {
+        d.ctor.noncomputable = true;
+        tainted.add(memberKeyOf(d.module, d.name, "constructor"));
+      }
+      for (const g of d.getters) {
+        if (bodyReaches(g.body)) {
+          g.noncomputable = true;
+          tainted.add(memberKeyOf(d.module, d.name, g.name));
+        }
+      }
+      for (const m of d.methods) {
+        if (bodyReaches(m.body)) {
+          m.noncomputable = true;
+          tainted.add(memberKeyOf(d.module, d.name, m.name));
+        }
+      }
+    }
+  }
+}
+
 export function emitModule(
   text: string,
   file: string,
@@ -4591,6 +4905,7 @@ export function emitModule(
   // The entry's qualifier is empty: its names are the ones annotations
   // are written about, so they keep their source spelling.
   const names = walkEmitModule(entry, file, text, "", closure);
+  markNoncomputable(closure.declarations);
   const { declarations, mapped, failed } = closure;
   const module = "";
   const key = (name: string) => modelKey({ module, name });

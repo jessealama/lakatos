@@ -1,7 +1,28 @@
 import { assert, describe, expect, test } from "vitest";
 import * as path from "node:path";
-import { emitModule } from "../src/emission.js";
+import { type EmitDecl, emitModule } from "../src/emission.js";
 import { type ModuleReader } from "../src/module-graph.js";
+
+/** A declaration's own name. A residual site is named by its owner and
+ * index, so a list assertion stays total rather than hiding one. */
+function declName(d: EmitDecl): string {
+  return d.kind === "residual" ? `${d.owner}#residual_${d.site}` : d.name;
+}
+
+/** What an expression-level refusal now produces: the annotation is tried,
+ * and the construct is recorded at its site instead of classifying the
+ * declaration. Returns the constructs in source order. */
+function residualConstructs(
+  src: string,
+  file: string,
+  read?: ModuleReader,
+): string[] {
+  const { emission, classified } = emitModule(src, file, read);
+  expect(classified).toEqual([]);
+  return emission.declarations.flatMap((d) =>
+    d.kind === "residual" ? [d.construct] : [],
+  );
+}
 
 /** An in-memory module tree, keyed the way the walk resolves: absolute
  * paths against the importing file's directory. */
@@ -36,7 +57,7 @@ describe("emission import closures", () => {
       reader({ "helper.mts": HELPER }),
     );
     expect(classified).toEqual([]);
-    expect(emission.declarations.map((d) => [d.module, d.name])).toEqual([
+    expect(emission.declarations.map((d) => [d.module, declName(d)])).toEqual([
       ["helper.mts", "double"],
       [undefined, "twice"],
     ]);
@@ -48,7 +69,7 @@ describe("emission import closures", () => {
       "main.mts",
       reader({ "helper.mts": HELPER }),
     );
-    const twice = emission.declarations.find((d) => d.name === "twice")!;
+    const twice = emission.declarations.find((d) => declName(d) === "twice")!;
     assert(twice.kind === "function");
     const ret = twice.body[0]!;
     expect(ret.kind).toBe("return");
@@ -219,7 +240,7 @@ describe("emission import closures", () => {
       reader({ "pt.mts": pt }),
     );
     expect(classified).toEqual([]);
-    const shift = emission.declarations.find((d) => d.name === "shift")!;
+    const shift = emission.declarations.find((d) => declName(d) === "shift")!;
     assert(shift.kind === "function");
     expect(shift.params[1]).toEqual({
       name: "p",
@@ -358,7 +379,7 @@ describe("emission import closures", () => {
       "main.mts",
       reader({ "helper.mts": mid, "base.ts": base }),
     );
-    expect(emission.declarations.map((d) => [d.module, d.name])).toEqual([
+    expect(emission.declarations.map((d) => [d.module, declName(d)])).toEqual([
       ["base.ts", "base"],
       ["helper.mts", "double"],
       [undefined, "twice"],
@@ -394,7 +415,7 @@ describe("emission import closures", () => {
       }),
     );
     expect(classified).toEqual([]);
-    expect(emission.declarations.map((d) => [d.module, d.name])).toEqual([
+    expect(emission.declarations.map((d) => [d.module, declName(d)])).toEqual([
       ["base.ts", "base"],
       ["a.ts", "a"],
       ["b.ts", "b"],
@@ -405,13 +426,12 @@ describe("emission import closures", () => {
   test("a specifier that is not a string literal degrades its bindings", () => {
     // Parse recovery admits one: the specifier is typed as an expression.
     const src = TWICE.replace('"./helper.mjs"', "`./helper.mjs`");
-    const { classified } = emitModule(
-      src,
-      "main.mts",
-      reader({ "helper.mts": HELPER }),
-    );
-    expect(classified[0]?.szs).toBe("Inappropriate");
-    expect(classified[0]?.reason).toContain("ImportDeclaration");
+    expect(
+      residualConstructs(src, "main.mts", reader({ "helper.mts": HELPER })),
+    ).toEqual([
+      expect.stringContaining("ImportDeclaration"),
+      expect.stringContaining("ImportDeclaration"),
+    ]);
   });
 
   test("an aliased import rewrites to the exported name", () => {
@@ -430,15 +450,17 @@ describe("emission import closures", () => {
 
   test("a bare specifier still degrades its bindings", () => {
     const src = TWICE.replace('"./helper.mjs"', '"lodash"');
-    const { classified } = emitModule(src, "main.mts", reader({}));
-    expect(classified[0]?.szs).toBe("Inappropriate");
-    expect(classified[0]?.reason).toContain("ImportDeclaration");
+    expect(residualConstructs(src, "main.mts", reader({}))).toEqual([
+      expect.stringContaining("ImportDeclaration"),
+      expect.stringContaining("ImportDeclaration"),
+    ]);
   });
 
   test("a relative specifier reaching no file degrades its bindings", () => {
-    const { classified } = emitModule(TWICE, "main.mts", reader({}));
-    expect(classified[0]?.szs).toBe("Inappropriate");
-    expect(classified[0]?.reason).toContain("ImportDeclaration");
+    expect(residualConstructs(TWICE, "main.mts", reader({}))).toEqual([
+      expect.stringContaining("ImportDeclaration"),
+      expect.stringContaining("ImportDeclaration"),
+    ]);
   });
 
   test("an import cycle degrades the cycle-closing name, not the entry's own", () => {
@@ -449,13 +471,18 @@ describe("emission import closures", () => {
       "}",
       "",
     ].join("\n");
-    const { classified } = emitModule(
+    const { emission, classified } = emitModule(
       TWICE,
       "main.mts",
       reader({ "helper.mts": cyclic }),
     );
-    expect(classified[0]?.szs).toBe("Inappropriate");
-    expect(classified[0]?.reason).toContain("ImportDeclaration");
+    expect(classified).toEqual([]);
+    // The site sits in the dependency, over the entry's own name.
+    expect(
+      emission.declarations.flatMap((d) =>
+        d.kind === "residual" ? [[d.owner, d.construct]] : [],
+      ),
+    ).toEqual([["double", expect.stringContaining("ImportDeclaration")]]);
   });
 
   test("default and namespace imports stay opaque even when the module resolves", () => {
@@ -468,12 +495,9 @@ describe("emission import closures", () => {
         "}",
         "",
       ].join("\n");
-      const { classified } = emitModule(
-        src,
-        "main.mts",
-        reader({ "helper.mts": HELPER }),
-      );
-      expect(classified[0]?.szs).toBe("Inappropriate");
+      expect(
+        residualConstructs(src, "main.mts", reader({ "helper.mts": HELPER })),
+      ).toEqual([expect.stringContaining("ImportDeclaration")]);
     }
   });
 
@@ -499,8 +523,10 @@ describe("emission import closures", () => {
   });
 
   test("no reader means the disk, and a missing file degrades rather than throws", () => {
-    const { classified } = emitModule(TWICE, "/nonexistent/main.mts");
-    expect(classified[0]?.szs).toBe("Inappropriate");
+    expect(residualConstructs(TWICE, "/nonexistent/main.mts")).toEqual([
+      expect.stringContaining("ImportDeclaration"),
+      expect.stringContaining("ImportDeclaration"),
+    ]);
   });
 });
 
@@ -530,7 +556,7 @@ describe("class-typed parameters across modules", () => {
       reader({ "box.mts": BOX }),
     );
     expect(classified).toEqual([]);
-    const unwrap = emission.declarations.find((d) => d.name === "unwrap")!;
+    const unwrap = emission.declarations.find((d) => declName(d) === "unwrap")!;
     assert(unwrap.kind === "function");
     expect(unwrap.params).toEqual([
       { name: "b", type: { class: "Box", module: "box.mts" } },
@@ -563,7 +589,7 @@ describe("class-typed parameters across modules", () => {
       reader({ "box.mts": BOX }),
     );
     expect(classified).toEqual([]);
-    const unwrap = emission.declarations.find((d) => d.name === "unwrap")!;
+    const unwrap = emission.declarations.find((d) => declName(d) === "unwrap")!;
     assert(unwrap.kind === "function");
     expect(unwrap.body[0]).toEqual({
       kind: "const",
@@ -600,7 +626,7 @@ describe("class-typed parameters across modules", () => {
       reader({ "box.mts": box }),
     );
     expect(classified).toEqual([]);
-    const unwrap = emission.declarations.find((d) => d.name === "unwrap")!;
+    const unwrap = emission.declarations.find((d) => declName(d) === "unwrap")!;
     assert(unwrap.kind === "function");
     expect(unwrap.body[0]).toEqual({
       kind: "return",
@@ -815,5 +841,53 @@ describe("imported module constants", () => {
       },
       source: "export const m = s * 60;",
     });
+  });
+});
+
+describe("residual sites across a module boundary", () => {
+  const UNMODELED = [
+    "export function h(x: number): number {",
+    "  return Math.log(x);",
+    "}",
+    "",
+  ].join("\n");
+
+  const CALLER = [
+    'import { h } from "./helper.mjs";',
+    "/** @ensures{p} forall (x: int ∈ [0, 5)) { uses(x) >= 0 } */",
+    "export function uses(x: number): number {",
+    "  return h(x);",
+    "}",
+    "",
+  ].join("\n");
+
+  test("a dependency's site is declared under its own module and taints the entry", () => {
+    const { emission, classified } = emitModule(
+      CALLER,
+      "main.mts",
+      reader({ "helper.mts": UNMODELED }),
+    );
+    expect(classified).toEqual([]);
+    expect(emission.declarations.map((d) => [d.module, declName(d)])).toEqual([
+      ["helper.mts", "h#residual_1"],
+      ["helper.mts", "h"],
+      [undefined, "uses"],
+    ]);
+    const site = emission.declarations[0]!;
+    assert(site.kind === "residual");
+    expect(site).toMatchObject({
+      owner: "h",
+      module: "helper.mts",
+      site: 1,
+      construct: "'Math.log' is not supported",
+      params: [{ name: "x", type: "number" }],
+    });
+    const dep = emission.declarations[1]!;
+    assert(dep.kind === "function");
+    expect(dep.noncomputable).toBe(true);
+    const entry = emission.declarations[2]!;
+    assert(entry.kind === "function");
+    expect(entry.noncomputable).toBe(true);
+    expect(emission.obligations).toHaveLength(1);
   });
 });

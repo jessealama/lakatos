@@ -17,7 +17,8 @@
         "oneOf": [
           { "$ref": "#/definitions/function" },
           { "$ref": "#/definitions/class" },
-          { "$ref": "#/definitions/constant" }
+          { "$ref": "#/definitions/constant" },
+          { "$ref": "#/definitions/residual" }
         ]
       }
     },
@@ -445,6 +446,22 @@
             "left": { "$ref": "#/definitions/expr" },
             "right": { "$ref": "#/definitions/expr" }
           }
+        },
+        {
+          "type": "object",
+          "description": "An unmodelable site: the opaque its owner declares, applied to the variables in scope there. Valued in JsM, so every use lifts.",
+          "additionalProperties": false,
+          "required": ["kind", "owner", "site", "args"],
+          "properties": {
+            "kind": { "const": "residual" },
+            "owner": { "$ref": "#/definitions/residualOwner" },
+            "module": { "$ref": "#/definitions/modulePath" },
+            "site": { "type": "integer", "minimum": 1 },
+            "args": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/expr" }
+            }
+          }
         }
       ]
     },
@@ -472,6 +489,10 @@
         "returns": {
           "const": "boolean",
           "description": "Present exactly for a boolean-returning declaration; absent means number."
+        },
+        "noncomputable": {
+          "const": true,
+          "description": "Present exactly when the body reaches a residual site, directly or through a callee that does; a valueless opaque compiles to 'pure', which the evaluation rung would prove through."
         }
       }
     },
@@ -513,6 +534,10 @@
             "body": {
               "type": "array",
               "items": { "$ref": "#/definitions/statement" }
+            },
+            "noncomputable": {
+              "const": true,
+              "description": "Present exactly when the body reaches a residual site, directly or through a callee that does; a valueless opaque compiles to 'pure', which the evaluation rung would prove through."
             }
           }
         },
@@ -531,6 +556,10 @@
               "returns": {
                 "const": "boolean",
                 "description": "Present exactly for a boolean-returning declaration; absent means number."
+              },
+              "noncomputable": {
+                "const": true,
+                "description": "Present exactly when the body reaches a residual site, directly or through a callee that does; a valueless opaque compiles to 'pure', which the evaluation rung would prove through."
               }
             }
           }
@@ -555,6 +584,10 @@
               "returns": {
                 "const": "boolean",
                 "description": "Present exactly for a boolean-returning declaration; absent means number."
+              },
+              "noncomputable": {
+                "const": true,
+                "description": "Present exactly when the body reaches a residual site, directly or through a callee that does; a valueless opaque compiles to 'pure', which the evaluation rung would prove through."
               }
             }
           }
@@ -577,6 +610,41 @@
         "source": {
           "type": "string",
           "description": "The declaration's original text, echoed as comments above the def."
+        }
+      }
+    },
+    "residualOwner": {
+      "type": "string",
+      "pattern": "^[$A-Za-z_][$A-Za-z0-9_]*(#[$A-Za-z_][$A-Za-z0-9_]*)?$",
+      "description": "The callable that owns a residual site: 'f', or 'C#member' with 'constructor' for a constructor's own."
+    },
+    "residual": {
+      "type": "object",
+      "description": "One residual site: the opaque its owner declares for an unmodelable expression, over the modeled variables in scope there, carrying the refusal text that names the construct. Emitted ahead of its owner.",
+      "additionalProperties": false,
+      "required": ["kind", "owner", "site", "construct", "params", "type"],
+      "properties": {
+        "kind": { "const": "residual" },
+        "owner": { "$ref": "#/definitions/residualOwner" },
+        "module": { "$ref": "#/definitions/modulePath" },
+        "site": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "From 1, in source order within the owner."
+        },
+        "construct": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The refusal's reason text, which names the construct."
+        },
+        "params": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/param" },
+          "description": "The receiver first inside a member, then the variables in scope."
+        },
+        "type": {
+          "$ref": "#/definitions/paramType",
+          "description": "The codomain; the renderer wraps it in JsM, since unmodeled code may throw."
         }
       }
     },
@@ -668,6 +736,16 @@
               "items": { "$ref": "#/definitions/statement" },
               "description": "Absent when the source has no else arm (or an empty one): control falls through to the statements after the if."
             }
+          }
+        },
+        {
+          "type": "object",
+          "description": "An expression statement: evaluated for its effect, value dropped.",
+          "additionalProperties": false,
+          "required": ["kind", "expr"],
+          "properties": {
+            "kind": { "const": "discard" },
+            "expr": { "$ref": "#/definitions/expr" }
           }
         }
       ]

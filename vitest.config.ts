@@ -52,9 +52,14 @@ export default defineConfig({
         // 2026-09-09: the refused-operator scan was deleted, every operator
         // outside the model now refusing at the construct scan, so the
         // denominator shrank again while the unreachable set did not.
+        // Ratcheted 2026-09-11: a body's expression refusals became residual
+        // sites, leaving the construct and failed-member scans answering for
+        // a property's own text alone — the arms only a body could reach were
+        // deleted, and the ones a property cannot yet reach (a union place in
+        // an atom) carry their own ignores.
         autoUpdate: true,
-        statements: 99.56,
-        branches: 98.52,
+        statements: 99.57,
+        branches: 98.63,
         functions: 100,
         lines: 99.66,
       },

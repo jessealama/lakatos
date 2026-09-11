@@ -39,17 +39,37 @@ def prettyLines (fmt : Format) : String :=
   String.intercalate "\n"
     (((fmt.pretty 100).splitOn "\n").map (·.dropEndWhile (· == ' ') |>.toString))
 
+/-- The class a residual site's owner names, for a member's site; none for
+a free function's, whose opaque stands on its own. -/
+def residualOwnerClass (r : EmitResidual) : Option String :=
+  match r.owner.splitOn "#" with
+  | [_] => none
+  | c :: _ => some c
+  | [] => none
+
 /-- The full artifact text. Pretty-printing runs in `CoreM` against an
 environment that imports `ThalesDsl`, which carries every syntax the
 quotations build. -/
 def renderEmission (e : Emission) : CoreM String := do
   let mut blocks : Array String := #[header e]
+  -- A member's site is typed over the receiver, so its opaque cannot be
+  -- declared before the structure that names it: the class prints its own
+  -- sites between the structure and the members that apply them.
+  let memberSites := e.declarations.filterMap fun d => match d with
+    | .residual r => match residualOwnerClass r with
+      | some c => some (r.module, c, r)
+      | none => none
+    | _ => none
   -- A dependency's declarations are contiguous and introduced by their
   -- module comment; the entry's carry none.
   let mut fromModule : Option String := none
   for d in e.declarations do
+    -- A member's site is printed by its class, not here.
+    if let .residual r := d then
+      if (residualOwnerClass r).isSome then continue
     let module := match d with
       | .fn f => f.module | .cls c => c.module | .const c => c.module
+      | .residual r => r.module
     if module != fromModule then
       fromModule := module
       if let some m := module then
@@ -69,6 +89,9 @@ def renderEmission (e : Emission) : CoreM String := do
       let st ← rendered (structCommand c)
       blocks := blocks.push
         (commentLines c.source ++ "\n" ++ prettyLines (← ppCommand st))
+      for (m, cls, r) in memberSites do
+        if m == c.module && cls == c.name then
+          blocks := blocks.push (prettyLines (← ppCommand (← rendered (residualCommand r))))
       blocks := blocks.push (prettyLines (← ppCommand (← rendered (ctorCommand c))))
       for g in c.getters do
         blocks := blocks.push
@@ -76,6 +99,8 @@ def renderEmission (e : Emission) : CoreM String := do
       for m in c.methods do
         blocks := blocks.push
           (prettyLines (← ppCommand (← rendered (methodCommand c m))))
+    | .residual r =>
+      blocks := blocks.push (prettyLines (← ppCommand (← rendered (residualCommand r))))
   for o in e.obligations do
     let cmd ← rendered (obligationCommand e o)
     let text := prettyLines (← ppCommand cmd)

@@ -73,6 +73,38 @@ def rendersOk (emissionPath : String) : CoreM Unit := do
   unless (rendered.splitOn "-0.5").length == 3 do
     throwError "the negated literal did not render:\n{rendered}"
 
+-- A member's site is typed over the receiver, so its opaque must come
+-- after the structure that names it and before the member applying it.
+#eval show CoreM Unit from do
+  let e : Emission := {
+    file := "t.ts"
+    declarations := #[
+      .residual { owner := "Pow#square", site := 1,
+                  construct := "'**' is not supported",
+                  params := #[{ name := "self", ty := .cls "Pow" none }],
+                  ty := .number },
+      .cls { name := "Pow", source := "class Pow {}",
+             fields := #[{ name := "#v", ty := .number }],
+             ctorParams := nums #["v"],
+             ctorBody := #[.fieldSet "#v" (.id "v")],
+             getters := #[],
+             methods := #[{ name := "square", tainted := true,
+                            params := #[],
+                            body := #[.ret (.residual "Pow#square" none 1 #[.selfRef])] }] }]
+    obligations := #[] }
+  let rendered ← renderEmission e
+  unless (rendered.splitOn "structure TsModel.Pow").length == 2 do
+    throwError "the structure did not render:\n{rendered}"
+  let beforeOpaque := (rendered.splitOn "noncomputable opaque TsModel.Pow.square.residual_1")[0]!
+  unless (beforeOpaque.splitOn "structure TsModel.Pow").length == 2 do
+    throwError "the site's opaque precedes its own structure:\n{rendered}"
+  let afterOpaque := (rendered.splitOn "noncomputable opaque TsModel.Pow.square.residual_1")[1]!
+  unless (afterOpaque.splitOn "def TsModel.Pow.square").length == 2 do
+    throwError "the site's opaque does not precede the member applying it:\n{rendered}"
+  -- Printed once, by its class, and not again at top level.
+  unless (rendered.splitOn "opaque TsModel.Pow.square.residual_1").length == 2 do
+    throwError "the site's opaque is repeated:\n{rendered}"
+
 -- A dependency's block is introduced once, ahead of its def; the entry's
 -- declarations get no separator of their own.
 #eval show CoreM Unit from do

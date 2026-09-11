@@ -101,6 +101,20 @@ def classMember (module : Option String) (cls member : String) :
   let _ ← identTerm member
   return mkIdent ((← classIdent module cls).getId ++ Name.mkSimple member)
 
+/-- A residual site's opaque: one component below its owner's model name.
+A site of 0 or an owner spelled outside `f` / `C#member` is an emission
+bug, refused rather than rendered. -/
+def residualIdent (module : Option String) (owner : String) (site : Nat) :
+    RenderM Ident := do
+  unless site ≥ 1 do
+    throw s!"residual site {site} of '{owner}' is not numbered from 1"
+  let base ← match owner.splitOn "#" with
+    | [f] => modelIdent module f
+    | [c, "constructor"] => classMember module c "construct"
+    | [c, m] => classMember module c m
+    | _ => throw s!"'{owner}' does not own residuals"
+  return mkIdent (base.getId ++ Name.mkSimple s!"residual_{site}")
+
 /-- The constructor local that carries field F: «this.F», a spelling no
 TypeScript identifier can take, so no source name captures it. -/
 def ctorLocal (field : String) : RenderM Ident := do
@@ -345,6 +359,11 @@ partial def valueTerm (coerced : String → Bool) : JsExpr → RenderM Rendered
   | .optionGet e => do
     let ⟨t, _⟩ ← valueTerm coerced e
     return ⟨← `((← Js.optionGet $t)), true⟩
+  | .residual owner module site args => do
+    let f ← residualIdent module owner site
+    let argTerms ← args.mapM (fun a => return (← valueTerm coerced a).term)
+    let app ← if argTerms.isEmpty then pure (f : TSyntax `term) else `($f $argTerms*)
+    return ⟨← `((← $app:term)), true⟩
 
 /-- A call as the `JsM` value it denotes, its arguments still
 value-level. -/
@@ -369,6 +388,17 @@ def monadicTerm (coerced : String → Bool) :
       let ⟨t, _⟩ ← valueTerm coerced (.call callee module args)
       return (← `(do return $t), false)
     return (← callTerm coerced callee module args, true)
+  -- A site's opaque is already `JsM`-valued, so with pure arguments the
+  -- bare application pins the monad the way a bare call does.
+  | .residual owner module site args => do
+    let liftedArgs ← args.anyM fun a => return (← valueTerm coerced a).lifted
+    if liftedArgs then
+      let ⟨t, _⟩ ← valueTerm coerced (.residual owner module site args)
+      return (← `(do return $t), false)
+    let f ← residualIdent module owner site
+    let argTerms ← args.mapM (fun a => return (← valueTerm coerced a).term)
+    let app ← if argTerms.isEmpty then pure (f : TSyntax `term) else `($f $argTerms*)
+    return (app, true)
   | e => do
     let ⟨t, lifted⟩ ← valueTerm coerced e
     if lifted then return (← `(do return $t), false)
@@ -439,6 +469,13 @@ partial def stmtDoElem (straight : Option (List (String × BindingTy))) :
     match fields.lookup f with
     | some ty => `(doElem| let $x:ident : $(← bindingTyTerm ty) := $(← bodyTerm e))
     | none => `(doElem| $x:ident := $(← bodyTerm e))
+  -- The value is dropped, the effect is not: an unmodeled statement on
+  -- the taken path may still throw.
+  | .discard e => do
+    let (t, _) ← monadicTerm (fun _ => false) e
+    -- `let x ← e` parses its right side as a do-element, so the term is
+    -- wrapped before it can fill the slot.
+    `(doElem| let _ ← $(← `(doElem| $t:term)))
 
 /-- An `if` statement. An else arm that is itself exactly one `if` joins
 the chain as `else if`, the way the source spells it: the nested doIf's
@@ -476,6 +513,18 @@ partial def assignedNames (s : JsStmt) : List String :=
       ++ (els.getD #[]).toList.flatMap assignedNames
   | _ => []
 
+/-- The Lean type a declared parameter type renders as. -/
+def paramTyTerm : ParamTy → RenderM (TSyntax `term)
+  | .number => `(JsNumber)
+  | .bool => `(Bool)
+  -- Every union spelling is the one tagged domain: the tags say what may
+  -- be injected, never what the binder's type is.
+  | .union _ => `(JsVal)
+  | .cls n m => do let c ← classIdent m n; `($c)
+  -- A defaulted class parameter: the instance or its absence, which the
+  -- tagged domain cannot hold.
+  | .option n m => do let c ← classIdent m n; `(Option $c)
+
 /-- The binder groups a parameter list renders as: a maximal run of one
 type shares a group, so an all-number signature prints as one. -/
 def paramBinders (params : Array Param) :
@@ -489,16 +538,7 @@ def paramBinders (params : Array Param) :
       else groups := groups.push (p.ty, #[x])
     | none => groups := groups.push (p.ty, #[x])
   groups.mapM fun (ty, xs) => do
-    let t : TSyntax `term ← match ty with
-      | .number => `(JsNumber)
-      | .bool => `(Bool)
-      -- Every union spelling is the one tagged domain: the tags say what
-      -- may be injected, never what the binder's type is.
-      | .union _ => `(JsVal)
-      | .cls n m => do let c ← classIdent m n; `($c)
-      -- A defaulted class parameter: the instance or its absence, which
-      -- the tagged domain cannot hold.
-      | .option n m => do let c ← classIdent m n; `(Option $c)
+    let t ← paramTyTerm ty
     let b ← `(Lean.Parser.Term.bracketedBinderF| ($xs* : $t))
     return (b : TSyntax ``Lean.Parser.Term.bracketedBinder)
 
@@ -526,9 +566,15 @@ def fnCommand (f : EmitFn) : RenderM (TSyntax `command) := do
   let elems := rebound ++ body
   let ret ← returnTyTerm f.returns
   -- Dual-tagged: the js_norm closers and the grind rung both unfold a
-  -- model by its equations.
-  `(@[js_norm, grind] def $name $binders* : $ret := do
-      $[$elems:doElem]*)
+  -- model by its equations. `noncomputable` is load-bearing on a tainted
+  -- model: a valueless opaque compiles to `pure`, and the evaluation rung
+  -- would prove through it.
+  if f.tainted then
+    `(@[js_norm, grind] noncomputable def $name $binders* : $ret := do
+        $[$elems:doElem]*)
+  else
+    `(@[js_norm, grind] def $name $binders* : $ret := do
+        $[$elems:doElem]*)
 
 /-- A module constant: a pure `JsNumber` def, dual-tagged like the models
 so the closers and the grind rung can unfold it — through the earlier
@@ -540,6 +586,23 @@ def constCommand (c : EmitConstant) : RenderM (TSyntax `command) := do
   -- slice never produces one, so a lift here is an emission bug.
   if lifted then throw s!"constant '{c.name}' has an initializer with effects"
   `(@[js_norm, grind] def $name : JsNumber := $init)
+
+/-- A residual site's opaque, its construct as the docstring the prover
+reads back into the verdict. `noncomputable` is load-bearing: a valueless
+opaque compiles to `pure`, and the evaluation rung would prove through
+it. -/
+def residualCommand (r : EmitResidual) : RenderM (TSyntax `command) := do
+  let name ← residualIdent r.module r.owner r.site
+  let codomain ← do let t ← paramTyTerm r.ty; `(JsM $t)
+  let ty ← r.params.foldrM (init := codomain) fun p acc => do
+    let x ← scopedIdent p.name
+    let t ← paramTyTerm p.ty
+    `(($x : $t) → $acc)
+  if (r.construct.splitOn "-/").length > 1 then
+    throw s!"residual text '{r.construct}' would close its docstring"
+  let doc : TSyntax ``Lean.Parser.Command.docComment :=
+    ⟨mkNode ``Lean.Parser.Command.docComment #[mkAtom "/--", mkAtom (r.construct ++ " -/")]⟩
+  `($doc:docComment noncomputable opaque $name : $ty)
 
 /-- Whether a statement tree assigns F anywhere. -/
 partial def hasSetOf (f : String) : JsStmt → Bool
@@ -588,8 +651,12 @@ def ctorCommand (c : EmitClass) : RenderM (TSyntax `command) := do
     if mkArgs.isEmpty then `(doElem| return $mk)
     else `(doElem| return $mk $mkArgs*)
   let elems := rebound ++ prelude ++ body ++ #[ret]
-  `(@[js_norm, grind] def $name $binders* : JsM $cls := do
-      $[$elems:doElem]*)
+  if c.ctorTainted then
+    `(@[js_norm, grind] noncomputable def $name $binders* : JsM $cls := do
+        $[$elems:doElem]*)
+  else
+    `(@[js_norm, grind] def $name $binders* : JsM $cls := do
+        $[$elems:doElem]*)
 
 /-- A method as a function of the instance and its parameters; the
 receiver is `self`, in the reserved vocabulary, so no source name
@@ -604,12 +671,17 @@ def methodCommand (c : EmitClass) (m : EmitMethod) : RenderM (TSyntax `command) 
   let body ← m.body.mapM (stmtDoElem none)
   let elems := rebound ++ body
   let ret ← returnTyTerm m.returns
-  `(@[js_norm, grind] def $name ($self : $cls) $binders* : $ret := do
-      $[$elems:doElem]*)
+  if m.tainted then
+    `(@[js_norm, grind] noncomputable def $name ($self : $cls) $binders* : $ret := do
+        $[$elems:doElem]*)
+  else
+    `(@[js_norm, grind] def $name ($self : $cls) $binders* : $ret := do
+        $[$elems:doElem]*)
 
 /-- A getter is the zero-parameter method shape. -/
 def getterCommand (c : EmitClass) (g : EmitGetter) : RenderM (TSyntax `command) :=
-  methodCommand c { name := g.name, returns := g.returns, params := #[], body := g.body }
+  methodCommand c { name := g.name, returns := g.returns, params := #[], body := g.body,
+                    tainted := g.tainted }
 
 /-- A boolean-valued expression as the proposition that it evaluates to
 `pure true` — one shape for both a boolean island conclusion and a guard

@@ -57,6 +57,9 @@ inductive JsExpr where
   `project`; unreachable behind its test, present so the rendering is
   total. -/
   | optionGet (operand : JsExpr)
+  /-- An unmodelable site inside its owner: the opaque the artifact
+  declares for it, applied to the variables in scope there. -/
+  | residual (owner : String) (module : Option String) (site : Nat) (args : Array JsExpr)
 deriving Repr, Inhabited
 
 /-- A binding's declared type — a local's or a field's: a number, a
@@ -78,6 +81,8 @@ inductive JsStmt where
   | assign (name : String) (expr : JsExpr)
   | ite (cond : JsExpr) (thn : Array JsStmt) (els : Option (Array JsStmt))
   | fieldSet (field : String) (expr : JsExpr)
+  /-- An expression statement: evaluated for its effect, value dropped. -/
+  | discard (expr : JsExpr)
 deriving Repr, Inhabited
 
 /-- A parameter's declared type: a TypeScript number, a boolean, a keyword
@@ -114,12 +119,15 @@ structure EmitFn where
   params : Array Param
   source : String
   body : Array JsStmt
+  /-- The body reaches a residual site, directly or through a callee. -/
+  tainted : Bool := false
 deriving Repr, Inhabited
 
 structure EmitGetter where
   name : String
   returns : ReturnTy := .number
   body : Array JsStmt
+  tainted : Bool := false
 deriving Repr, Inhabited
 
 structure EmitMethod where
@@ -127,6 +135,7 @@ structure EmitMethod where
   returns : ReturnTy := .number
   params : Array Param
   body : Array JsStmt
+  tainted : Bool := false
 deriving Repr, Inhabited
 
 /-- A structure field: its source spelling and its declared type. -/
@@ -149,6 +158,7 @@ structure EmitClass where
   ctorBody : Array JsStmt
   getters : Array EmitGetter
   methods : Array EmitMethod := #[]
+  ctorTainted : Bool := false
 deriving Repr, Inhabited
 
 /-- A module-level `const` whose initializer is a constant expression,
@@ -163,10 +173,23 @@ structure EmitConstant where
   source : String
 deriving Repr, Inhabited
 
+/-- One residual site: the opaque its owner declares — one component
+below the owner's model name, numbered in source order — typed over the
+in-scope variables, with the refusal text that names the construct. -/
+structure EmitResidual where
+  owner : String
+  module : Option String := none
+  site : Nat
+  construct : String
+  params : Array Param
+  ty : ParamTy
+deriving Repr, Inhabited
+
 inductive Decl where
   | fn (f : EmitFn)
   | cls (c : EmitClass)
   | const (c : EmitConstant)
+  | residual (r : EmitResidual)
 deriving Repr, Inhabited
 
 /-- One constructor parameter of a class binder's class: a number, a
@@ -277,6 +300,12 @@ def getBoolOpt (j : Json) (field : String) : Except String Bool :=
   | .ok v => match v.getBool? with
     | .ok b => pure b
     | .error _ => throw s!"field '{field}' is not a boolean"
+
+/-- A site index: a JSON number that is a positive integer. -/
+def getSite (j : Json) : Except String Nat := do
+  match (← j.getObjVal? "site").getNat? with
+  | .ok n => if n ≥ 1 then pure n else throw "field 'site' must be at least 1"
+  | .error _ => throw "field 'site' is not a natural number"
 
 def getArr (j : Json) (field : String) : Except String (Array Json) := do
   match (← j.getObjVal? field).getArr? with
@@ -397,6 +426,9 @@ partial def decodeExpr (j : Json) : Except String JsExpr := do
     pure (.optionTest (← decodeExpr (← j.getObjVal? "expr")) present)
   | "option-get" =>
     pure (.optionGet (← decodeExpr (← j.getObjVal? "expr")))
+  | "residual" =>
+    pure (.residual (← getStr j "owner") (← getStrOpt j "module") (← getSite j)
+      (← (← getArr j "args").mapM decodeExpr))
   | k => throw s!"unknown expression kind '{k}'"
 
 /-- A binding's optional `type` field: absent is number; an array is a
@@ -440,6 +472,7 @@ partial def decodeStmt (j : Json) : Except String JsStmt := do
   | "field-set" =>
     pure (.fieldSet (← getStr j "field")
       (← decodeExpr (← j.getObjVal? "expr")))
+  | "discard" => pure (.discard (← decodeExpr (← j.getObjVal? "expr")))
   | k => throw s!"unknown statement kind '{k}'"
 
 /-- A parameter's type: the string "number" or "boolean", an array of
@@ -484,18 +517,21 @@ def decodeFn (j : Json) : Except String EmitFn := do
          returns := ← decodeReturnTy j
          params := ← decodeParams j "params"
          source := ← getStr j "source"
-         body := ← (← getArr j "body").mapM decodeStmt }
+         body := ← (← getArr j "body").mapM decodeStmt
+         tainted := ← getBoolOpt j "noncomputable" }
 
 def decodeGetter (j : Json) : Except String EmitGetter := do
   pure { name := ← getStr j "name"
          returns := ← decodeReturnTy j
-         body := ← (← getArr j "body").mapM decodeStmt }
+         body := ← (← getArr j "body").mapM decodeStmt
+         tainted := ← getBoolOpt j "noncomputable" }
 
 def decodeMethod (j : Json) : Except String EmitMethod := do
   pure { name := ← getStr j "name"
          returns := ← decodeReturnTy j
          params := ← decodeParams j "params"
-         body := ← (← getArr j "body").mapM decodeStmt }
+         body := ← (← getArr j "body").mapM decodeStmt
+         tainted := ← getBoolOpt j "noncomputable" }
 
 def decodeClass (j : Json) : Except String EmitClass := do
   -- Fields are read in schema order, so the error names the first one
@@ -509,7 +545,8 @@ def decodeClass (j : Json) : Except String EmitClass := do
          ctorParams := ← decodeParams ctor "params"
          ctorBody := ← (← getArr ctor "body").mapM decodeStmt
          getters := ← (← getArr j "getters").mapM decodeGetter
-         methods := ← (← getArr j "methods").mapM decodeMethod }
+         methods := ← (← getArr j "methods").mapM decodeMethod
+         ctorTainted := ← getBoolOpt ctor "noncomputable" }
 
 def decodeConstant (j : Json) : Except String EmitConstant := do
   pure { name := ← getStr j "name"
@@ -517,11 +554,20 @@ def decodeConstant (j : Json) : Except String EmitConstant := do
          init := ← decodeExpr (← j.getObjVal? "init")
          source := ← getStr j "source" }
 
+def decodeResidual (j : Json) : Except String EmitResidual := do
+  pure { owner := ← getStr j "owner"
+         module := ← getStrOpt j "module"
+         site := ← getSite j
+         construct := ← getStr j "construct"
+         params := ← decodeParams j "params"
+         ty := ← decodeParamTy (← j.getObjVal? "type") }
+
 def decodeDecl (j : Json) : Except String Decl := do
   match ← getStr j "kind" with
   | "function" => .fn <$> decodeFn j
   | "class" => .cls <$> decodeClass j
   | "constant" => .const <$> decodeConstant j
+  | "residual" => .residual <$> decodeResidual j
   | k => throw s!"unknown declaration kind '{k}'"
 
 /-- One side of a `number` binder's interval, absent when unbounded: an

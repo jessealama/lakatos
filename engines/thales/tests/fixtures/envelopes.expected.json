@@ -330,7 +330,7 @@
       "function": "square",
       "property": "nonNegative",
       "szs": "Inappropriate",
-      "reason": "'square' could not be modeled: '**' is not supported"
+      "reason": "the property reaches code outside the model: '**' is not supported"
     }
   ],
   "engines/thales/tests/conformance/inappropriate/unmodeled-operator.ts": [
@@ -338,7 +338,7 @@
       "function": "masked",
       "property": "stuck",
       "szs": "Inappropriate",
-      "reason": "'masked' could not be modeled: '&' is not supported"
+      "reason": "the property reaches code outside the model: '&' is not supported"
     }
   ],
   "engines/thales/tests/conformance/timeout/big-domain.ts": [
@@ -464,7 +464,7 @@
       "function": "f",
       "property": "p",
       "szs": "Inappropriate",
-      "reason": "'f' could not be modeled: unmapped TypeScript construct 'Identifier' at 7:7"
+      "reason": "the property reaches code outside the model: unmapped TypeScript construct 'Identifier' at 7:7"
     }
   ],
   "engines/thales/tests/conformance/theorem/const-chain.ts": [
@@ -1033,7 +1033,7 @@
       "function": "Q#z",
       "property": "p",
       "szs": "Inappropriate",
-      "reason": "'Q#z' could not be modeled: parameter 'y' has a default the model cannot evaluate: unmapped TypeScript construct 'PropertyAccessExpression' at 4:38"
+      "reason": "the property reaches code outside the model: parameter 'y' has a default the model cannot evaluate: unmapped TypeScript construct 'PropertyAccessExpression' at 4:38"
     }
   ],
   "engines/thales/tests/conformance/theorem/method-default-omitted.ts": [
@@ -1090,12 +1090,13 @@
       "axioms": []
     }
   ],
-  "engines/thales/tests/conformance/inappropriate/fn-default-outside-slice.ts": [
+  "engines/thales/tests/conformance/theorem/fn-default-outside-slice.ts": [
     {
       "function": "g",
       "property": "p",
-      "szs": "Inappropriate",
-      "reason": "'g' could not be modeled: 'pow' could not be modeled: parameter 'y' has a default the model cannot evaluate: '**' is not supported"
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_15667256824482300058",
+      "axioms": []
     }
   ],
   "engines/thales/tests/conformance/theorem/field-union-undefined.ts": [
@@ -1188,7 +1189,7 @@
       "function": "Pow#square",
       "property": "grows",
       "szs": "Inappropriate",
-      "reason": "'Pow#square' could not be modeled: '**' is not supported"
+      "reason": "the property reaches code outside the model: '**' is not supported"
     }
   ],
   "engines/thales/tests/fixtures/class-params.ts": [
@@ -1345,7 +1346,7 @@
       "function": "applyDouble",
       "property": "viaConst",
       "szs": "Inappropriate",
-      "reason": "'applyDouble' could not be modeled: 'double' could not be modeled: unmapped TypeScript construct 'VariableStatement' at 6:14"
+      "reason": "the property reaches code outside the model: 'double' could not be modeled: unmapped TypeScript construct 'VariableStatement' at 6:14"
     },
     {
       "function": "keep",
@@ -1387,6 +1388,31 @@
       "kind": "unsupported-range"
     }
   ],
+  "engines/thales/tests/conformance/theorem/residual-untaken-branch.ts": [
+    {
+      "function": "width",
+      "property": "one",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_3928729050616798984",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/inappropriate/residual-dropped-value.ts": [
+    {
+      "function": "traced",
+      "property": "kept",
+      "szs": "Inappropriate",
+      "reason": "the property reaches code outside the model: 'log' could not be modeled: unmapped TypeScript construct 'DeclareKeyword' at 3:1"
+    }
+  ],
+  "engines/thales/tests/conformance/inappropriate/residual-sites-distinct.ts": [
+    {
+      "function": "twice",
+      "property": "agree",
+      "szs": "Inappropriate",
+      "reason": "the property reaches code outside the model: 'probe' could not be modeled: unmapped TypeScript construct 'DeclareKeyword' at 3:1; 'probe' could not be modeled: unmapped TypeScript construct 'DeclareKeyword' at 3:1"
+    }
+  ],
   "engines/thales/tests/conformance/theorem/imported-scale/main.ts": [
     {
       "function": "twice",
@@ -1401,7 +1427,7 @@
       "function": "grow",
       "property": "nonNegative",
       "szs": "Inappropriate",
-      "reason": "'grow' could not be modeled: 'scale' could not be modeled: unmapped TypeScript construct 'ImportDeclaration' at 1:10"
+      "reason": "the property reaches code outside the model: 'scale' could not be modeled: unmapped TypeScript construct 'ImportDeclaration' at 1:10"
     }
   ],
   "engines/thales/tests/conformance/inappropriate/import-cycle/main.ts": [
@@ -1409,7 +1435,7 @@
       "function": "total",
       "property": "nonNegative",
       "szs": "Inappropriate",
-      "reason": "'total' could not be modeled: 'cycle.ts::scaled' could not be modeled: 'cycle.ts::base' could not be modeled: unmapped TypeScript construct 'ImportDeclaration' at 1:10"
+      "reason": "the property reaches code outside the model: 'cycle.ts::base' could not be modeled: unmapped TypeScript construct 'ImportDeclaration' at 1:10"
     }
   ],
   "engines/thales/tests/fixtures/module-consts.ts": [
@@ -1536,7 +1562,7 @@
       "function": "scale",
       "property": "nonNegative",
       "szs": "Inappropriate",
-      "reason": "'scale' could not be modeled: 'factor' could not be modeled: unmapped TypeScript construct 'VariableStatement' at 1:5"
+      "reason": "the property reaches code outside the model: 'factor' could not be modeled: unmapped TypeScript construct 'VariableStatement' at 1:5"
     }
   ],
   "engines/thales/tests/fixtures/unions.ts": [
@@ -1658,7 +1684,7 @@
       "function": "narrow",
       "property": "p",
       "szs": "Inappropriate",
-      "reason": "'narrow' could not be modeled: 'v' is a 'number | string' value, not a 'number | string | boolean' value; unions flow only between identical spellings"
+      "reason": "the property reaches code outside the model: 'v' is a 'number | string' value, not a 'number | string | boolean' value; unions flow only between identical spellings"
     }
   ],
   "engines/thales/tests/fixtures/optionals.ts": [
@@ -2107,7 +2133,7 @@
       "function": "integerLog",
       "property": "nonNegative",
       "szs": "Inappropriate",
-      "reason": "'integerLog' could not be modeled: 'Math.log' is not supported"
+      "reason": "the property reaches code outside the model: 'Math.log' is not supported"
     }
   ],
   "engines/thales/tests/conformance/inappropriate/number-length.ts": [
@@ -2115,7 +2141,7 @@
       "function": "arity",
       "property": "nonNegative",
       "szs": "Inappropriate",
-      "reason": "'arity' could not be modeled: 'Number.length' is not supported"
+      "reason": "the property reaches code outside the model: 'Number.length' is not supported"
     }
   ],
   "engines/thales/tests/conformance/inappropriate/math-sqrt-local-alias.ts": [
@@ -2123,7 +2149,7 @@
       "function": "root",
       "property": "nonNegative",
       "szs": "Inappropriate",
-      "reason": "'root' could not be modeled: 'Math.sqrt' is modeled only as a callee"
+      "reason": "the property reaches code outside the model: 'Math.sqrt' is modeled only as a callee; 'sqrt' is a bound value, not a callable the model follows (unmapped TypeScript construct 'CallExpression' at 4:10)"
     }
   ]
 }
