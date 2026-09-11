@@ -53,10 +53,10 @@ export default defineConfig({
         // outside the model now refusing at the construct scan, so the
         // denominator shrank again while the unreachable set did not.
         autoUpdate: true,
-        statements: 99.54,
-        branches: 98.41,
+        statements: 99.56,
+        branches: 98.52,
         functions: 100,
-        lines: 99.64,
+        lines: 99.66,
       },
     },
   },

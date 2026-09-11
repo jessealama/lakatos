@@ -1603,6 +1603,29 @@
       "axioms": []
     }
   ],
+  "engines/thales/tests/conformance/theorem/boolean-union-place.ts": [
+    {
+      "function": "Maybe#level",
+      "property": "narrowed",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_10847265041150494820",
+      "axioms": []
+    },
+    {
+      "function": "Maybe#plain",
+      "property": "bare",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_2833897407238186981",
+      "axioms": []
+    },
+    {
+      "function": "held",
+      "property": "local",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_8097207314262498742",
+      "axioms": []
+    }
+  ],
   "engines/thales/tests/conformance/countersatisfiable/union-misread.ts": [
     {
       "function": "toNum",

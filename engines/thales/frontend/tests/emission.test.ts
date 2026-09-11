@@ -10183,6 +10183,126 @@ export class R {
     });
   });
 
+  /** A class over a `boolean | undefined` field, with a method body `m`
+   * and a free function `f` over the class, both annotated. */
+  function boolUnionField(method: string, fn = "return 0;"): string {
+    return `export class B {
+  readonly on: boolean | undefined;
+  constructor(n: number) {
+    this.on = n > 0;
+  }
+  /** @ensures{m} forall (a: number) { Object.is(new B(a).m(), new B(a).m()) } */
+  m(): number {
+    ${method}
+  }
+}
+/** @ensures{f} forall (a: number) { Object.is(f(new B(a)), f(new B(a))) } */
+export function f(b: B): number {
+  ${fn}
+}
+`;
+  }
+  function boolBodyOf(src: string, which: "m" | "f"): EmitStmt[] {
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    return which === "m"
+      ? (emission.declarations[0] as EmitClass).methods[0]!.body
+      : fnBody(emission.declarations[1]!);
+  }
+  const SELF_ON: EmitExpr = {
+    kind: "field-read",
+    className: "B",
+    field: "on",
+    object: { kind: "self" },
+  };
+
+  test("a boolean-carrying union place projects under a logical operator", () => {
+    expect(
+      boolBodyOf(
+        boolUnionField(
+          'if (typeof this.on === "boolean" && this.on) {\n      return 1;\n    }\n    return 0;',
+        ),
+        "m",
+      )[0],
+    ).toMatchObject({
+      kind: "if",
+      cond: {
+        kind: "binop",
+        op: "&&",
+        right: { kind: "project", tag: "boolean", expr: SELF_ON },
+      },
+    });
+  });
+
+  test("a boolean-carrying union place projects as a bare condition", () => {
+    expect(
+      boolBodyOf(
+        boolUnionField("if (this.on) {\n      return 1;\n    }\n    return 0;"),
+        "m",
+      )[0],
+    ).toMatchObject({
+      kind: "if",
+      cond: { kind: "project", tag: "boolean", expr: SELF_ON },
+    });
+  });
+
+  test("a boolean-carrying union place on a parameter receiver projects", () => {
+    expect(
+      boolBodyOf(boolUnionField("return 0;", "return b.on ? 1 : 0;"), "f")[0],
+    ).toMatchObject({
+      kind: "return",
+      expr: {
+        kind: "cond",
+        cond: {
+          kind: "project",
+          tag: "boolean",
+          expr: {
+            kind: "field-read",
+            className: "B",
+            field: "on",
+            object: { kind: "id", name: "b" },
+          },
+        },
+      },
+    });
+  });
+
+  test("a boolean-carrying union local projects at a boolean position", () => {
+    expect(
+      boolBodyOf(
+        boolUnionField(
+          "const w: boolean | undefined = this.on;\n    if (w) {\n      return 1;\n    }\n    return 0;",
+        ),
+        "m",
+      )[1],
+    ).toMatchObject({
+      kind: "if",
+      cond: {
+        kind: "project",
+        tag: "boolean",
+        expr: { kind: "id", name: "w" },
+      },
+    });
+  });
+
+  test("a union carrying no boolean still refuses at a boolean position", () => {
+    const { classified } = emitModule(
+      unionField("if (this.x) {\n      return 1;\n    }\n    return 0;"),
+      "t.ts",
+    );
+    expect(classified[0]!.reason).toContain("PropertyAccessExpression");
+  });
+
+  test("a local inferred from a boolean-carrying union place keeps the union", () => {
+    const { classified } = emitModule(
+      boolUnionField(
+        "const w = this.on;\n    const v: boolean | undefined = w;\n    return 0;",
+      ),
+      "t.ts",
+    );
+    expect(classified).toEqual([]);
+  });
+
   test("a union field read at a wider union spelling refuses", () => {
     const { classified } = emitModule(
       unionField(
