@@ -691,6 +691,10 @@ function callReturns(u: ts.Expression, scope: WalkScope): ReturnTy | undefined {
 function booleanShaped(e: ts.Expression, scope: WalkScope): boolean {
   const u = unwrapParens(e);
   if (booleanLiteral(u) !== undefined) return true;
+  // A union place carrying `boolean` denotes one here, lowering as the
+  // throwing projection; it precedes the name and member arms, which type
+  // a place at its own union rather than at `bool`.
+  if (booleanUnionPlace(u, scope)) return true;
   if (ts.isIdentifier(u)) return scope.vars.get(u.text) === "bool";
   if (ts.isBinaryExpression(u)) {
     const op = u.operatorToken.getText();
@@ -1279,6 +1283,15 @@ function walkTyped(
       expr: resolvePlace(e, scope, sf)!.expr,
     };
   }
+  // The boolean twin, gated on the tag: truthiness still has no model, so
+  // a union without `boolean` keeps its own refusal.
+  if (expected === "bool" && booleanUnionPlace(e, scope)) {
+    return {
+      kind: "project",
+      tag: "boolean",
+      expr: resolvePlace(e, scope, sf)!.expr,
+    };
+  }
   const boolLit = booleanLiteral(e);
   if (boolLit !== undefined) {
     if (expected !== "bool") {
@@ -1759,6 +1772,14 @@ function isUnionPlace(e: ts.Expression, scope: WalkScope): boolean {
   return ty !== undefined && isUnionTy(ty);
 }
 
+/** Whether an expression is a union-typed place carrying the `boolean`
+ * tag — the reads a boolean position projects. A union without the tag is
+ * left to refuse: projecting it would throw on every path. */
+function booleanUnionPlace(e: ts.Expression, scope: WalkScope): boolean {
+  const ty = placeTy(e, scope);
+  return ty !== undefined && isUnionTy(ty) && ty.union.includes("boolean");
+}
+
 /** A walked place: its type and its lowering. `new` arguments walk here,
  * and a member outside the model throws, exactly as a receiver arm does. */
 function resolvePlace(
@@ -2158,11 +2179,14 @@ function inferredLocalTy(
   const built = newCall(init);
   if (built !== undefined)
     return classNamed((built.expression as ts.Identifier).text, reg);
-  if (booleanShaped(init, scope)) return "bool";
+  // A place answers at its own type before the shape test, which reads a
+  // boolean-carrying union place as a boolean: `const w = this.on` is the
+  // union, the type TypeScript infers for it.
   const ty = placeTy(init, scope);
-  /* v8 ignore next 2 -- no place is an option: a bound option is not a
+  /* v8 ignore next -- no place is an option: a bound option is not a
      place, and no field holds one. */
-  return ty === undefined || isOptionTy(ty) ? "num" : ty;
+  if (ty !== undefined && !isOptionTy(ty)) return ty;
+  return booleanShaped(init, scope) ? "bool" : "num";
 }
 
 /** A declaration's `TStmt`s, or undefined when any declarator falls

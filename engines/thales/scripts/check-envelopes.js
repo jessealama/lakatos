@@ -196,12 +196,14 @@ const CONST_FIXTURES = [
 ];
 
 /** The union slice: typeof dispatch, JsVal equality, the falsity path,
- * union-typed locals (#117), and the refusals unions must not loosen. */
+ * union-typed locals (#117), the boolean position a union place projects
+ * at, and the refusals unions must not loosen. */
 const UNION_FIXTURES = [
   "engines/thales/tests/fixtures/unions.ts",
   `${CONFORMANCE}/theorem/union-typeof-dispatch.ts`,
   `${CONFORMANCE}/theorem/union-null-flag.ts`,
   `${CONFORMANCE}/theorem/union-local.ts`,
+  `${CONFORMANCE}/theorem/boolean-union-place.ts`,
   `${CONFORMANCE}/countersatisfiable/union-misread.ts`,
   `${CONFORMANCE}/inappropriate/union-return.ts`,
   `${CONFORMANCE}/inappropriate/union-string-argument.ts`,
