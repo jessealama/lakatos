@@ -1122,6 +1122,24 @@ function travelFailure(
   return travelFrom(scope.failed, ref);
 }
 
+/** A degraded member's refusal, read off whichever registry the receiver's
+ * class resolves against — the live one during that class's own walk. The
+ * walk consults this where a member is missing from the shape, so a use of
+ * a member that degraded travels that member's own construct instead of
+ * reporting the engine broken. */
+function memberTravel(
+  scope: WalkScope,
+  cls: ModelRef,
+  member: string,
+): FailedDecl | undefined {
+  const view = classView(scope, cls);
+  if (view === undefined) return undefined;
+  return travelFrom(view.failed, {
+    module: cls.module,
+    name: qualifiedName(member, cls.name),
+  });
+}
+
 /** The shape and failure registry a class ref resolves against: the
  * closure's for a registered class, the walk-in-progress ones when the
  * ref names the class currently being walked. */
@@ -1369,6 +1387,10 @@ function classShapeOf(scope: WalkScope, ref: ModelRef): ClassShape {
   if (scope.vars.has(ref.name) || scope.mapped.has(modelKey(ref))) {
     throw new ModelError(`'${name}' is not a class; 'new' has no model for it`);
   }
+  const travelled = travelFailure(scope, ref);
+  if (travelled !== undefined) {
+    throw new ModelError(travelled.reason, travelled.construct);
+  }
   const failed = scope.failed.get(modelKey(ref));
   if (failed !== undefined) {
     throw new ModelError(`'${name}' has no model: ${failed.reason}`);
@@ -1543,6 +1565,10 @@ function walkStrict(
     return { kind: "unop", op, operand };
   }
   if (isPrefixNot(e)) {
+    if (!booleanShaped(e.operand, scope)) {
+      const failed = nonBooleanOperand("!", "the operand", e.operand, sf);
+      throw new ModelError(failed.reason, failed.construct);
+    }
     const operand = walkTyped(e.operand, "bool", scope, sf);
     if (expected !== "bool") {
       throw new ModelError(
@@ -1554,6 +1580,10 @@ function walkStrict(
   if (ts.isConditionalExpression(e)) {
     // Both arms answer at the position's own type, so a conditional is
     // whatever type its context asks for; only the condition is pinned.
+    if (!booleanShaped(e.condition, scope)) {
+      const failed = nonBooleanOperand("?:", "the condition", e.condition, sf);
+      throw new ModelError(failed.reason, failed.construct);
+    }
     const cond = walkTyped(e.condition, "bool", scope, sf);
     const whenTrue = walkTyped(e.whenTrue, expected, scope, sf);
     const whenFalse = walkTyped(e.whenFalse, expected, scope, sf);
@@ -1584,6 +1614,17 @@ function walkStrict(
     }
     const op = e.operatorToken.getText(sf);
     if (LOGICAL_OPERATORS.has(op)) {
+      // Truthiness has no model, and that is the input's limit, not the
+      // engine's: the refusal names the operator so a body can carry it
+      // as a site.
+      if (!booleanShaped(e.left, scope)) {
+        const failed = nonBooleanOperand(op, "the left operand", e.left, sf);
+        throw new ModelError(failed.reason, failed.construct);
+      }
+      if (!booleanShaped(e.right, scope)) {
+        const failed = nonBooleanOperand(op, "the right operand", e.right, sf);
+        throw new ModelError(failed.reason, failed.construct);
+      }
       const left = walkTyped(e.left, "bool", scope, sf);
       const right = walkTyped(e.right, "bool", scope, sf);
       if (expected !== "bool") {
@@ -1640,6 +1681,25 @@ function walkStrict(
       }
       return sv;
     }
+    // An operand outside the values the model holds is refused, never
+    // absorbed: a site here would have to be typed at the position — a
+    // number — and stand for a string, which SameValue is false against
+    // for every number there is.
+    const admits = (t: ts.Expression) =>
+      numericShaped(t, scope) || taggedOperand(t, scope);
+    const offender = sides.findIndex((t) => !admits(t));
+    if (offender !== -1) {
+      const arg = unwrapParens(sides[offender]!);
+      const { line, character } = sf.getLineAndCharacterOfPosition(
+        arg.getStart(sf),
+      );
+      throw new HardRefusal(
+        `'Object.is' admits numbers, booleans, union values, ` +
+          `'undefined', and 'null'; argument ${offender + 1} is not one ` +
+          `(${kindName(arg.kind)} at ${line + 1}:${character + 1})`,
+        "Object.is",
+      );
+    }
     // Operands are typed before the position is, mirroring the binops.
     const left = walkTyped(sides[0], "num", scope, sf);
     const right = walkTyped(sides[1], "num", scope, sf);
@@ -1688,6 +1748,10 @@ function walkStrict(
       const shape = shapeOfRef(scope, ref);
       const sig = shape.methods.get(mcall.name);
       if (sig === undefined) {
+        const travelled = memberTravel(scope, ref, mcall.name);
+        if (travelled !== undefined) {
+          throw new ModelError(travelled.reason, travelled.construct);
+        }
         throw new ModelError(
           recv.expr.kind === "self"
             ? `'this.${mcall.name}' does not name a modeled method of ` +
@@ -1741,6 +1805,10 @@ function walkStrict(
       }
       const fty = shape.fields.get(maccess.name);
       if (fty === undefined) {
+        const travelled = memberTravel(scope, ref, maccess.name);
+        if (travelled !== undefined) {
+          throw new ModelError(travelled.reason, travelled.construct);
+        }
         throw new ModelError(
           recv.expr.kind === "self"
             ? `'this.${maccess.name}' does not name a field or a modeled ` +
@@ -1815,6 +1883,17 @@ function walkStrict(
           aliased.name,
         );
       }
+    }
+    if (scope.vars.has(e.expression.text)) {
+      // The model holds numbers, booleans, tagged values and instances —
+      // never a callable — so calling a bound name is a shape it does not
+      // follow, not a model it could not find.
+      const failed = constructAt(e, e.kind, sf);
+      throw new ModelError(
+        `'${e.expression.text}' is a bound value, not a callable the ` +
+          `model follows (${failed.reason})`,
+        failed.construct,
+      );
     }
     const sig = scope.mapped.get(key);
     if (sig === undefined) {

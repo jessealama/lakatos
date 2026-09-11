@@ -129,7 +129,11 @@ const FIXTURES = [
     expected: [
       ["f", "Theorem", /decision procedure over the bounded domain/],
       ["f", "Theorem", /kernel-checked/],
-      ["f", "Inappropriate", /reaches code outside the model: 'Math\.log' is not supported/],
+      [
+        "f",
+        "Inappropriate",
+        /reaches code outside the model: 'Math\.log' is not supported/,
+      ],
       ["g", "GaveUp", /unsolved goal:[\s\S]*residual_1/],
     ],
   },

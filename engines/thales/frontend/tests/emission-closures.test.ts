@@ -9,6 +9,21 @@ function declName(d: EmitDecl): string {
   return d.kind === "residual" ? `${d.owner}#residual_${d.site}` : d.name;
 }
 
+/** What an expression-level refusal now produces: the annotation is tried,
+ * and the construct is recorded at its site instead of classifying the
+ * declaration. Returns the constructs in source order. */
+function residualConstructs(
+  src: string,
+  file: string,
+  read?: ModuleReader,
+): string[] {
+  const { emission, classified } = emitModule(src, file, read);
+  expect(classified).toEqual([]);
+  return emission.declarations.flatMap((d) =>
+    d.kind === "residual" ? [d.construct] : [],
+  );
+}
+
 /** An in-memory module tree, keyed the way the walk resolves: absolute
  * paths against the importing file's directory. */
 function reader(files: Record<string, string>): ModuleReader {
@@ -411,13 +426,12 @@ describe("emission import closures", () => {
   test("a specifier that is not a string literal degrades its bindings", () => {
     // Parse recovery admits one: the specifier is typed as an expression.
     const src = TWICE.replace('"./helper.mjs"', "`./helper.mjs`");
-    const { classified } = emitModule(
-      src,
-      "main.mts",
-      reader({ "helper.mts": HELPER }),
-    );
-    expect(classified[0]?.szs).toBe("Inappropriate");
-    expect(classified[0]?.reason).toContain("ImportDeclaration");
+    expect(
+      residualConstructs(src, "main.mts", reader({ "helper.mts": HELPER })),
+    ).toEqual([
+      expect.stringContaining("ImportDeclaration"),
+      expect.stringContaining("ImportDeclaration"),
+    ]);
   });
 
   test("an aliased import rewrites to the exported name", () => {
@@ -436,15 +450,17 @@ describe("emission import closures", () => {
 
   test("a bare specifier still degrades its bindings", () => {
     const src = TWICE.replace('"./helper.mjs"', '"lodash"');
-    const { classified } = emitModule(src, "main.mts", reader({}));
-    expect(classified[0]?.szs).toBe("Inappropriate");
-    expect(classified[0]?.reason).toContain("ImportDeclaration");
+    expect(residualConstructs(src, "main.mts", reader({}))).toEqual([
+      expect.stringContaining("ImportDeclaration"),
+      expect.stringContaining("ImportDeclaration"),
+    ]);
   });
 
   test("a relative specifier reaching no file degrades its bindings", () => {
-    const { classified } = emitModule(TWICE, "main.mts", reader({}));
-    expect(classified[0]?.szs).toBe("Inappropriate");
-    expect(classified[0]?.reason).toContain("ImportDeclaration");
+    expect(residualConstructs(TWICE, "main.mts", reader({}))).toEqual([
+      expect.stringContaining("ImportDeclaration"),
+      expect.stringContaining("ImportDeclaration"),
+    ]);
   });
 
   test("an import cycle degrades the cycle-closing name, not the entry's own", () => {
@@ -455,13 +471,18 @@ describe("emission import closures", () => {
       "}",
       "",
     ].join("\n");
-    const { classified } = emitModule(
+    const { emission, classified } = emitModule(
       TWICE,
       "main.mts",
       reader({ "helper.mts": cyclic }),
     );
-    expect(classified[0]?.szs).toBe("Inappropriate");
-    expect(classified[0]?.reason).toContain("ImportDeclaration");
+    expect(classified).toEqual([]);
+    // The site sits in the dependency, over the entry's own name.
+    expect(
+      emission.declarations.flatMap((d) =>
+        d.kind === "residual" ? [[d.owner, d.construct]] : [],
+      ),
+    ).toEqual([["double", expect.stringContaining("ImportDeclaration")]]);
   });
 
   test("default and namespace imports stay opaque even when the module resolves", () => {
@@ -474,12 +495,9 @@ describe("emission import closures", () => {
         "}",
         "",
       ].join("\n");
-      const { classified } = emitModule(
-        src,
-        "main.mts",
-        reader({ "helper.mts": HELPER }),
-      );
-      expect(classified[0]?.szs).toBe("Inappropriate");
+      expect(
+        residualConstructs(src, "main.mts", reader({ "helper.mts": HELPER })),
+      ).toEqual([expect.stringContaining("ImportDeclaration")]);
     }
   });
 
@@ -505,8 +523,10 @@ describe("emission import closures", () => {
   });
 
   test("no reader means the disk, and a missing file degrades rather than throws", () => {
-    const { classified } = emitModule(TWICE, "/nonexistent/main.mts");
-    expect(classified[0]?.szs).toBe("Inappropriate");
+    expect(residualConstructs(TWICE, "/nonexistent/main.mts")).toEqual([
+      expect.stringContaining("ImportDeclaration"),
+      expect.stringContaining("ImportDeclaration"),
+    ]);
   });
 });
 

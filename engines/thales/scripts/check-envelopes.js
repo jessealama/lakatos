@@ -170,6 +170,11 @@ const DEGRADATION_FIXTURES = [
   `${CONFORMANCE}/nottried/empty-after-clamp.ts`,
   `${CONFORMANCE}/nottried/half-bounded-int.ts`,
   `${CONFORMANCE}/nottried/huge-range.ts`,
+  // A residual site off the property's path, and two on it: the reason a
+  // site produces is the prover's, so the store pins it end to end.
+  `${CONFORMANCE}/theorem/residual-untaken-branch.ts`,
+  `${CONFORMANCE}/inappropriate/residual-dropped-value.ts`,
+  `${CONFORMANCE}/inappropriate/residual-sites-distinct.ts`,
 ];
 
 /** The import slice: the closure fixtures the switchover carved out — a

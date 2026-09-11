@@ -107,13 +107,30 @@ describe("cli prove, plain pipeline", () => {
     expect(emission.obligations).toHaveLength(1);
   });
 
-  it("a fully classified file never reaches the engine", async () => {
+  it("a classified binder never reaches the engine; a residual site does", async () => {
+    // The call to a declaration outside the model is a residual site now, so
+    // `consts.ts` is emitted and the prover answers for it. A binder over a
+    // degraded class still classifies: there is nothing to quantify over.
+    runEmissionMock.mockReturnValue({
+      kind: "completed",
+      verdicts: [
+        {
+          identity: ["consts.ts", "applyDouble", "pos"],
+          szs: "Inappropriate",
+          reason:
+            "the property reaches code outside the model: 'double' could not " +
+            "be modeled: unmapped TypeScript construct 'VariableStatement' at 1:7",
+        },
+      ],
+      failures: [],
+      diagnostics: [],
+    });
     const { code, stdout } = await runMain([
       "prove",
       "consts.ts",
       "classbinder.ts",
     ]);
-    expect(runEmissionMock).not.toHaveBeenCalled();
+    expect(runEmissionMock).toHaveBeenCalled();
     expect(code).toBe(0);
     const env = JSON.parse(stdout[0]!);
     expectValidEnvelope(env);
@@ -125,8 +142,8 @@ describe("cli prove, plain pipeline", () => {
           property: "pos",
           szs: "Inappropriate",
           reason:
-            "'applyDouble' could not be modeled: 'double' could not be modeled: " +
-            "unmapped TypeScript construct 'VariableStatement' at 1:7",
+            "the property reaches code outside the model: 'double' could not " +
+            "be modeled: unmapped TypeScript construct 'VariableStatement' at 1:7",
         },
         {
           file: "classbinder.ts",

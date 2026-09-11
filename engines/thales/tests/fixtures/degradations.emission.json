@@ -30,6 +30,47 @@
       ]
     },
     {
+      "kind": "residual",
+      "owner": "applyDouble",
+      "site": 1,
+      "construct": "'double' could not be modeled: unmapped TypeScript construct 'VariableStatement' at 6:14",
+      "params": [
+        {
+          "name": "n",
+          "type": "number"
+        }
+      ],
+      "type": "number"
+    },
+    {
+      "kind": "function",
+      "name": "applyDouble",
+      "params": [
+        {
+          "name": "n",
+          "type": "number"
+        }
+      ],
+      "source": "export function applyDouble(n: number): number {\n  return double(n);\n}",
+      "body": [
+        {
+          "kind": "return",
+          "expr": {
+            "kind": "residual",
+            "owner": "applyDouble",
+            "site": 1,
+            "args": [
+              {
+                "kind": "id",
+                "name": "n"
+              }
+            ]
+          }
+        }
+      ],
+      "noncomputable": true
+    },
+    {
       "kind": "function",
       "name": "keep",
       "params": [
@@ -111,6 +152,43 @@
                 "kind": "id",
                 "name": "n"
               }
+            }
+          }
+        }
+      }
+    },
+    {
+      "function": "applyDouble",
+      "property": "viaConst",
+      "formula": "forall (n: int ∈ [0, 4)) { applyDouble(n) >= 0 }",
+      "payload": {
+        "kind": "structured",
+        "binders": [
+          {
+            "name": "n",
+            "kind": "range",
+            "lo": "0",
+            "hi": "4"
+          }
+        ],
+        "conclusion": {
+          "kind": "istrue",
+          "expr": {
+            "kind": "binop",
+            "op": ">=",
+            "left": {
+              "kind": "call",
+              "callee": "applyDouble",
+              "args": [
+                {
+                  "kind": "id",
+                  "name": "n"
+                }
+              ]
+            },
+            "right": {
+              "kind": "num",
+              "lit": "0"
             }
           }
         }
