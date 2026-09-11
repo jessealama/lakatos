@@ -248,6 +248,29 @@ def ppResidual (e : Expr) : MetaM Format :=
     (fun ctx => { ctx with openDecls := [.simple `Js [], .simple `ThalesDsl []] })
     (Meta.ppExpr e)
 
+/-- The residual sites a goal still depends on: the opaques this artifact
+declared — nothing in the library is opaque — each with the construct text
+the emitter left as its docstring, in name order. -/
+def residualSites (e : Expr) : MetaM (Array (Name × String)) := do
+  let env ← getEnv
+  let mut seen : Std.HashSet Name := {}
+  let mut out : Array (Name × String) := #[]
+  for c in (← instantiateMVars e).getUsedConstants do
+    if seen.contains c then continue
+    if let some (.opaqueInfo _) := env.find? c then
+      if (env.getModuleIdxFor? c).isNone then
+        seen := seen.insert c
+        let doc := ((← findDocString? env c).getD c.toString).trimRight
+        out := out.push (c, doc)
+  return out.qsort (fun a b => a.1.toString < b.1.toString)
+
+/-- The annotation is outside the model: the goal forces an unmodeled
+site, so no rung could have closed it. -/
+def inappropriateVerdict (identity : Identity) (sites : Array (Name × String)) : Verdict :=
+  ⟨identity, .Inappropriate,
+    s!"the property reaches code outside the model: {"; ".intercalate (sites.toList.map (·.2))}",
+    none, none⟩
+
 /-- What a rung reports when it has nothing to say about the goal it was
 left holding. -/
 def residualGaveUp (identity : Identity) (residual : Expr) : MetaM Verdict := do
@@ -327,6 +350,17 @@ partial def splitFieldIfs (goal : MVarId) : MetaM (List MVarId) := do
   match ← observing? (Meta.splitTarget? goal) with
   | some (some goals) => return (← goals.mapM splitFieldIfs).flatten
   | _ => return [goal]
+
+/-- The independent obligations a leaf carries. A branch splitter leaves
+one conjunct per arm, each provable on its own, so each is a leaf of its
+own: that is what lets an arm failing on a residual be told apart from an
+arm failing on its own arithmetic. -/
+partial def splitConjuncts (goal : MVarId) : MetaM (List MVarId) := do
+  let goal := (← goal.intros).2
+  unless (← instantiateMVars (← goal.getType)).isAppOfArity ``And 2 do return [goal]
+  match ← observing? goal.constructor with
+  | some goals => return (← goals.mapM splitConjuncts).flatten
+  | none => return [goal]
 
 /-- Normalization flattens a class binder's constructor image to
 `guard = false ∧ … ∧ C.mk t₁ … tₙ = p`, which is one hypothesis per guard
@@ -422,7 +456,7 @@ agree there are merged: two that differ only in a hypothesis neither
 reads prove once between them. -/
 def attemptGrind (identity : Identity) (p root : Expr) (goal : MVarId)
     (residual : Expr) : Term.TermElabM Verdict := do
-  let (solved, ranOut) := (← orFallThrough do
+  let (failed?, ranOut) := (← orFallThrough do
     let params ← Meta.Grind.mkDefaultParams {}
     -- Normalization is what makes two leaves comparable, not what makes
     -- them provable: without the rule set every leaf simply stands alone.
@@ -443,7 +477,9 @@ def attemptGrind (identity : Identity) (p root : Expr) (goal : MVarId)
     let goals ← do
       let some g ← normalize (← goal.intros).2 | pure ([] : List MVarId)
       let some g ← normalize (← deriveCtorImageFacts g) | pure []
-      splitFieldIfs g
+      let byField ← splitFieldIfs g
+      let byArm : MetaM (List (List MVarId)) := byField.mapM splitConjuncts
+      pure (← byArm).flatten
     -- Two leaves that agree once closed over their own contexts are one
     -- sequent: syntactic equality on a closed type is α-equivalence, so
     -- they share a single grind run and a single proof term.
@@ -457,30 +493,54 @@ def attemptGrind (identity : Identity) (p root : Expr) (goal : MVarId)
         let g ← g.revertAll
         let ty ← instantiateMVars (← g.getType)
         classes := classes.insert ty ((classes.getD ty #[]).push g)
-    let mut ok := true
+    -- Every leaf runs: which leaves failed is what separates a goal the
+    -- model cannot reach past from one the arithmetic stopped.
+    let mut failed : Array MVarId := #[]
     let mut ranOut := false
     for g in alone do
       let r ← Meta.Grind.main g params
       if r.hasFailed then
-        ok := false
-        ranOut ← grindRanOut r
-        break
-    if ok then
+        failed := failed.push g
+        if ← grindRanOut r then
+          ranOut := true
+          break
+    if !ranOut then
       for (_, members) in classes do
         let rep := members[0]!
         let r ← Meta.Grind.main rep params
         if r.hasFailed then
-          ok := false
-          ranOut ← grindRanOut r
-          break
+          failed := failed.push rep
+          if ← grindRanOut r then
+            ranOut := true
+            break
+          continue
         let proof ← instantiateMVars (Expr.mvar rep)
         for dup in members[1:] do
           dup.assign proof
-    pure (ok, ranOut)).getD (false, false)
-  if solved then return ← certifyRoot identity p root residual
+    pure (some failed, ranOut)).getD (none, false)
+  if let some failed := failed? then
+    if failed.isEmpty then return ← certifyRoot identity p root residual
   -- The counter really is spent, so the check rethrows the exception
   -- grind converted into a plain failure; runRung classifies it.
   if ranOut then Core.checkMaxHeartbeats "grind"
+  if let some failed := failed? then
+    -- Every failing leaf forces a residual site: the annotation reaches
+    -- outside the model. One leaf failing on its own arithmetic keeps the
+    -- GaveUp, since that failure is the engine's, not the model's.
+    let mut sites : Array (Name × String) := #[]
+    let mut allResidual := true
+    for g in failed do
+      let here ← residualSites (← g.getType)
+      if here.isEmpty then allResidual := false
+      sites := sites ++ here
+    if allResidual && !sites.isEmpty then
+      let mut seen : Std.HashSet Name := {}
+      let mut unique : Array (Name × String) := #[]
+      for site in sites.qsort (fun a b => a.1.toString < b.1.toString) do
+        unless seen.contains site.1 do
+          seen := seen.insert site.1
+          unique := unique.push site
+      return inappropriateVerdict identity unique
   return ← residualGaveUp identity residual
 
 def timeoutVerdict (identity : Identity) (budget : Nat) : Verdict :=

@@ -121,6 +121,18 @@ const FIXTURES = [
     file: "gaveup-grind.lean",
     expected: [["mul", "GaveUp", /unsolved goal:[\s\S]*Float\.ofInt/]],
   },
+  // A residual site off the property's path proves; on it, the verdict says
+  // the model does not reach that far and names the construct. An arm that
+  // fails on its own arithmetic keeps the goal it stumbled on.
+  {
+    file: "residual.lean",
+    expected: [
+      ["f", "Theorem", /decision procedure over the bounded domain/],
+      ["f", "Theorem", /kernel-checked/],
+      ["f", "Inappropriate", /reaches code outside the model: 'Math\.log' is not supported/],
+      ["g", "GaveUp", /unsolved goal:[\s\S]*residual_1/],
+    ],
+  },
   {
     file: "gaveup-goal.lean",
     expected: [
