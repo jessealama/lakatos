@@ -3491,6 +3491,17 @@ theorem float_lt_of_le_of_lt {a b c : Float} (hab : Float.le a b = true)
   exact lt_of_key (canonical_unpack _) (canonical_unpack _)
     (le_ne_nan_left hab) (lt_ne_nan_right hbc) hk
 
+/-- Transitivity of the non-strict order, which the strict and mixed
+forms above leave out. -/
+theorem float_le_trans {a b c : Float} (hab : Float.le a b = true)
+    (hbc : Float.le b c = true) : Float.le a c = true := by
+  rw [float_le_unpack] at hab hbc ⊢
+  have hk := Int.le_trans
+    (key_of_le (canonical_unpack _) (canonical_unpack _) hab)
+    (key_of_le (canonical_unpack _) (canonical_unpack _) hbc)
+  exact le_of_key (canonical_unpack _) (canonical_unpack _)
+    (le_ne_nan_left hab) (le_ne_nan_right hbc) hk
+
 /-! ## Totality at the `Float` layer
 
 IEEE comparison is total except at NaN, where every comparison is false.
