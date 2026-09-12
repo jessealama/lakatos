@@ -6,7 +6,7 @@ Start from `src/cli.ts` (the `prove|refute|check` spine; `check` is still a NotT
 
 ## Layering
 
-`engines/thales/` (proofs, Lean) and `engines/pabst/` (refutations, fast-check) never depend on each other. Both may depend on `lemma/` (the Lemma annotation language: discovery, `@ensures` extraction, parsing; spec and conformance corpus in `spec/`) and `tarski/` (the shared JS-semantics Lean package: the `Js` library — `number` as binary64, the JS operations Lean lacks, the value domain, the `js_norm` set and the binary64 theory — that thales proves against; it holds the Lean toolchain pin, thales requires it by path, and it has its own `CLAUDE.md`), which depend on no engine. `src/` may depend on all of them. One product, one version: `engines/thales/package.json` is private dev tooling for its check scripts, not a second package.
+`engines/thales/` (proofs, Lean) and `engines/pabst/` (refutations, fast-check) never depend on each other. Both may depend on `lemma/` (the Lemma annotation language: discovery, `@ensures` extraction, parsing; spec and conformance corpus in `spec/`) and `tarski/` (the shared JS-semantics Lean package thales proves against; see its `CLAUDE.md`), which depend on no engine. `src/` may depend on all of them. One product, one version: `engines/thales/package.json` is private dev tooling for its check scripts, not a second package.
 
 ## Building and testing
 

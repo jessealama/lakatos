@@ -5,7 +5,7 @@ open ThalesDsl Lean Js Js.Number
 
 -- The lifted binary64 facts are proofs, not assumptions: a verdict resting
 -- on any of them still reports an empty `axioms` array. Their content is
--- pinned in `Test/Js/FloatFactsTest.lean`; this is the trust side.
+-- pinned in `tarski/Test/Js/FloatFactsTest.lean`; this is the trust side.
 
 /-- info: true -/
 #guard_msgs in

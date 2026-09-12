@@ -144,6 +144,9 @@ Everything is one repository, one product, one version number:
   then symbolic tactics, then an honest "unable to prove").
 - [`engines/pabst/`](engines/pabst/) — the refutation engine: compiles
   properties to [fast-check](https://fast-check.dev/) runs.
+- [`tarski/`](tarski/) — the JS-semantics Lean library the proof engine
+  proves against: `number` as binary64, the operations Lean lacks, the
+  value domain, and their kernel-checked theory.
 - [`spec/`](spec/) — the Lemma annotation language: grammar, prose
   semantics, and conformance fixtures.
 
