@@ -1,35 +1,28 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working on the pabst engine.
+Pabst is lakatos's refutation engine: `@ensures` annotations become fast-check property tests, generated into the target project's per-run directory and executed with vitest; failures come back as per-annotation issues the CLI maps to SZS statuses (`falsified` → CounterSatisfiable, `threw` → Error, `exhausted` → GaveUp, `budget` → Timeout).
 
-## What this engine is
+Root-package code: no toolchain, lockfile, or package of its own. Build, test, and typecheck from the repo root; only its library tests live here (`tests/`). Annotation parsing is not here: pabst consumes lemma's parsed `Binder`/`Formula` and owns only what is fast-check-specific.
 
-Pabst is lakatos's refutation engine. It backs `lakatos refute`: `@ensures` annotations become fast-check property tests, generated into the target project's per-run artifact mirror and executed with vitest; failures come back as per-annotation issues the CLI maps to SZS statuses (`falsified` → CounterSatisfiable, `threw` → Error, `exhausted` → GaveUp, `budget` → Timeout). A spec whose binders range over at most 1,000 tuples is walked in full (`enumerate.ts`), and a clean pass over it is a Theorem the CLI marks `enumerated` from the plan's case count.
+## Where to start
 
-Unlike thales, pabst has no toolchain, lockfile, or package of its own — it is root-package code. Build (`npm run build`), test (`npm test`), and typecheck all run from the repo root; only its library tests live here (`tests/`).
+- `src/build-spec.ts` — lemma's output → one flat `PropertySpec` per annotation (`src/ir.ts`); `src/lower.ts` (`lowerTop`) flattens the formula to JS boolean text.
+- `src/codegen.ts` + `src/emit.ts` — string-build one vitest file per source file; `src/enumerate.ts` picks exhaustive enumeration vs sampling; `src/domains.ts` renders arbitraries from lemma's bounds.
+- `src/run.ts` — runs lakatos's own vitest under the current node (no npx) and classifies the outcome.
+- `src/contract.ts` — every string that must agree across emitted test ↔ `src/runtime.ts` ↔ CLI decoder. `tests/contract-pins.test.ts` names every other spelling to update when one changes.
 
-Annotation parsing is NOT here: discovery, `@ensures` extraction, and prefix/formula parsing live in `lemma/` at the repo root. Pabst consumes lemma's parsed output (`Binder`, `Formula`) and owns only what is fast-check-specific.
+## What the code can't tell you
 
-## Pipeline
-
-`lakatos refute` (root `src/cli.ts`) drives:
-
-1. **Build specs** (`build-spec.ts`) — lemma's `extract` → `parsePrefix` → `parseBody`, then pabst's `lowerTop` flattens the formula to JS boolean-expression text (a top-level implication's antecedents become `fc.pre` discards) and each atom's free identifiers (lemma's `freeIdentifiers`) that the module exports become the generated spec's imports; an unbound or unexported name never reaches pabst, since the CLI's island typing refuses it as `InputError` first. Result: one flat `PropertySpec` per annotation. An annotation whose only blocker is a binder domain lemma cannot represent — an interval endpoint beyond the safe integer range, whether or not the clamp empties it — yields no spec at all: generating over the clamped domain would refute a narrower statement than the one written, so it becomes an `untried` entry the CLI reports as `NotTried` with kind `unsupported-range`, exactly as the prover does. The classification and its reason string are lemma's (`clampedEndpoints`, `unsupportedRangeReason`), so the two engines cannot diverge on which domains they refuse.
-2. **Codegen** (`codegen.ts` + `emit.ts`) — per source file: mirror path under the run directory's `pabst/` (source extension kept: `a.ts` → `<run>/pabst/a.ts.pabst.test.ts`), then string-build a vitest/`@fast-check/vitest` test file. `enumerate.ts` decides per spec, from lemma's `prefixCardinality`, between an enumeration loop over every tuple of the domain and a sampled `test.prop`; sampled specs render arbitraries from binders by `domains.ts` (`arbitraryFor`, on top of lemma's bounds helpers), with a fixed 32-bit seed (`seed.ts`, `--seed` to reproduce).
-3. **Run** (`run.ts`) — run lakatos's own vitest under the current node (`vitest run --reporter=json`, no npx) and classify the outcome: `completed` (JSON results), `no-results`, or `broken-run`.
-4. **Report** — the CLI decodes sentinel-framed issues out of the vitest JSON (`contract.ts`) and joins them into the envelope.
-
-## The wire contract (`contract.ts`)
-
-Generated tests import `bool`, `report`, and `budget` from **`lakatos/runtime`** (`runtime.ts`, the root package's only export subpath — it resolves from the _target project's_ node_modules, which is why refute must run from that project). A failing property throws an `Issue` encoded behind the `PABST_ISSUE:` sentinel; `parseIssue` recovers it from vitest's failure messages. Every string that must agree across emitted test ↔ runtime ↔ CLI decoder lives in `contract.ts`, and `tests/contract-pins.test.ts` pins the ones that reach outside (the runtime specifier and dist paths, the issue schema's `functionName` pattern against lemma's `QUALIFIED_NAME_PATTERN`). If you change a contract string, the pin test tells you every other spelling to update.
-
-`schemas/issue.schema.json` is the per-issue JSON Schema; `IssueKind` is `falsified | threw | exhausted | budget`. The SZS mapping itself lives in root `src/szs.ts`, not here.
+- Generated tests import from `lakatos/runtime`, the root package's only export subpath, resolved from the _target project's_ node_modules — which is why refute must run from that project.
+- Domains lemma cannot represent (an interval endpoint beyond the safe-integer range) yield no spec at all and report `NotTried` / `unsupported-range`, exactly as prove does: generating over a clamped domain would refute a narrower statement than the one written. The classification is lemma's (`clampedEndpoints`, `unsupportedRangeReason`), so the engines cannot diverge on it.
+- A spec over at most 1,000 tuples (`ENUMERATION_CAP`) is walked in full and a clean pass is a Theorem the CLI marks `enumerated`; each enumerated test has a 4 s wall-clock budget (`LOOP_BUDGET_MS`), the source of the `budget` kind. Sampled specs run 1,000 cases (`SAMPLE_RUNS`) under a random 32-bit seed per run, reproducible with `--seed`.
+- Run outcomes are `completed`, `no-results`, `broken-run`, and `interrupted`; an interrupted run is the CLI's `User` status, never an error.
 
 ## Conventions
 
-- **Generated code is disposable.** Every run writes a fresh directory and never hand-edits one; determinism comes from the seed.
-- **Engine-neutral logic goes to `lemma/`, fast-check-specific logic stays here.** `domains.ts` renders arbitraries from lemma's bounds; it should not re-derive bounds arithmetic.
-- **Errors that are the input's fault throw `LemmaError`** (the CLI maps it to exit 2 with a one-line diagnostic); anything else escaping is an internal bug. A domain that is merely unrepresentable is not the input's fault: it is contained per annotation as `untried`, never a run-level abort.
-- **Never depend on thales** (and vice versa); the only sharing is via `lemma/` and the root contract. See the root `README.md` (Layout and Architecture) for the layering.
+- **Generated code is disposable.** Every run writes a fresh directory; determinism comes from the seed.
+- **Engine-neutral logic goes to `lemma/`; fast-check-specific logic stays here.** `domains.ts` must not re-derive bounds arithmetic.
+- **Input faults throw `LemmaError`** (exit 2 with a one-line diagnostic); anything else escaping is an internal bug. An unrepresentable domain is not the input's fault: contained per annotation, never a run-level abort.
+- **Never depend on thales**, and vice versa; sharing goes through `lemma/` and the root contract.
 
-CI: the root `lakatos.yml` workflow covers pabst (its tests are part of the root vitest suite), and Stryker mutation testing covers its sources.
+Stryker (`npm run mutation`, root config) targets pabst's sources but runs locally only; CI runs the vitest suite.
