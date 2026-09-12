@@ -1,0 +1,19 @@
+formula = "reviewed-task"
+description = "A unit of work that is not done until a separate review pass has closed"
+version = 1
+type = "workflow"
+
+[vars.title]
+description = "What the work is, as a sentence"
+required = true
+
+[[steps]]
+id = "implement"
+title = "{{title}}"
+description = "Do the work. Close only when the local gate passes and the change is committed on its branch."
+
+[[steps]]
+id = "review"
+title = "Review: {{title}}"
+needs = ["implement"]
+description = "Review the implement step's diff against its stated goal. Read the diff, run the tests, and note findings on this bead. Close when nothing remains, or file follow-up beads and close."

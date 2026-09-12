@@ -12,3 +12,5 @@ reports/
 *.db
 .beads-credential-key
 .beads/proxieddb/
+# bd's append-only audit log churns on every command
+.beads/interactions.jsonl
