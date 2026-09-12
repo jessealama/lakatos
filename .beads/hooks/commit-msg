@@ -1,0 +1,14 @@
+#!/bin/sh
+#
+# Reject commits with Claude AI attributions in the commit message.
+# Matches any model version (Opus, Sonnet, Haiku, etc.) and any
+# "Generated with Claude Code" tagline.
+
+msg_file="$1"
+
+if grep -qiE 'Co-Authored-By:.*Claude' "$msg_file" ||
+   grep -qiE 'Generated with.*Claude' "$msg_file"; then
+    echo >&2 "ERROR: Commit message contains a Claude attribution."
+    echo >&2 "Please remove any Co-Authored-By or Generated-with Claude lines."
+    exit 1
+fi
