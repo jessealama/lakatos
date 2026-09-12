@@ -5,6 +5,7 @@ on:
     branches: [main, thales-rewrite]
     paths:
       - "engines/thales/**"
+      - "tarski/**"
       - "spec/**"
       - "src/**"
       - "tests/**"
@@ -17,6 +18,7 @@ on:
   pull_request:
     paths:
       - "engines/thales/**"
+      - "tarski/**"
       - "spec/**"
       - "src/**"
       - "tests/**"
@@ -82,10 +84,10 @@ jobs:
         with:
           path: |
             engines/thales/.lake/build
-            engines/thales/.lake/packages
-          key: lake-${{ runner.os }}-${{ hashFiles('engines/thales/lean-toolchain', 'engines/thales/lakefile.lean', 'engines/thales/lake-manifest.json') }}
+            tarski/.lake/build
+          key: lake-v2-${{ runner.os }}-${{ hashFiles('tarski/lean-toolchain', 'tarski/lakefile.lean', 'engines/thales/lakefile.lean', 'engines/thales/lake-manifest.json') }}
           restore-keys: |
-            lake-${{ runner.os }}-
+            lake-v2-${{ runner.os }}-
 
       - name: Build
         run: lake build
