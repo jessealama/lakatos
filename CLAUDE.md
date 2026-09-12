@@ -14,8 +14,30 @@ Every TypeScript part — `src/`, `lemma/`, pabst, thales's `frontend/` — is o
 
 ## Issue tracker
 
-GitHub Issues on `jessealama/lakatos`. Conventions: `engines/thales/docs/agents/issue-tracker.md`; triage labels: `engines/thales/docs/agents/triage-labels.md`.
+GitHub Issues on `jessealama/lakatos` is the tracker: bugs, features, triage, and everything a PR or design record refers to by number. Conventions: `engines/thales/docs/agents/issue-tracker.md`; triage labels: `engines/thales/docs/agents/triage-labels.md`.
+
+Beads (`bd`, below) is agent-local task tracking within a session, not a second issue tracker: a bead is a step toward an issue, never a substitute for filing one.
 
 ## Docs
 
 Design records spanning more than one component go in `docs/design/`; a single engine's notes stay under that engine (`engines/thales/docs/`). Records are dated and are not updated to track the code.
+
+<!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:6cd5cc61 -->
+
+## Beads (agent task tracking)
+
+`bd` tracks an agent's in-session tasks and handoffs. Run `bd prime` for the command reference.
+
+```bash
+bd ready              # Find available work
+bd show <id>          # View issue details
+bd update <id> --claim  # Claim work
+bd close <id>         # Complete work
+```
+
+- Use `bd` instead of TodoWrite, TaskCreate, or markdown TODO lists for task tracking; anything that outlives the session goes to GitHub Issues.
+- Persistent memory stays in Claude Code's own memory files; do not use `bd remember` for it.
+- Issues live in a local Dolt DB; sync uses `refs/dolt/data` on the git remote; `.beads/issues.jsonl` is a passive export. Never commit, push, or sync Dolt unless asked.
+- At session end: close finished beads, file GitHub issues for follow-up work, run the local gate if code changed, and report changed files and status before any commit or push.
+
+<!-- END BEADS INTEGRATION -->

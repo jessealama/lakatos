@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "lakatos",
+  "project_id": "7be13652-fc1d-42a0-ac3c-018475e42f86"
+}
