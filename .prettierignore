@@ -5,7 +5,7 @@ engines/thales/package-lock.json
 # local Claude Code artifacts (globally gitignored, so absent in CI)
 .claude/
 
-# thales's Lean build tree and its lake-managed manifest
+# the two Lean packages' build trees and lake-managed manifests
 engines/thales/.lake/
 engines/thales/lake-manifest.json
 tarski/.lake/

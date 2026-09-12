@@ -5,7 +5,7 @@ Thales is lakatos's proof engine. It backs `lakatos prove`: annotated TypeScript
 Two halves in two languages:
 
 - **`frontend/` (TypeScript)** — the emitter. Root-package code: compiled by the root `tsconfig.json`, tested by the root vitest suite. Start at `frontend/src/emission.ts` (tsc AST → per-declaration JSON, and the classification of what it cannot map) and `frontend/src/run.ts` (lake/lean orchestration, verdict-line parsing).
-- **`ThalesDsl/` (Lean 4)** — the prover, one lake library plus the `thales-emit` executable, built on the JS-semantics library in the shared `tarski/` package at the repo root (`require tarski from "../../tarski"`; read `tarski/CLAUDE.md` before touching it); artifacts are run with `lake env lean`. `ThalesEmit/` is the renderer behind `thales-emit`. Start at `ThalesDsl/Prove.lean` (the tactic ladder) and `tarski/Js/Runtime.lean` (the semantic domain). Toolchain pinned in `tarski/lean-toolchain`, symlinked here as `lean-toolchain`. The boundary rule: nothing in `tarski/` mentions `ThalesDsl` or any emission concern — lakatos owns syntax and search, the library owns meaning.
+- **`ThalesDsl/` (Lean 4)** — the prover: the `ThalesDsl` and `ThalesEmit` lake libraries plus the `thales-emit` executable, built on the JS-semantics library in the shared `tarski/` package at the repo root (`require tarski from "../../tarski"`; read `tarski/CLAUDE.md` before touching it); artifacts are run with `lake env lean`. `ThalesEmit/` is the renderer behind `thales-emit`. Start at `ThalesDsl/Prove.lean` (the tactic ladder) and `tarski/Js/Runtime.lean` (the semantic domain). Toolchain pinned in `tarski/lean-toolchain`, symlinked here as `lean-toolchain`.
 
 Annotation parsing is not here: discovery, extraction, and prefix/formula parsing live in `lemma/`; the Lean side never sees Lemma syntax.
 
@@ -94,5 +94,5 @@ The status set lives in exactly two places: the `Szs` inductive here and `SZS_ST
 - **`autoImplicit` is off** in both lake packages (`lakefile.lean` here and in `tarski/`); bind implicit and universe variables explicitly.
 - **Failure containment over abortion.** A construct the engine can't handle degrades that declaration, that annotation, or that artifact — never the run. New frontend features must preserve this.
 - **One verdict line per `#thales_prove`, always**, even for failures the elaborator can see. Annotations the frontend classifies never enter the channel; the CLI joins them from the emission's `classified` list.
-- **Boundary rule:** nothing under `tarski/` may mention `ThalesDsl` or any emission concern — lakatos owns syntax and search, the library owns meaning. The `require` runs one way.
+- **Boundary rule:** nothing under `tarski/` may mention `ThalesDsl` or any emission concern (stated in `tarski/CLAUDE.md`); the `require` runs one way.
 - **Lean builds here; the frontend builds at the root.** This directory's `package.json` (`thales-dev`) exists only for the check scripts and has no dependencies. Formatting is root-only: one prettier pin, one config.

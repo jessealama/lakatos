@@ -7,8 +7,7 @@ package «thales» where
     ⟨`autoImplicit, false⟩
   ]
 
--- The JS-semantics library lives in the shared package at the repo root;
--- lake builds a path dependency in place.
+-- A path dependency: lake builds it in place, so nothing lands under .lake/packages.
 require tarski from "../../tarski"
 
 @[default_target]
