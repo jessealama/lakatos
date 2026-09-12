@@ -14,3 +14,6 @@ reports/
 .beads/proxieddb/
 # bd's append-only audit log churns on every command
 .beads/interactions.jsonl
+
+# tarski's Lean build tree (its manifest is tracked, like thales's)
+tarski/.lake/

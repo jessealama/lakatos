@@ -8,6 +8,8 @@ engines/thales/package-lock.json
 # thales's Lean build tree and its lake-managed manifest
 engines/thales/.lake/
 engines/thales/lake-manifest.json
+tarski/.lake/
+tarski/lake-manifest.json
 
 # hand-curated release notes
 engines/thales/CHANGELOG.md

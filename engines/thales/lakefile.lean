@@ -7,9 +7,9 @@ package «thales» where
     ⟨`autoImplicit, false⟩
   ]
 
-@[default_target]
-lean_lib «Js» where
-  globs := #[.submodules `Js, .one `Js]
+-- The JS-semantics library lives in the shared package at the repo root;
+-- lake builds a path dependency in place.
+require tarski from "../../tarski"
 
 @[default_target]
 lean_lib «ThalesDsl» where

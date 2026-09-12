@@ -1,6 +1,13 @@
 {"version": "1.2.0",
  "packagesDir": ".lake/packages",
- "packages": [],
+ "packages":
+ [{"type": "path",
+   "scope": "",
+   "name": "tarski",
+   "manifestFile": "lake-manifest.json",
+   "inherited": false,
+   "dir": "../../tarski",
+   "configFile": "lakefile.lean"}],
  "name": "thales",
  "lakeDir": ".lake",
  "fixedToolchain": false}
