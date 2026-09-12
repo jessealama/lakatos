@@ -37,6 +37,7 @@ bd close <id>         # Complete work
 
 - Use `bd` instead of TodoWrite, TaskCreate, or markdown TODO lists for task tracking; anything that outlives the session goes to GitHub Issues.
 - Persistent memory stays in Claude Code's own memory files; do not use `bd remember` for it.
+- Every task bead is poured from the `reviewed-task` formula (`bd mol pour reviewed-task --var "title=..."`, or `bd mol bond <epic> reviewed-task --var ...` under an epic), so a separate review bead blocks on the work and nothing counts as done until the review closes. Epics are reviewed and closed by hand.
 - Issues live in a local Dolt DB; sync uses `refs/dolt/data` on the git remote; `.beads/issues.jsonl` is a passive export. Never commit, push, or sync Dolt unless asked.
 - At session end: close finished beads, file GitHub issues for follow-up work, run the local gate if code changed, and report changed files and status before any commit or push.
 

@@ -70,6 +70,7 @@ bd close <id>         # Complete work
 - Use `bd` instead of TodoWrite, TaskCreate, or markdown TODO lists for in-session task tracking
 - Run `bd prime` for detailed command reference and session close protocol
 - Persistent memory stays in the agent's own memory files, not `bd remember`
+- Every task bead is poured from the `reviewed-task` formula (`bd mol pour reviewed-task --var "title=..."`, or `bd mol bond <epic> reviewed-task --var ...` under an epic), so a separate review bead blocks on the work and nothing counts as done until the review closes. Epics are reviewed and closed by hand.
 
 **Architecture in one line:** issues live in a local Dolt DB; sync uses `refs/dolt/data` on your git remote; `.beads/issues.jsonl` is a passive export. See https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md for details and anti-patterns.
 
