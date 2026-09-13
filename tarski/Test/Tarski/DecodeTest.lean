@@ -133,6 +133,24 @@ private def wholeSlice : Program :=
         "right":{"type":"Literal","value":1,"raw":"1"}}}"#)
   == "unsupported: AssignmentExpression +="
 
+-- A target the slice cannot assign through reports itself: the bridge's
+-- placeholder for the member access is what names the refusal.
+#guard decode (script
+    r#"{"type":"ExpressionStatement","expression":{
+        "type":"AssignmentExpression","operator":"=",
+        "left":{"type":"Unsupported","kind":"PropertyAccessExpression"},
+        "right":{"type":"Literal","value":1,"raw":"1"}}}"#)
+  == "unsupported: PropertyAccessExpression"
+
+-- `undefined` is a literal, not a name, so it is not an assignable
+-- target either.
+#guard decode (script
+    r#"{"type":"ExpressionStatement","expression":{
+        "type":"AssignmentExpression","operator":"=",
+        "left":{"type":"Identifier","name":"undefined"},
+        "right":{"type":"Literal","value":1,"raw":"1"}}}"#)
+  == "unsupported: AssignmentExpression target"
+
 -- `var` is a declaration kind the schema does not admit.
 #guard decode (script
     r#"{"type":"VariableDeclaration","kind":"var","declarations":[

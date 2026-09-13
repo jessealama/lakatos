@@ -111,10 +111,12 @@ partial def decodeExpr (j : Json) : DecodeM Expr := do
     let op ← strField j "operator"
     if op != "=" then .error (.unsupported s!"AssignmentExpression {op}")
     else
-      let target ← field j "left"
-      match ← nodeType target with
-      | "Identifier" => pure (.assign (← strField target "name") (← decodeExpr (← field j "right")))
-      | other => .error (.unsupported s!"AssignmentExpression target {other}")
+      -- Decoding the target first lets an out-of-slice one report itself:
+      -- a member access arrives as the bridge's placeholder and names the
+      -- kind it stood for, rather than being swallowed here.
+      match ← decodeExpr (← field j "left") with
+      | .ident name => pure (.assign name (← decodeExpr (← field j "right")))
+      | _ => .error (.unsupported "AssignmentExpression target")
   | "Unsupported" => .error (.unsupported (← strField j "kind"))
   | other => .error (.unsupported other)
 

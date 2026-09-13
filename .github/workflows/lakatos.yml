@@ -11,6 +11,8 @@ on:
       - "engines/pabst/**"
       - "engines/thales/frontend/**"
       - "engines/thales/tests/fixtures/**"
+      - "tarski/frontend/**"
+      - "tarski/Test/Tarski/fixtures/**"
       - "spec/**"
       - "package.json"
       - "package-lock.json"

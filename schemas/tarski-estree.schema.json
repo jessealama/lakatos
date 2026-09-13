@@ -1,10 +1,10 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/jessealama/lakatos/schemas/tarski-estree.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://lakatos.test/schemas/tarski-estree.schema.json",
   "title": "tarski ESTree",
   "description": "The seam between the TypeScript parser bridge and the Lean evaluator: an ESTree-shaped script, narrowed to the node kinds tarski's numeric slice evaluates. Positions are deliberately absent — every message the evaluator produces names a node kind, never a line — and `additionalProperties` is false everywhere so a producer cannot smuggle one in. A node outside the slice is not an error here: the bridge replaces it in place with an `Unsupported` node carrying its kind, and the Lean decoder is the one place that refuses it, so there is one seam and one message.",
-  "$ref": "#/$defs/Program",
-  "$defs": {
+  "$ref": "#/definitions/Program",
+  "definitions": {
     "Program": {
       "type": "object",
       "properties": {
@@ -12,7 +12,7 @@
         "sourceType": { "const": "script" },
         "body": {
           "type": "array",
-          "items": { "$ref": "#/$defs/Statement" }
+          "items": { "$ref": "#/definitions/Statement" }
         }
       },
       "required": ["type", "sourceType", "body"],
@@ -21,13 +21,13 @@
 
     "Statement": {
       "anyOf": [
-        { "$ref": "#/$defs/Directive" },
-        { "$ref": "#/$defs/ExpressionStatement" },
-        { "$ref": "#/$defs/VariableDeclaration" },
-        { "$ref": "#/$defs/IfStatement" },
-        { "$ref": "#/$defs/WhileStatement" },
-        { "$ref": "#/$defs/BlockStatement" },
-        { "$ref": "#/$defs/Unsupported" }
+        { "$ref": "#/definitions/Directive" },
+        { "$ref": "#/definitions/ExpressionStatement" },
+        { "$ref": "#/definitions/VariableDeclaration" },
+        { "$ref": "#/definitions/IfStatement" },
+        { "$ref": "#/definitions/WhileStatement" },
+        { "$ref": "#/definitions/BlockStatement" },
+        { "$ref": "#/definitions/Unsupported" }
       ]
     },
 
@@ -36,7 +36,7 @@
       "type": "object",
       "properties": {
         "type": { "const": "ExpressionStatement" },
-        "expression": { "$ref": "#/$defs/StringLiteral" },
+        "expression": { "$ref": "#/definitions/StringLiteral" },
         "directive": { "type": "string" }
       },
       "required": ["type", "expression", "directive"],
@@ -47,22 +47,22 @@
       "type": "object",
       "properties": {
         "type": { "const": "ExpressionStatement" },
-        "expression": { "$ref": "#/$defs/Expression" }
+        "expression": { "$ref": "#/definitions/Expression" }
       },
       "required": ["type", "expression"],
       "additionalProperties": false
     },
 
     "VariableDeclaration": {
-      "description": "`var` is absent: function-scoped bindings, hoisting, and the temporal dead zone are a later slice.",
+      "description": "`var` is admitted here and refused by the Lean decoder: function-scoped bindings, hoisting, and the temporal dead zone are a later slice, and the decoder is where the slice's boundary is stated.",
       "type": "object",
       "properties": {
         "type": { "const": "VariableDeclaration" },
-        "kind": { "enum": ["let", "const"] },
+        "kind": { "enum": ["var", "let", "const"] },
         "declarations": {
           "type": "array",
           "minItems": 1,
-          "items": { "$ref": "#/$defs/VariableDeclarator" }
+          "items": { "$ref": "#/definitions/VariableDeclarator" }
         }
       },
       "required": ["type", "kind", "declarations"],
@@ -73,9 +73,9 @@
       "type": "object",
       "properties": {
         "type": { "const": "VariableDeclarator" },
-        "id": { "$ref": "#/$defs/Identifier" },
+        "id": { "$ref": "#/definitions/Identifier" },
         "init": {
-          "oneOf": [{ "$ref": "#/$defs/Expression" }, { "type": "null" }]
+          "oneOf": [{ "$ref": "#/definitions/Expression" }, { "type": "null" }]
         }
       },
       "required": ["type", "id", "init"],
@@ -86,10 +86,10 @@
       "type": "object",
       "properties": {
         "type": { "const": "IfStatement" },
-        "test": { "$ref": "#/$defs/Expression" },
-        "consequent": { "$ref": "#/$defs/Statement" },
+        "test": { "$ref": "#/definitions/Expression" },
+        "consequent": { "$ref": "#/definitions/Statement" },
         "alternate": {
-          "oneOf": [{ "$ref": "#/$defs/Statement" }, { "type": "null" }]
+          "oneOf": [{ "$ref": "#/definitions/Statement" }, { "type": "null" }]
         }
       },
       "required": ["type", "test", "consequent", "alternate"],
@@ -100,8 +100,8 @@
       "type": "object",
       "properties": {
         "type": { "const": "WhileStatement" },
-        "test": { "$ref": "#/$defs/Expression" },
-        "body": { "$ref": "#/$defs/Statement" }
+        "test": { "$ref": "#/definitions/Expression" },
+        "body": { "$ref": "#/definitions/Statement" }
       },
       "required": ["type", "test", "body"],
       "additionalProperties": false
@@ -113,7 +113,7 @@
         "type": { "const": "BlockStatement" },
         "body": {
           "type": "array",
-          "items": { "$ref": "#/$defs/Statement" }
+          "items": { "$ref": "#/definitions/Statement" }
         }
       },
       "required": ["type", "body"],
@@ -122,15 +122,15 @@
 
     "Expression": {
       "anyOf": [
-        { "$ref": "#/$defs/NumericLiteral" },
-        { "$ref": "#/$defs/BooleanLiteral" },
-        { "$ref": "#/$defs/NullLiteral" },
-        { "$ref": "#/$defs/Identifier" },
-        { "$ref": "#/$defs/UnaryExpression" },
-        { "$ref": "#/$defs/BinaryExpression" },
-        { "$ref": "#/$defs/ConditionalExpression" },
-        { "$ref": "#/$defs/AssignmentExpression" },
-        { "$ref": "#/$defs/Unsupported" }
+        { "$ref": "#/definitions/NumericLiteral" },
+        { "$ref": "#/definitions/BooleanLiteral" },
+        { "$ref": "#/definitions/NullLiteral" },
+        { "$ref": "#/definitions/Identifier" },
+        { "$ref": "#/definitions/UnaryExpression" },
+        { "$ref": "#/definitions/BinaryExpression" },
+        { "$ref": "#/definitions/ConditionalExpression" },
+        { "$ref": "#/definitions/AssignmentExpression" },
+        { "$ref": "#/definitions/Unsupported" }
       ]
     },
 
@@ -194,8 +194,10 @@
       "type": "object",
       "properties": {
         "type": { "const": "UnaryExpression" },
-        "operator": { "enum": ["-", "+", "!"] },
-        "argument": { "$ref": "#/$defs/Expression" },
+        "operator": {
+          "enum": ["-", "+", "!", "~", "typeof", "void", "delete"]
+        },
+        "argument": { "$ref": "#/definitions/Expression" },
         "prefix": { "const": true }
       },
       "required": ["type", "operator", "argument", "prefix"],
@@ -203,15 +205,38 @@
     },
 
     "BinaryExpression": {
-      "description": "Loose `==` and `!=` are absent: they coerce across types this slice does not have.",
+      "description": "Every ESTree binary operator, not only the slice's: the bridge writes what it saw, and the Lean decoder names the one it will not evaluate. `&&`, `||`, and `??` are a LogicalExpression in ESTree, which is not a node here — they arrive as `Unsupported`.",
       "type": "object",
       "properties": {
         "type": { "const": "BinaryExpression" },
         "operator": {
-          "enum": ["+", "-", "*", "/", "%", "<", "<=", ">", ">=", "===", "!=="]
+          "enum": [
+            "==",
+            "!=",
+            "===",
+            "!==",
+            "<",
+            "<=",
+            ">",
+            ">=",
+            "<<",
+            ">>",
+            ">>>",
+            "+",
+            "-",
+            "*",
+            "/",
+            "%",
+            "**",
+            "|",
+            "^",
+            "&",
+            "in",
+            "instanceof"
+          ]
         },
-        "left": { "$ref": "#/$defs/Expression" },
-        "right": { "$ref": "#/$defs/Expression" }
+        "left": { "$ref": "#/definitions/Expression" },
+        "right": { "$ref": "#/definitions/Expression" }
       },
       "required": ["type", "operator", "left", "right"],
       "additionalProperties": false
@@ -221,22 +246,41 @@
       "type": "object",
       "properties": {
         "type": { "const": "ConditionalExpression" },
-        "test": { "$ref": "#/$defs/Expression" },
-        "consequent": { "$ref": "#/$defs/Expression" },
-        "alternate": { "$ref": "#/$defs/Expression" }
+        "test": { "$ref": "#/definitions/Expression" },
+        "consequent": { "$ref": "#/definitions/Expression" },
+        "alternate": { "$ref": "#/definitions/Expression" }
       },
       "required": ["type", "test", "consequent", "alternate"],
       "additionalProperties": false
     },
 
     "AssignmentExpression": {
-      "description": "Plain `=` to an identifier. Compound assignment and destructuring targets are later slices.",
+      "description": "The evaluator takes only plain `=` to an identifier; the schema admits every assignment operator and every target expression so that a compound assignment or a member target reaches the Lean decoder and is refused there by name.",
       "type": "object",
       "properties": {
         "type": { "const": "AssignmentExpression" },
-        "operator": { "const": "=" },
-        "left": { "$ref": "#/$defs/Identifier" },
-        "right": { "$ref": "#/$defs/Expression" }
+        "operator": {
+          "enum": [
+            "=",
+            "+=",
+            "-=",
+            "*=",
+            "/=",
+            "%=",
+            "**=",
+            "<<=",
+            ">>=",
+            ">>>=",
+            "|=",
+            "^=",
+            "&=",
+            "&&=",
+            "||=",
+            "??="
+          ]
+        },
+        "left": { "$ref": "#/definitions/Expression" },
+        "right": { "$ref": "#/definitions/Expression" }
       },
       "required": ["type", "operator", "left", "right"],
       "additionalProperties": false

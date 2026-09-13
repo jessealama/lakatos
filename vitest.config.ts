@@ -8,6 +8,7 @@ export default defineConfig({
       "lemma/tests/**/*.test.ts",
       "engines/pabst/tests/**/*.test.ts",
       "engines/thales/frontend/tests/**/*.test.ts",
+      "tarski/frontend/tests/**/*.test.ts",
       ".lakatos/**/*.test.ts",
     ],
     // Absolute: refute spawns vitest from a project directory that may sit
@@ -26,6 +27,7 @@ export default defineConfig({
         "lemma/src/**/*.ts",
         "engines/pabst/src/**/*.ts",
         "engines/thales/frontend/src/**/*.ts",
+        "tarski/frontend/src/**/*.ts",
       ],
       exclude: ["**/*.test.ts", "**/*.d.ts"],
       reporter: ["text", "html"],
