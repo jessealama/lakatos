@@ -64,6 +64,7 @@ const FLAGS = [
 function parseArgs(argv: readonly string[]): Options {
   const options: Options = { slices: [], timeout: 10_000 };
   for (let i = 0; i < argv.length; i++) {
+    /* v8 ignore next -- `i` is an index into `argv`. */
     const arg = argv[i] ?? "";
     if (!arg.startsWith("--")) {
       options.slices.push(arg);
@@ -149,10 +150,14 @@ function readPin(file: string): Pin {
 
 export function main(argv: readonly string[]): number {
   const root = findTarskiRoot();
+  /* v8 ignore start -- true only for a copy of this file outside any
+     lakatos checkout or installation, which the suite cannot arrange
+     from inside one. `paths.test.ts` covers the walk's own answer. */
   if (root === undefined) {
     console.error("tarski-test262: no tarski package here");
     return 2;
   }
+  /* v8 ignore stop */
   if (argv[0] === "setup") {
     // `--pin` names another pin file. The committed one is the default
     // and what CI uses; the flag is how the suite points `setup` at a
@@ -164,6 +169,9 @@ export function main(argv: readonly string[]): number {
       console.error("usage: tarski-test262 setup [--pin <pin.json>]");
       return 2;
     }
+    /* v8 ignore next 3 -- without `--pin` this reads the committed pin
+       and fetches tc39/test262 over the network, which is what CI does
+       and what the suite must not. */
     setupTest262(defaultCheckout(root), readPin(pin ?? pinPath(root)), (line) =>
       console.log(line),
     );

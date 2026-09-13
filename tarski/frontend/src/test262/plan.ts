@@ -51,6 +51,8 @@ function startsStrict(source: string): boolean {
   // Leading whitespace, line comments, and block comments, then the
   // directive in either quote. The suite's five strict `raw` tests are
   // all of this shape (a copyright comment, then the directive).
+  /* v8 ignore next 3 -- the pattern matches the empty string, so `exec`
+     always answers; the fallback is the type asking. */
   const head =
     /^(?:\s|\/\/[^\n]*\n|\/\*(?:[^*]|\*(?!\/))*\*\/)*/.exec(source)?.[0]
       .length ?? 0;

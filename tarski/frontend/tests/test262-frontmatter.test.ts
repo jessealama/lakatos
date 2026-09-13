@@ -45,6 +45,30 @@ describe("parseFrontMatter", () => {
     expect(parseFrontMatter(wrap("flags: [async]\n")).negative).toBeUndefined();
   });
 
+  it("stops a block list at the first line that is not an item", () => {
+    const front = parseFrontMatter(
+      wrap(
+        "features:\n  - Symbol\n  note: not an item\n  - Proxy\nflags: [async]\n",
+      ),
+    );
+    expect(front.features).toEqual(["Symbol"]);
+    expect(front.flags).toEqual(["async"]);
+  });
+
+  it("ignores a negative block missing the phase", () => {
+    expect(
+      parseFrontMatter(wrap("negative:\n  type: SyntaxError\n")).negative,
+    ).toBeUndefined();
+  });
+
+  it("ignores a line under negative that is not an entry", () => {
+    expect(
+      parseFrontMatter(
+        wrap("negative:\n  - phase\n  phase: parse\n  type: SyntaxError\n"),
+      ).negative,
+    ).toEqual({ phase: "parse", type: "SyntaxError" });
+  });
+
   it("ignores a negative block missing a key", () => {
     expect(
       parseFrontMatter(wrap("negative:\n  phase: parse\n")).negative,

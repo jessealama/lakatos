@@ -62,6 +62,8 @@ function blockList(lines: readonly string[], index: number): string[] {
   for (const line of indented(lines, index)) {
     const item = /^\s+-\s*(.*)$/.exec(line);
     if (!item) break;
+    /* v8 ignore next -- the group is not optional, so a match has it;
+       the fallback is `noUncheckedIndexedAccess` asking. */
     out.push(uncomment(item[1] ?? ""));
   }
   return out;
@@ -77,8 +79,11 @@ function negativeMap(
   for (const line of indented(lines, index)) {
     const entry = /^\s+([A-Za-z_]+):\s*(.*)$/.exec(line);
     if (!entry) continue;
+    /* v8 ignore start -- neither group is optional, so a match has both;
+       the fallbacks are `noUncheckedIndexedAccess` asking. */
     if (entry[1] === "phase") phase = uncomment(entry[2] ?? "");
     if (entry[1] === "type") type = uncomment(entry[2] ?? "");
+    /* v8 ignore stop */
   }
   if (phase === undefined || type === undefined) return undefined;
   return { phase, type };
@@ -99,8 +104,10 @@ export function parseFrontMatter(source: string): FrontMatter {
     // Column 0, so a block scalar's indented prose is never a key.
     const key = /^([A-Za-z_]+):\s*(.*)$/.exec(line);
     if (!key) continue;
+    /* v8 ignore start -- neither group is optional. */
     const name = key[1] ?? "";
     const value = uncomment(key[2] ?? "");
+    /* v8 ignore stop */
     if (name === "includes" || name === "flags" || name === "features") {
       front[name] =
         value.length > 0 ? flowList(value) : blockList(lines, index);

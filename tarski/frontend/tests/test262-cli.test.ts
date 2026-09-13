@@ -2,6 +2,7 @@ import {
   describe,
   it,
   expect,
+  beforeAll,
   beforeEach,
   afterEach,
   afterAll,
@@ -49,6 +50,9 @@ function invoke(argv: readonly string[]): {
   }
 }
 
+// 2 s per test, not 200 ms: the fake binary is a node process, and under
+// the coverage run a cold start can outlast a tight timeout, which would
+// move a passing test into the timeout column.
 const overTree = (...extra: string[]): readonly string[] => [
   "test",
   "--test262",
@@ -56,7 +60,18 @@ const overTree = (...extra: string[]): readonly string[] => [
   "--binary",
   FAKE,
   "--timeout",
-  "200",
+  "2000",
+  ...extra,
+];
+
+// The one slice with nothing in it that diverges, for the cases that do
+// not need the whole tree.
+const overPass = (...extra: string[]): readonly string[] => [
+  "test/pass",
+  "--test262",
+  TREE,
+  "--binary",
+  FAKE,
   ...extra,
 ];
 
@@ -76,14 +91,20 @@ describe("tarski-test262", () => {
   const scratch = mkdtempSync(path.join(tmpdir(), "test262-cli-"));
   afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
+  // One run of the whole tree, read by the three cases below: the timeout
+  // case costs the timeout, so it is paid once.
+  let tree: { status: number; stdout: string; stderr: string };
+  beforeAll(() => {
+    tree = invoke(overTree());
+  });
+
   it("runs the whole fake tree and tabulates it", () => {
-    const result = invoke(overTree());
-    expect(result.status).toBe(0);
-    expect(result.stdout.startsWith(TABLE)).toBe(true);
+    expect(tree.status).toBe(0);
+    expect(tree.stdout.startsWith(TABLE)).toBe(true);
   });
 
   it("names each not-run reason, each skip reason, and the unsupported kinds", () => {
-    const { stdout } = invoke(overTree());
+    const { stdout } = tree;
     expect(stdout).toContain(
       "not run:\n  async  1\n  module  1\n  noStrict  1\n  raw  1",
     );
@@ -96,7 +117,7 @@ describe("tarski-test262", () => {
   });
 
   it("lists the failures, the harness errors, and the timeouts", () => {
-    const { stdout } = invoke(overTree());
+    const { stdout } = tree;
     expect(stdout).toContain(
       "test/fail/assert-fails.js  Uncaught Test262Error: boom",
     );
@@ -111,21 +132,21 @@ describe("tarski-test262", () => {
 
   it("round-trips --write through --check", () => {
     const file = path.join(scratch, "expected.json");
-    expect(invoke(overTree("--write", file)).status).toBe(0);
-    const checked = invoke(overTree("--check", file));
+    expect(invoke(overPass("--write", file)).status).toBe(0);
+    const checked = invoke(overPass("--check", file));
     expect(checked.status).toBe(0);
     expect(checked.stdout).toContain(`expectations match ${file}`);
   });
 
   it("exits 1 and names the count when --check disagrees", () => {
     const file = path.join(scratch, "edited.json");
-    invoke(overTree("--write", file));
+    invoke(overPass("--write", file));
     const expected = JSON.parse(readFileSync(file, "utf8")) as Expectations;
     const row = expected.directories["test/pass"];
     if (row === undefined) throw new Error("no test/pass row was written");
     row.pass = 5;
     writeFileSync(file, `${JSON.stringify(expected, null, 2)}\n`);
-    const checked = invoke(overTree("--check", file));
+    const checked = invoke(overPass("--check", file));
     expect(checked.status).toBe(1);
     expect(checked.stderr).toContain("test/pass: pass expected 5, got 6");
   });
@@ -138,7 +159,7 @@ describe("tarski-test262", () => {
     });
 
     it("refuses an unknown flag", () => {
-      const result = invoke([...overTree(), "--nope", "x"]);
+      const result = invoke([...overPass(), "--nope", "x"]);
       expect(result.status).toBe(2);
       expect(result.stderr).toContain("unknown flag --nope");
     });
@@ -153,6 +174,22 @@ describe("tarski-test262", () => {
       const result = invoke(["test", "--timeout", "soon"]);
       expect(result.status).toBe(2);
       expect(result.stderr).toContain("--timeout needs a positive integer");
+    });
+
+    // The default paths: LAKATOS_TEST262 for the checkout, and
+    // `.lake/build/bin/tarski` for the binary. Lean is not installed in
+    // every job that runs this suite, so the binary may or may not be
+    // there; either answer exercises the arm.
+    it("falls back to the default checkout and binary", () => {
+      const previous = process.env.LAKATOS_TEST262;
+      process.env.LAKATOS_TEST262 = TREE;
+      try {
+        expect(invoke(["test/pass", "--binary", FAKE]).status).toBe(0);
+        expect([0, 2]).toContain(invoke(["test/pass"]).status);
+      } finally {
+        if (previous === undefined) delete process.env.LAKATOS_TEST262;
+        else process.env.LAKATOS_TEST262 = previous;
+      }
     });
 
     it("names setup when the checkout is not there", () => {

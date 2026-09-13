@@ -36,6 +36,8 @@ export interface SpawnOutcome {
 
 /** The first line of a report, which is where the binary puts the summary. */
 function firstLine(stderr: string): string {
+  /* v8 ignore next -- `split` always yields at least one element; the
+     fallback is `noUncheckedIndexedAccess` asking. */
   return stderr.split("\n")[0] ?? "";
 }
 
@@ -137,6 +139,8 @@ export function runOne(
     {
       status: result.status,
       signal: result.signal,
+      /* v8 ignore next -- null only when the child was spawned without
+         a pipe, which this never does. */
       stderr: result.stderr ?? "",
       ...(result.error === undefined ? {} : { error: result.error }),
     },

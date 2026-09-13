@@ -91,6 +91,8 @@ export function tabulate(
         row.harnessError += 1;
     }
   }
+  /* v8 ignore next 3 -- a Map's keys are distinct, so the comparator's
+     equal arm is never taken. */
   return Object.fromEntries(
     [...rows.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
   );
@@ -117,18 +119,23 @@ export function renderTable(counts: Record<string, DirectoryCounts>): string {
     String(row.harnessError),
     String(notRunTotal(row)),
   ]);
-  const widths = HEADERS.map((header, column) =>
-    Math.max(header.length, ...rows.map((row) => (row[column] ?? "").length)),
-  );
+  const widths: number[] = [];
+  for (const row of [HEADERS, ...rows]) {
+    for (const [column, cell] of row.entries()) {
+      widths[column] = Math.max(widths[column] ?? 0, cell.length);
+    }
+  }
   const line = (cells: readonly string[]): string =>
     cells
-      .map((cell, column) =>
+      .map((cell, column) => {
         // The first column is the directory, and reads as a list; every
         // other is a count, and reads as a column of digits.
-        column === 0
-          ? cell.padEnd(widths[column] ?? 0)
-          : cell.padStart(widths[column] ?? 0),
-      )
+        /* v8 ignore next -- every row has one cell per header, so the
+           width is always there; the fallback is `noUncheckedIndexedAccess`
+           asking, not a case a caller can produce. */
+        const width = widths[column] ?? cell.length;
+        return column === 0 ? cell.padEnd(width) : cell.padStart(width);
+      })
       .join("  ")
       .trimEnd();
   return [line(HEADERS), ...rows.map(line)].join("\n");

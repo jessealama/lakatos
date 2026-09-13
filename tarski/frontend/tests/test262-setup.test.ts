@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { execFileSync } from "node:child_process";
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -79,6 +80,14 @@ describe("setupTest262", () => {
     log = [];
     setup(older);
     expect(log).toEqual([`test262 already at ${older}`]);
+  });
+
+  // An interrupted fetch leaves a directory with a `.git` and no HEAD.
+  it("re-fetches into a repository that has no HEAD", () => {
+    mkdirSync(target, { recursive: true });
+    git(target, "init", "--quiet");
+    setup(older);
+    expect(head(target)).toBe(older);
   });
 
   it("moves a checkout at the wrong commit to the pin", () => {

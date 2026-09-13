@@ -167,6 +167,28 @@ describe("renderDetails", () => {
     );
   });
 
+  it("breaks a tie in the histogram by name, whichever came first", () => {
+    const golden = "unsupported:\n  ForStatement  1\n  SwitchStatement  1";
+    expect(
+      renderDetails([
+        ran("test/a", "one.js", {
+          class: "unsupported",
+          kind: "SwitchStatement",
+        }),
+        ran("test/a", "two.js", { class: "unsupported", kind: "ForStatement" }),
+      ]),
+    ).toBe(golden);
+    expect(
+      renderDetails([
+        ran("test/a", "one.js", { class: "unsupported", kind: "ForStatement" }),
+        ran("test/a", "two.js", {
+          class: "unsupported",
+          kind: "SwitchStatement",
+        }),
+      ]),
+    ).toBe(golden);
+  });
+
   it("says nothing when everything passed", () => {
     expect(renderDetails([ran("test/a", "one.js", { class: "pass" })])).toBe(
       "",
