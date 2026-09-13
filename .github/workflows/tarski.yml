@@ -29,6 +29,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      # The runner is TypeScript and the binary is Lean, and the check the
+      # issue asks for on every PR touching `tarski/` needs both in one
+      # job. The bridge's own vitest suites still run in `lakatos.yml`.
+      - name: Install Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: package-lock.json
+
       - name: Install Lean toolchain
         uses: leanprover/lean-action@v1
         with:
@@ -46,6 +56,14 @@ jobs:
           key: tarski-${{ runner.os }}-${{ hashFiles('tarski/lean-toolchain', 'tarski/lakefile.lean') }}
           restore-keys: |
             tarski-${{ runner.os }}-
+
+      - name: Install npm dependencies
+        working-directory: .
+        run: npm ci
+
+      - name: Build the TypeScript
+        working-directory: .
+        run: npm run build
 
       - name: Build
         run: lake build
@@ -72,8 +90,6 @@ jobs:
       # The seam end to end: these documents are the parser bridge's
       # output, byte for byte (tarski/frontend/tests/bridge-cli.test.ts
       # holds the two copies together), and the binary is what reads them.
-      # Node is not installed in this job, so the bridge itself runs in the
-      # lakatos workflow, not here.
       - name: Run a script
         run: |
           out=$(.lake/build/bin/tarski run Test/Tarski/fixtures/numeric-loop.json)
@@ -120,3 +136,38 @@ jobs:
           test "$status" = "1" || { echo "expected exit 1, got $status"; exit 1; }
           test "$err" = "Uncaught TypeError: not a function" || {
             echo "expected the TypeError report, got: $err"; exit 1; }
+
+      # `print` is the host binding test262 requires, and what it wrote
+      # comes out ahead of the completion value.
+      - name: Run the print script
+        run: |
+          out=$(.lake/build/bin/tarski run Test/Tarski/fixtures/print.json)
+          expected=$(printf 'a\n2\nt\nundefined')
+          test "$out" = "$expected" || { echo "expected a/2/t/undefined, got $out"; exit 1; }
+
+      # The suite itself, at the commit in tarski/test262/pin.json. The
+      # clone is a build artifact: cached by the pin's hash, fetched at
+      # depth 1 by SHA, never a submodule.
+      - name: Cache test262
+        uses: actions/cache@v6
+        with:
+          path: tarski/.test262
+          key: test262-${{ hashFiles('tarski/test262/pin.json') }}
+
+      - name: Set up test262
+        timeout-minutes: 5
+        run: node scripts/setup-test262.js
+
+      # The PR-gated slice. The committed table is the ratchet: a count
+      # that moved in either direction fails until it is written down.
+      - name: test262 harness slice
+        timeout-minutes: 10
+        run: node ../dist/tarski/frontend/src/test262/cli.js test/harness --check test262/expected.json
+
+      # What ties the fake binary the unit tests run to the real one.
+      - name: Runner end to end
+        timeout-minutes: 5
+        working-directory: .
+        env:
+          LAKATOS_TARSKI_E2E: "1"
+        run: npx vitest run tarski/frontend/tests/test262-e2e.test.ts

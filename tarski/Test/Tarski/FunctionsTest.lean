@@ -139,7 +139,7 @@ private def returnThis : Expr := .funcExpr none [] [.returnStmt (some .this)]
       .exprStmt (.call (.ident "f") []) ]
   == "undefined"
 
--- `this;` at the top level. `undefined` until #381 gives the script a
+-- `this;` at the top level. `undefined` until #389 gives the script a
 -- global object; an engine answers `undefined` for a module and the
 -- global object for a script, and neither exists here yet.
 #guard outcome [.exprStmt .this] == "undefined"

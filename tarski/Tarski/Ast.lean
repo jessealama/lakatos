@@ -35,8 +35,8 @@ inductive UnaryOp where
   | not
   /-- ESTree `UnaryExpression` with `operator: "typeof"`. Alone among
   these it never coerces its operand, and it is the one prefix operator
-  an unresolvable identifier does not throw under — though that last part
-  waits for the global object (#381), since nothing here has one. -/
+  an unresolvable identifier does not throw under: `typeof nope` is
+  `"undefined"` where `nope` alone is a `ReferenceError`. -/
   | typeof
 deriving Repr, DecidableEq, Inhabited
 

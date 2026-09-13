@@ -20,7 +20,8 @@
     "url": "https://github.com/jessealama/lakatos/issues"
   },
   "bin": {
-    "lakatos": "dist/src/cli.js"
+    "lakatos": "dist/src/cli.js",
+    "tarski-test262": "dist/tarski/frontend/src/test262/cli.js"
   },
   "exports": {
     "./runtime": {

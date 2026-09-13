@@ -16,8 +16,8 @@ never joins a simp set, and for the same reason: its recursion is on the
 step at a time with `rw`, and the `rw` count is the step count — here one
 prototype link, which finds the property it is looking for.
 
-The literal's object lands at reference 26, just past the realm's
-twenty-six intrinsics: a script starts from `Heap.initial`, not from an
+The literal's object lands at reference 29, just past the realm's
+twenty-nine intrinsics: a script starts from `Heap.initial`, not from an
 empty heap. -/
 
 open Tarski

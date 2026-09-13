@@ -35,6 +35,7 @@ const FIXTURES = [
   "finally-return",
   "harness-floor",
   "compare-array",
+  "print",
 ];
 
 describe("parseScript", () => {

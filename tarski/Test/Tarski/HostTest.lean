@@ -1,0 +1,139 @@
+import Tarski.Eval
+import Tarski.Format
+
+/-! The host-defined surface test262 requires: `print`, `$262`, `typeof`
+of a name that is not bound, and what an uncaught throw is reported as.
+
+`print` has no IO to do. It appends ToString of its argument to
+`%PrintLog%`, an intrinsic array, and `Tarski/Main.lean` writes the log
+out once the run is over; `printed` below is what the binary would put on
+stdout. `$262` exists and is empty: every hook the epic puts out of scope
+is refused by the decoder (`DecodeTest`), so what is left is an object
+for `typeof` to see and an absent `IsHTMLDDA` to read as `undefined`.
+
+The report cases are the ones the runner reads. test262 names the class
+of an uncaught error, and the runner matches that name off the binary's
+`Uncaught <name>: <message>` line; `Test262Error` is not an `Error`
+subclass, so the line has to come from the thrown object's *own*
+`toString` rather than from its prototype chain. -/
+
+open Tarski
+
+/-- What the binary would print, so a case reads as its own stdout. -/
+private def outcome (p : Program) : String :=
+  match runScript p with
+  | none => "<diverges>"
+  | some (.error (.throw v), h) => s!"uncaught: {describeThrown h v}"
+  | some (.error _, _) => "<abrupt>"
+  | some (.ok none, _) => "<empty>"
+  | some (.ok (some v), _) => formatValue v
+
+/-- What `print` wrote during the run: the binary's stdout above the
+completion value. -/
+private def printed (p : Program) : List String :=
+  match runScript p with
+  | none => []
+  | some (_, h) => h.printedLines
+
+/-- A one-expression statement list. -/
+private def stmt (e : Expr) : List Stmt := [.exprStmt e]
+
+/-- `print(<e>);` -/
+private def printStmt (e : Expr) : Stmt := .exprStmt (.call (.ident "print") [e])
+
+/-! ## `print`
+
+Each call is ToString of its first argument, in order. A call's own
+completion value is `undefined`, which is what `print` answers. -/
+
+#guard printed [printStmt (.strLit "a"), printStmt (.binary .add (.numLit 1.0) (.numLit 1.0))]
+  == ["a", "2"]
+
+#guard outcome [printStmt (.strLit "a")] == "undefined"
+
+/-! A missing argument is `undefined`, as everywhere else. -/
+#guard printed [.exprStmt (.call (.ident "print") [])] == ["undefined"]
+
+/-! ToString of an object runs its `toString`. -/
+#guard printed
+    [printStmt (.objectLit [("toString", .funcExpr none [] [.returnStmt (some (.strLit "t"))])])]
+  == ["t"]
+
+/-! A plain object has no `toString` until `Object.prototype` grows one
+(#389), so printing one throws where an engine prints
+`[object Object]`. -/
+#guard outcome [printStmt (.objectLit [])]
+  == "uncaught: TypeError: Cannot convert object to primitive value"
+
+/-! Nothing binds `%PrintLog%`, so an empty run has an empty log. -/
+#guard printed [.exprStmt (.numLit 1.0)] == []
+
+/-! ## `typeof` of the host bindings -/
+
+#guard outcome (stmt (.unary .typeof (.ident "print"))) == "function"
+#guard outcome (stmt (.unary .typeof (.ident "$262"))) == "object"
+
+/-! `$262` carries nothing, so `IsHTMLDDA` — which the suite reads to
+decide whether the host has that exotic object — is `undefined`. -/
+#guard outcome (stmt (.member (.ident "$262") "IsHTMLDDA")) == "undefined"
+
+/-! ## `typeof` of an unresolvable name
+
+`typeof` evaluates a reference, and an unresolvable one answers
+`"undefined"` instead of throwing. That is the whole of the exception:
+the name alone is still a `ReferenceError`. -/
+
+#guard outcome (stmt (.unary .typeof (.ident "nope"))) == "undefined"
+#guard outcome (stmt (.binary .strictEq (.unary .typeof (.ident "nope")) (.strLit "undefined")))
+  == "true"
+#guard outcome (stmt (.ident "nope")) == "uncaught: ReferenceError: nope is not defined"
+
+/-! A name that *is* bound is read as usual — including one in the
+temporal dead zone, which `typeof` does not excuse. -/
+#guard outcome
+    [ .varDecl .«let» [{ name := "x", init := some (.numLit 1.0) }],
+      .exprStmt (.unary .typeof (.ident "x")) ]
+  == "number"
+
+/-! ## The uncaught report
+
+`harness/sta.js`, as `HarnessTest` transcribes it: `Test262Error` is a
+plain function with its own `prototype.toString`, and nothing on its
+chain reaches `Error.prototype`. The runner reads the class name off this
+line, so the line has to be the object's own `toString`. -/
+
+private def sta : List Stmt :=
+  [ .funcDecl "Test262Error" ["message"]
+      [ .ifStmt (.unary .not (.binary .instanceof .this (.ident "Test262Error")))
+          (.block [.returnStmt (some (.new (.ident "Test262Error") [.ident "message"]))])
+          none,
+        .exprStmt (.assign (.member .this "message")
+          (.logical .or (.ident "message") (.strLit ""))) ],
+    .exprStmt (.assign (.member (.ident "Test262Error") "thrower")
+      (.funcExpr none ["message"]
+        [.throwStmt (.new (.ident "Test262Error") [.ident "message"])])),
+    .exprStmt (.assign (.member (.member (.ident "Test262Error") "prototype") "toString")
+      (.funcExpr none []
+        [.returnStmt (some (.binary .add (.strLit "Test262Error: ")
+          (.member .this "message")))])) ]
+
+#guard outcome (sta ++ [.throwStmt (.new (.ident "Test262Error") [.strLit "boom"])])
+  == "uncaught: Test262Error: boom"
+
+/-! An `Error` reports through `Error.prototype.toString`, as before. -/
+#guard outcome [.throwStmt (.new (.ident "TypeError") [.strLit "t"])]
+  == "uncaught: TypeError: t"
+
+/-! An object with no `toString` of any kind falls back to the printed
+form rather than replacing one uncaught throw with another. -/
+#guard outcome [.throwStmt (.objectLit [])] == "uncaught: [object Object]"
+
+/-! A primitive has no `toString` to run at all. -/
+#guard outcome [.throwStmt (.numLit 1.0)] == "uncaught: 1"
+
+/-! What `print` wrote before an uncaught throw is still the log: the
+binary writes it out ahead of the report. -/
+#guard printed (sta ++
+    [ printStmt (.strLit "before"),
+      .throwStmt (.new (.ident "Test262Error") [.strLit "boom"]) ])
+  == ["before"]

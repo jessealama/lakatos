@@ -1,0 +1,17 @@
+{
+  "directories": {
+    "test/harness": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 99,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 17,
+        "module": 0
+      }
+    }
+  }
+}

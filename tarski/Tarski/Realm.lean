@@ -21,9 +21,25 @@ the literal against the constants so the two cannot drift apart.
 | 21        | `Array`                                                  |
 | 22–24     | `Array.prototype.push`, `Array.prototype.join`, `Array.isArray` |
 | 25        | `String`                                                 |
+| 26        | `%PrintLog%`, the array `print` appends to                |
+| 27        | `print`                                                  |
+| 28        | `$262`                                                   |
 
-The ten global bindings are cells 0–9: the seven `Error` constructors,
-then `Object`, `Array`, and `String`.
+The twelve global bindings are cells 0–11: the seven `Error`
+constructors, then `Object`, `Array`, `String`, `print`, and `$262`.
+
+`print` and `$262` are the two host-defined bindings test262 requires of
+an implementation. `print` has no IO to do: it appends ToString of its
+argument to `%PrintLog%`, an ordinary intrinsic array, and
+`Tarski/Main.lean` writes that log out when the run is over. `$262`'s
+hooks — `evalScript`, `createRealm`, `detachArrayBuffer`, `gc`, `agent`,
+`global`, `AbstractModuleSource` — are refused by the decoder (see
+`Tarski/Decode.lean`), so a test that calls one is *unsupported* rather
+than failed; the object itself exists, empty, so that `typeof $262` is
+`"object"` and `$262.IsHTMLDDA` reads `undefined`, which is what the
+suite asks of a host that does not provide it. There is still no global
+*object* — `globalThis`, a top-level `this`, and `$262.global` wait for
+#389 with the rest of the intrinsics' surface.
 
 `Object.prototype` exists as of #380, and it carries `hasOwnProperty`
 and nothing else: `toString`, `valueOf`, and the rest of its surface are
@@ -99,6 +115,18 @@ def arrayIsArrayRef : Ref := 24
 `String.prototype` are #391's. -/
 def stringCtorRef : Ref := 25
 
+/-- `%PrintLog%`, the array `print` appends to. It is an intrinsic with
+no binding: the log is realm data the binary reads, not a value a script
+can reach. -/
+def printLogRef : Ref := 26
+
+/-- `print`, the test262 host's output binding. -/
+def printRef : Ref := 27
+
+/-- `$262`, the test262 host object. Empty: its hooks are refused by the
+decoder, so nothing here implements one. -/
+def hostRef : Ref := 28
+
 /-- The cell the kind's global binding lives in: 0–6, in the same
 order. -/
 def ErrorKind.cellRef : ErrorKind → CellRef
@@ -119,9 +147,15 @@ def arrayCellRef : CellRef := 8
 /-- The cell `String` is bound in. -/
 def stringCellRef : CellRef := 9
 
+/-- The cell `print` is bound in. -/
+def printCellRef : CellRef := 10
+
+/-- The cell `$262` is bound in. -/
+def hostCellRef : CellRef := 11
+
 /-- The scope a script's own declarations are instantiated on top of:
 `ErrorKind.all.map (fun k => (k.name, k.cellRef))`, written out so that
-`simp` sees a literal list. There is no global *object* yet (#381), so a
+`simp` sees a literal list. There is no global *object* yet (#389), so a
 binding here is an ordinary cell and `globalThis` is absent. -/
 def globalEnv : Env :=
   [ ("Error", 0),
@@ -133,7 +167,9 @@ def globalEnv : Env :=
     ("URIError", 6),
     ("Object", 7),
     ("Array", 8),
-    ("String", 9) ]
+    ("String", 9),
+    ("print", 10),
+    ("$262", 11) ]
 
 /-- The heap a script starts from: the realm, laid out at the references
 above. -/
@@ -151,7 +187,9 @@ def Heap.initial : Heap where
        { mutable := true, value := some (.obj 13) },  -- URIError
        { mutable := true, value := some (.obj 16) },  -- Object
        { mutable := true, value := some (.obj 21) },  -- Array
-       { mutable := true, value := some (.obj 25) } ] -- String
+       { mutable := true, value := some (.obj 25) },  -- String
+       { mutable := true, value := some (.obj 27) },  -- print
+       { mutable := true, value := some (.obj 28) } ] -- $262
   objects :=
     #[ -- 0: Error.prototype. `toString` is on it because the binary's
        -- uncaught-error report runs that algorithm anyway.
@@ -269,6 +307,16 @@ def Heap.initial : Heap where
        { callable := some (.native .arrayIsArray) },
        -- 25: String. No `prototype` property: the wrapper is #391's, so
        -- `new String("x")` refuses until then.
-       { callable := some (.native .stringCtor) } ]
+       { callable := some (.native .stringCtor) },
+       -- 26: %PrintLog%, the array `print` appends to. It is no script's
+       -- to reach: nothing binds it, so a run's output is exactly what
+       -- `print` put there.
+       { proto := some 20, kind := .array 0 },
+       -- 27: print
+       { callable := some (.native .print) },
+       -- 28: $262. Empty on purpose — its hooks are decoder refusals,
+       -- and what is left is an object for `typeof` to see and a missing
+       -- `IsHTMLDDA` to read as `undefined`.
+       { proto := some 15 } ]
 
 end Tarski

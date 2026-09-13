@@ -15,8 +15,8 @@ open Tarski
 
 /-! ## The shape -/
 
-#guard Heap.initial.cells.size == 10
-#guard Heap.initial.objects.size == 26
+#guard Heap.initial.cells.size == 12
+#guard Heap.initial.objects.size == 29
 
 /-! ## Each kind's prototype
 
@@ -68,7 +68,7 @@ constructor object. -/
         | some c => c.value == some (.obj k.ctorRef)
         | none => false)
 
-#guard globalEnv.length == 10
+#guard globalEnv.length == 12
 
 /-! ## `Error.prototype.toString` -/
 
@@ -171,3 +171,29 @@ No `prototype` property: the wrapper object and `String.prototype` are
 #guard (Heap.initial.read objectCellRef).bind (·.value) == some (.obj objectCtorRef)
 #guard (Heap.initial.read arrayCellRef).bind (·.value) == some (.obj arrayCtorRef)
 #guard (Heap.initial.read stringCellRef).bind (·.value) == some (.obj stringCtorRef)
+
+/-! ## The host bindings
+
+`print` and `$262` are what test262 asks a host for. `%PrintLog%` is the
+array `print` appends to: an intrinsic nothing binds, so a run's log is
+exactly what `print` put there. `$262` is empty on purpose — its hooks
+are decoder refusals, and what is left is an object for `typeof` to see
+and an absent `IsHTMLDDA` to read as `undefined`. -/
+
+#guard match Heap.initial.readObj printLogRef with
+  | some o => o.kind == .array 0 && o.proto == some arrayProtoRef && o.properties == []
+  | none => false
+
+#guard match Heap.initial.readObj printRef with
+  | some { callable := some (.native .print), .. } => true
+  | _ => false
+
+#guard match Heap.initial.readObj hostRef with
+  | some o => o.properties == [] && o.proto == some objectProtoRef && o.callable.isNone
+  | none => false
+
+#guard Env.lookup globalEnv "print" == some printCellRef
+#guard Env.lookup globalEnv "$262" == some hostCellRef
+
+#guard (Heap.initial.read printCellRef).bind (·.value) == some (.obj printRef)
+#guard (Heap.initial.read hostCellRef).bind (·.value) == some (.obj hostRef)

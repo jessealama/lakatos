@@ -12,9 +12,11 @@
     "lemma/src",
     "engines/pabst/src",
     "engines/thales/frontend/src",
+    "tarski/frontend/src",
     "tests",
     "lemma/tests",
     "engines/pabst/tests",
-    "engines/thales/frontend/tests"
+    "engines/thales/frontend/tests",
+    "tarski/frontend/tests"
   ]
 }
