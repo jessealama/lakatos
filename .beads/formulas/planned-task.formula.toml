@@ -1,0 +1,32 @@
+formula = "planned-task"
+description = "A unit of work with a written plan: plan, then implement, then review; not done until the review closes"
+version = 1
+type = "workflow"
+
+[vars.title]
+description = "What the work is, as a sentence"
+required = true
+
+[vars.issue]
+description = "GitHub issue number the work implements (digits only)"
+required = true
+
+[[steps]]
+id = "plan"
+title = "Plan: {{title}}"
+labels = ["plan"]
+description = "Read GitHub issue #{{issue}} and the current tarski/ code. Write the implementation plan (file layout, module names, test locations, in-issue sequencing) into the implement step's design field with `bd update <implement-id> --design-file`. If the plan hits a design fork the maintainer should see, add a human gate on the implement step. Close when the design is written."
+
+[[steps]]
+id = "implement"
+title = "{{title}}"
+needs = ["plan"]
+labels = ["implement"]
+description = "Implement GitHub issue #{{issue}} following this bead's design field. Work in a worktree named tarski-{{issue}} branched from origin/main. Run the gates named in the issue. Close only when the local gate passes, the change is committed on its branch, and a PR with auto-merge that says `Closes #{{issue}}` is open. Never close the review step."
+
+[[steps]]
+id = "review"
+title = "Review: {{title}}"
+needs = ["implement"]
+labels = ["review"]
+description = "Review the implement step's PR diff against GitHub issue #{{issue}}'s acceptance list. Read the diff, run the tests, and note findings on this bead. Follow-ups go to GitHub issues, labelled and blocked-by as appropriate. Close only after the PR has merged and nothing remains."

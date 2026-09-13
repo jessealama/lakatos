@@ -38,6 +38,8 @@ bd close <id>         # Complete work
 - Use `bd` instead of TodoWrite, TaskCreate, or markdown TODO lists for task tracking; anything that outlives the session goes to GitHub Issues.
 - Persistent memory stays in Claude Code's own memory files; do not use `bd remember` for it.
 - Every task bead is poured from the `reviewed-task` formula (`bd mol pour reviewed-task --var "title=..."`, or `bd mol bond <epic> reviewed-task --var ...` under an epic), so a separate review bead blocks on the work and nothing counts as done until the review closes. Epics are reviewed and closed by hand.
+- `planned-task` is `reviewed-task` with a plan step in front (plan → implement → review): the plan step writes the implementation plan into the implement bead's design field. It is the formula for GitHub epic #376's children.
+- Worker loops: `scripts/bd-worker.fish plan-review|implement` claims the next ready bead by label under the session epic and runs `claude -p` on `scripts/prompts/<label>.md`; `scripts/bd-pour-next.fish` pours a `planned-task` molecule for each GitHub child that has become unblocked. A red gate on an implement bead files one `repair` bead; a second failure adds a human gate. Only the script creates repair beads.
 - Issues live in a local Dolt DB; sync uses `refs/dolt/data` on the git remote; `.beads/issues.jsonl` is a passive export. Never commit, push, or sync Dolt unless asked.
 - At session end: close finished beads, file GitHub issues for follow-up work, run the local gate if code changed, and report changed files and status before any commit or push.
 
