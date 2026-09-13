@@ -1,0 +1,256 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/jessealama/lakatos/schemas/tarski-estree.schema.json",
+  "title": "tarski ESTree",
+  "description": "The seam between the TypeScript parser bridge and the Lean evaluator: an ESTree-shaped script, narrowed to the node kinds tarski's numeric slice evaluates. Positions are deliberately absent — every message the evaluator produces names a node kind, never a line — and `additionalProperties` is false everywhere so a producer cannot smuggle one in. A node outside the slice is not an error here: the bridge replaces it in place with an `Unsupported` node carrying its kind, and the Lean decoder is the one place that refuses it, so there is one seam and one message.",
+  "$ref": "#/$defs/Program",
+  "$defs": {
+    "Program": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "Program" },
+        "sourceType": { "const": "script" },
+        "body": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Statement" }
+        }
+      },
+      "required": ["type", "sourceType", "body"],
+      "additionalProperties": false
+    },
+
+    "Statement": {
+      "anyOf": [
+        { "$ref": "#/$defs/Directive" },
+        { "$ref": "#/$defs/ExpressionStatement" },
+        { "$ref": "#/$defs/VariableDeclaration" },
+        { "$ref": "#/$defs/IfStatement" },
+        { "$ref": "#/$defs/WhileStatement" },
+        { "$ref": "#/$defs/BlockStatement" },
+        { "$ref": "#/$defs/Unsupported" }
+      ]
+    },
+
+    "Directive": {
+      "description": "A directive-prologue statement. The Lean decoder requires the script's first statement to be this node with directive \"use strict\", and consumes it: tarski has no sloppy mode.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "ExpressionStatement" },
+        "expression": { "$ref": "#/$defs/StringLiteral" },
+        "directive": { "type": "string" }
+      },
+      "required": ["type", "expression", "directive"],
+      "additionalProperties": false
+    },
+
+    "ExpressionStatement": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "ExpressionStatement" },
+        "expression": { "$ref": "#/$defs/Expression" }
+      },
+      "required": ["type", "expression"],
+      "additionalProperties": false
+    },
+
+    "VariableDeclaration": {
+      "description": "`var` is absent: function-scoped bindings, hoisting, and the temporal dead zone are a later slice.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "VariableDeclaration" },
+        "kind": { "enum": ["let", "const"] },
+        "declarations": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/VariableDeclarator" }
+        }
+      },
+      "required": ["type", "kind", "declarations"],
+      "additionalProperties": false
+    },
+
+    "VariableDeclarator": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "VariableDeclarator" },
+        "id": { "$ref": "#/$defs/Identifier" },
+        "init": {
+          "oneOf": [{ "$ref": "#/$defs/Expression" }, { "type": "null" }]
+        }
+      },
+      "required": ["type", "id", "init"],
+      "additionalProperties": false
+    },
+
+    "IfStatement": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "IfStatement" },
+        "test": { "$ref": "#/$defs/Expression" },
+        "consequent": { "$ref": "#/$defs/Statement" },
+        "alternate": {
+          "oneOf": [{ "$ref": "#/$defs/Statement" }, { "type": "null" }]
+        }
+      },
+      "required": ["type", "test", "consequent", "alternate"],
+      "additionalProperties": false
+    },
+
+    "WhileStatement": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "WhileStatement" },
+        "test": { "$ref": "#/$defs/Expression" },
+        "body": { "$ref": "#/$defs/Statement" }
+      },
+      "required": ["type", "test", "body"],
+      "additionalProperties": false
+    },
+
+    "BlockStatement": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "BlockStatement" },
+        "body": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Statement" }
+        }
+      },
+      "required": ["type", "body"],
+      "additionalProperties": false
+    },
+
+    "Expression": {
+      "anyOf": [
+        { "$ref": "#/$defs/NumericLiteral" },
+        { "$ref": "#/$defs/BooleanLiteral" },
+        { "$ref": "#/$defs/NullLiteral" },
+        { "$ref": "#/$defs/Identifier" },
+        { "$ref": "#/$defs/UnaryExpression" },
+        { "$ref": "#/$defs/BinaryExpression" },
+        { "$ref": "#/$defs/ConditionalExpression" },
+        { "$ref": "#/$defs/AssignmentExpression" },
+        { "$ref": "#/$defs/Unsupported" }
+      ]
+    },
+
+    "NumericLiteral": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "Literal" },
+        "value": { "type": "number" },
+        "raw": { "type": "string" }
+      },
+      "required": ["type", "value", "raw"],
+      "additionalProperties": false
+    },
+
+    "BooleanLiteral": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "Literal" },
+        "value": { "type": "boolean" },
+        "raw": { "enum": ["true", "false"] }
+      },
+      "required": ["type", "value", "raw"],
+      "additionalProperties": false
+    },
+
+    "NullLiteral": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "Literal" },
+        "value": { "type": "null" },
+        "raw": { "const": "null" }
+      },
+      "required": ["type", "value", "raw"],
+      "additionalProperties": false
+    },
+
+    "StringLiteral": {
+      "description": "Reachable only as a directive's expression: string values are a later slice.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "Literal" },
+        "value": { "type": "string" },
+        "raw": { "type": "string" }
+      },
+      "required": ["type", "value", "raw"],
+      "additionalProperties": false
+    },
+
+    "Identifier": {
+      "description": "`undefined` arrives as an identifier, which is what it is in ESTree; the Lean decoder reads it as the literal a strict-mode script's non-writable global binding makes it.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "Identifier" },
+        "name": { "type": "string" }
+      },
+      "required": ["type", "name"],
+      "additionalProperties": false
+    },
+
+    "UnaryExpression": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "UnaryExpression" },
+        "operator": { "enum": ["-", "+", "!"] },
+        "argument": { "$ref": "#/$defs/Expression" },
+        "prefix": { "const": true }
+      },
+      "required": ["type", "operator", "argument", "prefix"],
+      "additionalProperties": false
+    },
+
+    "BinaryExpression": {
+      "description": "Loose `==` and `!=` are absent: they coerce across types this slice does not have.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "BinaryExpression" },
+        "operator": {
+          "enum": ["+", "-", "*", "/", "%", "<", "<=", ">", ">=", "===", "!=="]
+        },
+        "left": { "$ref": "#/$defs/Expression" },
+        "right": { "$ref": "#/$defs/Expression" }
+      },
+      "required": ["type", "operator", "left", "right"],
+      "additionalProperties": false
+    },
+
+    "ConditionalExpression": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "ConditionalExpression" },
+        "test": { "$ref": "#/$defs/Expression" },
+        "consequent": { "$ref": "#/$defs/Expression" },
+        "alternate": { "$ref": "#/$defs/Expression" }
+      },
+      "required": ["type", "test", "consequent", "alternate"],
+      "additionalProperties": false
+    },
+
+    "AssignmentExpression": {
+      "description": "Plain `=` to an identifier. Compound assignment and destructuring targets are later slices.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "AssignmentExpression" },
+        "operator": { "const": "=" },
+        "left": { "$ref": "#/$defs/Identifier" },
+        "right": { "$ref": "#/$defs/Expression" }
+      },
+      "required": ["type", "operator", "left", "right"],
+      "additionalProperties": false
+    },
+
+    "Unsupported": {
+      "description": "A node outside the slice, standing where it appeared. `kind` is the tsc SyntaxKind name the bridge saw, and it is what the evaluator names on stderr when it refuses the script.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "Unsupported" },
+        "kind": { "type": "string" }
+      },
+      "required": ["type", "kind"],
+      "additionalProperties": false
+    }
+  }
+}
