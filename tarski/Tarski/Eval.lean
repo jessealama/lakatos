@@ -39,9 +39,12 @@ def toNumberPrim : Value → Float
   | .obj _ => floatNaN
 
 /-- ToBoolean on this slice's values: total, and already correct for the
-tags later slices add. -/
+tags later slices add. NaN is the one binary64 value unequal to itself,
+which is how the number arm rejects it: the library models `Number` by
+Lean's own `Float`, and neither it nor Lean names an `isNaN` the boundary
+check would allow here. -/
 def toBooleanPrim : Value → Bool
-  | .prim (.num x) => !(x == 0.0) && !x.isNaN
+  | .prim (.num x) => !(x == 0.0) && x == x
   | .prim (.bool b) => b
   | .prim .undef => false
   | .prim .null => false
@@ -74,10 +77,10 @@ def applyBinary : BinaryOp → Value → Value → Value
   | .mul, l, r => .prim (.num (toNumberPrim l * toNumberPrim r))
   | .div, l, r => .prim (.num (toNumberPrim l / toNumberPrim r))
   | .rem, l, r => .prim (.num (Number.FloatOps.tsRem (toNumberPrim l) (toNumberPrim r)))
-  | .lt, l, r => .prim (.bool (Float.lt (toNumberPrim l) (toNumberPrim r)))
-  | .le, l, r => .prim (.bool (Float.le (toNumberPrim l) (toNumberPrim r)))
-  | .gt, l, r => .prim (.bool (Float.lt (toNumberPrim r) (toNumberPrim l)))
-  | .ge, l, r => .prim (.bool (Float.le (toNumberPrim r) (toNumberPrim l)))
+  | .lt, l, r => .prim (.bool (decide (toNumberPrim l < toNumberPrim r)))
+  | .le, l, r => .prim (.bool (decide (toNumberPrim l ≤ toNumberPrim r)))
+  | .gt, l, r => .prim (.bool (decide (toNumberPrim r < toNumberPrim l)))
+  | .ge, l, r => .prim (.bool (decide (toNumberPrim r ≤ toNumberPrim l)))
   | .strictEq, l, r => .prim (.bool (strictEqValue l r))
   | .strictNe, l, r => .prim (.bool (!strictEqValue l r))
 
@@ -208,9 +211,9 @@ uncaught abrupt completion, `.ok` the script's completion value (`none`
 when no statement produced one). The heap is dropped: nothing outside
 the evaluator can name a cell. -/
 def runProgram (p : Program) : Option (Except Completion (Option Value)) :=
-  match ((evalProgram p).run Heap.empty).run with
+  match ((evalProgram p).run).run Heap.empty with
   | none => none
-  | some (.error c) => some (.error c)
-  | some (.ok (v, _)) => some (.ok v)
+  | some (.error c, _) => some (.error c)
+  | some (.ok v, _) => some (.ok v)
 
 end Tarski

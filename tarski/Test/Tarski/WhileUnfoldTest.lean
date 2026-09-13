@@ -23,6 +23,7 @@ attribute [local simp] evalExpr evalStmt evalStmts evalDeclarators
   allocCell readCell writeCell Env.lookup Heap.alloc Heap.read Heap.write
   applyBinary applyUnary toNumberPrim toBooleanPrim strictEqValue updateEmpty
   DeclKind.isMutable Heap.empty runProgram evalProgram
+  ExceptT.run_bind Except.map throwJsError throwCompletion
 
 -- What each iteration's counter bump leaves behind. `simp +decide`
 -- settles the loop test itself, which is a decidable binary64 comparison.

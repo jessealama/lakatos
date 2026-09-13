@@ -2,13 +2,30 @@ import Tarski.Value
 
 /-! The evaluator's monad.
 
-`StateT Heap (ExceptT Completion Option)`: a run threads the heap, may
+`ExceptT Completion (StateT Heap Option)`: a run threads the heap, may
 end abruptly with a `Completion`, and may not end at all. Divergence is
 the `Option`'s `none` — it is never written by hand, because the only
 thing that produces it is the bottom of the `partial_fixpoint` the
 evaluator is defined by. A program that loops forever is not an error the
 evaluator reports; it is a run no caller ever sees the end of, observed
-only through a timeout. -/
+only through a timeout.
+
+The order of the two transformers is the whole of the design. Unfolded,
+this stack is `Heap → Option (Except Completion α × Heap)`: an abrupt
+completion carries the heap out beside it, so catching one keeps every
+write the abrupt part performed. The other order,
+`StateT Heap (ExceptT Completion Option)`, is
+`Heap → Option (Except Completion (α × Heap))`, which pairs the heap with
+the *value* and therefore drops it on the error side: a function's own
+`return` would undo the function's writes, and a `catch` would roll the
+heap back, neither of which JavaScript does. Divergence still swallows
+both, because the `Option` is outside both of them.
+
+`partial_fixpoint` has no monotonicity lemma for `tryCatch`, so a
+recursive definition may not catch inline. Each shape of caught
+completion is instead an opaque definition here with its own
+`@[partial_fixpoint_monotone]` lemma; `catchReturn` below is the first,
+and #379's `try`/`catch`/`finally` follow the same pattern. -/
 
 namespace Tarski
 
@@ -17,7 +34,7 @@ open Js
 /-- The evaluator's monad. `Option` outermost inside the transformer
 stack so that divergence swallows the heap and the completion alike:
 there is no partial state to inspect after a non-terminating run. -/
-abbrev EvalM (α : Type) := StateT Heap (ExceptT Completion Option) α
+abbrev EvalM (α : Type) := ExceptT Completion (StateT Heap Option) α
 
 /-- End the current run abruptly. -/
 def throwCompletion {α : Type} (c : Completion) : EvalM α :=
@@ -29,6 +46,48 @@ prototype; no caller changes, because every caller already treats the
 result as an abrupt completion and never inspects the value. -/
 def throwJsError {α : Type} (kind : String) : EvalM α :=
   throwCompletion (.throw (.prim (.str kind)))
+
+/-- Catch a `return` completion, letting every other one through. Opaque
+on purpose: `partial_fixpoint` cannot eliminate a recursive call written
+under `tryCatch`, but it can see through this definition given the
+monotonicity lemma below. -/
+def catchReturn (x : EvalM Value) : EvalM Value :=
+  ExceptT.mk do
+    match ← x.run with
+    | .ok v => pure (.ok v)
+    | .error (.«return» v) => pure (.ok v)
+    | .error c => pure (.error c)
+
+open Lean.Order in
+/-- `catchReturn` is monotone in its argument, which is what lets a
+recursive definition call itself under it. -/
+@[partial_fixpoint_monotone]
+theorem monotone_catchReturn {γ : Type} [PartialOrder γ] (f : γ → EvalM Value)
+    (hmono : monotone f) : monotone (fun x => catchReturn (f x)) := by
+  unfold catchReturn
+  apply monotone_bind
+  · exact hmono
+  · apply monotone_const
+
+/-! ### Running the stack under `simp`
+
+A proof about a closed program reduces `((x.run).run h)`, and for that
+`simp` has to push `ExceptT.run` through every bind and every state
+operation. Core tags `StateT.run_bind` as `simp` but not
+`ExceptT.run_bind`, so a proof adds that one lemma to its set by hand
+(with `Except.map`, which the `Functor` arm of a `do` block leaves
+behind); the three below supply what core has no lemma for at all,
+namely `ExceptT.run` of the lifted state operations. They are stated with
+`StateT.mk` on the right so that `StateT.run_mk` takes it from there. -/
+
+@[simp] theorem run_get :
+    (get : EvalM Heap).run = StateT.mk (fun h => some (Except.ok h, h)) := rfl
+
+@[simp] theorem run_set (h₀ : Heap) :
+    (set h₀ : EvalM PUnit).run = StateT.mk (fun _ => some (Except.ok ⟨⟩, h₀)) := rfl
+
+@[simp] theorem run_modify (f : Heap → Heap) :
+    (modify f : EvalM PUnit).run = StateT.mk (fun h => some (Except.ok ⟨⟩, f h)) := rfl
 
 /-- Allocate a binding and answer its reference. -/
 def allocCell (c : Cell) : EvalM CellRef := do
