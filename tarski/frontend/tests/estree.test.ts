@@ -24,6 +24,11 @@ const FIXTURES = [
   "if-else-block",
   "const-reassign",
   "unsupported-template",
+  "counter",
+  "factorial",
+  "prototype-chain",
+  "arrow-this",
+  "unsupported-default-param",
 ];
 
 describe("parseScript", () => {
@@ -48,18 +53,18 @@ describe("parseScript", () => {
   });
 
   // Only the *leading* run of string-literal statements is the prologue;
-  // a string statement after real code is an ordinary expression, and
-  // strings are outside the slice.
+  // a string statement after real code is an ordinary expression, and it
+  // carries no `directive`, which is what the Lean side reads.
   it("treats a later string statement as an expression, not a directive", () => {
     const program = parseScript('"use strict";\n1;\n"use asm";\n', "d.js");
     expect(program.body[2]).toEqual({
       type: "ExpressionStatement",
-      expression: { type: "Unsupported", kind: "StringLiteral" },
+      expression: { type: "Literal", value: "use asm", raw: '"use asm"' },
     });
   });
 
   it("replaces a construct outside the slice with its tsc kind, in place", () => {
-    const program = parseScript('"use strict";\nlet f = () => 1;\n', "u.js");
+    const program = parseScript('"use strict";\nclass A {}\n', "u.js");
     expect(program).toEqual({
       type: "Program",
       sourceType: "script",
@@ -73,28 +78,306 @@ describe("parseScript", () => {
           },
           directive: "use strict",
         },
-        {
-          type: "VariableDeclaration",
-          kind: "let",
-          declarations: [
-            {
-              type: "VariableDeclarator",
-              id: { type: "Identifier", name: "f" },
-              init: { type: "Unsupported", kind: "ArrowFunction" },
-            },
-          ],
-        },
+        { type: "Unsupported", kind: "ClassDeclaration" },
       ],
     });
   });
 
-  // ESTree has a LogicalExpression the schema does not: the short-circuit
-  // operators are out of the slice as nodes, not as operators.
-  it("gives the short-circuiting operators no BinaryExpression", () => {
-    const program = parseScript('"use strict";\n1 && 2;\n', "l.js");
+  // ESTree gives the short-circuiting operators a node of their own,
+  // because they do not evaluate both operands.
+  it("gives the short-circuiting operators a LogicalExpression", () => {
+    const program = parseScript('"use strict";\n1 && 2;\n1 ?? 2;\n', "l.js");
     expect(program.body[1]).toEqual({
       type: "ExpressionStatement",
-      expression: { type: "Unsupported", kind: "BinaryExpression" },
+      expression: {
+        type: "LogicalExpression",
+        operator: "&&",
+        left: { type: "Literal", value: 1, raw: "1" },
+        right: { type: "Literal", value: 2, raw: "2" },
+      },
+    });
+    // `??` is written out with them and refused by the Lean decoder.
+    expect(program.body[2]).toMatchObject({
+      expression: { type: "LogicalExpression", operator: "??" },
+    });
+    validate(program);
+  });
+
+  it("gives typeof the unary operator ESTree spells it with", () => {
+    const program = parseScript('"use strict";\ntypeof x;\n', "t.js");
+    expect(program.body[1]).toEqual({
+      type: "ExpressionStatement",
+      expression: {
+        type: "UnaryExpression",
+        operator: "typeof",
+        argument: { type: "Identifier", name: "x" },
+        prefix: true,
+      },
+    });
+  });
+
+  it("distinguishes a dot access from a bracket access by computed", () => {
+    const program = parseScript('"use strict";\no.x;\no[k];\n', "m.js");
+    expect(program.body[1]).toMatchObject({
+      expression: {
+        type: "MemberExpression",
+        computed: false,
+        property: { type: "Identifier", name: "x" },
+      },
+    });
+    expect(program.body[2]).toMatchObject({
+      expression: {
+        type: "MemberExpression",
+        computed: true,
+        property: { type: "Identifier", name: "k" },
+      },
+    });
+    validate(program);
+  });
+
+  it("writes a member target as the assignment's left", () => {
+    const program = parseScript('"use strict";\no.x = 1;\n', "a.js");
+    expect(program.body[1]).toMatchObject({
+      expression: {
+        type: "AssignmentExpression",
+        operator: "=",
+        left: { type: "MemberExpression", computed: false },
+      },
+    });
+    validate(program);
+  });
+
+  it("gives new with no argument list an empty arguments", () => {
+    const program = parseScript('"use strict";\nnew F;\nnew F(1);\n', "c.js");
+    expect(program.body[1]).toMatchObject({
+      expression: { type: "NewExpression", arguments: [] },
+    });
+    expect(program.body[2]).toMatchObject({
+      expression: {
+        type: "NewExpression",
+        arguments: [{ type: "Literal", value: 1, raw: "1" }],
+      },
+    });
+    validate(program);
+  });
+
+  // `async` and `generator` are real syntax whose semantics the epic does
+  // not model: the bridge writes the flags and the Lean decoder names
+  // them, as it does for `var`.
+  it("emits the async and generator flags rather than refusing them", () => {
+    const program = parseScript(
+      '"use strict";\nasync function f() {}\nfunction* g() {}\n',
+      "g.js",
+    );
+    expect(program.body[1]).toMatchObject({
+      type: "FunctionDeclaration",
+      async: true,
+      generator: false,
+    });
+    expect(program.body[2]).toMatchObject({
+      type: "FunctionDeclaration",
+      async: false,
+      generator: true,
+    });
+    validate(program);
+  });
+
+  it("marks a concise arrow body with expression: true", () => {
+    const program = parseScript(
+      '"use strict";\nconst f = (x) => x;\nconst g = () => {};\n',
+      "ar.js",
+    );
+    expect(program.body[1]).toMatchObject({
+      declarations: [
+        {
+          init: {
+            type: "ArrowFunctionExpression",
+            expression: true,
+            body: { type: "Identifier", name: "x" },
+          },
+        },
+      ],
+    });
+    expect(program.body[2]).toMatchObject({
+      declarations: [
+        {
+          init: {
+            type: "ArrowFunctionExpression",
+            expression: false,
+            body: { type: "BlockStatement", body: [] },
+          },
+        },
+      ],
+    });
+    validate(program);
+  });
+
+  // An object-literal member outside the slice stands where it appeared,
+  // so the literal itself still reaches the Lean decoder.
+  const MEMBERS: [string, string][] = [
+    ["a shorthand property", "{ a }"],
+    ["a computed key", "{ [k]: 1 }"],
+    ["a method", "{ m() {} }"],
+    ["a getter", "{ get m() { return 1; } }"],
+    ["a spread", "{ ...o }"],
+  ];
+  const MEMBER_KINDS: Record<string, string> = {
+    "{ a }": "ShorthandPropertyAssignment",
+    "{ [k]: 1 }": "ComputedPropertyName",
+    "{ m() {} }": "MethodDeclaration",
+    "{ get m() { return 1; } }": "GetAccessor",
+    "{ ...o }": "SpreadAssignment",
+  };
+
+  for (const [what, source] of MEMBERS) {
+    it(`replaces ${what} in place`, () => {
+      const program = parseScript(
+        `"use strict";\nconst o = ${source};\n`,
+        "p.js",
+      );
+      expect(program.body[1]).toMatchObject({
+        declarations: [
+          {
+            init: {
+              type: "ObjectExpression",
+              properties: [{ type: "Unsupported", kind: MEMBER_KINDS[source] }],
+            },
+          },
+        ],
+      });
+      validate(program);
+    });
+  }
+
+  // A private name is a property the slice does not read, and it is the
+  // property that leaves the slice, not the access.
+  it("replaces a private-name property in place", () => {
+    const program = parseScript('"use strict";\no.#x;\n', "pr.js");
+    expect(program.body[1]).toMatchObject({
+      expression: {
+        type: "MemberExpression",
+        computed: false,
+        property: { type: "Unsupported", kind: "PrivateIdentifier" },
+      },
+    });
+    validate(program);
+  });
+
+  it("gives a bare return a null argument", () => {
+    const program = parseScript(
+      '"use strict";\nfunction f() { return; }\n',
+      "r.js",
+    );
+    expect(program.body[1]).toMatchObject({
+      body: {
+        type: "BlockStatement",
+        body: [{ type: "ReturnStatement", argument: null }],
+      },
+    });
+    validate(program);
+  });
+
+  it("keeps a string or numeric object key as the literal it is", () => {
+    const program = parseScript(
+      '"use strict";\nconst o = { "a b": 1, 2: 3 };\n',
+      "k.js",
+    );
+    expect(program.body[1]).toMatchObject({
+      declarations: [
+        {
+          init: {
+            type: "ObjectExpression",
+            properties: [
+              { key: { type: "Literal", value: "a b", raw: '"a b"' } },
+              { key: { type: "Literal", value: 2, raw: "2" } },
+            ],
+          },
+        },
+      ],
+    });
+    validate(program);
+  });
+
+  // A named function expression binds its own name inside itself; the
+  // schema's `id` is where that name arrives.
+  it("keeps a function expression's own name", () => {
+    const program = parseScript(
+      '"use strict";\nconst f = function fac(n) { return n; };\n',
+      "fe.js",
+    );
+    expect(program.body[1]).toMatchObject({
+      declarations: [
+        {
+          init: {
+            type: "FunctionExpression",
+            id: { type: "Identifier", name: "fac" },
+          },
+        },
+      ],
+    });
+    validate(program);
+  });
+
+  // An optional chain short-circuits the whole chain, which is semantics
+  // of its own: the access leaves the slice as a whole.
+  it("refuses an optional chain as one node", () => {
+    const program = parseScript(
+      '"use strict";\na?.b;\nf?.();\na?.[b];\n',
+      "q.js",
+    );
+    expect(program.body[1]).toMatchObject({
+      expression: { type: "Unsupported", kind: "PropertyAccessExpression" },
+    });
+    expect(program.body[2]).toMatchObject({
+      expression: { type: "Unsupported", kind: "CallExpression" },
+    });
+    expect(program.body[3]).toMatchObject({
+      expression: { type: "Unsupported", kind: "ElementAccessExpression" },
+    });
+    validate(program);
+  });
+
+  it("replaces a spread argument in place, keeping the call", () => {
+    const program = parseScript('"use strict";\nf(...xs);\n', "s.js");
+    expect(program.body[1]).toMatchObject({
+      expression: {
+        type: "CallExpression",
+        arguments: [{ type: "Unsupported", kind: "SpreadElement" }],
+      },
+    });
+    validate(program);
+  });
+
+  // A parameter outside the slice is refused alone: the function node
+  // survives, which is what lets the decoder say `Parameter` rather than
+  // `FunctionDeclaration`.
+  it("replaces an out-of-slice parameter in place", () => {
+    const program = parseScript(
+      '"use strict";\nfunction f(a, b = 1, ...r) {}\nfunction g({ a }) {}\n',
+      "pp.js",
+    );
+    expect(program.body[1]).toMatchObject({
+      params: [
+        { type: "Identifier", name: "a" },
+        { type: "Unsupported", kind: "Parameter" },
+        { type: "Unsupported", kind: "Parameter" },
+      ],
+    });
+    expect(program.body[2]).toMatchObject({
+      params: [{ type: "Unsupported", kind: "ObjectBindingPattern" }],
+    });
+    validate(program);
+  });
+
+  // A template with no substitutions is a string, but not a
+  // StringLiteral: it stays outside the slice.
+  it("keeps a substitution-free template outside the slice", () => {
+    const program = parseScript('"use strict";\n`x`;\n', "tp.js");
+    expect(program.body[1]).toMatchObject({
+      expression: {
+        type: "Unsupported",
+        kind: "NoSubstitutionTemplateLiteral",
+      },
     });
   });
 
@@ -268,6 +551,48 @@ describe("the schema as the seam", () => {
         type: "Program",
         sourceType: "script",
         body: [{ type: "VariableDeclaration", kind: "let", declarations: [] }],
+      },
+    ],
+    [
+      "a Property with a computed key",
+      {
+        type: "Program",
+        sourceType: "script",
+        body: [
+          {
+            type: "ExpressionStatement",
+            expression: {
+              type: "ObjectExpression",
+              properties: [
+                {
+                  type: "Property",
+                  key: { type: "Identifier", name: "a" },
+                  value: { type: "Literal", value: 1, raw: "1" },
+                  kind: "init",
+                  computed: true,
+                  shorthand: false,
+                  method: false,
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+    [
+      "a CallExpression with no arguments field",
+      {
+        type: "Program",
+        sourceType: "script",
+        body: [
+          {
+            type: "ExpressionStatement",
+            expression: {
+              type: "CallExpression",
+              callee: { type: "Identifier", name: "f" },
+            },
+          },
+        ],
       },
     ],
   ];

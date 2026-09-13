@@ -60,6 +60,10 @@ export default defineConfig({
         // deleted, and the ones a property cannot yet reach (a union place in
         // an atom) carry their own ignores. Ratcheted 2026-09-13: the tarski
         // parser bridge and its command joined the denominator fully covered.
+        // Ratcheted 2026-09-13: the bridge grew the function, object, and
+        // member nodes, every arm of them reached by a test — a function
+        // without a body or a name is an ambient or module form a script
+        // cannot contain, and those two carry their own ignores.
         //
         // Measure this from a path with no dot-directory in it. The include
         // globs above do not match through one, and a run from, say, a
@@ -67,9 +71,9 @@ export default defineConfig({
         // — different denominator, different numbers.
         autoUpdate: true,
         statements: 99.58,
-        branches: 98.66,
+        branches: 98.69,
         functions: 100,
-        lines: 99.67,
+        lines: 99.68,
       },
     },
   },

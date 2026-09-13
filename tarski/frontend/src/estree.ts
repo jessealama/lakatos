@@ -315,6 +315,28 @@ function objectMember(
   };
 }
 
+/** A function's body. One without a body is an ambient declaration,
+ * which a script cannot contain — `function f();` is a syntax error, and
+ * the bridge refuses a program that does not parse before it gets
+ * here. */
+function functionBody(
+  node: ts.FunctionDeclaration | ts.FunctionExpression,
+  sf: ts.SourceFile,
+): BlockStatement {
+  /* v8 ignore next -- see above: the body is always present */
+  return node.body
+    ? blockStatement(node.body, sf)
+    : { type: "BlockStatement", body: [] };
+}
+
+/** A function declaration's name. One without a name is
+ * `export default function () {}`, a module form; a script cannot
+ * produce it. */
+function declarationName(node: ts.FunctionDeclaration): string {
+  /* v8 ignore next -- see above: the name is always present */
+  return node.name ? node.name.text : "";
+}
+
 /** The parts every function form shares. A parameter with a default or a
  * rest marker is refused as the `Parameter` it is; a binding pattern is
  * refused as the pattern, which is the more useful name. Either way only
@@ -415,7 +437,10 @@ function expression(node: ts.Expression, sf: ts.SourceFile): Expression {
       type: "NewExpression",
       callee: expression(node.expression, sf),
       // `new F` with no argument list is an empty one in ESTree.
-      arguments: callArguments(node.arguments ?? ts.factory.createNodeArray(), sf),
+      arguments: callArguments(
+        node.arguments ?? ts.factory.createNodeArray(),
+        sf,
+      ),
     };
   }
   if (ts.isObjectLiteralExpression(node)) {
@@ -430,9 +455,7 @@ function expression(node: ts.Expression, sf: ts.SourceFile): Expression {
       type: "FunctionExpression",
       id: node.name ? { type: "Identifier", name: node.name.text } : null,
       params: parts.params,
-      body: node.body
-        ? blockStatement(node.body, sf)
-        : { type: "BlockStatement", body: [] },
+      body: functionBody(node, sf),
       async: parts.async,
       generator: parts.generator,
     };
@@ -553,13 +576,9 @@ function statement(node: ts.Statement, sf: ts.SourceFile): Statement {
     const parts = functionParts(node);
     return {
       type: "FunctionDeclaration",
-      // A declaration without a name is `export default function () {}`,
-      // which is a module form; a script cannot produce one.
-      id: { type: "Identifier", name: node.name ? node.name.text : "" },
+      id: { type: "Identifier", name: declarationName(node) },
       params: parts.params,
-      body: node.body
-        ? blockStatement(node.body, sf)
-        : { type: "BlockStatement", body: [] },
+      body: functionBody(node, sf),
       async: parts.async,
       generator: parts.generator,
     };

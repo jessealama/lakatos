@@ -56,12 +56,32 @@ jobs:
       - name: Lean tests
         run: lake build TarskiTest
 
-      # The seam end to end: this document is the parser bridge's output,
-      # byte for byte (tarski/frontend/tests/bridge-cli.test.ts holds the
-      # two copies together), and the binary is what reads it. Node is not
-      # installed in this job, so the bridge itself runs in the lakatos
-      # workflow, not here.
+      # Every arithmetic and comparison under `Tarski/` must be one the
+      # `Js` library models, and a check that has never refused anything
+      # is not evidence — so the planted violation is run too.
+      - name: Boundary check
+        run: sh scripts/check-boundary.sh
+
+      - name: Boundary check bites
+        run: |
+          if sh scripts/check-boundary.sh scripts/boundary-fixture; then
+            echo "the check accepted a planted Float.sqrt"
+            exit 1
+          fi
+
+      # The seam end to end: these documents are the parser bridge's
+      # output, byte for byte (tarski/frontend/tests/bridge-cli.test.ts
+      # holds the two copies together), and the binary is what reads them.
+      # Node is not installed in this job, so the bridge itself runs in the
+      # lakatos workflow, not here.
       - name: Run a script
         run: |
           out=$(.lake/build/bin/tarski run Test/Tarski/fixtures/numeric-loop.json)
           test "$out" = "8" || { echo "expected 8, got $out"; exit 1; }
+
+      # The issue's own example: closures over one cell, a prototype
+      # chain, `typeof`, and a `return` caught with the heap intact.
+      - name: Run the counter script
+        run: |
+          out=$(.lake/build/bin/tarski run Test/Tarski/fixtures/counter.json)
+          test "$out" = "true" || { echo "expected true, got $out"; exit 1; }
