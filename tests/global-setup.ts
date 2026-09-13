@@ -11,9 +11,9 @@ const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
  * tsc processes truncating and rewriting the same output while a third
  * suite reads or spawns it.
  *
- * refute spawns its own vitest on generated tests, and one whose cwd is
- * inside the repo tree inherits this config — that run must not rebuild
- * dist/ underneath the parent's suites, so it is skipped by cwd.
+ * A refute child runs under its own config and never reaches this file;
+ * the cwd guard stays as a belt for any other vitest started inside the
+ * tree.
  */
 export default function setup(): void {
   if (realpathSync(process.cwd()) !== realpathSync(repoRoot)) return;

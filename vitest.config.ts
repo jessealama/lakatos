@@ -9,11 +9,8 @@ export default defineConfig({
       "engines/pabst/tests/**/*.test.ts",
       "engines/thales/frontend/tests/**/*.test.ts",
       "tarski/frontend/tests/**/*.test.ts",
-      ".lakatos/**/*.test.ts",
     ],
-    // Absolute: refute spawns vitest from a project directory that may sit
-    // inside this repo, and such a run inherits this config — a relative
-    // path would resolve against *its* root, where the file is not.
+    // Absolute so the path is the same whatever cwd a run starts from.
     globalSetup: [
       fileURLToPath(new URL("./tests/global-setup.ts", import.meta.url)),
     ],
