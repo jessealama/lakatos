@@ -24,3 +24,7 @@ spec/
 # goldens that are the bridge's output byte for byte
 tarski/frontend/tests/fixtures/
 tarski/Test/Tarski/fixtures/
+
+# the pinned test262 clone: upstream's bytes, and gitignored one directory
+# down, which prettier does not read
+tarski/.test262/
