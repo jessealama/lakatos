@@ -60,8 +60,56 @@ structure Closure where
   kind : FuncKind
 deriving Repr, Inhabited
 
+/-- The `Error` constructors the language has, in the order
+`Tarski/Realm.lean` lays them out. `AggregateError` is absent: it takes
+an iterable and has an `errors` property, neither of which this slice
+can build. -/
+inductive ErrorKind where
+  | error
+  | typeError
+  | rangeError
+  | referenceError
+  | syntaxError
+  | evalError
+  | uriError
+deriving Repr, DecidableEq, Inhabited
+
+/-- The spelling of the kind's `name` property, which is also the
+constructor's binding in the global environment. -/
+def ErrorKind.name : ErrorKind → String
+  | .error => "Error"
+  | .typeError => "TypeError"
+  | .rangeError => "RangeError"
+  | .referenceError => "ReferenceError"
+  | .syntaxError => "SyntaxError"
+  | .evalError => "EvalError"
+  | .uriError => "URIError"
+
+/-- Every kind, in the order the realm's references are assigned. -/
+def ErrorKind.all : List ErrorKind :=
+  [.error, .typeError, .rangeError, .referenceError, .syntaxError, .evalError, .uriError]
+
+/-- A built-in function's body: an identity Lean dispatches on, not a
+`Closure`. A built-in is not self-hosted for two reasons — a native
+constructor must be able to construct when called without `new`, which
+no AST spells, and `[[ErrorData]]`-style internal behaviour has no source
+form at all. Later slices add constructors here (`Object.keys`,
+`Math.max`, …) and an arm to `callNative` for each. -/
+inductive NativeFn where
+  /-- One of the `Error` constructors. -/
+  | errorCtor (kind : ErrorKind)
+  /-- `Error.prototype.toString`. -/
+  | errorToString
+deriving Repr, DecidableEq, Inhabited
+
+/-- `[[Call]]`: user code or a built-in. -/
+inductive Callable where
+  | closure (c : Closure)
+  | native (f : NativeFn)
+deriving Repr, Inhabited
+
 /-- An ordinary object: a prototype link, own data properties in
-insertion order, and — for a function — the closure it calls. There are
+insertion order, and — for a function — what calling it does. There are
 no property descriptors and no accessors; writability, enumerability,
 and getters are #389's. -/
 structure Obj where
@@ -71,7 +119,7 @@ structure Obj where
   /-- Own data properties, in insertion order. -/
   properties : List (String × Value) := []
   /-- `[[Call]]`. An object with one is a function. -/
-  callable : Option Closure := none
+  callable : Option Callable := none
 deriving Repr, Inhabited
 
 /-- A variable binding. `mutable` is `false` for `const`, which is what
@@ -89,17 +137,24 @@ structure Heap where
   objects : Array Obj := #[]
 deriving Repr, Inhabited
 
-/-- An abrupt completion — the evaluator's error channel. `break` and
-`continue` are here so the monad is final; nothing in this slice builds
-one. -/
+/-- An abrupt completion — the evaluator's error channel. Each of the
+three jumps carries the completion record's `[[Value]]`: a `break` or a
+`continue` carries the running completion value of the statement lists it
+is crossing, which is what UpdateEmpty fills in the spec and what
+`evalStmt`'s threaded accumulator computes here, so
+`while (true) { 2; break; }` completes with `2`. A `label` of `none` is
+the unlabelled form. -/
 inductive Completion where
   | throw (value : Value)
   | «return» (value : Value)
-  | «break» (label : Option String)
-  | «continue» (label : Option String)
+  | «break» (label : Option String) (value : Option Value)
+  | «continue» (label : Option String) (value : Option Value)
 deriving Repr, DecidableEq, Inhabited
 
-/-- The state a program starts from. -/
+/-- The heap with no realm in it: no intrinsics, no global bindings.
+`Tarski/Realm.lean`'s `Heap.initial` is what a script actually starts
+from; this is what that one is built on top of, and what a proof about
+the object operations alone uses. -/
 def Heap.empty : Heap := {}
 
 /-- Allocate a binding, answering its reference and the grown heap. -/

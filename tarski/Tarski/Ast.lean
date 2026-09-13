@@ -9,9 +9,10 @@ the word appears.
 Strict mode only. Parameters are plain identifiers: a default is #393's,
 rest and binding patterns are #394's, and `var` is still absent, so
 hoisting here is per-block and covers `let`, `const`, and function
-declarations only. `throw`/`try` are #379's, `for` and the logical
-operators #383's, classes #384's. Later slices add constructors; they do
-not reshape the ones here. -/
+declarations only. `throw` and `try`, labels, and `break`/`continue` are
+here; `switch` — the other breakable statement — is #393's and `for` and
+`do`/`while` are #383's, classes #384's. Later slices add constructors;
+they do not reshape the ones here. -/
 
 namespace Tarski
 
@@ -65,6 +66,11 @@ inductive BinaryOp where
   | strictEq
   /-- `!==`. -/
   | strictNe
+  /-- `instanceof`. Neither operand is coerced: the left is compared
+  against a prototype chain by identity, and the right must be a
+  function. `in` is the other relational operator ESTree spells as a
+  `BinaryExpression`, and it is not here. -/
+  | instanceof
 deriving Repr, DecidableEq, Inhabited
 
 /-- The short-circuiting infix operators. They are not `BinaryOp`
@@ -80,9 +86,10 @@ deriving Repr, DecidableEq, Inhabited
 
 /-- Whether an operator coerces its operands before comparing them. The
 two strict-equality tests do not: they answer on the values themselves,
-so an object operand is not run through ToPrimitive. -/
+so an object operand is not run through ToPrimitive. Neither does
+`instanceof`, which is about references and has a dispatch of its own. -/
 def BinaryOp.coerces : BinaryOp → Bool
-  | .strictEq | .strictNe => false
+  | .strictEq | .strictNe | .instanceof => false
   | _ => true
 
 mutual
@@ -176,6 +183,36 @@ inductive Stmt where
   | whileStmt (test : Expr) (body : Stmt)
   /-- ESTree `BlockStatement`: its own declarative scope. -/
   | block (body : List Stmt)
+  /-- ESTree `ThrowStatement`. -/
+  | throwStmt (argument : Expr)
+  /-- ESTree `TryStatement`. `handler` is the `CatchClause` and
+  `finalizer` the `finally` block's statements; at least one of the two
+  is present, which the decoder enforces because `try { }` alone does not
+  parse. -/
+  | tryStmt (block : List Stmt) (handler : Option CatchClause)
+      (finalizer : Option (List Stmt))
+  /-- ESTree `LabeledStatement`. A label is not a scope: it is a target,
+  and the statement it names is evaluated with the label set that reaches
+  it, which is what lets a `continue` name a loop from inside a nested
+  one. -/
+  | labeled (label : String) (body : Stmt)
+  /-- ESTree `BreakStatement`; `none` is the unlabelled form, which the
+  innermost loop catches. -/
+  | breakStmt (label : Option String)
+  /-- ESTree `ContinueStatement`; `none` is the unlabelled form. -/
+  | continueStmt (label : Option String)
+
+/-- ESTree `CatchClause`. `param` is `none` for the optional-binding
+form, `catch { }`; a binding pattern is #394's and arrives as
+`Unsupported`, so the clause survives and only the binding is refused.
+The parameter is a mutable binding in a scope of its own, holding nothing
+but itself, which is why it does not collide with a same-named binding
+outside. -/
+structure CatchClause where
+  /-- ESTree `CatchClause.param`, an `Identifier` or nothing. -/
+  param : Option String
+  /-- ESTree `CatchClause.body`, a `BlockStatement`'s statements. -/
+  body : List Stmt
 
 /-- One declarator of a `VariableDeclaration`. `none` binds `undefined`.
 JS requires an initializer on a `const`, but as an early error, and early
@@ -195,7 +232,7 @@ end
 -- not among them — no handler accepts the nesting, and nothing needs a
 -- decision procedure on syntax: the tests compare programs by `repr` and
 -- results by `Value`, which stays decidable.
-deriving instance Repr, Inhabited for Expr, ArrowBody, Target, Stmt, Declarator
+deriving instance Repr, Inhabited for Expr, ArrowBody, Target, Stmt, CatchClause, Declarator
 
 /-- ESTree `Program` with `sourceType: "script"`, its `"use strict"`
 directive already consumed by the decoder. -/

@@ -29,6 +29,11 @@
         { "$ref": "#/definitions/IfStatement" },
         { "$ref": "#/definitions/WhileStatement" },
         { "$ref": "#/definitions/BlockStatement" },
+        { "$ref": "#/definitions/ThrowStatement" },
+        { "$ref": "#/definitions/TryStatement" },
+        { "$ref": "#/definitions/LabeledStatement" },
+        { "$ref": "#/definitions/BreakStatement" },
+        { "$ref": "#/definitions/ContinueStatement" },
         { "$ref": "#/definitions/Unsupported" }
       ]
     },
@@ -119,6 +124,90 @@
         }
       },
       "required": ["type", "body"],
+      "additionalProperties": false
+    },
+
+    "ThrowStatement": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "ThrowStatement" },
+        "argument": { "$ref": "#/definitions/Expression" }
+      },
+      "required": ["type", "argument"],
+      "additionalProperties": false
+    },
+
+    "TryStatement": {
+      "description": "`try { }` with neither a handler nor a finalizer is a syntax error, so the bridge never emits one; the Lean decoder refuses such a document as malformed rather than unsupported, because no program produced it.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "TryStatement" },
+        "block": { "$ref": "#/definitions/BlockStatement" },
+        "handler": {
+          "oneOf": [{ "$ref": "#/definitions/CatchClause" }, { "type": "null" }]
+        },
+        "finalizer": {
+          "oneOf": [
+            { "$ref": "#/definitions/BlockStatement" },
+            { "type": "null" }
+          ]
+        }
+      },
+      "required": ["type", "block", "handler", "finalizer"],
+      "additionalProperties": false
+    },
+
+    "CatchClause": {
+      "description": "The optional-binding form, `catch { }`, has `param: null`. A destructuring binding is outside the slice and arrives as `Unsupported` with the pattern's kind, so the clause — and the `try` around it — survives and only the binding is refused.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "CatchClause" },
+        "param": {
+          "oneOf": [
+            { "$ref": "#/definitions/Identifier" },
+            { "$ref": "#/definitions/Unsupported" },
+            { "type": "null" }
+          ]
+        },
+        "body": { "$ref": "#/definitions/BlockStatement" }
+      },
+      "required": ["type", "param", "body"],
+      "additionalProperties": false
+    },
+
+    "LabeledStatement": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "LabeledStatement" },
+        "label": { "$ref": "#/definitions/Identifier" },
+        "body": { "$ref": "#/definitions/Statement" }
+      },
+      "required": ["type", "label", "body"],
+      "additionalProperties": false
+    },
+
+    "BreakStatement": {
+      "description": "`label` is null for the unlabelled form. A `break` outside any loop, and a label that is not on the stack, are checker errors rather than parse errors in tsc, so they reach the evaluator: early errors are outside this epic, and such a jump escapes as the abrupt completion it is.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "BreakStatement" },
+        "label": {
+          "oneOf": [{ "$ref": "#/definitions/Identifier" }, { "type": "null" }]
+        }
+      },
+      "required": ["type", "label"],
+      "additionalProperties": false
+    },
+
+    "ContinueStatement": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "ContinueStatement" },
+        "label": {
+          "oneOf": [{ "$ref": "#/definitions/Identifier" }, { "type": "null" }]
+        }
+      },
+      "required": ["type", "label"],
       "additionalProperties": false
     },
 
@@ -216,7 +305,7 @@
     },
 
     "BinaryExpression": {
-      "description": "Every ESTree binary operator, not only the slice's: the bridge writes what it saw, and the Lean decoder names the one it will not evaluate. `&&`, `||`, and `??` are not here — ESTree makes them a LogicalExpression, and so does this schema.",
+      "description": "Every ESTree binary operator, not only the slice's: the bridge writes what it saw, and the Lean decoder names the one it will not evaluate. `instanceof` is evaluated; `in` is not. `&&`, `||`, and `??` are not here — ESTree makes them a LogicalExpression, and so does this schema.",
       "type": "object",
       "properties": {
         "type": { "const": "BinaryExpression" },

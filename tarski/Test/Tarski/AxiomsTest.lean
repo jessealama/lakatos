@@ -48,11 +48,43 @@ private def onlyStandard (n : Name) : CoreM Bool := do
 
 /-- info: true -/
 #guard_msgs in
+#eval onlyStandard ``Tarski.evalBlock
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.evalCatch
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.evalLabeled
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.evalLoop
+
+/-- info: true -/
+#guard_msgs in
 #eval onlyStandard ``Tarski.callFunction
 
 /-- info: true -/
 #guard_msgs in
 #eval onlyStandard ``Tarski.construct
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.callNative
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.allocFromConstructor
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.instanceOf
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.protoChainHas
 
 /-- info: true -/
 #guard_msgs in
@@ -88,11 +120,29 @@ private def onlyStandard (n : Name) : CoreM Bool := do
 
 /-- info: true -/
 #guard_msgs in
+#eval onlyStandard ``Tarski.runScript
+
+/-- info: true -/
+#guard_msgs in
 #eval onlyStandard ``Tarski.runProgram
+
+-- The realm is a literal, and the report that reads it is a definition
+-- like any other.
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.Heap.initial
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.errorSummary
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.describeThrown
 
 -- Catching a completion is an opaque definition with a monotonicity
 -- lemma of its own, because `partial_fixpoint` has none for `tryCatch`.
--- Both rest on nothing beyond the standard three.
+-- There are two, and all four rest on nothing beyond the standard three.
 /-- info: true -/
 #guard_msgs in
 #eval onlyStandard ``Tarski.catchReturn
@@ -101,9 +151,23 @@ private def onlyStandard (n : Name) : CoreM Bool := do
 #guard_msgs in
 #eval onlyStandard ``Tarski.monotone_catchReturn
 
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.attempt
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.monotone_attempt
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.throwJsError
+
 -- The unfolding equations the proofs rewrite with are theorems of the
 -- same standing: if they were not, every postcondition proved through a
 -- `while` or a prototype walk would rest on whatever they did assume.
+-- `protoChainHas` joins the two for the same reason: it recurses on the
+-- heap, so it is `rw`'s and never a simp set's.
 /-- info: true -/
 #guard_msgs in
 #eval onlyStandard ``Tarski.evalWhile.eq_def
@@ -111,3 +175,7 @@ private def onlyStandard (n : Name) : CoreM Bool := do
 /-- info: true -/
 #guard_msgs in
 #eval onlyStandard ``Tarski.getProp.eq_def
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.protoChainHas.eq_def

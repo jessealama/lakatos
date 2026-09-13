@@ -14,12 +14,12 @@ open Tarski
 
 /-- What the binary would print, so a case reads as its own stdout. -/
 private def outcome (p : Program) : String :=
-  match runProgram p with
+  match runScript p with
   | none => "<diverges>"
-  | some (.error (.throw v)) => s!"uncaught: {formatValue v}"
-  | some (.error _) => "<abrupt>"
-  | some (.ok none) => "<empty>"
-  | some (.ok (some v)) => formatValue v
+  | some (.error (.throw v), h) => s!"uncaught: {describeThrown h v}"
+  | some (.error _, _) => "<abrupt>"
+  | some (.ok none, _) => "<empty>"
+  | some (.ok (some v), _) => formatValue v
 
 /-! ## The issue's example
 
@@ -102,7 +102,7 @@ private def named : Expr :=
 #guard outcome
     [ .varDecl .«const» [{ name := "f", init := some named }],
       .exprStmt (.ident "fac") ]
-  == "uncaught: ReferenceError"
+  == "uncaught: ReferenceError: fac is not defined"
 
 /-! ## `this` -/
 
@@ -175,7 +175,7 @@ private def returnThis : Expr := .funcExpr none [] [.returnStmt (some .this)]
 #guard outcome
     [ .block [.funcDecl "f" [] [.returnStmt (some (.numLit 1.0))]],
       .exprStmt (.call (.ident "f") []) ]
-  == "uncaught: ReferenceError"
+  == "uncaught: ReferenceError: f is not defined"
 
 /-! ## What is not callable -/
 
@@ -183,19 +183,19 @@ private def returnThis : Expr := .funcExpr none [] [.returnStmt (some .this)]
 #guard outcome
     [ .varDecl .«const» [{ name := "n", init := some (.numLit 1.0) }],
       .exprStmt (.call (.ident "n") []) ]
-  == "uncaught: TypeError"
+  == "uncaught: TypeError: not a function"
 
 -- `const o = {}; o();` — an object without a `[[Call]]`.
 #guard outcome
     [ .varDecl .«const» [{ name := "o", init := some (.objectLit []) }],
       .exprStmt (.call (.ident "o") []) ]
-  == "uncaught: TypeError"
+  == "uncaught: TypeError: not a function"
 
 -- `const f = () => 1; new f();` — an arrow has no `[[Construct]]`.
 #guard outcome
     [ .varDecl .«const» [{ name := "f", init := some (.arrow [] (.expr (.numLit 1.0))) }],
       .exprStmt (.new (.ident "f") []) ]
-  == "uncaught: TypeError"
+  == "uncaught: TypeError: not a constructor"
 
 /-! ## Short-circuiting
 

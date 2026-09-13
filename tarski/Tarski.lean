@@ -1,5 +1,6 @@
 import Tarski.Ast
 import Tarski.Value
+import Tarski.Realm
 import Tarski.Monad
 import Tarski.Eval
 import Tarski.Format

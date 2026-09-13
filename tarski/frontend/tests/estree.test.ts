@@ -29,6 +29,10 @@ const FIXTURES = [
   "prototype-chain",
   "arrow-this",
   "unsupported-default-param",
+  "errors",
+  "uncaught",
+  "labeled-loops",
+  "finally-return",
 ];
 
 describe("parseScript", () => {
@@ -248,6 +252,120 @@ describe("parseScript", () => {
       validate(program);
     });
   }
+
+  it("gives a throw its argument", () => {
+    const program = parseScript('"use strict";\nthrow e;\n', "th.js");
+    expect(program.body[1]).toEqual({
+      type: "ThrowStatement",
+      argument: { type: "Identifier", name: "e" },
+    });
+    validate(program);
+  });
+
+  it("writes all three parts of a try", () => {
+    const program = parseScript(
+      '"use strict";\ntry { } catch (e) { } finally { }\n',
+      "t.js",
+    );
+    expect(program.body[1]).toEqual({
+      type: "TryStatement",
+      block: { type: "BlockStatement", body: [] },
+      handler: {
+        type: "CatchClause",
+        param: { type: "Identifier", name: "e" },
+        body: { type: "BlockStatement", body: [] },
+      },
+      finalizer: { type: "BlockStatement", body: [] },
+    });
+    validate(program);
+  });
+
+  // The optional-binding form and the clause-less form: each absent part
+  // is null rather than missing, because the Lean decoder reads a field.
+  it("gives an absent catch binding, catch clause, or finalizer null", () => {
+    const program = parseScript(
+      '"use strict";\ntry { } catch { }\ntry { } finally { }\n',
+      "t2.js",
+    );
+    expect(program.body[1]).toMatchObject({
+      handler: { type: "CatchClause", param: null },
+      finalizer: null,
+    });
+    expect(program.body[2]).toMatchObject({
+      handler: null,
+      finalizer: { type: "BlockStatement", body: [] },
+    });
+    validate(program);
+  });
+
+  // A destructuring catch binding is refused in place, so the clause —
+  // and the `try` around it — survives, as an out-of-slice parameter
+  // leaves its function standing.
+  it("replaces a destructuring catch binding in place", () => {
+    const program = parseScript(
+      '"use strict";\ntry { } catch ({ message }) { }\n',
+      "t3.js",
+    );
+    expect(program.body[1]).toMatchObject({
+      type: "TryStatement",
+      handler: {
+        type: "CatchClause",
+        param: { type: "Unsupported", kind: "ObjectBindingPattern" },
+      },
+    });
+    validate(program);
+  });
+
+  it("gives a labelled loop its label and both jumps theirs", () => {
+    const program = parseScript(
+      '"use strict";\na: while (x) { break a; continue a; }\n',
+      "lb.js",
+    );
+    expect(program.body[1]).toEqual({
+      type: "LabeledStatement",
+      label: { type: "Identifier", name: "a" },
+      body: {
+        type: "WhileStatement",
+        test: { type: "Identifier", name: "x" },
+        body: {
+          type: "BlockStatement",
+          body: [
+            {
+              type: "BreakStatement",
+              label: { type: "Identifier", name: "a" },
+            },
+            {
+              type: "ContinueStatement",
+              label: { type: "Identifier", name: "a" },
+            },
+          ],
+        },
+      },
+    });
+    validate(program);
+  });
+
+  // `break` outside a loop is a checker error in tsc, not a parse error,
+  // so it reaches the bridge and the evaluator says what it means.
+  it("gives an unlabelled break a null label", () => {
+    const program = parseScript('"use strict";\nbreak;\ncontinue;\n', "br.js");
+    expect(program.body[1]).toEqual({ type: "BreakStatement", label: null });
+    expect(program.body[2]).toEqual({ type: "ContinueStatement", label: null });
+    validate(program);
+  });
+
+  it("writes instanceof as a BinaryExpression operator", () => {
+    const program = parseScript('"use strict";\nx instanceof Y;\n', "io.js");
+    expect(program.body[1]).toMatchObject({
+      expression: {
+        type: "BinaryExpression",
+        operator: "instanceof",
+        left: { type: "Identifier", name: "x" },
+        right: { type: "Identifier", name: "Y" },
+      },
+    });
+    validate(program);
+  });
 
   // A private name is a property the slice does not read, and it is the
   // property that leaves the slice, not the access.
@@ -577,6 +695,47 @@ describe("the schema as the seam", () => {
             },
           },
         ],
+      },
+    ],
+    [
+      "a TryStatement missing handler",
+      {
+        type: "Program",
+        sourceType: "script",
+        body: [
+          {
+            type: "TryStatement",
+            block: { type: "BlockStatement", body: [] },
+            finalizer: { type: "BlockStatement", body: [] },
+          },
+        ],
+      },
+    ],
+    [
+      "a CatchClause whose param is a string",
+      {
+        type: "Program",
+        sourceType: "script",
+        body: [
+          {
+            type: "TryStatement",
+            block: { type: "BlockStatement", body: [] },
+            handler: {
+              type: "CatchClause",
+              param: "e",
+              body: { type: "BlockStatement", body: [] },
+            },
+            finalizer: null,
+          },
+        ],
+      },
+    ],
+    [
+      "a BreakStatement missing label",
+      {
+        type: "Program",
+        sourceType: "script",
+        body: [{ type: "BreakStatement" }],
       },
     ],
     [

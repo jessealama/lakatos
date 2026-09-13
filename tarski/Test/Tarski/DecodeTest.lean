@@ -390,3 +390,90 @@ private def objectSlice : Program :=
     r#"{"type":"FunctionDeclaration","id":{"type":"Identifier","name":"f"},"params":[],
         "body":{"type":"Identifier","name":"x"},"async":false,"generator":false}"#)
   == "malformed: function body is a Identifier"
+
+/-! ## Every node kind exceptions and control flow added
+
+A third whole-slice document, holding `throw`, the three shapes of `try`,
+a labelled loop with both jumps in it, a bare `break`, and `instanceof`.
+As with the two above, the document and the term are written out
+separately so a change to either has to be a change to both. -/
+
+private def controlSliceJson : String := script <|
+  r#"{"type":"ThrowStatement","argument":{"type":"Literal","value":1,"raw":"1"}},
+     {"type":"TryStatement",
+      "block":{"type":"BlockStatement","body":[
+        {"type":"ExpressionStatement","expression":{"type":"Identifier","name":"a"}}]},
+      "handler":{"type":"CatchClause","param":{"type":"Identifier","name":"e"},
+                 "body":{"type":"BlockStatement","body":[
+                   {"type":"ExpressionStatement","expression":{"type":"Identifier","name":"e"}}]}},
+      "finalizer":{"type":"BlockStatement","body":[
+        {"type":"ExpressionStatement","expression":{"type":"Literal","value":2,"raw":"2"}}]}},
+     {"type":"TryStatement",
+      "block":{"type":"BlockStatement","body":[]},
+      "handler":{"type":"CatchClause","param":null,
+                 "body":{"type":"BlockStatement","body":[]}},
+      "finalizer":null},
+     {"type":"TryStatement",
+      "block":{"type":"BlockStatement","body":[]},
+      "handler":null,
+      "finalizer":{"type":"BlockStatement","body":[]}},
+     {"type":"LabeledStatement","label":{"type":"Identifier","name":"outer"},
+      "body":{"type":"WhileStatement",
+        "test":{"type":"Literal","value":true,"raw":"true"},
+        "body":{"type":"BlockStatement","body":[
+          {"type":"BreakStatement","label":{"type":"Identifier","name":"outer"}},
+          {"type":"ContinueStatement","label":{"type":"Identifier","name":"outer"}}]}}},
+     {"type":"BreakStatement","label":null},
+     {"type":"ExpressionStatement","expression":{
+       "type":"BinaryExpression","operator":"instanceof",
+       "left":{"type":"Identifier","name":"x"},
+       "right":{"type":"Identifier","name":"Y"}}}"#
+
+private def controlSlice : Program :=
+  [ .throwStmt (.numLit 1.0),
+    .tryStmt [.exprStmt (.ident "a")]
+      (some { param := some "e", body := [.exprStmt (.ident "e")] })
+      (some [.exprStmt (.numLit 2.0)]),
+    .tryStmt [] (some { param := none, body := [] }) none,
+    .tryStmt [] none (some []),
+    .labeled "outer"
+      (.whileStmt (.boolLit true)
+        (.block [.breakStmt (some "outer"), .continueStmt (some "outer")])),
+    .breakStmt none,
+    .exprStmt (.binary .instanceof (.ident "x") (.ident "Y")) ]
+
+#guard decode controlSliceJson == toString (repr controlSlice)
+
+/-! ## Unsupported: a catch parameter outside the slice -/
+
+-- A destructuring `catch` binding is #394's. It is refused in place, so
+-- the message names the pattern rather than the `try`.
+#guard decode (script
+    r#"{"type":"TryStatement","block":{"type":"BlockStatement","body":[]},
+        "handler":{"type":"CatchClause",
+                   "param":{"type":"Unsupported","kind":"ObjectBindingPattern"},
+                   "body":{"type":"BlockStatement","body":[]}},
+        "finalizer":null}"#)
+  == "unsupported: ObjectBindingPattern"
+
+/-! ## Malformed: exceptions and control flow, shaped wrongly -/
+
+-- `try { }` alone does not parse, so the bridge never sends a
+-- `TryStatement` with neither clause.
+#guard decode (script
+    r#"{"type":"TryStatement","block":{"type":"BlockStatement","body":[]},
+        "handler":null,"finalizer":null}"#)
+  == "malformed: TryStatement has neither handler nor finalizer"
+
+#guard decode (script
+    r#"{"type":"TryStatement","block":{"type":"Identifier","name":"x"},
+        "handler":null,"finalizer":{"type":"BlockStatement","body":[]}}"#)
+  == "malformed: block is a Identifier"
+
+#guard decode (script
+    r#"{"type":"LabeledStatement","label":{"type":"Literal","value":1,"raw":"1"},
+        "body":{"type":"BlockStatement","body":[]}}"#)
+  == "malformed: LabeledStatement label is a Literal"
+
+#guard decode (script r#"{"type":"BreakStatement"}"#)
+  == "malformed: missing field \"label\""

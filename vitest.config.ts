@@ -63,14 +63,17 @@ export default defineConfig({
         // Ratcheted 2026-09-13: the bridge grew the function, object, and
         // member nodes, every arm of them reached by a test — a function
         // without a body or a name is an ambient or module form a script
-        // cannot contain, and those two carry their own ignores.
+        // cannot contain, and those two carry their own ignores. Ratcheted
+        // again 2026-09-13: the bridge's `throw`, `try`, label, and jump
+        // nodes joined it fully covered, so the denominator grew while the
+        // unreachable set did not.
         //
         // Measure this from a path with no dot-directory in it. The include
         // globs above do not match through one, and a run from, say, a
         // worktree under .claude/ silently reports every loaded file instead
         // — different denominator, different numbers.
         autoUpdate: true,
-        statements: 99.58,
+        statements: 99.59,
         branches: 98.69,
         functions: 100,
         lines: 99.68,

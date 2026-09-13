@@ -23,14 +23,14 @@ private def program : Program :=
 attribute [local simp] evalExpr evalExprs evalStmt evalStmts evalDeclarators
   instantiateBlock hoistNames hoistDeclarators initFunctions
   callFunction catchReturn makeFunction bindParams
-  applyBinary toPrimitive BinaryOp.coerces toNumberPrim toBooleanPrim
+  applyBinary toPrimitive BinaryOp.coerces toNumberPrim toBooleanPrim isStrPrim
   allocCell getCell readCell writeCell initCell
   allocObj readObj writeObj modifyObj
   Env.lookup Heap.alloc Heap.read Heap.write
   Heap.allocObj Heap.readObj Heap.writeObj
   Obj.getOwn Obj.setOwn propGet propSet
-  updateEmpty undefValue thisName DeclKind.isMutable
-  Heap.empty runProgram evalProgram
+  undefValue thisName DeclKind.isMutable
+  Heap.initial globalEnv runScript runProgram evalProgram
   ExceptT.run_bind Except.map throwJsError throwCompletion
 
 @[local simp] private theorem two_plus_one : (2.0 + 1.0 : Float) = 3.0 := by decide
