@@ -87,6 +87,12 @@ def updateEmpty (acc : Option Value) : Option Value → Option Value
   | some v => some v
   | none => acc
 
+/-- `undefined`, the value `if` and `while` complete with when their body
+produced none. Both statements start from it rather than from empty —
+`eval("1; if (true) {}")` is `undefined`, not `1` — while a block that
+runs nothing completes empty and leaves the previous value standing. -/
+def undefValue : Value := .prim .undef
+
 mutual
 
 /-- Evaluate an expression. -/
@@ -138,15 +144,17 @@ def evalStmt (env : Env) : Stmt → EvalM (Env × Option Value)
     let t ← evalExpr env test
     if toBooleanPrim t then do
       let (_, v) ← evalStmt env consequent
-      pure (env, v)
+      pure (env, updateEmpty (some undefValue) v)
     else
       match alternate with
       | some s => do
         let (_, v) ← evalStmt env s
-        pure (env, v)
-      | none => pure (env, none)
+        pure (env, updateEmpty (some undefValue) v)
+      | none => pure (env, some undefValue)
   | .whileStmt test body => do
-    let v ← evalWhile env test body none
+    -- The loop's running value starts at `undefined`, not at empty, so a
+    -- loop whose body never runs still completes with a value.
+    let v ← evalWhile env test body (some undefValue)
     pure (env, v)
   | .block body => do
     let (_, v) ← evalStmts env body none

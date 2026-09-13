@@ -85,9 +85,10 @@ inductive Expr where
   | assign (target : String) (value : Expr)
 deriving Repr, DecidableEq, Inhabited
 
-/-- One declarator of a `VariableDeclaration`. An initializer is required
-in this slice for `const` and optional for `let`; `none` binds
-`undefined`. -/
+/-- One declarator of a `VariableDeclaration`. `none` binds `undefined`.
+JS requires an initializer on a `const`, but as an early error, and early
+errors are outside this epic — so `const x;` binds `undefined` here where
+an engine refuses the script. -/
 structure Declarator where
   /-- ESTree `VariableDeclarator.id`, an `Identifier`. -/
   name : String
