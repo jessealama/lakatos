@@ -100,6 +100,25 @@ inductive NativeFn where
   | errorCtor (kind : ErrorKind)
   /-- `Error.prototype.toString`. -/
   | errorToString
+  /-- `String`, called as a function: ToString of its argument. It is not
+  a constructor here — the wrapper object is #391's. -/
+  | stringCtor
+  /-- `Object`, the constructor. -/
+  | objectCtor
+  /-- `Object.is`. -/
+  | objectIs
+  /-- `Object.keys`. -/
+  | objectKeys
+  /-- `Object.prototype.hasOwnProperty`. -/
+  | objectHasOwnProperty
+  /-- `Array`, the constructor. -/
+  | arrayCtor
+  /-- `Array.isArray`. -/
+  | arrayIsArray
+  /-- `Array.prototype.push`. -/
+  | arrayPush
+  /-- `Array.prototype.join`. -/
+  | arrayJoin
 deriving Repr, DecidableEq, Inhabited
 
 /-- `[[Call]]`: user code or a built-in. -/
@@ -108,18 +127,34 @@ inductive Callable where
   | native (f : NativeFn)
 deriving Repr, Inhabited
 
+/-- How exotic an object is. `ordinary` is every object with no
+internal behaviour of its own; `array` is the Array exotic object, and
+its `length` lives here rather than among the properties for three
+reasons: it is then never enumerated by `Object.keys`, never shadowed by
+an ordinary write, and truncation is one field write rather than a scan
+plus a property update. Later slices add constructors — a boxed string or
+number (#391, #382) and `arguments` (#393). -/
+inductive ObjKind where
+  | ordinary
+  | array (length : Nat)
+deriving Repr, DecidableEq, Inhabited
+
 /-- An ordinary object: a prototype link, own data properties in
 insertion order, and — for a function — what calling it does. There are
 no property descriptors and no accessors; writability, enumerability,
 and getters are #389's. -/
 structure Obj where
-  /-- `[[Prototype]]`. `none` is the null prototype; every object here
-  has one until `Object.prototype` exists (#389). -/
+  /-- `[[Prototype]]`. `none` is the null prototype; a function object's
+  is one until `Function.prototype` exists (#389). -/
   proto : Option Ref := none
-  /-- Own data properties, in insertion order. -/
+  /-- Own data properties, in insertion order. An array's elements are
+  here, under their index keys; its `length` is not. -/
   properties : List (String × Value) := []
   /-- `[[Call]]`. An object with one is a function. -/
   callable : Option Callable := none
+  /-- The exotic-object classification. Defaulted, so an ordinary
+  object's literal says nothing about it. -/
+  kind : ObjKind := .ordinary
 deriving Repr, Inhabited
 
 /-- A variable binding. `mutable` is `false` for `const`, which is what
@@ -216,5 +251,84 @@ def Obj.setOwn (o : Obj) (key : String) (v : Value) : Obj :=
 def Env.lookup : Env → String → Option CellRef
   | [], _ => none
   | (n, r) :: rest, name => if n == name then some r else Env.lookup rest name
+
+/-- A `Nat` as a Number. This is the one widening the evaluator performs
+itself — a length or an index becoming a JS value — and it is exact:
+`Nat.toFloat` is `Float.ofNat`, a definition with no `extern`, so the
+kernel reduces it, and every length this slice can build is far below
+2^53. `scripts/check-boundary.sh`'s header names this spelling; the
+conversions in the other direction go through `uint32Of?`. -/
+def Value.ofNat (n : Nat) : Value := .prim (.num n.toFloat)
+
+/-- Fold a run of decimal digits onto an accumulator, refusing anything
+that is not one. Core's `String.toNat?` accepts digit separators
+(`"1_0".toNat? = some 10`), which is not what an array index is, so the
+parse is written out here. -/
+def digitsToNat : List Char → Nat → Option Nat
+  | [], acc => some acc
+  | c :: rest, acc =>
+    if c.isDigit then digitsToNat rest (acc * 10 + (c.toNat - '0'.toNat)) else none
+
+/-- A property key read as an array index: CanonicalNumericIndexString
+restricted to the indices an array may hold. Non-empty, digits only, no
+leading zero unless the string is `"0"`, and below 2^32 - 1, so that
+`xs["01"]` and `xs["1.0"]` are ordinary string keys that do not grow a
+`length`. -/
+def arrayIndex? (key : String) : Option Nat :=
+  match key.toList with
+  | [] => none
+  | ['0'] => some 0
+  | '0' :: _ => none
+  | cs =>
+    match digitsToNat cs 0 with
+    | some n => if n < 4294967295 then some n else none
+    | none => none
+
+/-- Whether an object is an Array exotic object. -/
+def Obj.isArray (o : Obj) : Bool :=
+  match o.kind with
+  | .array _ => true
+  | .ordinary => false
+
+/-- `[[GetOwnProperty]]` reduced to a yes or no, which is all
+`Object.prototype.hasOwnProperty` asks. An array's `length` is an own
+property that lives in the kind rather than the property list, so it is
+answered here by hand. -/
+def Obj.hasOwn (o : Obj) (key : String) : Bool :=
+  match o.kind with
+  | .array _ => key == "length" || (o.getOwn key).isSome
+  | .ordinary => (o.getOwn key).isSome
+
+/-- ArraySetLength's shortening half: drop every element at an index at
+or past the new length, keep the rest in order, and record the length.
+Growing is the same operation with nothing to drop. -/
+def Obj.truncate (o : Obj) (n : Nat) : Obj :=
+  { o with
+    kind := .array n,
+    properties := o.properties.filter (fun p =>
+      match arrayIndex? p.1 with
+      | some i => i < n
+      | none => true) }
+
+/-- OrdinaryOwnPropertyKeys: the index keys in ascending numeric order,
+then every other key in insertion order. Symbols are #392's, and an
+array's `length` is not here because it is not in the property list —
+`Object.keys([7, 8])` is `["0", "1"]`. Enumerability arrives with
+descriptors (#389), so until then every own key is listed. -/
+def Obj.ownKeys (o : Obj) : List String :=
+  let keys := o.properties.map (·.1)
+  let indexed := keys.filterMap (fun k => (arrayIndex? k).map (fun i => (i, k)))
+  (indexed.mergeSort (fun a b => decide (a.1 ≤ b.1))).map (·.2)
+    ++ keys.filter (fun k => (arrayIndex? k).isNone)
+
+/-- A list of values as index-keyed properties, numbered from `start`. -/
+def indexProps (start : Nat) : List Value → List (String × Value)
+  | [] => []
+  | v :: rest => (Nat.repr start, v) :: indexProps (start + 1) rest
+
+/-- ArrayCreate's object: the elements under their index keys, the
+length in the kind, and the given prototype. -/
+def Obj.array (proto : Option Ref) (elements : List Value) : Obj :=
+  { kind := .array elements.length, proto, properties := indexProps 0 elements }
 
 end Tarski
