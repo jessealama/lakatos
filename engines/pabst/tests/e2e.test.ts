@@ -132,6 +132,10 @@ const enumeratedSlowOneSrc = path.join(
   root,
   "engines/pabst/tests/fixtures/e2e/enumerated-slow-one.ts",
 );
+// Tens of milliseconds: enough for the budget fixtures to overrun without
+// making the suite wait on them.
+const SHORT_BUDGET = { loopBudgetMs: 40 };
+
 const enumeratedCapSrc = path.join(
   root,
   "engines/pabst/tests/fixtures/e2e/enumerated-cap.ts",
@@ -753,9 +757,15 @@ describe("end-to-end", () => {
 
   it(
     "a walk that outruns its budget is a Timeout saying how far it got",
-    { timeout: 60000 },
+    { timeout: 30000 },
     () => {
-      const [r] = generate([enumeratedBudgetSrc], OUT_ROOT);
+      const [r] = generate(
+        [enumeratedBudgetSrc],
+        OUT_ROOT,
+        undefined,
+        new Set(),
+        SHORT_BUDGET,
+      );
       const env = run(r!);
       expect(env.failed).toBe(1);
       const a = env.annotations[0]!;
@@ -772,9 +782,15 @@ describe("end-to-end", () => {
 
   it(
     "a walk whose only tuple outruns the budget still finishes as a Theorem",
-    { timeout: 60000 },
+    { timeout: 30000 },
     () => {
-      const [r] = generate([enumeratedSlowOneSrc], OUT_ROOT);
+      const [r] = generate(
+        [enumeratedSlowOneSrc],
+        OUT_ROOT,
+        undefined,
+        new Set(),
+        SHORT_BUDGET,
+      );
       const env = run(r!);
       expect(env).toMatchObject({ passed: 1, failed: 0 });
       expect(env.annotations).toHaveLength(1);

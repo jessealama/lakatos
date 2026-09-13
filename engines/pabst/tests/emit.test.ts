@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { LOOP_BUDGET_MS } from "../src/enumerate.js";
 import { emit } from "../src/emit.js";
 import type { PropertySpec } from "../src/ir.js";
 
@@ -16,7 +17,13 @@ const spec: PropertySpec = {
 };
 
 describe("emit", () => {
-  const out = emit([spec], "foo.ts", "out/foo.pabst.test.ts", 42);
+  const out = emit(
+    [spec],
+    "foo.ts",
+    "out/foo.pabst.test.ts",
+    42,
+    LOOP_BUDGET_MS,
+  );
 
   it("imports vitest + @fast-check/vitest and the module", () => {
     expect(out).toContain('import { describe } from "vitest";');
@@ -66,6 +73,7 @@ describe("emit", () => {
       "foo.ts",
       "out/foo.pabst.test.ts",
       42,
+      LOOP_BUDGET_MS,
     );
     const occurrences = multi.split('from "lakatos/runtime"').length - 1;
     expect(occurrences).toBe(1);
@@ -105,6 +113,7 @@ describe("emit — import path and exports", () => {
       "sub/bar.ts",
       "out.pabst.test.ts",
       42,
+      LOOP_BUDGET_MS,
     );
     expect(out).toContain('import * as __M from "./sub/bar";');
   });
@@ -115,6 +124,7 @@ describe("emit — import path and exports", () => {
       "foo.ts",
       "out/foo.pabst.test.ts",
       42,
+      LOOP_BUDGET_MS,
     );
     expect(out).not.toContain("} = __M;");
   });
@@ -127,6 +137,7 @@ describe("emit — class methods", () => {
       "counter.ts",
       "out/counter.pabst.test.ts",
       7,
+      LOOP_BUDGET_MS,
     );
     expect(out).toContain('describe("Counter", () => {');
     expect(out).toContain('describe("inc", () => {');
@@ -138,6 +149,7 @@ describe("emit — class methods", () => {
       "counter.ts",
       "out/counter.pabst.test.ts",
       7,
+      LOOP_BUDGET_MS,
     );
     expect(out).toContain(
       '__pabstReport("counter.ts", "Counter#inc", "incAddsOne", ["x"], d)',
@@ -145,7 +157,13 @@ describe("emit — class methods", () => {
   });
 
   it("passes the . qualified name to the reporter for a static method", () => {
-    const out = emit([staticSpec], "arith.ts", "out/arith.pabst.test.ts", 7);
+    const out = emit(
+      [staticSpec],
+      "arith.ts",
+      "out/arith.pabst.test.ts",
+      7,
+      LOOP_BUDGET_MS,
+    );
     expect(out).toContain('describe("Arith", () => {');
     expect(out).toContain('describe("negate", () => {');
     expect(out).toContain(
@@ -163,14 +181,26 @@ describe("emit — bounded intervals", () => {
         { varName: "y", domain: "number", range: { min: "0", max: "1" } },
       ],
     };
-    const out = emit([bounded], "foo.ts", "out/foo.pabst.test.ts", 42);
+    const out = emit(
+      [bounded],
+      "foo.ts",
+      "out/foo.pabst.test.ts",
+      42,
+      LOOP_BUDGET_MS,
+    );
     expect(out).toContain(
       "test.prop([fc.integer({ min: 1, max: 30 }), fc.double({ min: 0, max: 1, noNaN: true })]",
     );
   });
 
   it("leaves unranged binders exactly as before", () => {
-    const out = emit([spec], "foo.ts", "out/foo.pabst.test.ts", 42);
+    const out = emit(
+      [spec],
+      "foo.ts",
+      "out/foo.pabst.test.ts",
+      42,
+      LOOP_BUDGET_MS,
+    );
     expect(out).toContain("test.prop([fc.integer(), fc.double()]");
   });
 });
@@ -198,7 +228,13 @@ const classSpec: PropertySpec = {
 };
 
 describe("emit — class binders", () => {
-  const out = emit([classSpec], "point.ts", "out/point.pabst.test.ts", 42);
+  const out = emit(
+    [classSpec],
+    "point.ts",
+    "out/point.pabst.test.ts",
+    42,
+    LOOP_BUDGET_MS,
+  );
 
   it("draws each class binder as its constructor-argument tuple", () => {
     expect(out).toContain(
@@ -228,7 +264,13 @@ describe("emit — class binders", () => {
   });
 
   it("passes no constructor list when every binder is primitive", () => {
-    const plain = emit([spec], "foo.ts", "out/foo.pabst.test.ts", 42);
+    const plain = emit(
+      [spec],
+      "foo.ts",
+      "out/foo.pabst.test.ts",
+      42,
+      LOOP_BUDGET_MS,
+    );
     expect(plain).not.toContain("], d, [");
   });
 });
@@ -253,7 +295,13 @@ const nestedSpec: PropertySpec = {
 };
 
 describe("emit — nested class binders", () => {
-  const out = emit([nestedSpec], "box.ts", "out/box.pabst.test.ts", 42);
+  const out = emit(
+    [nestedSpec],
+    "box.ts",
+    "out/box.pabst.test.ts",
+    42,
+    LOOP_BUDGET_MS,
+  );
 
   it("draws the nested tuple", () => {
     expect(out).toContain(
@@ -292,7 +340,13 @@ const enumeratedSpec: PropertySpec = {
 };
 
 describe("emit — enumerated specs", () => {
-  const out = emit([enumeratedSpec], "small.ts", "out/small.pabst.test.ts", 42);
+  const out = emit(
+    [enumeratedSpec],
+    "small.ts",
+    "out/small.pabst.test.ts",
+    42,
+    LOOP_BUDGET_MS,
+  );
 
   it("imports the budget reporter beside the others", () => {
     expect(out).toContain(
@@ -338,6 +392,7 @@ describe("emit — enumerated specs", () => {
       "small.ts",
       "out/small.pabst.test.ts",
       42,
+      LOOP_BUDGET_MS,
     );
     expect(both).toContain("test.prop([fc.integer(), fc.double()]");
     expect(both).toContain('test("pos", { timeout: 0 }');
@@ -372,6 +427,7 @@ describe("emit — enumerated class binders", () => {
     "flag.ts",
     "out/flag.pabst.test.ts",
     42,
+    LOOP_BUDGET_MS,
   );
 
   it("opens one loop per constructor slot before the primitive binder's", () => {
@@ -410,6 +466,7 @@ describe("emit — enumerated class binders", () => {
       "small.ts",
       "out/small.pabst.test.ts",
       42,
+      LOOP_BUDGET_MS,
     );
     expect(plain).toContain("errorInstance: __e });");
   });
@@ -424,6 +481,7 @@ describe("emit — enumerated class binders", () => {
       "flag.ts",
       "out/flag.pabst.test.ts",
       42,
+      LOOP_BUDGET_MS,
     );
     expect(shapes(sampled)).toBeDefined();
     expect(shapes(out)).toBe(shapes(sampled));
@@ -439,7 +497,13 @@ describe("emit — enumerated class binders", () => {
       freeExports: ["Unit", "live"],
       cases: 1,
     };
-    const out = emit([unitSpec], "unit.ts", "out/unit.pabst.test.ts", 42);
+    const out = emit(
+      [unitSpec],
+      "unit.ts",
+      "out/unit.pabst.test.ts",
+      42,
+      LOOP_BUDGET_MS,
+    );
     expect(out).toContain(
       "      for (const __once of [0]) {\n" +
         "        if (performance.now() - __t0 > 4000)",
@@ -469,7 +533,13 @@ describe("emit — enumerated class binders", () => {
       freeExports: ["Flag", "Pair", "live"],
       cases: 8,
     };
-    const nested = emit([pairSpec], "flag.ts", "out/flag.pabst.test.ts", 42);
+    const nested = emit(
+      [pairSpec],
+      "flag.ts",
+      "out/flag.pabst.test.ts",
+      42,
+      LOOP_BUDGET_MS,
+    );
     expect(nested).toContain(
       "      for (const __p_0_0 of [false, true]) {\n" +
         "        for (const __p_0_1 of [false, true]) {\n" +
