@@ -35,7 +35,7 @@ attribute [local simp] evalExpr evalStmt evalStmts evalDeclarators
   applyBinary applyUnary applyStrict BinaryOp.coerces toPrimitive
   toNumberPrim toBooleanPrim strictEqValue
   evalBlock evalLabeled evalLoop attempt liftCompletion loopContinues
-  DeclKind.isMutable Heap.empty runProgram evalProgram
+  DeclKind.isMutable Heap.initial globalEnv runScript runProgram evalProgram
   ExceptT.run_bind Except.map throwJsError throwCompletion
 
 @[local simp] private theorem bump0 : (0.0 + 1.0 : Float) = 1.0 := by decide

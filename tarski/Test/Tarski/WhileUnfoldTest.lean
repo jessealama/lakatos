@@ -26,7 +26,7 @@ attribute [local simp] evalExpr evalStmt evalStmts evalDeclarators
   applyBinary applyUnary applyStrict BinaryOp.coerces toPrimitive
   toNumberPrim toBooleanPrim strictEqValue
   evalBlock evalLoop attempt liftCompletion loopContinues
-  DeclKind.isMutable Heap.empty runProgram evalProgram
+  DeclKind.isMutable Heap.initial globalEnv runScript runProgram evalProgram
   ExceptT.run_bind Except.map throwJsError throwCompletion
 
 -- What each iteration's counter bump leaves behind. `simp +decide`

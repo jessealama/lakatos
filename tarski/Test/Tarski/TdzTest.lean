@@ -11,18 +11,19 @@ the `var` this slice does not have. The same pre-pass builds every
 function declaration in the block, so one may be called above its own
 text.
 
-The thrown value is a placeholder string until #379 allocates a real
-`ReferenceError`; what is pinned here is which programs throw. -/
+What is pinned here is which programs throw, and with which message: a
+dead-zone read names the binding it could not reach, which is a different
+refusal from `const`'s. -/
 
 open Tarski
 
 private def outcome (p : Program) : String :=
-  match runProgram p with
+  match runScript p with
   | none => "<diverges>"
-  | some (.error (.throw v)) => s!"uncaught: {formatValue v}"
-  | some (.error _) => "<abrupt>"
-  | some (.ok none) => "<empty>"
-  | some (.ok (some v)) => formatValue v
+  | some (.error (.throw v), h) => s!"uncaught: {describeThrown h v}"
+  | some (.error _, _) => "<abrupt>"
+  | some (.ok none, _) => "<empty>"
+  | some (.ok (some v), _) => formatValue v
 
 /-! ## The dead zone -/
 
@@ -30,7 +31,7 @@ private def outcome (p : Program) : String :=
 #guard outcome
     [ .exprStmt (.ident "x"),
       .varDecl .«let» [{ name := "x", init := some (.numLit 1.0) }] ]
-  == "uncaught: ReferenceError"
+  == "uncaught: ReferenceError: Cannot access 'x' before initialization"
 
 -- `let x = 1; x;` — after the declarator, the same name is ordinary.
 #guard outcome
@@ -48,7 +49,7 @@ private def outcome (p : Program) : String :=
 #guard outcome
     [ .exprStmt (.assign (.ident "x") (.numLit 1.0)),
       .varDecl .«let» [{ name := "x", init := none }] ]
-  == "uncaught: ReferenceError"
+  == "uncaught: ReferenceError: Cannot access 'x' before initialization"
 
 -- `let x = 1; { x; let x = 2; }` — the inner block's own binding shadows
 -- the outer one from the block's first statement, so the read is in the
@@ -58,14 +59,14 @@ private def outcome (p : Program) : String :=
       .block
         [ .exprStmt (.ident "x"),
           .varDecl .«let» [{ name := "x", init := some (.numLit 2.0) }] ] ]
-  == "uncaught: ReferenceError"
+  == "uncaught: ReferenceError: Cannot access 'x' before initialization"
 
 -- `const c = 1; c = 2;` — `const` still refuses assignment, and with a
 -- TypeError, which is a different refusal from the dead zone's.
 #guard outcome
     [ .varDecl .«const» [{ name := "c", init := some (.numLit 1.0) }],
       .exprStmt (.assign (.ident "c") (.numLit 2.0)) ]
-  == "uncaught: TypeError"
+  == "uncaught: TypeError: Assignment to constant variable."
 
 /-! ## What hoisting buys -/
 
@@ -82,7 +83,7 @@ private def outcome (p : Program) : String :=
     [ .funcDecl "f" [] [.returnStmt (some (.ident "x"))],
       .exprStmt (.call (.ident "f") []),
       .varDecl .«let» [{ name := "x", init := some (.numLit 2.0) }] ]
-  == "uncaught: ReferenceError"
+  == "uncaught: ReferenceError: Cannot access 'x' before initialization"
 
 -- `{ f(); function f() { return 1; } }` — a function declaration is
 -- callable above its own text, within its block.

@@ -14,12 +14,12 @@ open Tarski
 
 /-- What the binary would print, so a case reads as its own stdout. -/
 private def outcome (p : Program) : String :=
-  match runProgram p with
+  match runScript p with
   | none => "<diverges>"
-  | some (.error (.throw v)) => s!"uncaught: {formatValue v}"
-  | some (.error _) => "<abrupt>"
-  | some (.ok none) => "<empty>"
-  | some (.ok (some v)) => formatValue v
+  | some (.error (.throw v), h) => s!"uncaught: {describeThrown h v}"
+  | some (.error _, _) => "<abrupt>"
+  | some (.ok none, _) => "<empty>"
+  | some (.ok (some v), _) => formatValue v
 
 /-- `const o = { a: 1 };`, the object every read below starts from. -/
 private def declareO : Stmt :=
@@ -128,10 +128,10 @@ private def declareP : List Stmt :=
 /-! ## Bases that are not objects -/
 
 -- `undefined.x;`
-#guard outcome [.exprStmt (.member .undefLit "x")] == "uncaught: TypeError"
+#guard outcome [.exprStmt (.member .undefLit "x")] == "uncaught: TypeError: Cannot read properties of undefined (reading 'x')"
 
 -- `null.x;`
-#guard outcome [.exprStmt (.member .nullLit "x")] == "uncaught: TypeError"
+#guard outcome [.exprStmt (.member .nullLit "x")] == "uncaught: TypeError: Cannot read properties of null (reading 'x')"
 
 -- `(1).x;` — a number has no wrapper prototype yet, so the read answers
 -- `undefined` where an engine would find `Number.prototype` (#382).
@@ -139,7 +139,7 @@ private def declareP : List Stmt :=
 
 -- `(1).x = 2;` — but a write to a primitive is a strict-mode TypeError.
 #guard outcome
-    [.exprStmt (.assign (.member (.numLit 1.0) "x") (.numLit 2.0))] == "uncaught: TypeError"
+    [.exprStmt (.assign (.member (.numLit 1.0) "x") (.numLit 2.0))] == "uncaught: TypeError: Cannot set properties of 1 (setting 'x')"
 
 /-! ## `typeof` over the value domain -/
 
@@ -158,7 +158,7 @@ private def declareP : List Stmt :=
 -- `toString`, because there is no `Object.prototype` to find them on.
 -- #389 makes this `"[object Object]1"`; until then it throws, and that
 -- is recorded here rather than left to be discovered.
-#guard outcome [.exprStmt (.binary .add (.objectLit []) (.numLit 1.0))] == "uncaught: TypeError"
+#guard outcome [.exprStmt (.binary .add (.objectLit []) (.numLit 1.0))] == "uncaught: TypeError: Cannot convert object to primitive value"
 
 -- `const o = { valueOf: function () { return 3; } }; o + 1;` — a
 -- user-defined `valueOf` already works.

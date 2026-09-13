@@ -14,7 +14,11 @@ never joins a simp set, and for the same reason: its recursion is on the
 *heap* rather than on syntax, so `simp` unfolds it under the binder that
 `readObj` has not yet resolved and never stops. Both are unfolded one
 step at a time with `rw`, and the `rw` count is the step count — here one
-prototype link, which finds the property it is looking for. -/
+prototype link, which finds the property it is looking for.
+
+The literal's object lands at reference 15, just past the realm's fifteen
+intrinsics: a script starts from `Heap.initial`, not from an empty
+heap. -/
 
 open Tarski
 
@@ -35,7 +39,7 @@ attribute [local simp] evalExpr evalStmt evalStmts evalDeclarators evalProps
   Env.lookup Heap.alloc Heap.read Heap.write
   Heap.allocObj Heap.readObj Heap.writeObj
   Obj.getOwn Obj.setOwn propGet propSet
-  DeclKind.isMutable Heap.empty runProgram evalProgram
+  DeclKind.isMutable Heap.initial globalEnv runScript runProgram evalProgram
   ExceptT.run_bind Except.map throwJsError throwCompletion
 
 example : runProgram program = some (.ok (some (.prim (.num 1.0)))) := by

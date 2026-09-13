@@ -23,12 +23,12 @@ open Tarski
 
 /-- What the binary would print, so a case reads as its own stdout. -/
 private def outcome (p : Program) : String :=
-  match runProgram p with
+  match runScript p with
   | none => "<diverges>"
-  | some (.error (.throw v)) => s!"uncaught: {formatValue v}"
-  | some (.error _) => "<abrupt>"
-  | some (.ok none) => "<empty>"
-  | some (.ok (some v)) => formatValue v
+  | some (.error (.throw v), h) => s!"uncaught: {describeThrown h v}"
+  | some (.error _, _) => "<abrupt>"
+  | some (.ok none, _) => "<empty>"
+  | some (.ok (some v), _) => formatValue v
 
 private def num (x : Float) : Expr := .numLit x
 private def n : Expr := .ident "n"

@@ -37,9 +37,9 @@ def formatNumber (x : Float) : String :=
   else if Float.lt x 0.0 then "-" ++ formatMagnitude (-x)
   else formatMagnitude x
 
-/-- A value, as the binary prints it. The object arm is unreachable in
-this slice; the string arm is not, because an uncaught error's
-placeholder value is one. -/
+/-- A value, as the binary prints it. Both the string and the object arm
+are reachable: a script may `throw "x"` or `throw {}`, and `describeThrown`
+falls back to this for a thrown value that is not an Error object. -/
 def formatValue : Value → String
   | .prim (.num x) => formatNumber x
   | .prim (.bool b) => if b then "true" else "false"

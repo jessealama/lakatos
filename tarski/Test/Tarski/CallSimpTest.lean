@@ -30,7 +30,7 @@ attribute [local simp] evalExpr evalExprs evalStmt evalStmts evalDeclarators
   Heap.allocObj Heap.readObj Heap.writeObj
   Obj.getOwn Obj.setOwn propGet propSet
   undefValue thisName DeclKind.isMutable
-  Heap.empty runProgram evalProgram
+  Heap.initial globalEnv runScript runProgram evalProgram
   ExceptT.run_bind Except.map throwJsError throwCompletion
 
 @[local simp] private theorem two_plus_one : (2.0 + 1.0 : Float) = 3.0 := by decide

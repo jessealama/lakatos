@@ -15,12 +15,12 @@ open Tarski
 
 /-- What the binary would print, so a case reads as its own stdout. -/
 private def outcome (p : Program) : String :=
-  match runProgram p with
+  match runScript p with
   | none => "<diverges>"
-  | some (.error (.throw v)) => s!"uncaught: {formatValue v}"
-  | some (.error _) => "<abrupt>"
-  | some (.ok none) => "<empty>"
-  | some (.ok (some v)) => formatValue v
+  | some (.error (.throw v), h) => s!"uncaught: {describeThrown h v}"
+  | some (.error _, _) => "<abrupt>"
+  | some (.ok none, _) => "<empty>"
+  | some (.ok (some v), _) => formatValue v
 
 private def one : Stmt := .exprStmt (.numLit 1.0)
 private def yes : Expr := .boolLit true
@@ -74,15 +74,14 @@ private def no : Expr := .boolLit false
 
 /-! ## What ends a run early -/
 
--- `undeclared;` — an unresolvable reference. The value is a placeholder
--- until #379 allocates a real Error.
-#guard outcome [.exprStmt (.ident "undeclared")] == "uncaught: ReferenceError"
+-- `undeclared;` — an unresolvable reference.
+#guard outcome [.exprStmt (.ident "undeclared")] == "uncaught: ReferenceError: undeclared is not defined"
 
 -- `const frozen = 1; frozen = 2;` — assignment to an immutable binding.
 #guard outcome
     [.varDecl .«const» [{ name := "frozen", init := some (.numLit 1.0) }],
      .exprStmt (.assign (.ident "frozen") (.numLit 2.0))]
-  == "uncaught: TypeError"
+  == "uncaught: TypeError: Assignment to constant variable."
 
 -- `let n = 0; n = 2; n;` — a `let` binding is writable, and the write is
 -- visible afterwards because bindings live in the heap.
@@ -96,4 +95,4 @@ private def no : Expr := .boolLit false
 #guard outcome
     [.block [.varDecl .«let» [{ name := "n", init := some (.numLit 1.0) }]],
      .exprStmt (.ident "n")]
-  == "uncaught: ReferenceError"
+  == "uncaught: ReferenceError: n is not defined"

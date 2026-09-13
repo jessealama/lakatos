@@ -1,4 +1,4 @@
-import Tarski.Value
+import Tarski.Realm
 
 /-! The evaluator's monad.
 
@@ -44,13 +44,6 @@ abbrev EvalM (α : Type) := ExceptT Completion (StateT Heap Option) α
 /-- End the current run abruptly. -/
 def throwCompletion {α : Type} (c : Completion) : EvalM α :=
   throw c
-
-/-- Throw a placeholder for a runtime error whose real value is an `Error`
-object this slice cannot allocate. #379 gives it a real allocation and a
-prototype; no caller changes, because every caller already treats the
-result as an abrupt completion and never inspects the value. -/
-def throwJsError {α : Type} (kind : String) : EvalM α :=
-  throwCompletion (.throw (.prim (.str kind)))
 
 /-- Catch a `return` completion, letting every other one through. Opaque
 on purpose: `partial_fixpoint` cannot eliminate a recursive call written
@@ -122,6 +115,27 @@ namely `ExceptT.run` of the lifted state operations. They are stated with
 @[simp] theorem run_modify (f : Heap → Heap) :
     (modify f : EvalM PUnit).run = StateT.mk (fun h => some (Except.ok ⟨⟩, f h)) := rfl
 
+/-- Allocate an object and answer its reference. -/
+def allocObj (o : Obj) : EvalM Ref := do
+  let h ← get
+  let (r, h') := h.allocObj o
+  set h'
+  return r
+
+/-- Throw one of the evaluator's own runtime errors: a fresh object whose
+prototype is the kind's, carrying the message as an own property. The
+`name` it will report comes from that prototype, so the object is exactly
+what `new TypeError(message)` builds, which is what makes the evaluator's
+refusals catchable and testable with `instanceof`.
+
+Every message the evaluator raises is in one table in `Tarski/Eval.lean`'s
+header. test262 never inspects them; the table exists so the tests can
+pin what the binary prints. -/
+def throwJsError {α : Type} (kind : ErrorKind) (message : String) : EvalM α := do
+  let r ← allocObj
+    { proto := some kind.protoRef, properties := [("message", .prim (.str message))] }
+  throwCompletion (.throw (.obj r))
+
 /-- Allocate a binding and answer its reference. -/
 def allocCell (c : Cell) : EvalM CellRef := do
   let h ← get
@@ -129,23 +143,24 @@ def allocCell (c : Cell) : EvalM CellRef := do
   set h'
   return r
 
-/-- The cell a reference names. The `ReferenceError` arm is unreachable
-for a reference that came out of an `Env`: the evaluator only puts
-references into scope chains after allocating their cells. -/
+/-- The cell a reference names. The error arm is unreachable for a
+reference that came out of an `Env`: the evaluator only puts references
+into scope chains after allocating their cells. -/
 def getCell (r : CellRef) : EvalM Cell := do
   let h ← get
   match h.read r with
   | some c => pure c
-  | none => throwJsError "ReferenceError"
+  | none => throwJsError .referenceError "dangling binding"
 
 /-- Read a binding's value. An uninitialized cell is a name in its
 temporal dead zone — in scope, because its block was instantiated, but
 not yet reached by its declarator — and reading one is a
-`ReferenceError`, which is what makes the TDZ observable. -/
-def readCell (r : CellRef) : EvalM Value := do
+`ReferenceError`, which is what makes the TDZ observable. The name is
+passed in so the message can say which binding it was. -/
+def readCell (name : String) (r : CellRef) : EvalM Value := do
   match (← getCell r).value with
   | some v => pure v
-  | none => throwJsError "ReferenceError"
+  | none => throwJsError .referenceError s!"Cannot access '{name}' before initialization"
 
 /-- Write a binding's value. -/
 def writeCell (r : CellRef) (v : Value) : EvalM Unit := do
@@ -158,13 +173,6 @@ assigning to one are different events even where the code is one, and
 def initCell (r : CellRef) (v : Value) : EvalM Unit :=
   writeCell r v
 
-/-- Allocate an object and answer its reference. -/
-def allocObj (o : Obj) : EvalM Ref := do
-  let h ← get
-  let (r, h') := h.allocObj o
-  set h'
-  return r
-
 /-- The object a reference names. Unreachable in the same way as
 `getCell`: a `Value.obj` only ever holds a reference the heap handed
 out. -/
@@ -172,7 +180,7 @@ def readObj (r : Ref) : EvalM Obj := do
   let h ← get
   match h.readObj r with
   | some o => pure o
-  | none => throwJsError "TypeError"
+  | none => throwJsError .typeError "dangling object"
 
 /-- Replace an object. -/
 def writeObj (r : Ref) (o : Obj) : EvalM Unit := do

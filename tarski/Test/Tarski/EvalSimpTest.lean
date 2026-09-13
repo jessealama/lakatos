@@ -35,7 +35,7 @@ attribute [local simp] evalExpr evalStmt evalStmts evalDeclarators
   Env.lookup Heap.alloc Heap.read Heap.write
   applyBinary applyUnary applyStrict BinaryOp.coerces toPrimitive
   toNumberPrim toBooleanPrim strictEqValue
-  DeclKind.isMutable Heap.empty runProgram evalProgram Js.JsVal.strictEq
+  DeclKind.isMutable Heap.initial globalEnv runScript runProgram evalProgram Js.JsVal.strictEq
   ExceptT.run_bind Except.map throwJsError throwCompletion
 
 @[local simp] private theorem three_times_two_and_a_half : (3.0 * 2.5 : Float) = 7.5 := by decide

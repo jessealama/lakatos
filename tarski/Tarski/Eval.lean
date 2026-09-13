@@ -29,7 +29,31 @@ A block's declarations are instantiated before its first statement runs.
 That is one mechanism answering three needs: the temporal dead zone (a
 cell exists but holds nothing until its declarator runs), a function
 declaration callable above its own text, and two declarations that call
-each other. -/
+each other.
+
+## The messages the evaluator raises
+
+Every runtime error the evaluator itself throws is here, verbatim,
+V8-shaped where that was free. test262 never inspects a message; the
+table exists so the tests can pin what the binary prints, and so that a
+new refusal is written against a list rather than invented.
+
+| Situation                                         | Class            | Message                                                     |
+| ------------------------------------------------- | ---------------- | ----------------------------------------------------------- |
+| a name that resolves nowhere                       | `ReferenceError` | `{name} is not defined`                                      |
+| a read or write in the temporal dead zone          | `ReferenceError` | `Cannot access '{name}' before initialization`               |
+| assignment to a `const`                            | `TypeError`      | `Assignment to constant variable.`                           |
+| calling a non-function                             | `TypeError`      | `not a function`                                             |
+| `new` on anything without `[[Construct]]`          | `TypeError`      | `not a constructor`                                          |
+| a property read on `undefined` or `null`           | `TypeError`      | `Cannot read properties of {undefined|null} (reading '{key}')` |
+| a property write on a primitive                    | `TypeError`      | `Cannot set properties of {base} (setting '{key}')`          |
+| ToPrimitive with no primitive to give              | `TypeError`      | `Cannot convert object to primitive value`                   |
+| `instanceof` a non-callable                        | `TypeError`      | `Right-hand side of 'instanceof' is not callable`            |
+| `instanceof` a function with a non-object prototype | `TypeError`     | `Function has non-object prototype in instanceof check`      |
+| `Error.prototype.toString` on a primitive          | `TypeError`      | `Error.prototype.toString called on non-object`              |
+
+`Tarski/Monad.lean` holds two more, for the two arms a reference the
+evaluator handed out cannot reach. -/
 
 namespace Tarski
 
@@ -170,7 +194,7 @@ def typeofValue (v : Value) : EvalM String := do
 constructed. The function object's own `[[Prototype]]` stays null until
 `Function.prototype` exists (#389). -/
 def makeFunction (c : Closure) : EvalM Value := do
-  let f ← allocObj { callable := some c }
+  let f ← allocObj { callable := some (.closure c) }
   match c.kind with
   | .arrow => pure (.obj f)
   | .ordinary => do
@@ -246,7 +270,9 @@ checks and no prototype-chain setters, and descriptors and accessors are
 def setProp (base : Value) (key : String) (v : Value) : EvalM Unit :=
   match base with
   | .obj r => modifyObj r (fun o => o.setOwn key v)
-  | .prim _ => throwJsError "TypeError"
+  | .prim _ =>
+    throwJsError .typeError
+      s!"Cannot set properties of {formatValue base} (setting '{key}')"
 
 mutual
 
@@ -259,13 +285,13 @@ def evalExpr (env : Env) : Expr → EvalM Value
   | .nullLit => pure (.prim .null)
   | .ident name =>
     match Env.lookup env name with
-    | some r => readCell r
-    | none => throwJsError "ReferenceError"
+    | some r => readCell name r
+    | none => throwJsError .referenceError s!"{name} is not defined"
   | .this =>
     -- No global object yet, so an unbound `this` is `undefined` rather
     -- than a `ReferenceError`: #381 gives the top level a receiver.
     match Env.lookup env thisName with
-    | some r => readCell r
+    | some r => readCell thisName r
     | none => pure undefValue
   | .unary op operand =>
     match op with
@@ -354,14 +380,15 @@ def evalExpr (env : Env) : Expr → EvalM Value
       | some r => do
         let cell ← getCell r
         match cell.value with
-        | none => throwJsError "ReferenceError"
+        | none =>
+          throwJsError .referenceError s!"Cannot access '{name}' before initialization"
         | some _ =>
           if cell.mutable then do
             writeCell r v
             pure v
           else
-            throwJsError "TypeError"
-      | none => throwJsError "ReferenceError"
+            throwJsError .typeError "Assignment to constant variable."
+      | none => throwJsError .referenceError s!"{name} is not defined"
     | .member object name => do
       let base ← evalExpr env object
       let v ← evalExpr env value
@@ -403,8 +430,10 @@ This is inside the fixpoint block for the walk today, and for #389's
 accessors, which will call user code from here. -/
 def getProp (base : Value) (key : String) : EvalM Value :=
   match base with
-  | .prim .undef => throwJsError "TypeError"
-  | .prim .null => throwJsError "TypeError"
+  | .prim .undef =>
+    throwJsError .typeError s!"Cannot read properties of undefined (reading '{key}')"
+  | .prim .null =>
+    throwJsError .typeError s!"Cannot read properties of null (reading '{key}')"
   | .prim _ => pure undefValue
   | .obj r => do
     let o ← readObj r
@@ -431,7 +460,7 @@ def toPrimitive (v : Value) : EvalM JsVal :=
     | none =>
       match ← primitiveFrom v "toString" with
       | some p => pure p
-      | none => throwJsError "TypeError"
+      | none => throwJsError .typeError "Cannot convert object to primitive value"
   partial_fixpoint
 
 /-- One step of OrdinaryToPrimitive: call the named method on the object
@@ -469,12 +498,18 @@ declarations. A `return` is an abrupt completion `catchReturn` turns back
 into a value; a body that falls off the end answers `undefined`. -/
 def callFunction (f : Value) (thisArg : Value) (args : List Value) : EvalM Value :=
   match f with
-  | .prim _ => throwJsError "TypeError"
+  | .prim _ => throwJsError .typeError "not a function"
   | .obj r => do
     let o ← readObj r
     match o.callable with
-    | none => throwJsError "TypeError"
-    | some c => do
+    | none => throwJsError .typeError "not a function"
+    | some (.native (.errorCtor _)) =>
+      -- `Error("x")` is `new Error("x")`: an Error constructor called as
+      -- a function constructs (20.5.1.1), because with no `new.target` it
+      -- falls back to itself.
+      construct f args
+    | some (.native n) => callNative n thisArg args
+    | some (.closure c) => do
       let withThis ←
         match c.kind with
         | .arrow => pure c.env
@@ -488,26 +523,91 @@ def callFunction (f : Value) (thisArg : Value) (args : List Value) : EvalM Value
         pure undefValue
   partial_fixpoint
 
+/-- Run a built-in.
+
+`.errorCtor` is the shared body of the seven `Error` constructors: it
+sets `message` on the object it was handed, when an argument other than
+`undefined` was given, and answers that object. It never allocates, so
+`new E(m)` and `E(m)` differ only in who allocates — which is what lets
+`construct` hand it a fresh object and `callFunction` route to
+`construct`. The `options` argument, and so `cause`, is ignored; there is
+no `stack`.
+
+`.errorToString` is `Error.prototype.toString`: `name` and `message` off
+the receiver, each defaulting when absent, joined by `": "` unless one of
+them is empty. The uncaught-error report runs this same algorithm, which
+is the reason it is exposed at all. -/
+def callNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Value :=
+  match f with
+  | .errorCtor _ => do
+    match args with
+    | [] => pure thisArg
+    | .prim .undef :: _ => pure thisArg
+    | m :: _ => do
+      -- ToString, which `toPropertyKey` already is for every primitive
+      -- and which runs ToPrimitive on an object; #380 gives it its own
+      -- name.
+      setProp thisArg "message" (.prim (.str (← toPropertyKey m)))
+      pure thisArg
+  | .errorToString =>
+    match thisArg with
+    | .prim _ => throwJsError .typeError "Error.prototype.toString called on non-object"
+    | .obj _ => do
+      let name ← match ← getProp thisArg "name" with
+        | .prim .undef => pure "Error"
+        | v => toPropertyKey v
+      let msg ← match ← getProp thisArg "message" with
+        | .prim .undef => pure ""
+        | v => toPropertyKey v
+      if name.isEmpty then pure (.prim (.str msg))
+      else if msg.isEmpty then pure (.prim (.str name))
+      else pure (.prim (.str (name ++ ": " ++ msg)))
+  partial_fixpoint
+
+/-- OrdinaryCreateFromConstructor: the instance `new` builds, linked to
+the constructor's `prototype` property when that is an object and to null
+otherwise. Shared by the two `construct` arms, which differ only in what
+runs afterwards. -/
+def allocFromConstructor (f : Value) : EvalM Ref := do
+  let protoVal ← getProp f "prototype"
+  let proto := match protoVal with
+    | .obj p => some p
+    | .prim _ => none
+  allocObj { proto }
+  partial_fixpoint
+
+/-- Whether `p` is on `o`'s prototype chain, `o` itself not counted —
+`[[HasInstance]]`'s walk. No fuel, as `getProp` has none: a cycle is a
+program that does not terminate, and nothing can build one until
+`Object.setPrototypeOf` (#389). -/
+def protoChainHas (o p : Ref) : EvalM Bool := do
+  match (← readObj o).proto with
+  | none => pure false
+  | some q => if q == p then pure true else protoChainHas q p
+  partial_fixpoint
+
 /-- `new`. The instance's prototype is the function's `prototype`
 property when that is an object, and null otherwise; a constructor that
 returns an object returns that object, and one that returns anything else
 returns the instance. An arrow has no `[[Construct]]`. -/
 def construct (f : Value) (args : List Value) : EvalM Value :=
   match f with
-  | .prim _ => throwJsError "TypeError"
+  | .prim _ => throwJsError .typeError "not a constructor"
   | .obj r => do
     let o ← readObj r
     match o.callable with
-    | none => throwJsError "TypeError"
-    | some c =>
+    | none => throwJsError .typeError "not a constructor"
+    | some (.native (.errorCtor k)) => do
+      -- The native answers the object it was handed, so the
+      -- return-object rule below holds trivially and is not written out.
+      let fresh ← allocFromConstructor f
+      callNative (.errorCtor k) (.obj fresh) args
+    | some (.native _) => throwJsError .typeError "not a constructor"
+    | some (.closure c) =>
       match c.kind with
-      | .arrow => throwJsError "TypeError"
+      | .arrow => throwJsError .typeError "not a constructor"
       | .ordinary => do
-        let protoVal ← getProp f "prototype"
-        let proto := match protoVal with
-          | .obj p => some p
-          | .prim _ => none
-        let fresh ← allocObj { proto }
+        let fresh ← allocFromConstructor f
         match ← callFunction f (.obj fresh) args with
         | .obj result => pure (.obj result)
         | .prim _ => pure (.obj fresh)
@@ -651,21 +751,49 @@ def evalWhile (env : Env) (labels : List String) (test : Expr) (body : Stmt)
 
 end
 
-/-- Run a whole script from the empty environment and the empty heap. The
-script body is a block like any other, so it is instantiated first. -/
+/-- Run a whole script from the realm's global environment. The script
+body is a block like any other, so it is instantiated first — on top of
+`globalEnv`, which is where `Error` and its subclasses are bound. -/
 def evalProgram (p : Program) : EvalM (Option Value) := do
-  let env ← instantiateBlock [] p
+  let env ← instantiateBlock globalEnv p
   evalStmts env p none
 
-/-- A script's observable outcome: `none` is divergence, `.error` an
-uncaught abrupt completion, `.ok` the script's completion value (`none`
-when no statement produced one). The heap is dropped: nothing outside
-the evaluator can name a cell, and a completion carries no reference a
-caller could follow. -/
+/-- A script's run, heap and all: `none` is divergence, `.error` an
+uncaught abrupt completion, `.ok` the completion value (`none` when no
+statement produced one). The binary reads this, because reporting an
+uncaught error means following the reference it threw. -/
+def runScript (p : Program) : Option (Except Completion (Option Value) × Heap) :=
+  ((evalProgram p).run).run Heap.initial
+
+/-- A script's outcome with the heap dropped, which is what a proof
+states: a theorem about a program should say what it answers, not what
+realm it answered in. -/
 def runProgram (p : Program) : Option (Except Completion (Option Value)) :=
-  match ((evalProgram p).run).run Heap.empty with
-  | none => none
-  | some (.error c, _) => some (.error c)
-  | some (.ok v, _) => some (.ok v)
+  (runScript p).map (·.1)
+
+/-- An Error object's `toString`, for the report. "Error object" here
+means the prototype chain reaches `Error.prototype` — which is what an
+`[[ErrorData]]` slot would say about everything this slice can build,
+there being no other way to get that prototype. -/
+def errorSummary (v : Value) : EvalM (Option String) := do
+  match v with
+  | .prim _ => pure none
+  | .obj r =>
+    if ← protoChainHas r ErrorKind.error.protoRef then
+      match ← callNative .errorToString v [] with
+      | .prim (.str s) => pure (some s)
+      | _ => pure none
+    else pure none
+
+/-- How the binary names a thrown value: `<name>: <message>` for an Error
+object, and its printed form for anything else — a script may `throw 1`.
+The summary is computed in the heap the throw came out with, since that
+is where the object is. A `toString` that itself ends abruptly falls back
+to the printed form rather than replacing one uncaught throw with
+another. -/
+def describeThrown (h : Heap) (v : Value) : String :=
+  match ((errorSummary v).run).run h with
+  | some (.ok (some s), _) => s
+  | _ => formatValue v
 
 end Tarski

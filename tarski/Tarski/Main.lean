@@ -11,8 +11,9 @@ completion value, or nothing when no statement produced one.
 Exit codes:
 
 * `0` — the script ran. Its completion value, if any, is on stdout.
-* `1` — the script ended with an uncaught abrupt completion. `uncaught:`
-  and the thrown value are on stderr.
+* `1` — the script ended with an uncaught abrupt completion. `Uncaught `
+  and the thrown value are on stderr: `<name>: <message>` for an Error
+  object, the value's printed form otherwise.
 * `2` — the input is not a script this binary can be handed: bad usage,
   an unreadable file, text that is not JSON, or a document outside the
   schema. The reason is on stderr.
@@ -27,20 +28,22 @@ open Lean Tarski
 
 /-- Run one decoded program and report it. -/
 def report (program : Program) : IO UInt32 :=
-  match runProgram program with
-  | some (.ok none) => pure 0
-  | some (.ok (some v)) => do
+  match runScript program with
+  | some (.ok none, _) => pure 0
+  | some (.ok (some v), _) => do
     IO.println (formatValue v)
     pure 0
-  | some (.error (.throw v)) => do
-    IO.eprintln s!"uncaught: {formatValue v}"
+  | some (.error (.throw v), h) => do
+    -- The heap the throw came out with is where the thrown object is, so
+    -- the report is computed in it.
+    IO.eprintln s!"Uncaught {describeThrown h v}"
     pure 1
-  | some (.error _) => do
-    -- A `return` outside any function reaches this; `break` and
-    -- `continue` cannot yet be written. An engine refuses `return` at the
-    -- top level as an early error, and early errors are outside the epic,
-    -- so it is reported here as the abrupt completion it is.
-    IO.eprintln "uncaught: abrupt completion outside any loop or function"
+  | some (.error _, _) => do
+    -- A `return` outside any function, a `break` or `continue` outside
+    -- any loop, or a jump to a label that is not on the stack. An engine
+    -- refuses each as an early error, and early errors are outside the
+    -- epic, so they are reported here as the abrupt completions they are.
+    IO.eprintln "Uncaught: abrupt completion outside any loop, label, or function"
     pure 1
   | none => do
     -- The logical model of divergence. Compiled code loops instead of
