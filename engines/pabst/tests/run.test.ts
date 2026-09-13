@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { runTests, vitestEntry } from "../src/run.js";
+import { childConfig, runTests, vitestEntry } from "../src/run.js";
 import { encodeIssue } from "../src/contract.js";
 import { FALSIFIED } from "./helpers/fixtures.js";
 
@@ -9,12 +9,10 @@ const repoRoot = process.cwd();
 
 // The fixture specs import vitest, resolved by walking up node_modules from
 // cwd, so these projects live inside the repo tree (gitignored under
-// .lakatos/), not os.tmpdir(). The spawned vitest also inherits the nearest
-// config walking up from cwd, so each fixture pins its own: `ok` an empty one (restoring
-// vitest's default include, which picks up *.spec.ts), `broken` the same
-// empty one, `crash` a throwing one. Fixture tests are *.spec.ts so the OUTER
-// suite's include (tests/**/*.test.ts, .lakatos/**/*.test.ts) never collects a
-// leftover copy from a crashed run.
+// .lakatos/), not os.tmpdir(). The child runs under lakatos's own config,
+// so nothing here needs one. Fixture tests are *.spec.ts so the OUTER
+// suite's include (tests/**/*.test.ts) never collects a leftover copy from
+// a crashed run.
 const workDir = path.join(repoRoot, ".lakatos", "runtest");
 
 // Where these tests tell runTests to write its results, relative to whichever
@@ -47,26 +45,9 @@ describe("runTests", () => {
     fs.mkdirSync(okDir, { recursive: true });
     fs.mkdirSync(crashDir, { recursive: true });
     fs.writeFileSync(path.join(okDir, "sample.spec.ts"), SAMPLE_SPEC, "utf8");
-    fs.writeFileSync(
-      path.join(okDir, "vitest.config.ts"),
-      `import { defineConfig } from "vitest/config";\nexport default defineConfig({});\n`,
-      "utf8",
-    );
-    // A config that throws makes vitest die before its reporter writes the
-    // results file — the observed real-world shape of the no-results path.
-    fs.writeFileSync(
-      path.join(crashDir, "vitest.config.ts"),
-      `throw new Error("boom: config exploded");\n`,
-      "utf8",
-    );
     // A spec that throws at import time: vitest survives to write results,
     // but with success:false and zero counted test failures.
     fs.mkdirSync(brokenDir, { recursive: true });
-    fs.writeFileSync(
-      path.join(brokenDir, "vitest.config.ts"),
-      `import { defineConfig } from "vitest/config";\nexport default defineConfig({});\n`,
-      "utf8",
-    );
     fs.writeFileSync(
       path.join(brokenDir, "sample.spec.ts"),
       `throw new Error("boom: import exploded");\n`,
@@ -125,6 +106,21 @@ describe("runTests", () => {
     expect(args[0]).toBe(vitestEntry());
     expect(fs.existsSync(vitestEntry())).toBe(true);
     expect(args.slice(1, 3)).toEqual(["run", "."]);
+  });
+
+  it("launches the child with lakatos's own config, never the cwd's", () => {
+    const launches: [string, string[]][] = [];
+    const capture = (cmd: string, args: string[]) => {
+      launches.push([cmd, args]);
+      return { status: 1, signal: null, stdout: "", stderr: "" };
+    };
+    inDir(okDir, () => runTests(".", RESULTS, capture));
+    const args = launches[0]![1];
+    const at = args.indexOf("--config");
+    expect(at).toBeGreaterThan(0);
+    expect(args[at + 1]).toBe(childConfig());
+    expect(path.isAbsolute(childConfig())).toBe(true);
+    expect(fs.existsSync(childConfig())).toBe(true);
   });
 
   it("surfaces the spawn error when vitest cannot be launched", () => {
@@ -202,24 +198,36 @@ describe("runTests", () => {
     "reports no-results when vitest dies before writing results, ignoring a stale results file",
     { timeout: 60000 },
     () => {
-      const result = inDir(crashDir, () => {
-        fs.mkdirSync(path.dirname(RESULTS), { recursive: true });
-        fs.writeFileSync(
-          RESULTS,
-          JSON.stringify({
-            numPassedTests: 9,
-            numFailedTests: 0,
-            success: true,
-            testResults: [],
-          }),
-          "utf8",
-        );
-        return runTests(".", RESULTS);
-      });
+      const prev = process.env.NODE_OPTIONS;
+      // A flag node refuses in NODE_OPTIONS kills the child before vitest
+      // runs, so no reporter ever writes the results file.
+      process.env.NODE_OPTIONS = "--bogus-flag";
+      let result;
+      try {
+        result = inDir(crashDir, () => {
+          fs.mkdirSync(path.dirname(RESULTS), { recursive: true });
+          fs.writeFileSync(
+            RESULTS,
+            JSON.stringify({
+              numPassedTests: 9,
+              numFailedTests: 0,
+              success: true,
+              testResults: [],
+            }),
+            "utf8",
+          );
+          return runTests(".", RESULTS);
+        });
+      } finally {
+        if (prev === undefined) delete process.env.NODE_OPTIONS;
+        else process.env.NODE_OPTIONS = prev;
+      }
       expect(result.kind).toBe("no-results");
       if (result.kind !== "no-results") return;
       expect(result.status).not.toBe(0);
-      expect(result.stdout + result.stderr).toContain("boom: config exploded");
+      expect(result.stdout + result.stderr).toContain(
+        "not allowed in NODE_OPTIONS",
+      );
     },
   );
 });

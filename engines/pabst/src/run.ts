@@ -1,7 +1,8 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import { interruptedBy, type InterruptSignal } from "../../../src/interrupt.js";
 import type { FileResult, VitestJson } from "./vitest-json.js";
 
@@ -36,6 +37,15 @@ export function vitestEntry(): string {
   return path.resolve(path.dirname(pkgPath), pkg.bin.vitest);
 }
 
+/** The shipped child config. Under tsc it is the .js beside this module;
+ * under vitest, which loads sources, it is the .ts. */
+export function childConfig(): string {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  return ["js", "ts"]
+    .map((ext) => path.join(here, `vitest-child.config.${ext}`))
+    .filter((p) => existsSync(p))[0]!;
+}
+
 /**
  * Run vitest over `target` (the generated out-files of one invocation, or a
  * single file or directory) and return its parsed JSON results. When vitest
@@ -68,6 +78,8 @@ export function runTests(
       vitestEntry(),
       "run",
       ...targets,
+      "--config",
+      childConfig(),
       "--reporter=json",
       `--outputFile=${resultsFile}`,
     ],
