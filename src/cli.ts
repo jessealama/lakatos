@@ -42,7 +42,7 @@ import {
   type PropertyIdentity,
 } from "./envelope.js";
 import { withInterruptGuard, type InterruptSignal } from "./interrupt.js";
-import { claimRunDir, RUN_ROOT } from "./run-dir.js";
+import { claimRunDir, RUN_ROOT, TYPECHECK_CACHE } from "./run-dir.js";
 
 /** Envelope entries for extraction-level input errors, with their
  * diagnostics echoed to stderr. Any such entry makes the run exit 2.
@@ -232,7 +232,7 @@ async function runCommand(spine: Spine, patterns: string[]): Promise<number> {
   // directory, and before any codegen so no engine sees unchecked input.
   const check = typecheckProject(
     process.cwd(),
-    path.resolve(RUN_ROOT, "typecheck.tsbuildinfo"),
+    path.resolve(RUN_ROOT, TYPECHECK_CACHE),
   );
   if (check.kind === "missing") {
     const annotations = refusedResults(files, NO_TSCONFIG);

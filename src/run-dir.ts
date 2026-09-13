@@ -5,6 +5,10 @@ import { LemmaError } from "../lemma/src/index.js";
 /** The root every run's artifacts land under, one directory per invocation. */
 export const RUN_ROOT = ".lakatos";
 
+/** The incremental tsc cache, under the run root but not of any one run:
+ * clearing it between runs costs a cold program every time. */
+export const TYPECHECK_CACHE = "typecheck.tsbuildinfo";
+
 /**
  * Where one invocation's artifacts go, named by the instant the envelope
  * reports as `startedAt` so a report and its artifacts match by eye.
