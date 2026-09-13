@@ -78,7 +78,11 @@ export function generate(
       continue;
     }
     fs.mkdirSync(path.dirname(outFile), { recursive: true });
-    fs.writeFileSync(outFile, emit(specs, file, outFile, seed, loopBudgetMs), "utf8");
+    fs.writeFileSync(
+      outFile,
+      emit(specs, file, outFile, seed, loopBudgetMs),
+      "utf8",
+    );
     results.push({
       sourceFile: file,
       outFile,
