@@ -3,12 +3,10 @@ import Js.Number.FloatOps
 
 /-! Provisional value formatting for the executable.
 
-This is not ECMA's `Number::toString`: an integral magnitude inside the
-safe range prints exactly, and everything else prints the six fraction
-digits the runtime's own `Float.toString` gives, trimmed. `1/3` prints
-`0.333333` where JS prints `0.3333333333333333`. #388 replaces this file
-with the real algorithm — one file, one function, so that change touches
-nothing else. -/
+`formatNumber` is the placeholder Number-to-String algorithm, and it is
+named here, in one place, with what it does and does not do. #388
+replaces this one function with ECMA's `Number::toString`; nothing else
+changes. -/
 
 namespace Tarski
 
@@ -28,9 +26,24 @@ def formatMagnitude (x : Float) : String :=
   else if Number.FloatOps.tsIsSafeInteger x then toString x.toUInt64
   else trimFraction x.toString
 
-/-- A number, as `String(x)` would print it. Both zeros print `0`, as JS
-does — the sign of zero is observable only through `Object.is` and
-division. -/
+/-- A number, as `String(x)` would print it — the placeholder
+Number-to-String algorithm this slice runs everywhere a number becomes a
+string: `String(x)`, `+` with a string operand, ToPropertyKey, and the
+binary's own output.
+
+It is **correct** for every integer of magnitude below 2^53, for both
+zeros (which print `0`, the sign of zero being observable only through
+`Object.is` and division), and for `NaN`, `Infinity`, and `-Infinity`.
+
+It is **not** ECMA's `Number::toString` for anything else. A non-integer
+prints the six fraction digits the runtime's own formatter gives rather
+than the shortest round-tripping decimal, so `1/3` prints `0.333333`
+where JS prints `0.3333333333333333`. A magnitude at or above 1e21
+prints in full rather than in exponent form, so `1e21` prints
+`1000000000000000000000` where JS prints `1e+21`. A magnitude small
+enough to round to zero at six digits prints `0`. `Test/Tarski/FormatTest.lean`
+pins each of those as the honest limit, and #388 is where they stop being
+true. -/
 def formatNumber (x : Float) : String :=
   if x.isNaN then "NaN"
   else if x == 0.0 then "0"

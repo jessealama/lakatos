@@ -255,7 +255,12 @@ private def objectSliceJson : String := script <|
                 "right":{"type":"Literal","value":"number","raw":"\"number\""}}}},
      {"type":"ExpressionStatement","expression":{
        "type":"CallExpression","callee":{"type":"Identifier","name":"g"},
-       "arguments":[{"type":"Literal","value":3,"raw":"3"}]}}"#
+       "arguments":[{"type":"Literal","value":3,"raw":"3"}]}},
+     {"type":"ExpressionStatement","expression":{
+       "type":"ArrayExpression","elements":[
+         {"type":"Literal","value":1,"raw":"1"},
+         {"type":"Literal","value":"a","raw":"\"a\""},
+         {"type":"Identifier","name":"x"}]}}"#
 
 /-- The same program as an AST term. A concise arrow body keeps its
 `ArrowBody.expr` shape here; the evaluator is what reads it as a
@@ -274,7 +279,8 @@ private def objectSlice : Program :=
     .exprStmt (.logical .and
       (.binary .strictEq (.index (.ident "o") (.strLit "b key")) (.strLit "s"))
       (.binary .strictEq (.unary .typeof (.member (.ident "o") "a")) (.strLit "number"))),
-    .exprStmt (.call (.ident "g") [.numLit 3.0]) ]
+    .exprStmt (.call (.ident "g") [.numLit 3.0]),
+    .exprStmt (.arrayLit [.numLit 1.0, .strLit "a", .ident "x"]) ]
 
 #guard decode objectSliceJson == toString (repr objectSlice)
 
@@ -362,6 +368,23 @@ private def objectSlice : Program :=
         "arguments":[{"type":"Unsupported","kind":"SpreadElement"}]}}"#)
   == "unsupported: SpreadElement"
 
+-- A hole and a spread are refused where they stand, the array literal
+-- around them surviving, as a call's spread argument is.
+#guard decode (script
+    r#"{"type":"ExpressionStatement","expression":{
+        "type":"ArrayExpression","elements":[
+          {"type":"Literal","value":1,"raw":"1"},
+          {"type":"Unsupported","kind":"OmittedExpression"},
+          {"type":"Literal","value":2,"raw":"2"}]}}"#)
+  == "unsupported: OmittedExpression"
+
+#guard decode (script
+    r#"{"type":"ExpressionStatement","expression":{
+        "type":"ArrayExpression","elements":[
+          {"type":"Unsupported","kind":"SpreadElement"},
+          {"type":"Literal","value":1,"raw":"1"}]}}"#)
+  == "unsupported: SpreadElement"
+
 -- `??` is a logical operator the slice does not have.
 #guard decode (script
     r#"{"type":"ExpressionStatement","expression":{
@@ -383,6 +406,10 @@ private def objectSlice : Program :=
         "object":{"type":"Identifier","name":"o"},
         "property":{"type":"Identifier","name":"a"}}}"#)
   == "malformed: missing field \"computed\""
+
+#guard decode (script
+    r#"{"type":"ExpressionStatement","expression":{"type":"ArrayExpression"}}"#)
+  == "malformed: missing field \"elements\""
 
 -- A function body that is not a block: the bridge cannot produce one,
 -- so this is the producer being broken rather than the slice's edge.

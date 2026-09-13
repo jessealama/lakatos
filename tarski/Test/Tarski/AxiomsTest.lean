@@ -108,6 +108,22 @@ private def onlyStandard (n : Name) : CoreM Bool := do
 
 /-- info: true -/
 #guard_msgs in
+#eval onlyStandard ``Tarski.toStringValue
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.setArrayLength
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.pushElements
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.joinElements
+
+/-- info: true -/
+#guard_msgs in
 #eval onlyStandard ``Tarski.instantiateBlock
 
 /-- info: true -/
@@ -125,6 +141,56 @@ private def onlyStandard (n : Name) : CoreM Bool := do
 /-- info: true -/
 #guard_msgs in
 #eval onlyStandard ``Tarski.runProgram
+
+-- The object operations #380 added: the array shape, the two
+-- conversions at the arithmetic boundary, and the two allocators.
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.newObject
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.newArray
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.newArrayOfLength
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.sameValueValue
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.uint32Of?
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.Value.ofNat
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.arrayIndex?
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.digitsToNat
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.Obj.array
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.Obj.ownKeys
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.Obj.truncate
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.Obj.hasOwn
 
 -- The realm is a literal, and the report that reads it is a definition
 -- like any other.
@@ -179,3 +245,8 @@ private def onlyStandard (n : Name) : CoreM Bool := do
 /-- info: true -/
 #guard_msgs in
 #eval onlyStandard ``Tarski.protoChainHas.eq_def
+
+-- `joinElements` is the third: it recurses on an array's length.
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.joinElements.eq_def
