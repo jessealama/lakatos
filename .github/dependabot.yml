@@ -7,14 +7,23 @@ updates:
     # Bundle every non-breaking update (dependencies + devDependencies)
     # into a single grouped PR.
     groups:
+      # vitest's plugins pin vitest as an exact-version peer, so a major
+      # bump of any one of them alone cannot install; they move together.
+      vitest:
+        applies-to: version-updates
+        patterns:
+          - "vitest"
+          - "@vitest/*"
+          - "@fast-check/vitest"
+        update-types:
+          - "major"
       minor-and-patch:
         applies-to: version-updates
         update-types:
           - "minor"
           - "patch"
-    # Major bumps are deliberately left out of the group, so Dependabot
-    # opens a separate PR for each one (e.g. vitest 4 -> 5) for individual
-    # review.
+    # Other major bumps are deliberately left out of the groups, so
+    # Dependabot opens a separate PR for each one for individual review.
 
   - package-ecosystem: "github-actions"
     directory: "/"
