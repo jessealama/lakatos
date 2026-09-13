@@ -77,6 +77,25 @@ def toNumberPrim : JsVal → Float
   | .str _ => floatNaN
   | .bigint _ => floatNaN
 
+/-- ToString on primitives. An object never reaches this — ToPrimitive
+runs first — and the number arm goes through the provisional
+`formatNumber`, so it is ECMA's `Number::toString` only once #388 lands.
+`toPropertyKey` is this, and so is the string arm of `+`. -/
+def toStringPrim : JsVal → String
+  | .str s => s
+  | .num x => formatNumber x
+  | .bool b => if b then "true" else "false"
+  | .undef => "undefined"
+  | .null => "null"
+  | .bigint i => toString i ++ "n"
+
+/-- Whether a primitive is a string, which is what makes `+`
+concatenation rather than addition. Not `JsVal.isStr`: the library owns
+that namespace, and the evaluator may not grow it. -/
+def isStrPrim : JsVal → Bool
+  | .str _ => true
+  | _ => false
+
 /-- ToBoolean, which is total and never calls user code, so it takes a
 whole `Value`: every object is truthy. NaN is the one binary64 value
 unequal to itself, which is how the number arm rejects it — the library
@@ -123,13 +142,18 @@ def applyUnary : UnaryOp → JsVal → Value
   | .typeof, v => .prim (.str (typeofName v.typeof))
 
 /-- Apply a coercing infix operator to its two operands, both of which
-ToPrimitive has already run on, left first. `+` is numeric addition,
-which is all it can be until #380 gives strings concatenation. `%` is the
+ToPrimitive has already run on, left first. `+` is the one operator that
+looks at the operands' types: a string on either side makes it
+concatenation, which is here because this slice's own example builds a
+message with it — every other string operation is #380's. `%` is the
 library's `tsRem` — C `fmod`, not the IEEE remainder — and the relations
 are Lean's binary64 order, which is the library's model of it, so a NaN
-operand answers `false` on all four. -/
+operand answers `false` on all four. Relational comparison of two strings
+is #380's too, so `"a" < "b"` is still NaN-against-NaN here. -/
 def applyBinary : BinaryOp → JsVal → JsVal → Value
-  | .add, l, r => .prim (.num (toNumberPrim l + toNumberPrim r))
+  | .add, l, r =>
+    if isStrPrim l || isStrPrim r then .prim (.str (toStringPrim l ++ toStringPrim r))
+    else .prim (.num (toNumberPrim l + toNumberPrim r))
   | .sub, l, r => .prim (.num (toNumberPrim l - toNumberPrim r))
   | .mul, l, r => .prim (.num (toNumberPrim l * toNumberPrim r))
   | .div, l, r => .prim (.num (toNumberPrim l / toNumberPrim r))
@@ -140,6 +164,12 @@ def applyBinary : BinaryOp → JsVal → JsVal → Value
   | .ge, l, r => .prim (.bool (decide (toNumberPrim r ≤ toNumberPrim l)))
   | .strictEq, l, r => .prim (.bool (strictEqValue (.prim l) (.prim r)))
   | .strictNe, l, r => .prim (.bool (!strictEqValue (.prim l) (.prim r)))
+  -- `evalExpr` answers `instanceof` before reaching here, as it answers
+  -- `!` and `typeof` before `applyUnary`. Unlike those, this arm cannot
+  -- state the operator's meaning — it walks a prototype chain, which is
+  -- the heap's business — so it states what is true of the primitives it
+  -- would have been handed: neither is an instance of anything.
+  | .instanceof, _, _ => .prim (.bool false)
 
 /-- The two strict-equality operators, which answer on whole values:
 neither coerces, so an object operand is compared by identity and is
@@ -307,12 +337,15 @@ def evalExpr (env : Env) : Expr → EvalM Value
   | .binary op left right => do
     let l ← evalExpr env left
     let r ← evalExpr env right
-    if op.coerces then do
-      let lp ← toPrimitive l
-      let rp ← toPrimitive r
-      pure (applyBinary op lp rp)
-    else
-      pure (applyStrict op l r)
+    match op with
+    | .instanceof => pure (.prim (.bool (← instanceOf l r)))
+    | _ =>
+      if op.coerces then do
+        let lp ← toPrimitive l
+        let rp ← toPrimitive r
+        pure (applyBinary op lp rp)
+      else
+        pure (applyStrict op l r)
   | .logical op left right => do
     -- Short-circuiting: the answer is one of the operands, never a
     -- boolean of its own, and the right one may not run at all.
@@ -480,15 +513,10 @@ def primitiveFrom (o : Value) (name : String) : EvalM (Option JsVal) := do
 #392's, so an object key is its ToPrimitive and then this again. -/
 def toPropertyKey (v : Value) : EvalM String :=
   match v with
-  | .prim (.str s) => pure s
-  | .prim (.num x) => pure (formatNumber x)
-  | .prim (.bool b) => pure (if b then "true" else "false")
-  | .prim .undef => pure "undefined"
-  | .prim .null => pure "null"
-  | .prim (.bigint i) => pure (toString i ++ "n")
+  | .prim p => pure (toStringPrim p)
   | .obj _ => do
     let p ← toPrimitive v
-    toPropertyKey (.prim p)
+    pure (toStringPrim p)
   partial_fixpoint
 
 /-- Call a function. The callee's environment is its closure's, plus a
@@ -655,6 +683,27 @@ def evalStmt (env : Env) : Stmt → Option Value → EvalM (Option Value)
     -- unlabelled `continue` is its own.
     evalLoop env [] test body
   | .block body, acc => evalBlock env body acc
+  | .throwStmt argument, _ => do
+    let v ← evalExpr env argument
+    throwCompletion (.throw v)
+  | .tryStmt block handler finalizer, _ => do
+    -- The three parts of TryStatement's semantics, in order. The block's
+    -- completion is reified rather than propagated, so the finalizer runs
+    -- whatever it was; a `catch` replaces it only for a *throw*, which is
+    -- why a `return` crossing a `try` is not caught here; and the
+    -- finalizer's own abrupt completion escapes this `do` block, which is
+    -- exactly the override the spec gives it — `try { return 1; }
+    -- finally { return 2; }` is 2.
+    let tried ← attempt (evalBlock env block (some undefValue))
+    let caught ← match tried, handler with
+      | .error (.throw e), some h => attempt (evalCatch env h e)
+      | r, _ => pure r
+    match finalizer with
+    | none => pure ()
+    | some fin => do
+      let _ ← evalBlock env fin none
+      pure ()
+    liftCompletion caught
   | .labeled l body, acc =>
     -- A label reached from a statement list starts a fresh label set:
     -- only `a: b: while (…)` puts two in one set, and `evalLabeled` is
@@ -670,6 +719,38 @@ def evalBlock (env : Env) (body : List Stmt) (acc : Option Value) :
     EvalM (Option Value) := do
   let inner ← instantiateBlock env body
   evalStmts inner body acc
+  partial_fixpoint
+
+/-- CatchClauseEvaluation: the handler's block, run with the thrown value
+bound. The binding is mutable — `catch (e) { e = 2; }` is legal — and
+lives in a scope holding nothing but itself, so a same-named binding
+outside is shadowed for the clause and untouched after it. A clause
+without a parameter binds nothing. -/
+def evalCatch (env : Env) (h : CatchClause) (e : Value) : EvalM (Option Value) := do
+  let inner ← match h.param with
+    | none => pure env
+    | some name => do
+      let r ← allocCell { mutable := true, value := some e }
+      pure ((name, r) :: env)
+  evalBlock inner h.body (some undefValue)
+  partial_fixpoint
+
+/-- InstanceofOperator. `Symbol.hasInstance` is #392's, so this is always
+OrdinaryHasInstance: the right operand must be a function, its
+`prototype` property must be an object, and the question is whether that
+object is on the left operand's prototype chain. A primitive left operand
+is not an instance of anything, and says so rather than throwing. -/
+def instanceOf (v target : Value) : EvalM Bool := do
+  if ← isCallable target then
+    match v with
+    | .prim _ => pure false
+    | .obj o =>
+      match ← getProp target "prototype" with
+      | .obj p => protoChainHas o p
+      | .prim _ =>
+        throwJsError .typeError "Function has non-object prototype in instanceof check"
+  else
+    throwJsError .typeError "Right-hand side of 'instanceof' is not callable"
   partial_fixpoint
 
 /-- LabelledEvaluation: a statement reached through a set of labels. A

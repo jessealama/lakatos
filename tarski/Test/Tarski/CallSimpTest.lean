@@ -23,7 +23,7 @@ private def program : Program :=
 attribute [local simp] evalExpr evalExprs evalStmt evalStmts evalDeclarators
   instantiateBlock hoistNames hoistDeclarators initFunctions
   callFunction catchReturn makeFunction bindParams
-  applyBinary toPrimitive BinaryOp.coerces toNumberPrim toBooleanPrim
+  applyBinary toPrimitive BinaryOp.coerces toNumberPrim toBooleanPrim isStrPrim
   allocCell getCell readCell writeCell initCell
   allocObj readObj writeObj modifyObj
   Env.lookup Heap.alloc Heap.read Heap.write

@@ -34,7 +34,7 @@ attribute [local simp] evalExpr evalStmt evalStmts evalDeclarators
   allocCell getCell readCell writeCell initCell
   Env.lookup Heap.alloc Heap.read Heap.write
   applyBinary applyUnary applyStrict BinaryOp.coerces toPrimitive
-  toNumberPrim toBooleanPrim strictEqValue
+  toNumberPrim toBooleanPrim isStrPrim toStringPrim strictEqValue
   DeclKind.isMutable Heap.initial globalEnv runScript runProgram evalProgram Js.JsVal.strictEq
   ExceptT.run_bind Except.map throwJsError throwCompletion
 

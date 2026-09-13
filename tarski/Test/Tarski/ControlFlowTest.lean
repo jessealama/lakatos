@@ -125,6 +125,16 @@ private def letNum (name : String) (x : Float) : Stmt :=
           (.block [.labeled "b" (.block [.breakStmt (some "a")])])) ]
   == "undefined"
 
+-- `let n = 0; while (true) { try { break; } finally { n = n + 1; } } n;`
+-- — a `break` out of a `try` runs the finalizer on its way, and the
+-- finalizer does not swallow it.
+#guard outcome
+    [ letNum "n" 0.0,
+      .whileStmt (.boolLit true)
+        (.block [.tryStmt [.breakStmt none] none (some [bump "n" 1.0])]),
+      .exprStmt n ]
+  == "1"
+
 /-! ## What a jump completes with
 
 Every expectation here is `eval`'s answer on the same source. -/
