@@ -40,7 +40,7 @@
   },
   "dependencies": {
     "typescript": "^6.0.3",
-    "vitest": "^4.1.9"
+    "vitest": "^5.0.0"
   },
   "peerDependencies": {
     "@fast-check/vitest": "^0.4.1",
