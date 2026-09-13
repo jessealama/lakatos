@@ -28,8 +28,11 @@ private def program : Program :=
 -- program has run. `Js.JsVal.strictEq` is the library's `===`; the
 -- evaluator only dispatches to it.
 attribute [local simp] evalExpr evalStmt evalStmts evalDeclarators
-  allocCell readCell writeCell Env.lookup Heap.alloc Heap.read Heap.write
-  applyBinary applyUnary toNumberPrim toBooleanPrim strictEqValue updateEmpty
+  instantiateBlock hoistNames hoistDeclarators initFunctions
+  allocCell getCell readCell writeCell initCell
+  Env.lookup Heap.alloc Heap.read Heap.write
+  applyBinary applyUnary applyStrict BinaryOp.coerces toPrimitive
+  toNumberPrim toBooleanPrim strictEqValue updateEmpty
   DeclKind.isMutable Heap.empty runProgram evalProgram Js.JsVal.strictEq
   ExceptT.run_bind Except.map throwJsError throwCompletion
 

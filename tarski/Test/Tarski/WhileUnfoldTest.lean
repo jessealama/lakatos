@@ -16,12 +16,15 @@ open Tarski
 private def program : Program :=
   [ .varDecl .«let» [{ name := "n", init := some (.numLit 0.0) }],
     .whileStmt (.binary .lt (.ident "n") (.numLit 3.0))
-      (.block [.exprStmt (.assign "n" (.binary .add (.ident "n") (.numLit 1.0)))]),
+      (.block [.exprStmt (.assign (.ident "n") (.binary .add (.ident "n") (.numLit 1.0)))]),
     .exprStmt (.ident "n") ]
 
 attribute [local simp] evalExpr evalStmt evalStmts evalDeclarators
-  allocCell readCell writeCell Env.lookup Heap.alloc Heap.read Heap.write
-  applyBinary applyUnary toNumberPrim toBooleanPrim strictEqValue updateEmpty
+  instantiateBlock hoistNames hoistDeclarators initFunctions
+  allocCell getCell readCell writeCell initCell
+  Env.lookup Heap.alloc Heap.read Heap.write
+  applyBinary applyUnary applyStrict BinaryOp.coerces toPrimitive
+  toNumberPrim toBooleanPrim strictEqValue updateEmpty
   DeclKind.isMutable Heap.empty runProgram evalProgram
   ExceptT.run_bind Except.map throwJsError throwCompletion
 

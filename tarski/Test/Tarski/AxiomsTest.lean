@@ -32,11 +32,55 @@ private def onlyStandard (n : Name) : CoreM Bool := do
 
 /-- info: true -/
 #guard_msgs in
+#eval onlyStandard ``Tarski.evalExprs
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.evalProps
+
+/-- info: true -/
+#guard_msgs in
 #eval onlyStandard ``Tarski.evalDeclarators
 
 /-- info: true -/
 #guard_msgs in
 #eval onlyStandard ``Tarski.evalWhile
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.callFunction
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.construct
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.getProp
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.setProp
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.toPrimitive
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.primitiveFrom
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.toPropertyKey
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.instantiateBlock
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.makeFunction
 
 /-- info: true -/
 #guard_msgs in
@@ -46,9 +90,24 @@ private def onlyStandard (n : Name) : CoreM Bool := do
 #guard_msgs in
 #eval onlyStandard ``Tarski.runProgram
 
--- The unfolding equation the loop proofs rewrite with is a theorem of the
--- same standing: if it were not, every postcondition proved through a
--- `while` would rest on whatever it did assume.
+-- Catching a completion is an opaque definition with a monotonicity
+-- lemma of its own, because `partial_fixpoint` has none for `tryCatch`.
+-- Both rest on nothing beyond the standard three.
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.catchReturn
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.monotone_catchReturn
+
+-- The unfolding equations the proofs rewrite with are theorems of the
+-- same standing: if they were not, every postcondition proved through a
+-- `while` or a prototype walk would rest on whatever they did assume.
 /-- info: true -/
 #guard_msgs in
 #eval onlyStandard ``Tarski.evalWhile.eq_def
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.getProp.eq_def

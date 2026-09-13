@@ -96,17 +96,57 @@ def allocCell (c : Cell) : EvalM CellRef := do
   set h'
   return r
 
-/-- Read a binding. The `ReferenceError` arm is unreachable for a
-reference that came out of an `Env`: the evaluator only puts references
-into scope chains after allocating their cells. -/
-def readCell (r : CellRef) : EvalM Cell := do
+/-- The cell a reference names. The `ReferenceError` arm is unreachable
+for a reference that came out of an `Env`: the evaluator only puts
+references into scope chains after allocating their cells. -/
+def getCell (r : CellRef) : EvalM Cell := do
   let h ← get
   match h.read r with
   | some c => pure c
   | none => throwJsError "ReferenceError"
 
-/-- Write a binding's value. Unreachable in the same way as `readCell`. -/
+/-- Read a binding's value. An uninitialized cell is a name in its
+temporal dead zone — in scope, because its block was instantiated, but
+not yet reached by its declarator — and reading one is a
+`ReferenceError`, which is what makes the TDZ observable. -/
+def readCell (r : CellRef) : EvalM Value := do
+  match (← getCell r).value with
+  | some v => pure v
+  | none => throwJsError "ReferenceError"
+
+/-- Write a binding's value. -/
 def writeCell (r : CellRef) (v : Value) : EvalM Unit := do
   modify (fun h => h.write r v)
+
+/-- End a binding's temporal dead zone. The same operation as
+`writeCell`, under the name the spec gives it: initializing a cell and
+assigning to one are different events even where the code is one, and
+`#393`'s `var` will initialize without any declarator having run. -/
+def initCell (r : CellRef) (v : Value) : EvalM Unit :=
+  writeCell r v
+
+/-- Allocate an object and answer its reference. -/
+def allocObj (o : Obj) : EvalM Ref := do
+  let h ← get
+  let (r, h') := h.allocObj o
+  set h'
+  return r
+
+/-- The object a reference names. Unreachable in the same way as
+`getCell`: a `Value.obj` only ever holds a reference the heap handed
+out. -/
+def readObj (r : Ref) : EvalM Obj := do
+  let h ← get
+  match h.readObj r with
+  | some o => pure o
+  | none => throwJsError "TypeError"
+
+/-- Replace an object. -/
+def writeObj (r : Ref) (o : Obj) : EvalM Unit := do
+  modify (fun h => h.writeObj r o)
+
+/-- Read an object, transform it, and write it back. -/
+def modifyObj (r : Ref) (f : Obj → Obj) : EvalM Unit := do
+  writeObj r (f (← readObj r))
 
 end Tarski
