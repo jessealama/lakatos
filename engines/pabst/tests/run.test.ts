@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { runTests, vitestEntry } from "../src/run.js";
+import { childConfig, runTests, vitestEntry } from "../src/run.js";
 import { encodeIssue } from "../src/contract.js";
 import { FALSIFIED } from "./helpers/fixtures.js";
 
@@ -125,6 +125,21 @@ describe("runTests", () => {
     expect(args[0]).toBe(vitestEntry());
     expect(fs.existsSync(vitestEntry())).toBe(true);
     expect(args.slice(1, 3)).toEqual(["run", "."]);
+  });
+
+  it("launches the child with lakatos's own config, never the cwd's", () => {
+    const launches: [string, string[]][] = [];
+    const capture = (cmd: string, args: string[]) => {
+      launches.push([cmd, args]);
+      return { status: 1, signal: null, stdout: "", stderr: "" };
+    };
+    inDir(okDir, () => runTests(".", RESULTS, capture));
+    const args = launches[0]![1];
+    const at = args.indexOf("--config");
+    expect(at).toBeGreaterThan(0);
+    expect(args[at + 1]).toBe(childConfig());
+    expect(path.isAbsolute(childConfig())).toBe(true);
+    expect(fs.existsSync(childConfig())).toBe(true);
   });
 
   it("surfaces the spawn error when vitest cannot be launched", () => {
