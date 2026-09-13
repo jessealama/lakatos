@@ -6,8 +6,10 @@
 #   scripts/bd-worker.fish implement   [--once] [--dry-run] [--poll SECONDS] [--model MODEL] [--epic ID]
 #
 # The prompt for a bead is scripts/prompts/<label>.md with {{BEAD}} and
-# {{ROOT}} substituted. Each run is logged under .lakatos/workers/. The loop
-# stops when the epic has no open beads left. While idle it prints
+# {{ROOT}} substituted. Each run streams its full event log to
+# .lakatos/workers/<bead>-<time>.jsonl (stderr beside it) and renders one
+# terminal line per tool call and message through bd-worker-render.jq. The
+# loop stops when the epic has no open beads left. While idle it prints
 # scripts/bd-status.fish's account of why (a human gate, a worker on the
 # other loop, an unclaimed bead) whenever that account changes. `bd` runs
 # from the repo root, never from a worktree.
@@ -98,19 +100,23 @@ while true
     end
 
     set -l prompt (sed -e "s|{{BEAD}}|$claimed|g" -e "s|{{ROOT}}|$root|g" -e "s|{{EPIC}}|$epic|g" $prompt_file | string collect)
-    set -l log $root/.lakatos/workers/$claimed-(date +%Y%m%dT%H%M%S).log
+    set -l log $root/.lakatos/workers/$claimed-(date +%Y%m%dT%H%M%S).jsonl
 
     echo "[$role] $claimed ($label) -> $model, log $log"
     if set -q _flag_dry_run
-        echo "--- would run: claude -p --model $model --dangerously-skip-permissions --output-format text"
+        echo "--- would run: claude -p --model $model --dangerously-skip-permissions --output-format stream-json --verbose"
         echo "--- with prompt:"
         echo $prompt
         bd -C $root update $claimed --status open --assignee "" -q
         exit 0
     end
 
+    # The full event stream goes to the .jsonl log as it happens; the
+    # terminal gets one line per tool call, message, and the final result.
+    # stderr (MCP and hook noise) goes to a sibling .stderr file.
     set -l claude_cmd (set -q BD_WORKER_CLAUDE; and echo $BD_WORKER_CLAUDE; or echo claude)
-    $claude_cmd -p --model $model --dangerously-skip-permissions --output-format text $prompt 2>&1 | tee $log
+    $claude_cmd -p --model $model --dangerously-skip-permissions --output-format stream-json --verbose $prompt 2>>$log.stderr \
+        | tee $log | jq --unbuffered -R -r -f $root/scripts/bd-worker-render.jq
     set -l status_after (bd -C $root show $claimed --json | jq -r '(.[0] // .) | .status')
 
     if test "$status_after" = in_progress
