@@ -182,274 +182,316 @@ function issuesOf(env: Envelope): Issue[] {
     .map(({ szs, ...issue }) => issue as Issue);
 }
 
-describe("end-to-end", () => {
-  beforeAll(clean);
+/** One generate and one child run over every batched fixture; rows read
+ * their own file's annotations out of the shared envelope. */
+function runBatch(
+  files: string[],
+  seed: number,
+): { env: Envelope; gens: GenResult[] } {
+  const gens = generate(files, OUT_ROOT, seed);
+  expect(gens.map((g) => g.sourceFile)).toEqual(files);
+  const result = runTests(
+    gens.map((g) => g.outFile!),
+    E2E_RESULTS,
+  );
+  if (result.kind !== "completed") {
+    throw new Error(`vitest run failed: ${JSON.stringify(result)}`);
+  }
+  const env = buildEnvelope(
+    META,
+    result.json,
+    gens.flatMap((g) =>
+      g.properties.map((p) => ({ file: g.sourceFile, ...p })),
+    ),
+  );
+  expectValidEnvelope(env);
+  return { env, gens };
+}
+
+function forFile(env: Envelope, file: string): Envelope["annotations"] {
+  return env.annotations.filter((a) => a.file === file);
+}
+
+function issuesFor(env: Envelope, file: string): Issue[] {
+  return forFile(env, file)
+    .filter((a) => a.kind !== undefined && a.kind !== "enumerated")
+    .map(({ szs, ...issue }) => issue as Issue);
+}
+
+const SAMPLED_SEED = 3;
+const SAMPLED_ROWS = [
+  passSrc,
+  classPassSrc,
+  binderPassSrc,
+  binderNestedPassSrc,
+  accessorPassSrc,
+  stringLawsSrc,
+  intRoundTripSrc,
+  regexGuardSrc,
+  equationPassSrc,
+  failSrc,
+  commutesSrc,
+  classFailSrc,
+  binderFailSrc,
+  binderNestedFailSrc,
+  binderNestedExhaustedSrc,
+  accessorFailSrc,
+  nearMissSrc,
+  readmeExampleSrc,
+  parseRoundTripSrc,
+  safeSqrtSrc,
+  throwingGuardSrc,
+  exhaustedSrc,
+  equationFailSrc,
+];
+
+// Seed 3 is pinned: the -0 and x=0 rows each fail for a single input that
+// fast-check does not reliably probe on a random seed; 3 is verified to
+// probe 0 for fc.nat() and fc.double().
+describe("end-to-end: sampled rows, seed 3", () => {
+  let env: Envelope;
+  let emittedRegexGuard: string;
+  beforeAll(() => {
+    clean();
+    const batch = runBatch(SAMPLED_ROWS, SAMPLED_SEED);
+    env = batch.env;
+    const regexGuardGen = batch.gens.find(
+      (g) => g.sourceFile === regexGuardSrc,
+    );
+    emittedRegexGuard = fs.readFileSync(regexGuardGen!.outFile!, "utf8");
+  }, 60000);
   afterAll(clean);
 
-  it("a true property passes vitest", { timeout: 30000 }, () => {
-    const [r] = generate([passSrc], OUT_ROOT);
-    expect(r).toBeDefined();
-    const env = run(r!);
-    expect(env.failed).toBe(0);
-    expect(issuesOf(env)).toEqual([]);
+  it("a true property passes vitest", () => {
+    expect(issuesFor(env, passSrc)).toEqual([]);
   });
 
-  it(
-    "a false property fails vitest with a structured counterexample",
-    { timeout: 30000 },
-    () => {
-      const [r] = generate([failSrc], OUT_ROOT);
-      expect(r).toBeDefined();
-      const env = run(r!);
-      expect(env.failed).toBeGreaterThan(0);
-      expect(issuesOf(env)).toHaveLength(1);
-      expectValidIssue(issuesOf(env)[0]);
-      expect(issuesOf(env)[0]).toMatchObject({
-        property: "wrong",
-        kind: "falsified",
-        counterexample: { x: 1 },
-      });
-    },
-  );
+  it("a false property fails vitest with a structured counterexample", () => {
+    const issues = issuesFor(env, failSrc);
+    expect(issues).toHaveLength(1);
+    expectValidIssue(issues[0]);
+    expect(issues[0]).toMatchObject({
+      property: "wrong",
+      kind: "falsified",
+      counterexample: { x: 1 },
+    });
+  });
 
-  it(
-    "a two-binder commutativity claim is falsified with both binders bound",
-    { timeout: 30000 },
-    () => {
-      const [r] = generate([commutesSrc], OUT_ROOT);
-      expect(r).toBeDefined();
-      const env = run(r!);
-      expect(issuesOf(env)).toHaveLength(1);
-      const issue = issuesOf(env)[0]!;
-      expectValidIssue(issue);
-      expect(issue).toMatchObject({
-        function: "f",
-        property: "commutes",
-        kind: "falsified",
-        counterexample: { a: 0, b: 1 },
-      });
-    },
-  );
+  it("a two-binder commutativity claim is falsified with both binders bound", () => {
+    const issues = issuesFor(env, commutesSrc);
+    expect(issues).toHaveLength(1);
+    expectValidIssue(issues[0]);
+    expect(issues[0]).toMatchObject({
+      function: "f",
+      property: "commutes",
+      kind: "falsified",
+      counterexample: { a: 0, b: 1 },
+    });
+  });
 
-  // Seed 3 is pinned: these fixtures each fail for a single input (x=0 / +0), and
-  // fast-check does NOT reliably probe 0 on a random seed (~50% miss rate), so an
-  // unseeded run is a coin flip. Seed 3 is verified to probe 0 for both fc.nat()
-  // and fc.double().
-  it(
-    "class instance + static properties that hold pass vitest",
-    { timeout: 30000 },
-    () => {
-      const [r] = generate([classPassSrc], OUT_ROOT, 3);
-      expect(r).toBeDefined();
-      const env = run(r!);
-      expect(env.failed).toBe(0);
-      expect(issuesOf(env)).toEqual([]);
-    },
-  );
+  it("class instance + static properties that hold pass vitest", () => {
+    expect(issuesFor(env, classPassSrc)).toEqual([]);
+  });
 
-  it(
-    "a buggy instance method is flagged as Class#method",
-    { timeout: 30000 },
-    () => {
-      const [r] = generate([classFailSrc], OUT_ROOT, 3);
-      expect(r).toBeDefined();
-      const env = run(r!);
-      expect(env.failed).toBeGreaterThan(0);
-      expect(issuesOf(env)).toHaveLength(1);
-      expectValidIssue(issuesOf(env)[0]);
-      expect(issuesOf(env)[0]).toMatchObject({
-        function: "BoundedCounter#dec",
-        property: "neverNegative",
-        kind: "falsified",
-        counterexample: { x: 0 },
-      });
-    },
-  );
+  it("a buggy instance method is flagged as Class#method", () => {
+    const issues = issuesFor(env, classFailSrc);
+    expect(issues).toHaveLength(1);
+    expectValidIssue(issues[0]);
+    expect(issues[0]).toMatchObject({
+      function: "BoundedCounter#dec",
+      property: "neverNegative",
+      kind: "falsified",
+      counterexample: { x: 0 },
+    });
+  });
 
-  it(
-    "a true property over class binders passes: throwing tuples discard",
-    { timeout: 30000 },
-    () => {
-      const [r] = generate([binderPassSrc], OUT_ROOT, 3);
-      expect(r).toBeDefined();
-      const env = run(r!);
-      expect(env.failed).toBe(0);
-      expect(issuesOf(env)).toEqual([]);
-    },
-  );
+  it("a true property over class binders passes: throwing tuples discard", () => {
+    expect(issuesFor(env, binderPassSrc)).toEqual([]);
+  });
 
-  it(
-    "a false property over class binders reports constructions as the counterexample",
-    { timeout: 30000 },
-    () => {
-      const [r] = generate([binderFailSrc], OUT_ROOT, 3);
-      expect(r).toBeDefined();
-      const env = run(r!);
-      expect(env.failed).toBeGreaterThan(0);
-      expect(issuesOf(env)).toHaveLength(1);
-      expectValidIssue(issuesOf(env)[0]);
-      const issue = issuesOf(env)[0]!;
-      expect(issue).toMatchObject({
-        function: "Point#distance",
-        property: "tight",
-        kind: "falsified",
-      });
-      const cx = (issue as { counterexample: Record<string, string> })
-        .counterexample;
-      expect(cx.p).toMatch(/^new Point\(/);
-      expect(cx.q).toMatch(/^new Point\(/);
-    },
-  );
+  it("a false property over class binders reports constructions as the counterexample", () => {
+    const issues = issuesFor(env, binderFailSrc);
+    expect(issues).toHaveLength(1);
+    expectValidIssue(issues[0]);
+    expect(issues[0]).toMatchObject({
+      function: "Point#distance",
+      property: "tight",
+      kind: "falsified",
+    });
+    const cx = (issues[0] as { counterexample: Record<string, string> })
+      .counterexample;
+    expect(cx.p).toMatch(/^new Point\(/);
+    expect(cx.q).toMatch(/^new Point\(/);
+  });
 
-  it(
-    "a true property over a nested class binder passes",
-    { timeout: 30000 },
-    () => {
-      const [r] = generate([binderNestedPassSrc], OUT_ROOT, 3);
-      expect(r).toBeDefined();
-      const env = run(r!);
-      expect(env.failed).toBe(0);
-      expect(issuesOf(env)).toEqual([]);
-    },
-  );
+  it("a true property over a nested class binder passes", () => {
+    expect(issuesFor(env, binderNestedPassSrc)).toEqual([]);
+  });
 
-  it(
-    "a nested counterexample reports the whole construction tree",
-    { timeout: 30000 },
-    () => {
-      const [r] = generate([binderNestedFailSrc], OUT_ROOT, 3);
-      expect(r).toBeDefined();
-      const env = run(r!);
-      expect(env.failed).toBeGreaterThan(0);
-      expect(issuesOf(env)).toHaveLength(1);
-      expectValidIssue(issuesOf(env)[0]);
-      const issue = issuesOf(env)[0]!;
-      expect(issue).toMatchObject({
-        function: "Span#length",
-        property: "tight",
-        kind: "falsified",
-      });
-      const cx = (issue as { counterexample: Record<string, string> })
-        .counterexample;
-      expect(cx.s).toMatch(/^new Span\(new Point\(.+\),new Point\(.+\)\)$/);
-    },
-  );
+  it("a nested counterexample reports the whole construction tree", () => {
+    const issues = issuesFor(env, binderNestedFailSrc);
+    expect(issues).toHaveLength(1);
+    expectValidIssue(issues[0]);
+    expect(issues[0]).toMatchObject({
+      function: "Span#length",
+      property: "tight",
+      kind: "falsified",
+    });
+    const cx = (issues[0] as { counterexample: Record<string, string> })
+      .counterexample;
+    expect(cx.s).toMatch(/^new Span\(new Point\(.+\),new Point\(.+\)\)$/);
+  });
 
-  it(
-    "compounded constructor discards are reported as kind 'exhausted'",
-    { timeout: 30000 },
-    () => {
-      const [r] = generate([binderNestedExhaustedSrc], OUT_ROOT, 3);
-      expect(r).toBeDefined();
-      const env = run(r!);
-      expect(env.failed).toBeGreaterThan(0);
-      expect(issuesOf(env)).toHaveLength(1);
-      expectValidIssue(issuesOf(env)[0]);
-      expect(issuesOf(env)[0]).toMatchObject({
-        property: "onTheMark",
-        kind: "exhausted",
-      });
-      expect(issuesOf(env)[0]!.counterexample).toBeUndefined();
-    },
-  );
+  it("compounded constructor discards are reported as kind 'exhausted'", () => {
+    const issues = issuesFor(env, binderNestedExhaustedSrc);
+    expect(issues).toHaveLength(1);
+    expectValidIssue(issues[0]);
+    expect(issues[0]).toMatchObject({
+      property: "onTheMark",
+      kind: "exhausted",
+    });
+    expect(issues[0]!.counterexample).toBeUndefined();
+  });
 
-  it(
-    "getter and constructor properties that hold pass vitest",
-    { timeout: 30000 },
-    () => {
-      const [r] = generate([accessorPassSrc], OUT_ROOT, 3);
-      expect(r).toBeDefined();
-      const env = run(r!);
-      expect(env.failed).toBe(0);
-      expect(issuesOf(env)).toEqual([]);
-      // Both attachment points ran: the getter and the constructor.
-      expect(env.annotations.map((a) => a.function).sort()).toEqual([
-        "Box#constructor",
-        "Box#v",
-      ]);
-    },
-  );
+  it("getter and constructor properties that hold pass vitest", () => {
+    expect(issuesFor(env, accessorPassSrc)).toEqual([]);
+    // Both attachment points ran: the getter and the constructor.
+    expect(
+      forFile(env, accessorPassSrc)
+        .map((a) => a.function)
+        .sort(),
+    ).toEqual(["Box#constructor", "Box#v"]);
+  });
 
-  it("a buggy getter is flagged as Class#getter", { timeout: 30000 }, () => {
-    const [r] = generate([accessorFailSrc], OUT_ROOT, 3);
-    expect(r).toBeDefined();
-    const env = run(r!);
-    expect(env.failed).toBeGreaterThan(0);
-    expect(issuesOf(env)).toHaveLength(1);
-    expectValidIssue(issuesOf(env)[0]);
-    expect(issuesOf(env)[0]).toMatchObject({
+  it("a buggy getter is flagged as Class#getter", () => {
+    const issues = issuesFor(env, accessorFailSrc);
+    expect(issues).toHaveLength(1);
+    expectValidIssue(issues[0]);
+    expect(issues[0]).toMatchObject({
       function: "ClampedBox#v",
       property: "roundTrip",
       kind: "falsified",
     });
   });
 
-  it(
-    "a static-method near-miss is flagged as Class.method with the -0 counterexample",
-    { timeout: 30000 },
-    () => {
-      const [r] = generate([nearMissSrc], OUT_ROOT, 3);
-      expect(r).toBeDefined();
-      const env = run(r!);
-      expect(env.failed).toBeGreaterThan(0);
-      expect(issuesOf(env)).toHaveLength(1);
-      expectValidIssue(issuesOf(env)[0]);
-      expect(issuesOf(env)[0]).toMatchObject({
-        function: "Arith.negate",
-        property: "matchesSubtraction",
-        kind: "falsified",
-        counterexample: { x: 0 },
-      });
-    },
-  );
-
-  it(
-    "the README front-page example is verbatim on disk and is falsified",
-    { timeout: 30000 },
-    () => {
-      const readme = fs.readFileSync(
-        path.join(root, "engines/pabst/README.md"),
-        "utf8",
-      );
-      const block = /```ts\n([\s\S]*?)```/.exec(readme)?.[1];
-      expect(block, "README has no ```ts code block").toBeDefined();
-      expect(
-        fs.readFileSync(readmeExampleSrc, "utf8"),
-        "engines/pabst/tests/fixtures/e2e/readme-example.ts must be byte-identical to the README's first ts block",
-      ).toBe(block);
-      const [r] = generate([readmeExampleSrc], OUT_ROOT, 3);
-      expect(r).toBeDefined();
-      const env = run(r!);
-      expect(env.failed).toBeGreaterThan(0);
-      expect(issuesOf(env)).toHaveLength(1);
-      expectValidIssue(issuesOf(env)[0]);
-      expect(issuesOf(env)[0]).toMatchObject({
-        function: "foo",
-        property: "nonzero",
-        kind: "falsified",
-      });
-      expect(Object.keys(issuesOf(env)[0]!.counterexample ?? {})).toEqual([
-        "x",
-        "y",
-      ]);
-    },
-  );
-
-  it("README string laws (contains) pass vitest", { timeout: 30000 }, () => {
-    const [r] = generate([stringLawsSrc], OUT_ROOT);
-    expect(r).toBeDefined();
-    const env = run(r!);
-    expect(env.failed).toBe(0);
-    expect(issuesOf(env)).toEqual([]);
+  it("a static-method near-miss is flagged as Class.method with the -0 counterexample", () => {
+    const issues = issuesFor(env, nearMissSrc);
+    expect(issues).toHaveLength(1);
+    expectValidIssue(issues[0]);
+    expect(issues[0]).toMatchObject({
+      function: "Arith.negate",
+      property: "matchesSubtraction",
+      kind: "falsified",
+      counterexample: { x: 0 },
+    });
   });
 
-  it("Number(String(x)) round-trips over int", { timeout: 30000 }, () => {
-    const [r] = generate([intRoundTripSrc], OUT_ROOT);
-    expect(r).toBeDefined();
-    const env = run(r!);
-    expect(env.failed).toBe(0);
-    expect(issuesOf(env)).toEqual([]);
+  it("the README front-page example is verbatim on disk and is falsified", () => {
+    const readme = fs.readFileSync(
+      path.join(root, "engines/pabst/README.md"),
+      "utf8",
+    );
+    const block = /```ts\n([\s\S]*?)```/.exec(readme)?.[1];
+    expect(block, "README has no ```ts code block").toBeDefined();
+    expect(
+      fs.readFileSync(readmeExampleSrc, "utf8"),
+      "engines/pabst/tests/fixtures/e2e/readme-example.ts must be byte-identical to the README's first ts block",
+    ).toBe(block);
+    const issues = issuesFor(env, readmeExampleSrc);
+    expect(issues).toHaveLength(1);
+    expectValidIssue(issues[0]);
+    expect(issues[0]).toMatchObject({
+      function: "foo",
+      property: "nonzero",
+      kind: "falsified",
+    });
+    expect(Object.keys(issues[0]!.counterexample ?? {})).toEqual(["x", "y"]);
   });
+
+  it("README string laws (contains) pass vitest", () => {
+    expect(issuesFor(env, stringLawsSrc)).toEqual([]);
+  });
+
+  it("Number(String(x)) round-trips over int", () => {
+    expect(issuesFor(env, intRoundTripSrc)).toEqual([]);
+  });
+
+  it("parseInt is NOT the inverse of String over doubles (falsified)", () => {
+    const issues = issuesFor(env, parseRoundTripSrc);
+    expect(issues).toHaveLength(1);
+    expectValidIssue(issues[0]);
+    expect(issues[0]).toMatchObject({
+      property: "parseIntInverts",
+      kind: "falsified",
+    });
+    expect(Object.keys(issues[0]!.counterexample ?? {})).toEqual(["x"]);
+  });
+
+  it("a property whose body throws is reported as kind 'threw'", () => {
+    const issues = issuesFor(env, safeSqrtSrc);
+    expect(issues).toHaveLength(1);
+    expectValidIssue(issues[0]);
+    expect(issues[0]).toMatchObject({
+      property: "nonNegativeRoot",
+      kind: "threw",
+    });
+    expect(issues[0]!.error).toContain("negative");
+    expect(Object.keys(issues[0]!.counterexample ?? {})).toEqual(["x"]);
+  });
+
+  it("a guard that throws is reported as kind 'threw', not discarded", () => {
+    // The prover reads the same thrown guard as a failed `= pure true`
+    // hypothesis — vacuous truth. Divergence documented on both sides.
+    const issues = issuesFor(env, throwingGuardSrc);
+    expect(issues).toHaveLength(1);
+    expectValidIssue(issues[0]);
+    expect(issues[0]).toMatchObject({
+      property: "guardThrows",
+      kind: "threw",
+    });
+    expect(issues[0]!.error).toContain("negative");
+  });
+
+  it("an unsatisfiable precondition is reported as kind 'exhausted'", () => {
+    const issues = issuesFor(env, exhaustedSrc);
+    expect(issues).toHaveLength(1);
+    expectValidIssue(issues[0]);
+    expect(issues[0]).toMatchObject({
+      property: "unsatisfiable",
+      kind: "exhausted",
+    });
+    expect(issues[0]!.counterexample).toBeUndefined();
+  });
+
+  it("regex-guarded string binders only generate matching values", () => {
+    // Pin the emitted arbitraries: anchored, non-capturing, flags kept.
+    expect(emittedRegexGuard).toContain("fc.stringMatching(/^(?:[a-z]+)$/)");
+    expect(emittedRegexGuard).toContain(
+      "fc.stringMatching(/^(?:\\p{Lu}{2,5})$/u)",
+    );
+    expect(issuesFor(env, regexGuardSrc)).toEqual([]);
+  });
+
+  it("equation syntax: guarded identities pass vitest", () => {
+    expect(issuesFor(env, equationPassSrc)).toEqual([]);
+  });
+
+  it("equation syntax: the -0 near-miss is refuted via ≡", () => {
+    const issues = issuesFor(env, equationFailSrc);
+    expect(issues).toHaveLength(1);
+    expectValidIssue(issues[0]);
+    expect(issues[0]).toMatchObject({
+      function: "negate",
+      property: "matchesSubtraction",
+      kind: "falsified",
+      counterexample: { x: 0 },
+    });
+  });
+});
+
+describe("end-to-end", () => {
+  beforeAll(clean);
+  afterAll(clean);
 
   it(
     "float addition is NOT associative (falsified)",
@@ -470,85 +512,6 @@ describe("end-to-end", () => {
         "y",
         "z",
       ]);
-    },
-  );
-
-  it(
-    "parseInt is NOT the inverse of String over doubles (falsified)",
-    { timeout: 30000 },
-    () => {
-      const [r] = generate([parseRoundTripSrc], OUT_ROOT, 3);
-      expect(r).toBeDefined();
-      const env = run(r!);
-      expect(env.failed).toBeGreaterThan(0);
-      expect(issuesOf(env)).toHaveLength(1);
-      expectValidIssue(issuesOf(env)[0]);
-      expect(issuesOf(env)[0]).toMatchObject({
-        property: "parseIntInverts",
-        kind: "falsified",
-      });
-      expect(Object.keys(issuesOf(env)[0]!.counterexample ?? {})).toEqual([
-        "x",
-      ]);
-    },
-  );
-
-  it(
-    "a property whose body throws is reported as kind 'threw'",
-    { timeout: 30000 },
-    () => {
-      const [r] = generate([safeSqrtSrc], OUT_ROOT, 3);
-      expect(r).toBeDefined();
-      const env = run(r!);
-      expect(env.failed).toBeGreaterThan(0);
-      expect(issuesOf(env)).toHaveLength(1);
-      expectValidIssue(issuesOf(env)[0]);
-      expect(issuesOf(env)[0]).toMatchObject({
-        property: "nonNegativeRoot",
-        kind: "threw",
-      });
-      expect(issuesOf(env)[0]!.error).toContain("negative");
-      expect(Object.keys(issuesOf(env)[0]!.counterexample ?? {})).toEqual([
-        "x",
-      ]);
-    },
-  );
-
-  it(
-    "a guard that throws is reported as kind 'threw', not discarded",
-    { timeout: 30000 },
-    () => {
-      // The prover reads the same thrown guard as a failed `= pure true`
-      // hypothesis — vacuous truth. Divergence documented on both sides.
-      const [r] = generate([throwingGuardSrc], OUT_ROOT, 3);
-      expect(r).toBeDefined();
-      const env = run(r!);
-      expect(env.failed).toBeGreaterThan(0);
-      expect(issuesOf(env)).toHaveLength(1);
-      expectValidIssue(issuesOf(env)[0]);
-      expect(issuesOf(env)[0]).toMatchObject({
-        property: "guardThrows",
-        kind: "threw",
-      });
-      expect(issuesOf(env)[0]!.error).toContain("negative");
-    },
-  );
-
-  it(
-    "an unsatisfiable precondition is reported as kind 'exhausted'",
-    { timeout: 30000 },
-    () => {
-      const [r] = generate([exhaustedSrc], OUT_ROOT);
-      expect(r).toBeDefined();
-      const env = run(r!);
-      expect(env.failed).toBeGreaterThan(0);
-      expect(issuesOf(env)).toHaveLength(1);
-      expectValidIssue(issuesOf(env)[0]);
-      expect(issuesOf(env)[0]).toMatchObject({
-        property: "unsatisfiable",
-        kind: "exhausted",
-      });
-      expect(issuesOf(env)[0]!.counterexample).toBeUndefined();
     },
   );
 
@@ -595,53 +558,6 @@ describe("end-to-end", () => {
         "halfOpenAtZero",
       ])
         expect(by.get(p)).toMatchObject({ szs: "GaveUp" });
-    },
-  );
-
-  it(
-    "regex-guarded string binders only generate matching values",
-    { timeout: 30000 },
-    () => {
-      const [r] = generate([regexGuardSrc], OUT_ROOT);
-      expect(r).toBeDefined();
-      // Pin the emitted arbitraries: anchored, non-capturing, flags kept.
-      const emitted = fs.readFileSync(r!.outFile!, "utf8");
-      expect(emitted).toContain("fc.stringMatching(/^(?:[a-z]+)$/)");
-      expect(emitted).toContain("fc.stringMatching(/^(?:\\p{Lu}{2,5})$/u)");
-      const env = run(r!);
-      expect(env.failed).toBe(0);
-      expect(issuesOf(env)).toEqual([]);
-    },
-  );
-
-  it(
-    "equation syntax: guarded identities pass vitest",
-    { timeout: 30000 },
-    () => {
-      const [r] = generate([equationPassSrc], OUT_ROOT, 3);
-      expect(r).toBeDefined();
-      const env = run(r!);
-      expect(env.failed).toBe(0);
-      expect(issuesOf(env)).toEqual([]);
-    },
-  );
-
-  it(
-    "equation syntax: the -0 near-miss is refuted via ≡",
-    { timeout: 30000 },
-    () => {
-      const [r] = generate([equationFailSrc], OUT_ROOT, 3);
-      expect(r).toBeDefined();
-      const env = run(r!);
-      expect(env.failed).toBeGreaterThan(0);
-      expect(issuesOf(env)).toHaveLength(1);
-      expectValidIssue(issuesOf(env)[0]);
-      expect(issuesOf(env)[0]).toMatchObject({
-        function: "negate",
-        property: "matchesSubtraction",
-        kind: "falsified",
-        counterexample: { x: 0 },
-      });
     },
   );
 
