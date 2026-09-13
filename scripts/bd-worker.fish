@@ -7,8 +7,10 @@
 #
 # The prompt for a bead is scripts/prompts/<label>.md with {{BEAD}} and
 # {{ROOT}} substituted. Each run is logged under .lakatos/workers/. The loop
-# stops when the epic has no open beads left. `bd` runs from the repo root,
-# never from a worktree.
+# stops when the epic has no open beads left. While idle it prints
+# scripts/bd-status.fish's account of why (a human gate, a worker on the
+# other loop, an unclaimed bead) whenever that account changes. `bd` runs
+# from the repo root, never from a worktree.
 #
 # A worker that exits with its bead still in progress has failed. What
 # happens next depends on the label, and only this script decides it:
@@ -47,6 +49,7 @@ set -l model (set -q _flag_model; and echo $_flag_model; or echo $default_model)
 
 set -x BEADS_ACTOR "$role-worker"
 mkdir -p $root/.lakatos/workers
+set -l last_state ''
 
 while true
     # `bd ready --label-any` does not filter (bd 1.2.2 returns unlabelled
@@ -68,15 +71,23 @@ while true
             echo "[$role] nothing open under $epic; done"
             exit 0
         end
+        # Say why nothing is ready, but only when the answer changes.
+        set -l state (fish $root/scripts/bd-status.fish --epic $epic 2>&1 | string collect)
+        # Elapsed minutes tick every poll; compare without them.
+        set -l key (string replace -ra ', \d+ min so far' '' -- $state | string collect)
+        if test "$key" != "$last_state"
+            echo "[$role] "(date +%H:%M)" nothing ready for $labels:"
+            printf '    %s\n' (string split \n -- $state)
+            set last_state $key
+        end
         if set -q _flag_once
-            echo "[$role] nothing ready under $epic ($open beads still open)"
             exit 0
         end
-        echo "[$role] nothing ready; sleeping $poll s"
         sleep $poll
         continue
     end
 
+    set last_state ''
     set -l label (bd -C $root show $claimed --json | jq -r '(.[0] // .) | .labels[]' | grep -E '^(plan|implement|review|repair)$' | head -1)
     set -l mol (bd -C $root show $claimed --json | jq -r '(.[0] // .) | .parent')
     set -l prompt_file $root/scripts/prompts/$label.md
