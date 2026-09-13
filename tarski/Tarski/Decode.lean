@@ -66,7 +66,16 @@ private def arrayField (j : Json) (name : String) : DecodeM (List Json) := do
   | .ok a => .ok a.toList
   | .error _ => bad s!"field \"{name}\" is not an array"
 
-/-- A function form's body: a `BlockStatement`'s statement list. -/
+/-- A named field that must be a `BlockStatement`, read as its statement
+list. The message names the field, since a `try` has three of them. -/
+private def blockField (j : Json) (name : String) : DecodeM (List Json) := do
+  let block ← field j name
+  match ← nodeType block with
+  | "BlockStatement" => arrayField block "body"
+  | other => bad s!"{name} is a {other}"
+
+/-- A function form's body: a `BlockStatement`'s statement list. Its own
+message, because "body" alone would not say which node was wrong. -/
 private def bodyField (j : Json) : DecodeM (List Json) := do
   let body ← field j "body"
   match ← nodeType body with
@@ -118,6 +127,7 @@ private def binaryOp (s : String) : DecodeM BinaryOp :=
   | ">=" => .ok .ge
   | "===" => .ok .strictEq
   | "!==" => .ok .strictNe
+  | "instanceof" => .ok .instanceof
   | _ => .error (.unsupported s!"BinaryExpression {s}")
 
 /-- A `Literal`, by the JSON type of its `value`. -/
@@ -132,6 +142,16 @@ private def decodeLiteral (j : Json) : DecodeM Expr := do
 /-- An identifier's name; `undefined` is the literal, not a reference. -/
 private def identExpr (name : String) : Expr :=
   if name == "undefined" then .undefLit else .ident name
+
+/-- A `break` or `continue`'s target: an `Identifier`'s name, or nothing
+for the unlabelled form. -/
+private def jumpLabel (j : Json) : DecodeM (Option String) := do
+  match ← optField j "label" with
+  | none => pure none
+  | some l =>
+    match ← nodeType l with
+    | "Identifier" => pure (some (← strField l "name"))
+    | other => bad s!"jump label is a {other}"
 
 /-- What an assignment can write to. Reading the target as an expression
 first is what lets an out-of-slice one report itself: it arrived as the
@@ -275,8 +295,44 @@ partial def decodeStmt (j : Json) : DecodeM Stmt := do
   | "WhileStatement" =>
     pure (.whileStmt (← decodeExpr (← field j "test")) (← decodeStmt (← field j "body")))
   | "BlockStatement" => pure (.block (← decodeStmts (← arrayField j "body")))
+  | "ThrowStatement" => pure (.throwStmt (← decodeExpr (← field j "argument")))
+  | "TryStatement" =>
+    let block ← decodeStmts (← blockField j "block")
+    let handler ← match ← optField j "handler" with
+      | some h => pure (some (← decodeCatch h))
+      | none => pure none
+    let finalizer ← match ← optField j "finalizer" with
+      | some f => pure (some (← decodeStmts (← blockField j "finalizer")))
+      | none => pure none
+    -- `try { }` alone is a syntax error, so the bridge never sends one;
+    -- a document that does is a broken producer, not a program outside
+    -- the slice.
+    if handler.isNone && finalizer.isNone then
+      bad "TryStatement has neither handler nor finalizer"
+    else pure (.tryStmt block handler finalizer)
+  | "LabeledStatement" =>
+    let label ← field j "label"
+    match ← nodeType label with
+    | "Identifier" =>
+      pure (.labeled (← strField label "name") (← decodeStmt (← field j "body")))
+    | other => bad s!"LabeledStatement label is a {other}"
+  | "BreakStatement" => pure (.breakStmt (← jumpLabel j))
+  | "ContinueStatement" => pure (.continueStmt (← jumpLabel j))
   | "Unsupported" => .error (.unsupported (← strField j "kind"))
   | other => .error (.unsupported other)
+
+/-- A `CatchClause`. An out-of-slice parameter is refused in place — the
+clause, and so the `try` around it, survives — which is the precedent a
+function parameter set. -/
+partial def decodeCatch (j : Json) : DecodeM CatchClause := do
+  let param ← match ← optField j "param" with
+    | none => pure none
+    | some p =>
+      match ← nodeType p with
+      | "Identifier" => pure (some (← strField p "name"))
+      | "Unsupported" => .error (.unsupported (← strField p "kind"))
+      | other => bad s!"CatchClause param is a {other}"
+  pure { param, body := ← decodeStmts (← blockField j "body") }
 
 partial def decodeDeclarators : List Json → DecodeM (List Declarator)
   | [] => pure []

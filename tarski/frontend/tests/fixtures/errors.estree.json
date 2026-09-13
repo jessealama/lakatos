@@ -1,0 +1,219 @@
+{
+  "type": "Program",
+  "sourceType": "script",
+  "body": [
+    {
+      "type": "ExpressionStatement",
+      "expression": {
+        "type": "Literal",
+        "value": "use strict",
+        "raw": "\"use strict\""
+      },
+      "directive": "use strict"
+    },
+    {
+      "type": "FunctionDeclaration",
+      "id": {
+        "type": "Identifier",
+        "name": "inv"
+      },
+      "params": [
+        {
+          "type": "Identifier",
+          "name": "x"
+        }
+      ],
+      "body": {
+        "type": "BlockStatement",
+        "body": [
+          {
+            "type": "IfStatement",
+            "test": {
+              "type": "BinaryExpression",
+              "operator": "===",
+              "left": {
+                "type": "Identifier",
+                "name": "x"
+              },
+              "right": {
+                "type": "Literal",
+                "value": 0,
+                "raw": "0"
+              }
+            },
+            "consequent": {
+              "type": "ThrowStatement",
+              "argument": {
+                "type": "NewExpression",
+                "callee": {
+                  "type": "Identifier",
+                  "name": "RangeError"
+                },
+                "arguments": [
+                  {
+                    "type": "Literal",
+                    "value": "zero",
+                    "raw": "\"zero\""
+                  }
+                ]
+              }
+            },
+            "alternate": null
+          },
+          {
+            "type": "ReturnStatement",
+            "argument": {
+              "type": "BinaryExpression",
+              "operator": "/",
+              "left": {
+                "type": "Literal",
+                "value": 1,
+                "raw": "1"
+              },
+              "right": {
+                "type": "Identifier",
+                "name": "x"
+              }
+            }
+          }
+        ]
+      },
+      "async": false,
+      "generator": false
+    },
+    {
+      "type": "VariableDeclaration",
+      "kind": "let",
+      "declarations": [
+        {
+          "type": "VariableDeclarator",
+          "id": {
+            "type": "Identifier",
+            "name": "caught"
+          },
+          "init": {
+            "type": "Literal",
+            "value": "",
+            "raw": "\"\""
+          }
+        }
+      ]
+    },
+    {
+      "type": "TryStatement",
+      "block": {
+        "type": "BlockStatement",
+        "body": [
+          {
+            "type": "ExpressionStatement",
+            "expression": {
+              "type": "CallExpression",
+              "callee": {
+                "type": "Identifier",
+                "name": "inv"
+              },
+              "arguments": [
+                {
+                  "type": "Literal",
+                  "value": 0,
+                  "raw": "0"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "handler": {
+        "type": "CatchClause",
+        "param": {
+          "type": "Identifier",
+          "name": "e"
+        },
+        "body": {
+          "type": "BlockStatement",
+          "body": [
+            {
+              "type": "ExpressionStatement",
+              "expression": {
+                "type": "AssignmentExpression",
+                "operator": "=",
+                "left": {
+                  "type": "Identifier",
+                  "name": "caught"
+                },
+                "right": {
+                  "type": "ConditionalExpression",
+                  "test": {
+                    "type": "BinaryExpression",
+                    "operator": "instanceof",
+                    "left": {
+                      "type": "Identifier",
+                      "name": "e"
+                    },
+                    "right": {
+                      "type": "Identifier",
+                      "name": "RangeError"
+                    }
+                  },
+                  "consequent": {
+                    "type": "MemberExpression",
+                    "object": {
+                      "type": "Identifier",
+                      "name": "e"
+                    },
+                    "property": {
+                      "type": "Identifier",
+                      "name": "message"
+                    },
+                    "computed": false
+                  },
+                  "alternate": {
+                    "type": "Literal",
+                    "value": "wrong",
+                    "raw": "\"wrong\""
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "finalizer": {
+        "type": "BlockStatement",
+        "body": [
+          {
+            "type": "ExpressionStatement",
+            "expression": {
+              "type": "AssignmentExpression",
+              "operator": "=",
+              "left": {
+                "type": "Identifier",
+                "name": "caught"
+              },
+              "right": {
+                "type": "BinaryExpression",
+                "operator": "+",
+                "left": {
+                  "type": "Identifier",
+                  "name": "caught"
+                },
+                "right": {
+                  "type": "Literal",
+                  "value": "!",
+                  "raw": "\"!\""
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "ExpressionStatement",
+      "expression": {
+        "type": "Identifier",
+        "name": "caught"
+      }
+    }
+  ]
+}

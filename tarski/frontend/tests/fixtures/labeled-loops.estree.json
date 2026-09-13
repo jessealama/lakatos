@@ -1,0 +1,238 @@
+{
+  "type": "Program",
+  "sourceType": "script",
+  "body": [
+    {
+      "type": "ExpressionStatement",
+      "expression": {
+        "type": "Literal",
+        "value": "use strict",
+        "raw": "\"use strict\""
+      },
+      "directive": "use strict"
+    },
+    {
+      "type": "VariableDeclaration",
+      "kind": "let",
+      "declarations": [
+        {
+          "type": "VariableDeclarator",
+          "id": {
+            "type": "Identifier",
+            "name": "i"
+          },
+          "init": {
+            "type": "Literal",
+            "value": 0,
+            "raw": "0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "VariableDeclaration",
+      "kind": "let",
+      "declarations": [
+        {
+          "type": "VariableDeclarator",
+          "id": {
+            "type": "Identifier",
+            "name": "hits"
+          },
+          "init": {
+            "type": "Literal",
+            "value": 0,
+            "raw": "0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "LabeledStatement",
+      "label": {
+        "type": "Identifier",
+        "name": "outer"
+      },
+      "body": {
+        "type": "WhileStatement",
+        "test": {
+          "type": "BinaryExpression",
+          "operator": "<",
+          "left": {
+            "type": "Identifier",
+            "name": "i"
+          },
+          "right": {
+            "type": "Literal",
+            "value": 3,
+            "raw": "3"
+          }
+        },
+        "body": {
+          "type": "BlockStatement",
+          "body": [
+            {
+              "type": "ExpressionStatement",
+              "expression": {
+                "type": "AssignmentExpression",
+                "operator": "=",
+                "left": {
+                  "type": "Identifier",
+                  "name": "i"
+                },
+                "right": {
+                  "type": "BinaryExpression",
+                  "operator": "+",
+                  "left": {
+                    "type": "Identifier",
+                    "name": "i"
+                  },
+                  "right": {
+                    "type": "Literal",
+                    "value": 1,
+                    "raw": "1"
+                  }
+                }
+              }
+            },
+            {
+              "type": "VariableDeclaration",
+              "kind": "let",
+              "declarations": [
+                {
+                  "type": "VariableDeclarator",
+                  "id": {
+                    "type": "Identifier",
+                    "name": "j"
+                  },
+                  "init": {
+                    "type": "Literal",
+                    "value": 0,
+                    "raw": "0"
+                  }
+                }
+              ]
+            },
+            {
+              "type": "WhileStatement",
+              "test": {
+                "type": "BinaryExpression",
+                "operator": "<",
+                "left": {
+                  "type": "Identifier",
+                  "name": "j"
+                },
+                "right": {
+                  "type": "Literal",
+                  "value": 3,
+                  "raw": "3"
+                }
+              },
+              "body": {
+                "type": "BlockStatement",
+                "body": [
+                  {
+                    "type": "ExpressionStatement",
+                    "expression": {
+                      "type": "AssignmentExpression",
+                      "operator": "=",
+                      "left": {
+                        "type": "Identifier",
+                        "name": "j"
+                      },
+                      "right": {
+                        "type": "BinaryExpression",
+                        "operator": "+",
+                        "left": {
+                          "type": "Identifier",
+                          "name": "j"
+                        },
+                        "right": {
+                          "type": "Literal",
+                          "value": 1,
+                          "raw": "1"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "type": "IfStatement",
+                    "test": {
+                      "type": "BinaryExpression",
+                      "operator": "===",
+                      "left": {
+                        "type": "Identifier",
+                        "name": "j"
+                      },
+                      "right": {
+                        "type": "Literal",
+                        "value": 2,
+                        "raw": "2"
+                      }
+                    },
+                    "consequent": {
+                      "type": "BreakStatement",
+                      "label": {
+                        "type": "Identifier",
+                        "name": "outer"
+                      }
+                    },
+                    "alternate": null
+                  },
+                  {
+                    "type": "ExpressionStatement",
+                    "expression": {
+                      "type": "AssignmentExpression",
+                      "operator": "=",
+                      "left": {
+                        "type": "Identifier",
+                        "name": "hits"
+                      },
+                      "right": {
+                        "type": "BinaryExpression",
+                        "operator": "+",
+                        "left": {
+                          "type": "Identifier",
+                          "name": "hits"
+                        },
+                        "right": {
+                          "type": "Literal",
+                          "value": 1,
+                          "raw": "1"
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "ExpressionStatement",
+      "expression": {
+        "type": "BinaryExpression",
+        "operator": "+",
+        "left": {
+          "type": "Identifier",
+          "name": "hits"
+        },
+        "right": {
+          "type": "BinaryExpression",
+          "operator": "*",
+          "left": {
+            "type": "Identifier",
+            "name": "i"
+          },
+          "right": {
+            "type": "Literal",
+            "value": 10,
+            "raw": "10"
+          }
+        }
+      }
+    }
+  ]
+}

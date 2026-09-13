@@ -219,6 +219,40 @@ export interface ReturnStatement {
   argument: Expression | null;
 }
 
+export interface ThrowStatement {
+  type: "ThrowStatement";
+  argument: Expression;
+}
+
+export interface CatchClause {
+  type: "CatchClause";
+  param: Identifier | Unsupported | null;
+  body: BlockStatement;
+}
+
+export interface TryStatement {
+  type: "TryStatement";
+  block: BlockStatement;
+  handler: CatchClause | null;
+  finalizer: BlockStatement | null;
+}
+
+export interface LabeledStatement {
+  type: "LabeledStatement";
+  label: Identifier;
+  body: Statement;
+}
+
+export interface BreakStatement {
+  type: "BreakStatement";
+  label: Identifier | null;
+}
+
+export interface ContinueStatement {
+  type: "ContinueStatement";
+  label: Identifier | null;
+}
+
 export type Statement =
   | Directive
   | ExpressionStatement
@@ -228,6 +262,11 @@ export type Statement =
   | IfStatement
   | WhileStatement
   | BlockStatement
+  | ThrowStatement
+  | TryStatement
+  | LabeledStatement
+  | BreakStatement
+  | ContinueStatement
   | Unsupported;
 
 export interface Program {
@@ -555,6 +594,28 @@ function blockStatement(node: ts.Block, sf: ts.SourceFile): BlockStatement {
   };
 }
 
+/** A `catch` clause. The optional-binding form has no variable
+ * declaration at all and gives `param: null`; a destructuring binding is
+ * outside the slice and is refused in place, as an out-of-slice parameter
+ * is, so the clause and the `try` around it survive. */
+function catchClause(node: ts.CatchClause, sf: ts.SourceFile): CatchClause {
+  const declaration = node.variableDeclaration;
+  let param: Identifier | Unsupported | null;
+  if (!declaration) {
+    param = null;
+  } else if (ts.isIdentifier(declaration.name)) {
+    param = { type: "Identifier", name: declaration.name.text };
+  } else {
+    param = unsupported(declaration.name);
+  }
+  return { type: "CatchClause", param, body: blockStatement(node.block, sf) };
+}
+
+/** A `break` or `continue`'s target. */
+function jumpLabel(node: ts.BreakOrContinueStatement): Identifier | null {
+  return node.label ? { type: "Identifier", name: node.label.text } : null;
+}
+
 function statement(node: ts.Statement, sf: ts.SourceFile): Statement {
   if (ts.isExpressionStatement(node)) {
     return {
@@ -606,6 +667,35 @@ function statement(node: ts.Statement, sf: ts.SourceFile): Statement {
   }
   if (ts.isBlock(node)) {
     return blockStatement(node, sf);
+  }
+  if (ts.isThrowStatement(node)) {
+    return {
+      type: "ThrowStatement",
+      argument: expression(node.expression, sf),
+    };
+  }
+  if (ts.isTryStatement(node)) {
+    return {
+      type: "TryStatement",
+      block: blockStatement(node.tryBlock, sf),
+      handler: node.catchClause ? catchClause(node.catchClause, sf) : null,
+      finalizer: node.finallyBlock
+        ? blockStatement(node.finallyBlock, sf)
+        : null,
+    };
+  }
+  if (ts.isLabeledStatement(node)) {
+    return {
+      type: "LabeledStatement",
+      label: { type: "Identifier", name: node.label.text },
+      body: statement(node.statement, sf),
+    };
+  }
+  if (ts.isBreakStatement(node)) {
+    return { type: "BreakStatement", label: jumpLabel(node) };
+  }
+  if (ts.isContinueStatement(node)) {
+    return { type: "ContinueStatement", label: jumpLabel(node) };
   }
   return unsupported(node);
 }

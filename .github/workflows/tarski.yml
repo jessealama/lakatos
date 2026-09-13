@@ -85,3 +85,22 @@ jobs:
         run: |
           out=$(.lake/build/bin/tarski run Test/Tarski/fixtures/counter.json)
           test "$out" = "true" || { echo "expected true, got $out"; exit 1; }
+
+      # #379's example: a thrown RangeError caught by `instanceof`, its
+      # message concatenated in a `finally`.
+      - name: Run the errors script
+        run: |
+          out=$(.lake/build/bin/tarski run Test/Tarski/fixtures/errors.json)
+          test "$out" = "zero!" || { echo "expected zero!, got $out"; exit 1; }
+
+      # And what an uncaught throw looks like from outside: the report on
+      # stderr, nothing on stdout, exit 1.
+      - name: Report an uncaught throw
+        run: |
+          set +e
+          err=$(.lake/build/bin/tarski run Test/Tarski/fixtures/uncaught.json 2>&1 >/dev/null)
+          status=$?
+          set -e
+          test "$status" = "1" || { echo "expected exit 1, got $status"; exit 1; }
+          test "$err" = "Uncaught TypeError: not a function" || {
+            echo "expected the TypeError report, got: $err"; exit 1; }
