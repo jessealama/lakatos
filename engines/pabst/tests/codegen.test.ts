@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { generate } from "../src/codegen.js";
+import { LOOP_BUDGET_MS } from "../src/enumerate.js";
 import { annotationKey, LemmaError } from "../../../lemma/src/index.js";
 
 // The out root is the caller's to choose; these tests pick an arbitrary
@@ -86,6 +87,19 @@ export class Counter {
     ]);
     const code = fs.readFileSync(r!.outFile!, "utf8");
     expect(code).toContain('test("pos", { timeout: 0 }');
+  });
+
+  it("emits the loop budget it was given, and the default without one", () => {
+    const [byDefault] = generate(["small.ts"], OUT, 7);
+    expect(fs.readFileSync(byDefault!.outFile!, "utf8")).toContain(
+      `performance.now() - __t0 > ${LOOP_BUDGET_MS}`,
+    );
+    const [custom] = generate(["small.ts"], OUT, 7, new Set(), {
+      loopBudgetMs: 40,
+    });
+    expect(fs.readFileSync(custom!.outFile!, "utf8")).toContain(
+      "performance.now() - __t0 > 40)",
+    );
   });
 
   it("skips a file with no @ensures annotations", () => {

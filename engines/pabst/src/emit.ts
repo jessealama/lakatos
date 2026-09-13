@@ -27,6 +27,7 @@ export function emit(
   sourceFile: string,
   outFile: string,
   seed: number,
+  loopBudgetMs: number,
 ): string {
   const srcAbs = path.resolve(sourceFile).replace(SRC_EXT, "");
   const outDir = path.dirname(path.resolve(outFile));
@@ -65,7 +66,7 @@ export function emit(
       for (const [fnName, fnSpecs] of methods) {
         lines.push(`  describe(${JSON.stringify(fnName)}, () => {`);
         for (const s of fnSpecs)
-          lines.push(emitSpec(s, sourceFile, seed, "    "));
+          lines.push(emitSpec(s, sourceFile, seed, "    ", loopBudgetMs));
         lines.push(`  });`);
       }
     } else {
@@ -73,7 +74,7 @@ export function emit(
       for (const [methodName, mSpecs] of methods) {
         lines.push(`    describe(${JSON.stringify(methodName)}, () => {`);
         for (const s of mSpecs)
-          lines.push(emitSpec(s, sourceFile, seed, "      "));
+          lines.push(emitSpec(s, sourceFile, seed, "      ", loopBudgetMs));
         lines.push(`    });`);
       }
       lines.push(`  });`);
@@ -91,10 +92,11 @@ function emitSpec(
   sourceFile: string,
   seed: number,
   indent: string,
+  loopBudgetMs: number,
 ): string {
   return s.cases === undefined
     ? emitProp(s, sourceFile, seed, indent)
-    : emitEnumerated(s, s.cases, sourceFile, indent);
+    : emitEnumerated(s, s.cases, sourceFile, indent, loopBudgetMs);
 }
 
 function emitProp(

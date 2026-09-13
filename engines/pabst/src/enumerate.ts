@@ -116,6 +116,7 @@ export function emitEnumerated(
   cases: number,
   sourceFile: string,
   indent: string,
+  loopBudgetMs: number,
 ): string {
   const name = JSON.stringify(s.name);
   const file = JSON.stringify(sourceFile);
@@ -157,7 +158,7 @@ export function emitEnumerated(
     depth++;
   }
   out.push(
-    `${inner}if (performance.now() - __t0 > ${LOOP_BUDGET_MS}) ${BUDGET_ALIAS}(${ident}, __done, ${cases});`,
+    `${inner}if (performance.now() - __t0 > ${loopBudgetMs}) ${BUDGET_ALIAS}(${ident}, __done, ${cases});`,
   );
   out.push(`${inner}__done++;`);
   for (const b of s.binders) {

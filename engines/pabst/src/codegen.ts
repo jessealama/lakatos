@@ -7,6 +7,7 @@ import {
   qualifiedName,
 } from "../../../lemma/src/index.js";
 import { emit } from "./emit.js";
+import { LOOP_BUDGET_MS } from "./enumerate.js";
 import { randomSeed } from "./seed.js";
 
 export interface GeneratedProperty {
@@ -33,12 +34,21 @@ export interface GenResult {
   untried: UntriedProperty[];
 }
 
+/** Knobs a caller may turn at generation time; the CLI turns none. */
+export interface GenerateOptions {
+  /** Wall clock an enumerated walk may spend before reporting a budget
+   * Timeout; tests shrink it so slow fixtures need not be slow. */
+  loopBudgetMs?: number;
+}
+
 export function generate(
   files: string[],
   outRoot: string,
   seed: number = randomSeed(),
   refused: ReadonlySet<string> = new Set(),
+  opts: GenerateOptions = {},
 ): GenResult[] {
+  const loopBudgetMs = opts.loopBudgetMs ?? LOOP_BUDGET_MS;
   const results: GenResult[] = [];
   for (const file of files) {
     // Mirroring shared with thales; the outside-cwd guard fires here even
@@ -68,7 +78,7 @@ export function generate(
       continue;
     }
     fs.mkdirSync(path.dirname(outFile), { recursive: true });
-    fs.writeFileSync(outFile, emit(specs, file, outFile, seed), "utf8");
+    fs.writeFileSync(outFile, emit(specs, file, outFile, seed, loopBudgetMs), "utf8");
     results.push({
       sourceFile: file,
       outFile,
