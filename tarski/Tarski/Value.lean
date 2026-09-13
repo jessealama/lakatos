@@ -89,14 +89,18 @@ structure Heap where
   objects : Array Obj := #[]
 deriving Repr, Inhabited
 
-/-- An abrupt completion — the evaluator's error channel. `break` and
-`continue` are here so the monad is final; nothing in this slice builds
-one. -/
+/-- An abrupt completion — the evaluator's error channel. Each of the
+three jumps carries the completion record's `[[Value]]`: a `break` or a
+`continue` carries the running completion value of the statement lists it
+is crossing, which is what UpdateEmpty fills in the spec and what
+`evalStmt`'s threaded accumulator computes here, so
+`while (true) { 2; break; }` completes with `2`. A `label` of `none` is
+the unlabelled form. -/
 inductive Completion where
   | throw (value : Value)
   | «return» (value : Value)
-  | «break» (label : Option String)
-  | «continue» (label : Option String)
+  | «break» (label : Option String) (value : Option Value)
+  | «continue» (label : Option String) (value : Option Value)
 deriving Repr, DecidableEq, Inhabited
 
 /-- The state a program starts from. -/

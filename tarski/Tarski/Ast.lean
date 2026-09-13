@@ -9,9 +9,10 @@ the word appears.
 Strict mode only. Parameters are plain identifiers: a default is #393's,
 rest and binding patterns are #394's, and `var` is still absent, so
 hoisting here is per-block and covers `let`, `const`, and function
-declarations only. `throw`/`try` are #379's, `for` and the logical
-operators #383's, classes #384's. Later slices add constructors; they do
-not reshape the ones here. -/
+declarations only. `throw` and `try`, labels, and `break`/`continue` are
+here; `switch` — the other breakable statement — is #393's and `for` and
+`do`/`while` are #383's, classes #384's. Later slices add constructors;
+they do not reshape the ones here. -/
 
 namespace Tarski
 
@@ -176,6 +177,16 @@ inductive Stmt where
   | whileStmt (test : Expr) (body : Stmt)
   /-- ESTree `BlockStatement`: its own declarative scope. -/
   | block (body : List Stmt)
+  /-- ESTree `LabeledStatement`. A label is not a scope: it is a target,
+  and the statement it names is evaluated with the label set that reaches
+  it, which is what lets a `continue` name a loop from inside a nested
+  one. -/
+  | labeled (label : String) (body : Stmt)
+  /-- ESTree `BreakStatement`; `none` is the unlabelled form, which the
+  innermost loop catches. -/
+  | breakStmt (label : Option String)
+  /-- ESTree `ContinueStatement`; `none` is the unlabelled form. -/
+  | continueStmt (label : Option String)
 
 /-- One declarator of a `VariableDeclaration`. `none` binds `undefined`.
 JS requires an initializer on a `const`, but as an early error, and early

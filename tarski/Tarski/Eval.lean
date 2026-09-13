@@ -124,11 +124,18 @@ def applyStrict : BinaryOp → Value → Value → Value
   | .strictNe, l, r => .prim (.bool (!strictEqValue l r))
   | _, l, r => .prim (.bool (strictEqValue l r))
 
-/-- UpdateEmpty: a statement that completes empty leaves the running
-completion value alone. -/
-def updateEmpty (acc : Option Value) : Option Value → Option Value
-  | some v => some v
-  | none => acc
+/-- Whether a `continue` is this loop's. An unlabelled one always is —
+the innermost loop catches it — and a labelled one is exactly when the
+label is among those the loop was reached through. -/
+def loopContinues (labels : List String) : Option String → Bool
+  | none => true
+  | some l => labels.contains l
+
+/-- Put a reified completion back into the monad: the answer `attempt`
+gave, resumed. -/
+def liftCompletion : Except Completion (Option Value) → EvalM (Option Value)
+  | .ok v => pure v
+  | .error c => throwCompletion c
 
 /-- `undefined`, the value `if` and `while` complete with when their body
 produced none, a missing argument binds to, and a `return` without an
@@ -506,43 +513,94 @@ def construct (f : Value) (args : List Value) : EvalM Value :=
         | .prim _ => pure (.obj fresh)
   partial_fixpoint
 
-/-- Evaluate a statement and answer its completion value. The
-environment is not answered: `instantiateBlock` fixed it before the list
-started running. -/
-def evalStmt (env : Env) : Stmt → EvalM (Option Value)
-  | .exprStmt value => do
+/-- Evaluate a statement against the running completion value, and
+answer the updated one. The environment is not answered:
+`instantiateBlock` fixed it before the list started running.
+
+Threading is UpdateEmpty, done once instead of at every statement list.
+The spec fills an abrupt completion's empty `[[Value]]` from each list it
+crosses on the way out; starting a nested list at the *enclosing* running
+value computes exactly the same first-non-empty value, without catching
+the completion at every list to patch it. So a statement that completes
+empty answers `acc` unchanged, and a `break` throws the value it can see.
+`if`, `while`, `try`, and `catch` bodies start from `undefined` rather
+than from the enclosing value — `eval("1; if (true) {}")` is `undefined`
+— while a bare block, a function body, and the script itself do not. -/
+def evalStmt (env : Env) : Stmt → Option Value → EvalM (Option Value)
+  | .exprStmt value, _ => do
     let v ← evalExpr env value
     pure (some v)
-  | .varDecl _ declarators => do
+  | .varDecl _ declarators, acc => do
     evalDeclarators env declarators
-    pure none
-  | .funcDecl _ _ _ =>
+    pure acc
+  | .funcDecl _ _ _, acc =>
     -- Instantiation already built and bound it; the statement itself
     -- completes empty, so `1; function f() {}` still answers 1.
-    pure none
-  | .returnStmt argument => do
+    pure acc
+  | .returnStmt argument, _ => do
     let v ← match argument with
       | some e => evalExpr env e
       | none => pure undefValue
     throwCompletion (.«return» v)
-  | .ifStmt test consequent alternate => do
+  | .ifStmt test consequent alternate, _ => do
     let t ← evalExpr env test
-    if toBooleanPrim t then do
-      let v ← evalStmt env consequent
-      pure (updateEmpty (some undefValue) v)
+    if toBooleanPrim t then
+      evalStmt env consequent (some undefValue)
     else
       match alternate with
-      | some s => do
-        let v ← evalStmt env s
-        pure (updateEmpty (some undefValue) v)
+      | some s => evalStmt env s (some undefValue)
       | none => pure (some undefValue)
-  | .whileStmt test body =>
-    -- The loop's running value starts at `undefined`, not at empty, so a
-    -- loop whose body never runs still completes with a value.
-    evalWhile env test body (some undefValue)
-  | .block body => do
-    let inner ← instantiateBlock env body
-    evalStmts inner body none
+  | .whileStmt test body, _ =>
+    -- An unlabelled loop reached directly: no label names it, so only an
+    -- unlabelled `continue` is its own.
+    evalLoop env [] test body
+  | .block body, acc => evalBlock env body acc
+  | .labeled l body, acc =>
+    -- A label reached from a statement list starts a fresh label set:
+    -- only `a: b: while (…)` puts two in one set, and `evalLabeled` is
+    -- what collects them.
+    evalLabeled env [] (.labeled l body) acc
+  | .breakStmt label, acc => throwCompletion (.«break» label acc)
+  | .continueStmt label, acc => throwCompletion (.«continue» label acc)
+  partial_fixpoint
+
+/-- A statement list with its own scope: instantiated, then run from the
+running value it was reached with. -/
+def evalBlock (env : Env) (body : List Stmt) (acc : Option Value) :
+    EvalM (Option Value) := do
+  let inner ← instantiateBlock env body
+  evalStmts inner body acc
+  partial_fixpoint
+
+/-- LabelledEvaluation: a statement reached through a set of labels. A
+`labeled` adds its own and recurses, so `a: b: while (…)` hands the loop
+both; a loop consumes the set, because a labelled `continue` targeting it
+must be *its* continue rather than an escape; anything else ignores it
+and is an ordinary statement. A labelled `break` is caught by the label
+it names and by nothing else, which is why this is the only catch of one
+and why an unnamed label set is not a scope. -/
+def evalLabeled (env : Env) (labels : List String) :
+    Stmt → Option Value → EvalM (Option Value)
+  | .labeled l body, acc => do
+    match ← attempt (evalLabeled env (l :: labels) body acc) with
+    | .ok v => pure v
+    | .error (.«break» (some l') v) =>
+      if l' == l then pure v else throwCompletion (.«break» (some l') v)
+    | .error c => throwCompletion c
+  | .whileStmt test body, _ => evalLoop env labels test body
+  | s, acc => evalStmt env s acc
+  partial_fixpoint
+
+/-- A loop as a BreakableStatement: an unlabelled `break` is its own and
+ends it with the running value, a labelled one is somebody else's. The
+loop's running value starts at `undefined`, not at empty, so a loop whose
+body never runs still completes with a value. -/
+def evalLoop (env : Env) (labels : List String) (test : Expr) (body : Stmt) :
+    EvalM (Option Value) := do
+  match ← attempt (evalWhile env labels test body (some undefValue)) with
+  | .ok v => pure v
+  | .error (.«break» none v) => pure v
+  | .error c => throwCompletion c
   partial_fixpoint
 
 /-- Initialize a declaration's cells left to right, each initializer
@@ -567,19 +625,26 @@ def evalDeclarators (env : Env) : List Declarator → EvalM Unit
 def evalStmts (env : Env) : List Stmt → Option Value → EvalM (Option Value)
   | [], acc => pure acc
   | s :: rest, acc => do
-    let v ← evalStmt env s
-    evalStmts env rest (updateEmpty acc v)
+    let v ← evalStmt env s acc
+    evalStmts env rest v
   partial_fixpoint
 
-/-- Run a `while`. The loop is the one definition whose unfolding is a
-proof step: `rw [evalWhile]` exposes exactly one iteration, and a
-postcondition is proved by doing that until the test fails. -/
-def evalWhile (env : Env) (test : Expr) (body : Stmt) (acc : Option Value) :
-    EvalM (Option Value) := do
+/-- Run a `while`'s iterations. The loop is the one definition whose
+unfolding is a proof step: `rw [evalWhile]` exposes exactly one
+iteration, and a postcondition is proved by doing that until the test
+fails. A `continue` this loop answers for resumes with the value the body
+had reached; any other completion, `break` included, leaves — `evalLoop`
+is where an unlabelled `break` stops. -/
+def evalWhile (env : Env) (labels : List String) (test : Expr) (body : Stmt)
+    (acc : Option Value) : EvalM (Option Value) := do
   let t ← evalExpr env test
-  if toBooleanPrim t then do
-    let v ← evalStmt env body
-    evalWhile env test body (updateEmpty acc v)
+  if toBooleanPrim t then
+    match ← attempt (evalStmt env body acc) with
+    | .ok v => evalWhile env labels test body v
+    | .error (.«continue» l v) =>
+      if loopContinues labels l then evalWhile env labels test body v
+      else throwCompletion (.«continue» l v)
+    | .error c => throwCompletion c
   else
     pure acc
   partial_fixpoint

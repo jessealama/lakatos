@@ -22,10 +22,15 @@ heap back, neither of which JavaScript does. Divergence still swallows
 both, because the `Option` is outside both of them.
 
 `partial_fixpoint` has no monotonicity lemma for `tryCatch`, so a
-recursive definition may not catch inline. Each shape of caught
-completion is instead an opaque definition here with its own
-`@[partial_fixpoint_monotone]` lemma; `catchReturn` below is the first,
-and #379's `try`/`catch`/`finally` follow the same pattern. -/
+recursive definition may not catch inline. Catching is instead an opaque
+definition here with its own `@[partial_fixpoint_monotone]` lemma, and
+there are exactly two: `catchReturn`, which a call site wraps its body
+in, and `attempt`, which *reifies* a completion rather than choosing one
+shape to swallow. Every other catch — a `try`, a `finally`, a loop's
+`break`, a label's — is an ordinary `match` on what `attempt` answered,
+inside the fixpoint block, needing no lemma of its own because
+`partial_fixpoint` already handles a `match`. One shape, one lemma, and a
+catching arm may recurse. -/
 
 namespace Tarski
 
@@ -65,6 +70,34 @@ recursive definition call itself under it. -/
 theorem monotone_catchReturn {γ : Type} [PartialOrder γ] (f : γ → EvalM Value)
     (hmono : monotone f) : monotone (fun x => catchReturn (f x)) := by
   unfold catchReturn
+  apply monotone_bind
+  · exact hmono
+  · apply monotone_const
+
+/-- Run a computation and answer its completion as a value: `.ok` for a
+normal one, `.error c` for an abrupt one. Nothing is swallowed — the
+caller decides, by an ordinary `match`, which completions it handles and
+rethrows the rest with `throwCompletion`. The heap comes out either way,
+because the state is inside the `Except`, so a caught throw keeps every
+write the abrupt part made.
+
+Opaque for the same reason `catchReturn` is: `partial_fixpoint` cannot
+eliminate a recursive call written under `tryCatch`, but it can see
+through this definition given the monotonicity lemma below, and the
+`match` that follows is one it already handles. -/
+def attempt {α : Type} (x : EvalM α) : EvalM (Except Completion α) :=
+  ExceptT.mk do
+    let r ← x.run
+    pure (.ok r)
+
+open Lean.Order in
+/-- `attempt` is monotone in its argument, which is what lets a
+recursive definition call itself under it — and, since the `match` on its
+answer is ordinary, lets a catching arm recurse too. -/
+@[partial_fixpoint_monotone]
+theorem monotone_attempt {α γ : Type} [PartialOrder γ] (f : γ → EvalM α)
+    (hmono : monotone f) : monotone (fun x => attempt (f x)) := by
+  unfold attempt
   apply monotone_bind
   · exact hmono
   · apply monotone_const

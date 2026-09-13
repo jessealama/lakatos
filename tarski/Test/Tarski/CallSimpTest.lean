@@ -29,7 +29,7 @@ attribute [local simp] evalExpr evalExprs evalStmt evalStmts evalDeclarators
   Env.lookup Heap.alloc Heap.read Heap.write
   Heap.allocObj Heap.readObj Heap.writeObj
   Obj.getOwn Obj.setOwn propGet propSet
-  updateEmpty undefValue thisName DeclKind.isMutable
+  undefValue thisName DeclKind.isMutable
   Heap.empty runProgram evalProgram
   ExceptT.run_bind Except.map throwJsError throwCompletion
 

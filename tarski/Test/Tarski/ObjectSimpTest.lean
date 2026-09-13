@@ -35,7 +35,7 @@ attribute [local simp] evalExpr evalStmt evalStmts evalDeclarators evalProps
   Env.lookup Heap.alloc Heap.read Heap.write
   Heap.allocObj Heap.readObj Heap.writeObj
   Obj.getOwn Obj.setOwn propGet propSet
-  updateEmpty DeclKind.isMutable Heap.empty runProgram evalProgram
+  DeclKind.isMutable Heap.empty runProgram evalProgram
   ExceptT.run_bind Except.map throwJsError throwCompletion
 
 example : runProgram program = some (.ok (some (.prim (.num 1.0)))) := by
