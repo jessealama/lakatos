@@ -226,6 +226,7 @@
         { "$ref": "#/definitions/MemberExpression" },
         { "$ref": "#/definitions/CallExpression" },
         { "$ref": "#/definitions/NewExpression" },
+        { "$ref": "#/definitions/ArrayExpression" },
         { "$ref": "#/definitions/ObjectExpression" },
         { "$ref": "#/definitions/FunctionExpression" },
         { "$ref": "#/definitions/ArrowFunctionExpression" },
@@ -448,6 +449,20 @@
         }
       },
       "required": ["type", "callee", "arguments"],
+      "additionalProperties": false
+    },
+
+    "ArrayExpression": {
+      "description": "A hole is outside the slice and arrives as an `Unsupported` element with kind `OmittedExpression`, a spread as one with kind `SpreadElement`; each stands in place, so the literal survives and only the element is refused.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "ArrayExpression" },
+        "elements": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Expression" }
+        }
+      },
+      "required": ["type", "elements"],
       "additionalProperties": false
     },
 

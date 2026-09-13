@@ -93,6 +93,22 @@ jobs:
           out=$(.lake/build/bin/tarski run Test/Tarski/fixtures/errors.json)
           test "$out" = "zero!" || { echo "expected zero!, got $out"; exit 1; }
 
+      # #380's example: string concatenation and comparison, an array's
+      # live `length`, `push`, `join`, `Array.isArray`, and `Object.is`
+      # through the library's `sameValue`.
+      - name: Run the harness-floor script
+        run: |
+          out=$(.lake/build/bin/tarski run Test/Tarski/fixtures/harness-floor.json)
+          test "$out" = "true" || { echo "expected true, got $out"; exit 1; }
+
+      # The test262 harness's own `compareArray`, transcribed with `let`
+      # and `while`: array `length`, index reads, and the two values
+      # `===` gets wrong.
+      - name: Run the compareArray script
+        run: |
+          out=$(.lake/build/bin/tarski run Test/Tarski/fixtures/compare-array.json)
+          test "$out" = "true" || { echo "expected true, got $out"; exit 1; }
+
       # And what an uncaught throw looks like from outside: the report on
       # stderr, nothing on stdout, exit 1.
       - name: Report an uncaught throw

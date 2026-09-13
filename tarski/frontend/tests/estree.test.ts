@@ -33,6 +33,8 @@ const FIXTURES = [
   "uncaught",
   "labeled-loops",
   "finally-return",
+  "harness-floor",
+  "compare-array",
 ];
 
 describe("parseScript", () => {
@@ -455,6 +457,66 @@ describe("parseScript", () => {
     validate(program);
   });
 
+  it("writes an array literal's elements in order", () => {
+    const program = parseScript(
+      '"use strict";\nconst xs = [1, "a", x];\n',
+      "a.js",
+    );
+    expect(program.body[1]).toMatchObject({
+      declarations: [
+        {
+          init: {
+            type: "ArrayExpression",
+            elements: [
+              { type: "Literal", value: 1 },
+              { type: "Literal", value: "a" },
+              { type: "Identifier", name: "x" },
+            ],
+          },
+        },
+      ],
+    });
+    validate(program);
+  });
+
+  // A hole and a spread are each refused where they stand, as an
+  // object-literal member and a call argument are, so the literal around
+  // them still reaches the Lean decoder.
+  it("replaces a hole and a spread element in place", () => {
+    const program = parseScript(
+      '"use strict";\nconst a = [1, , 2];\nconst b = [...xs, 1];\n',
+      "h.js",
+    );
+    expect(program.body[1]).toMatchObject({
+      declarations: [
+        {
+          init: {
+            type: "ArrayExpression",
+            elements: [
+              { type: "Literal", value: 1 },
+              { type: "Unsupported", kind: "OmittedExpression" },
+              { type: "Literal", value: 2 },
+            ],
+          },
+        },
+      ],
+    });
+    expect(program.body[2]).toMatchObject({
+      declarations: [
+        {
+          init: {
+            type: "ArrayExpression",
+            elements: [
+              { type: "Unsupported", kind: "SpreadElement" },
+              { type: "Literal", value: 1 },
+            ],
+          },
+        },
+      ],
+    });
+    validate(program);
+  });
+
   it("replaces a spread argument in place, keeping the call", () => {
     const program = parseScript('"use strict";\nf(...xs);\n', "s.js");
     expect(program.body[1]).toMatchObject({
@@ -736,6 +798,19 @@ describe("the schema as the seam", () => {
         type: "Program",
         sourceType: "script",
         body: [{ type: "BreakStatement" }],
+      },
+    ],
+    [
+      "an ArrayExpression with no elements field",
+      {
+        type: "Program",
+        sourceType: "script",
+        body: [
+          {
+            type: "ExpressionStatement",
+            expression: { type: "ArrayExpression" },
+          },
+        ],
       },
     ],
     [
