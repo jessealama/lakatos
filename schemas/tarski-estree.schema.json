@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://lakatos.test/schemas/tarski-estree.schema.json",
   "title": "tarski ESTree",
-  "description": "The seam between the TypeScript parser bridge and the Lean evaluator: an ESTree-shaped script, narrowed to the node kinds tarski's numeric slice evaluates. Positions are deliberately absent — every message the evaluator produces names a node kind, never a line — and `additionalProperties` is false everywhere so a producer cannot smuggle one in. A node outside the slice is not an error here: the bridge replaces it in place with an `Unsupported` node carrying its kind, and the Lean decoder is the one place that refuses it, so there is one seam and one message.",
+  "description": "The seam between the TypeScript parser bridge and the Lean evaluator: an ESTree-shaped script, narrowed to the node kinds tarski evaluates. Positions are deliberately absent — every message the evaluator produces names a node kind, never a line — and `additionalProperties` is false everywhere so a producer cannot smuggle one in. A node outside the slice is not an error here: the bridge replaces it in place with an `Unsupported` node carrying its kind, and the Lean decoder is the one place that refuses it, so there is one seam and one message.",
   "$ref": "#/definitions/Program",
   "definitions": {
     "Program": {
@@ -24,6 +24,8 @@
         { "$ref": "#/definitions/Directive" },
         { "$ref": "#/definitions/ExpressionStatement" },
         { "$ref": "#/definitions/VariableDeclaration" },
+        { "$ref": "#/definitions/FunctionDeclaration" },
+        { "$ref": "#/definitions/ReturnStatement" },
         { "$ref": "#/definitions/IfStatement" },
         { "$ref": "#/definitions/WhileStatement" },
         { "$ref": "#/definitions/BlockStatement" },
@@ -125,10 +127,19 @@
         { "$ref": "#/definitions/NumericLiteral" },
         { "$ref": "#/definitions/BooleanLiteral" },
         { "$ref": "#/definitions/NullLiteral" },
+        { "$ref": "#/definitions/StringLiteral" },
         { "$ref": "#/definitions/Identifier" },
+        { "$ref": "#/definitions/ThisExpression" },
         { "$ref": "#/definitions/UnaryExpression" },
         { "$ref": "#/definitions/BinaryExpression" },
+        { "$ref": "#/definitions/LogicalExpression" },
         { "$ref": "#/definitions/ConditionalExpression" },
+        { "$ref": "#/definitions/MemberExpression" },
+        { "$ref": "#/definitions/CallExpression" },
+        { "$ref": "#/definitions/NewExpression" },
+        { "$ref": "#/definitions/ObjectExpression" },
+        { "$ref": "#/definitions/FunctionExpression" },
+        { "$ref": "#/definitions/ArrowFunctionExpression" },
         { "$ref": "#/definitions/AssignmentExpression" },
         { "$ref": "#/definitions/Unsupported" }
       ]
@@ -168,7 +179,7 @@
     },
 
     "StringLiteral": {
-      "description": "Reachable only as a directive's expression: string values are a later slice.",
+      "description": "A string literal, both as a directive's expression and as an ordinary value. String operations — concatenation, `length`, comparison — are a later slice; a string here can be bound, stored, compared with `===`, and produced by `typeof`.",
       "type": "object",
       "properties": {
         "type": { "const": "Literal" },
@@ -205,7 +216,7 @@
     },
 
     "BinaryExpression": {
-      "description": "Every ESTree binary operator, not only the slice's: the bridge writes what it saw, and the Lean decoder names the one it will not evaluate. `&&`, `||`, and `??` are a LogicalExpression in ESTree, which is not a node here — they arrive as `Unsupported`.",
+      "description": "Every ESTree binary operator, not only the slice's: the bridge writes what it saw, and the Lean decoder names the one it will not evaluate. `&&`, `||`, and `??` are not here — ESTree makes them a LogicalExpression, and so does this schema.",
       "type": "object",
       "properties": {
         "type": { "const": "BinaryExpression" },
@@ -255,7 +266,7 @@
     },
 
     "AssignmentExpression": {
-      "description": "The evaluator takes only plain `=` to an identifier; the schema admits every assignment operator and every target expression so that a compound assignment or a member target reaches the Lean decoder and is refused there by name.",
+      "description": "The evaluator takes plain `=` to an identifier or a member; the schema admits every assignment operator and every target expression so that a compound assignment or an out-of-slice target reaches the Lean decoder and is refused there by name.",
       "type": "object",
       "properties": {
         "type": { "const": "AssignmentExpression" },
@@ -283,6 +294,202 @@
         "right": { "$ref": "#/definitions/Expression" }
       },
       "required": ["type", "operator", "left", "right"],
+      "additionalProperties": false
+    },
+
+    "ThisExpression": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "ThisExpression" }
+      },
+      "required": ["type"],
+      "additionalProperties": false
+    },
+
+    "LogicalExpression": {
+      "description": "The short-circuiting operators, which ESTree separates from BinaryExpression because they do not evaluate both operands. `??` is admitted here and refused by the Lean decoder.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "LogicalExpression" },
+        "operator": { "enum": ["&&", "||", "??"] },
+        "left": { "$ref": "#/definitions/Expression" },
+        "right": { "$ref": "#/definitions/Expression" }
+      },
+      "required": ["type", "operator", "left", "right"],
+      "additionalProperties": false
+    },
+
+    "MemberExpression": {
+      "description": "`computed` says which spelling was used: `o.x` has an Identifier property and `computed: false`, `o[e]` has an arbitrary expression and `computed: true`. An optional chain (`o?.x`) is not this node — the whole access arrives as `Unsupported`.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "MemberExpression" },
+        "object": { "$ref": "#/definitions/Expression" },
+        "property": { "$ref": "#/definitions/Expression" },
+        "computed": { "type": "boolean" }
+      },
+      "required": ["type", "object", "property", "computed"],
+      "additionalProperties": false
+    },
+
+    "CallExpression": {
+      "description": "A spread argument is outside the slice and arrives as an `Unsupported` element in `arguments`; an optional call (`f?.()`) makes the whole call `Unsupported`.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "CallExpression" },
+        "callee": { "$ref": "#/definitions/Expression" },
+        "arguments": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Expression" }
+        }
+      },
+      "required": ["type", "callee", "arguments"],
+      "additionalProperties": false
+    },
+
+    "NewExpression": {
+      "description": "`new F` without an argument list carries an empty `arguments`, as ESTree specifies.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "NewExpression" },
+        "callee": { "$ref": "#/definitions/Expression" },
+        "arguments": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Expression" }
+        }
+      },
+      "required": ["type", "callee", "arguments"],
+      "additionalProperties": false
+    },
+
+    "ObjectExpression": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "ObjectExpression" },
+        "properties": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              { "$ref": "#/definitions/Property" },
+              { "$ref": "#/definitions/Unsupported" }
+            ]
+          }
+        }
+      },
+      "required": ["type", "properties"],
+      "additionalProperties": false
+    },
+
+    "Property": {
+      "description": "A plain `key: value` member. Shorthand, methods, accessors, computed keys, and spread are outside the slice and arrive as `Unsupported` members instead, so this node is always `kind: \"init\"` and never computed. A numeric key is admitted here and refused by the Lean decoder.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "Property" },
+        "key": {
+          "anyOf": [
+            { "$ref": "#/definitions/Identifier" },
+            { "$ref": "#/definitions/StringLiteral" },
+            { "$ref": "#/definitions/NumericLiteral" }
+          ]
+        },
+        "value": { "$ref": "#/definitions/Expression" },
+        "kind": { "const": "init" },
+        "computed": { "const": false },
+        "shorthand": { "const": false },
+        "method": { "const": false }
+      },
+      "required": [
+        "type",
+        "key",
+        "value",
+        "kind",
+        "computed",
+        "shorthand",
+        "method"
+      ],
+      "additionalProperties": false
+    },
+
+    "Params": {
+      "description": "A parameter list. Only a plain identifier is in the slice: a default or a rest parameter arrives as `Unsupported` with kind `Parameter`, and a binding pattern with the pattern's own kind, so the function node itself survives and only the parameter is refused.",
+      "type": "array",
+      "items": {
+        "anyOf": [
+          { "$ref": "#/definitions/Identifier" },
+          { "$ref": "#/definitions/Unsupported" }
+        ]
+      }
+    },
+
+    "FunctionExpression": {
+      "description": "`async` and `generator` are admitted here and refused by the Lean decoder: they are real syntax whose semantics are outside this epic, so the refusal names them rather than the node.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "FunctionExpression" },
+        "id": {
+          "oneOf": [{ "$ref": "#/definitions/Identifier" }, { "type": "null" }]
+        },
+        "params": { "$ref": "#/definitions/Params" },
+        "body": { "$ref": "#/definitions/BlockStatement" },
+        "async": { "type": "boolean" },
+        "generator": { "type": "boolean" }
+      },
+      "required": ["type", "id", "params", "body", "async", "generator"],
+      "additionalProperties": false
+    },
+
+    "ArrowFunctionExpression": {
+      "description": "`expression` is true for the concise body form, whose `body` is then an Expression rather than a BlockStatement. An arrow is never a generator.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "ArrowFunctionExpression" },
+        "id": { "type": "null" },
+        "params": { "$ref": "#/definitions/Params" },
+        "body": {
+          "anyOf": [
+            { "$ref": "#/definitions/BlockStatement" },
+            { "$ref": "#/definitions/Expression" }
+          ]
+        },
+        "expression": { "type": "boolean" },
+        "async": { "type": "boolean" },
+        "generator": { "const": false }
+      },
+      "required": [
+        "type",
+        "id",
+        "params",
+        "body",
+        "expression",
+        "async",
+        "generator"
+      ],
+      "additionalProperties": false
+    },
+
+    "FunctionDeclaration": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "FunctionDeclaration" },
+        "id": { "$ref": "#/definitions/Identifier" },
+        "params": { "$ref": "#/definitions/Params" },
+        "body": { "$ref": "#/definitions/BlockStatement" },
+        "async": { "type": "boolean" },
+        "generator": { "type": "boolean" }
+      },
+      "required": ["type", "id", "params", "body", "async", "generator"],
+      "additionalProperties": false
+    },
+
+    "ReturnStatement": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "ReturnStatement" },
+        "argument": {
+          "oneOf": [{ "$ref": "#/definitions/Expression" }, { "type": "null" }]
+        }
+      },
+      "required": ["type", "argument"],
       "additionalProperties": false
     },
 

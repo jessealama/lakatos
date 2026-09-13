@@ -69,7 +69,7 @@ private def no : Expr := .boolLit false
     [one,
      .varDecl .«let» [{ name := "n", init := some (.numLit 0.0) }],
      .whileStmt (.binary .lt (.ident "n") (.numLit 2.0))
-       (.block [.exprStmt (.assign "n" (.binary .add (.ident "n") (.numLit 1.0)))])]
+       (.block [.exprStmt (.assign (.ident "n") (.binary .add (.ident "n") (.numLit 1.0)))])]
   == "2"
 
 /-! ## What ends a run early -/
@@ -81,14 +81,14 @@ private def no : Expr := .boolLit false
 -- `const frozen = 1; frozen = 2;` — assignment to an immutable binding.
 #guard outcome
     [.varDecl .«const» [{ name := "frozen", init := some (.numLit 1.0) }],
-     .exprStmt (.assign "frozen" (.numLit 2.0))]
+     .exprStmt (.assign (.ident "frozen") (.numLit 2.0))]
   == "uncaught: TypeError"
 
 -- `let n = 0; n = 2; n;` — a `let` binding is writable, and the write is
 -- visible afterwards because bindings live in the heap.
 #guard outcome
     [.varDecl .«let» [{ name := "n", init := some (.numLit 0.0) }],
-     .exprStmt (.assign "n" (.numLit 2.0)),
+     .exprStmt (.assign (.ident "n") (.numLit 2.0)),
      .exprStmt (.ident "n")]
   == "2"
 

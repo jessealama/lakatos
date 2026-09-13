@@ -69,6 +69,70 @@ export interface BinaryExpression {
   right: Expression;
 }
 
+export interface LogicalExpression {
+  type: "LogicalExpression";
+  operator: string;
+  left: Expression;
+  right: Expression;
+}
+
+export interface ThisExpression {
+  type: "ThisExpression";
+}
+
+export interface MemberExpression {
+  type: "MemberExpression";
+  object: Expression;
+  property: Expression;
+  computed: boolean;
+}
+
+export interface CallExpression {
+  type: "CallExpression";
+  callee: Expression;
+  arguments: Expression[];
+}
+
+export interface NewExpression {
+  type: "NewExpression";
+  callee: Expression;
+  arguments: Expression[];
+}
+
+export interface Property {
+  type: "Property";
+  key: Literal | Identifier;
+  value: Expression;
+  kind: "init";
+  computed: false;
+  shorthand: false;
+  method: false;
+}
+
+export interface ObjectExpression {
+  type: "ObjectExpression";
+  properties: (Property | Unsupported)[];
+}
+
+export interface FunctionExpression {
+  type: "FunctionExpression";
+  id: Identifier | null;
+  params: (Identifier | Unsupported)[];
+  body: BlockStatement;
+  async: boolean;
+  generator: boolean;
+}
+
+export interface ArrowFunctionExpression {
+  type: "ArrowFunctionExpression";
+  id: null;
+  params: (Identifier | Unsupported)[];
+  body: BlockStatement | Expression;
+  expression: boolean;
+  async: boolean;
+  generator: false;
+}
+
 export interface ConditionalExpression {
   type: "ConditionalExpression";
   test: Expression;
@@ -86,9 +150,17 @@ export interface AssignmentExpression {
 export type Expression =
   | Literal
   | Identifier
+  | ThisExpression
   | UnaryExpression
   | BinaryExpression
+  | LogicalExpression
   | ConditionalExpression
+  | MemberExpression
+  | CallExpression
+  | NewExpression
+  | ObjectExpression
+  | FunctionExpression
+  | ArrowFunctionExpression
   | AssignmentExpression
   | Unsupported;
 
@@ -133,10 +205,26 @@ export interface BlockStatement {
   body: Statement[];
 }
 
+export interface FunctionDeclaration {
+  type: "FunctionDeclaration";
+  id: Identifier;
+  params: (Identifier | Unsupported)[];
+  body: BlockStatement;
+  async: boolean;
+  generator: boolean;
+}
+
+export interface ReturnStatement {
+  type: "ReturnStatement";
+  argument: Expression | null;
+}
+
 export type Statement =
   | Directive
   | ExpressionStatement
   | VariableDeclaration
+  | FunctionDeclaration
+  | ReturnStatement
   | IfStatement
   | WhileStatement
   | BlockStatement
@@ -181,10 +269,96 @@ const ASSIGNMENT_OPERATORS = new Set([
   "??=",
 ]);
 
-// ESTree calls these LogicalExpression, a node tarski's schema does not
-// have; they arrive as Unsupported, naming the tsc kind as everything
-// else outside the slice does.
+// ESTree calls these LogicalExpression, a node of its own, because they
+// do not evaluate both operands. `??` is written out with them and
+// refused on the Lean side.
 const LOGICAL_OPERATORS = new Set(["&&", "||", "??"]);
+
+/** A call's arguments. A spread is outside the slice and stands in place
+ * as `Unsupported`, so the call itself still reaches the Lean decoder. */
+function callArguments(
+  args: ts.NodeArray<ts.Expression>,
+  sf: ts.SourceFile,
+): Expression[] {
+  return args.map((a) =>
+    ts.isSpreadElement(a) ? unsupported(a) : expression(a, sf),
+  );
+}
+
+/** One member of an object literal. Only `key: value` with an identifier,
+ * string, or numeric key is in the slice; shorthand, methods, accessors,
+ * computed keys, and spread stand in place as `Unsupported`. */
+function objectMember(
+  member: ts.ObjectLiteralElementLike,
+  sf: ts.SourceFile,
+): Property | Unsupported {
+  if (!ts.isPropertyAssignment(member)) return unsupported(member);
+  const name = member.name;
+  let key: Literal | Identifier;
+  if (ts.isIdentifier(name)) {
+    key = { type: "Identifier", name: name.text };
+  } else if (ts.isStringLiteral(name)) {
+    key = { type: "Literal", value: name.text, raw: rawText(name, sf) };
+  } else if (ts.isNumericLiteral(name)) {
+    key = { type: "Literal", value: Number(name.text), raw: rawText(name, sf) };
+  } else {
+    return unsupported(name);
+  }
+  return {
+    type: "Property",
+    key,
+    value: expression(member.initializer, sf),
+    kind: "init",
+    computed: false,
+    shorthand: false,
+    method: false,
+  };
+}
+
+/** A function's body. One without a body is an ambient declaration,
+ * which a script cannot contain — `function f();` is a syntax error, and
+ * the bridge refuses a program that does not parse before it gets
+ * here. */
+function functionBody(
+  node: ts.FunctionDeclaration | ts.FunctionExpression,
+  sf: ts.SourceFile,
+): BlockStatement {
+  /* v8 ignore next -- see above: the body is always present */
+  return node.body
+    ? blockStatement(node.body, sf)
+    : { type: "BlockStatement", body: [] };
+}
+
+/** A function declaration's name. One without a name is
+ * `export default function () {}`, a module form; a script cannot
+ * produce it. */
+function declarationName(node: ts.FunctionDeclaration): string {
+  /* v8 ignore next -- see above: the name is always present */
+  return node.name ? node.name.text : "";
+}
+
+/** The parts every function form shares. A parameter with a default or a
+ * rest marker is refused as the `Parameter` it is; a binding pattern is
+ * refused as the pattern, which is the more useful name. Either way only
+ * the parameter leaves the slice, not the function. */
+function functionParts(
+  node: ts.FunctionDeclaration | ts.FunctionExpression | ts.ArrowFunction,
+): {
+  params: (Identifier | Unsupported)[];
+  async: boolean;
+  generator: boolean;
+} {
+  const params = node.parameters.map((p): Identifier | Unsupported => {
+    if (p.initializer || p.dotDotDotToken) return unsupported(p);
+    if (!ts.isIdentifier(p.name)) return unsupported(p.name);
+    return { type: "Identifier", name: p.name.text };
+  });
+  const isAsync = (node.modifiers ?? []).some(
+    (m) => m.kind === ts.SyntaxKind.AsyncKeyword,
+  );
+  const asterisk = ts.isArrowFunction(node) ? undefined : node.asteriskToken;
+  return { params, async: isAsync, generator: Boolean(asterisk) };
+}
 
 function expression(node: ts.Expression, sf: ts.SourceFile): Expression {
   if (ts.isNumericLiteral(node)) {
@@ -203,13 +377,103 @@ function expression(node: ts.Expression, sf: ts.SourceFile): Expression {
   if (node.kind === ts.SyntaxKind.NullKeyword) {
     return { type: "Literal", value: null, raw: "null" };
   }
+  if (ts.isStringLiteral(node)) {
+    // A template with no substitutions is a different node kind, and a
+    // different literal: it stays outside the slice.
+    return { type: "Literal", value: node.text, raw: rawText(node, sf) };
+  }
   if (ts.isIdentifier(node)) {
     return { type: "Identifier", name: node.text };
+  }
+  if (node.kind === ts.SyntaxKind.ThisKeyword) {
+    return { type: "ThisExpression" };
   }
   // Parentheses carry no meaning past the parse: the tree already has the
   // grouping they expressed.
   if (ts.isParenthesizedExpression(node)) {
     return expression(node.expression, sf);
+  }
+  // tsc gives `typeof` its own node; ESTree spells it as a unary operator.
+  if (ts.isTypeOfExpression(node)) {
+    return {
+      type: "UnaryExpression",
+      operator: "typeof",
+      argument: expression(node.expression, sf),
+      prefix: true,
+    };
+  }
+  if (ts.isPropertyAccessExpression(node)) {
+    // An optional chain has semantics of its own — it short-circuits the
+    // whole chain — so the access leaves the slice as a whole.
+    if (node.questionDotToken) return unsupported(node);
+    return {
+      type: "MemberExpression",
+      object: expression(node.expression, sf),
+      property: ts.isIdentifier(node.name)
+        ? { type: "Identifier", name: node.name.text }
+        : unsupported(node.name),
+      computed: false,
+    };
+  }
+  if (ts.isElementAccessExpression(node)) {
+    if (node.questionDotToken) return unsupported(node);
+    return {
+      type: "MemberExpression",
+      object: expression(node.expression, sf),
+      property: expression(node.argumentExpression, sf),
+      computed: true,
+    };
+  }
+  if (ts.isCallExpression(node)) {
+    if (node.questionDotToken) return unsupported(node);
+    return {
+      type: "CallExpression",
+      callee: expression(node.expression, sf),
+      arguments: callArguments(node.arguments, sf),
+    };
+  }
+  if (ts.isNewExpression(node)) {
+    return {
+      type: "NewExpression",
+      callee: expression(node.expression, sf),
+      // `new F` with no argument list is an empty one in ESTree.
+      arguments: callArguments(
+        node.arguments ?? ts.factory.createNodeArray(),
+        sf,
+      ),
+    };
+  }
+  if (ts.isObjectLiteralExpression(node)) {
+    return {
+      type: "ObjectExpression",
+      properties: node.properties.map((m) => objectMember(m, sf)),
+    };
+  }
+  if (ts.isFunctionExpression(node)) {
+    const parts = functionParts(node);
+    return {
+      type: "FunctionExpression",
+      id: node.name ? { type: "Identifier", name: node.name.text } : null,
+      params: parts.params,
+      body: functionBody(node, sf),
+      async: parts.async,
+      generator: parts.generator,
+    };
+  }
+  if (ts.isArrowFunction(node)) {
+    const parts = functionParts(node);
+    const concise = !ts.isBlock(node.body);
+    return {
+      type: "ArrowFunctionExpression",
+      id: null,
+      params: parts.params,
+      body: ts.isBlock(node.body)
+        ? blockStatement(node.body, sf)
+        : expression(node.body, sf),
+      expression: concise,
+      async: parts.async,
+      generator: false,
+    };
   }
   if (ts.isPrefixUnaryExpression(node)) {
     return {
@@ -241,7 +505,12 @@ function expression(node: ts.Expression, sf: ts.SourceFile): Expression {
       };
     }
     if (LOGICAL_OPERATORS.has(operator)) {
-      return unsupported(node);
+      return {
+        type: "LogicalExpression",
+        operator,
+        left: expression(node.left, sf),
+        right: expression(node.right, sf),
+      };
     }
     return {
       type: "BinaryExpression",
@@ -279,6 +548,13 @@ function declarationKind(list: ts.VariableDeclarationList): string {
   return "var";
 }
 
+function blockStatement(node: ts.Block, sf: ts.SourceFile): BlockStatement {
+  return {
+    type: "BlockStatement",
+    body: node.statements.map((s) => statement(s, sf)),
+  };
+}
+
 function statement(node: ts.Statement, sf: ts.SourceFile): Statement {
   if (ts.isExpressionStatement(node)) {
     return {
@@ -294,6 +570,23 @@ function statement(node: ts.Statement, sf: ts.SourceFile): Statement {
       type: "VariableDeclaration",
       kind: declarationKind(list),
       declarations,
+    };
+  }
+  if (ts.isFunctionDeclaration(node)) {
+    const parts = functionParts(node);
+    return {
+      type: "FunctionDeclaration",
+      id: { type: "Identifier", name: declarationName(node) },
+      params: parts.params,
+      body: functionBody(node, sf),
+      async: parts.async,
+      generator: parts.generator,
+    };
+  }
+  if (ts.isReturnStatement(node)) {
+    return {
+      type: "ReturnStatement",
+      argument: node.expression ? expression(node.expression, sf) : null,
     };
   }
   if (ts.isIfStatement(node)) {
@@ -312,10 +605,7 @@ function statement(node: ts.Statement, sf: ts.SourceFile): Statement {
     };
   }
   if (ts.isBlock(node)) {
-    return {
-      type: "BlockStatement",
-      body: node.statements.map((s) => statement(s, sf)),
-    };
+    return blockStatement(node, sf);
   }
   return unsupported(node);
 }

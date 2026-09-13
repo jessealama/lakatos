@@ -36,7 +36,10 @@ def report (program : Program) : IO UInt32 :=
     IO.eprintln s!"uncaught: {formatValue v}"
     pure 1
   | some (.error _) => do
-    -- No node in this slice builds a `break`, `continue`, or `return`.
+    -- A `return` outside any function reaches this; `break` and
+    -- `continue` cannot yet be written. An engine refuses `return` at the
+    -- top level as an early error, and early errors are outside the epic,
+    -- so it is reported here as the abrupt completion it is.
     IO.eprintln "uncaught: abrupt completion outside any loop or function"
     pure 1
   | none => do

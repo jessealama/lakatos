@@ -1,0 +1,106 @@
+{
+  "type": "Program",
+  "sourceType": "script",
+  "body": [
+    {
+      "type": "ExpressionStatement",
+      "expression": {
+        "type": "Literal",
+        "value": "use strict",
+        "raw": "\"use strict\""
+      },
+      "directive": "use strict"
+    },
+    {
+      "type": "FunctionDeclaration",
+      "id": {
+        "type": "Identifier",
+        "name": "fact"
+      },
+      "params": [
+        {
+          "type": "Identifier",
+          "name": "n"
+        }
+      ],
+      "body": {
+        "type": "BlockStatement",
+        "body": [
+          {
+            "type": "ReturnStatement",
+            "argument": {
+              "type": "ConditionalExpression",
+              "test": {
+                "type": "BinaryExpression",
+                "operator": "<=",
+                "left": {
+                  "type": "Identifier",
+                  "name": "n"
+                },
+                "right": {
+                  "type": "Literal",
+                  "value": 1,
+                  "raw": "1"
+                }
+              },
+              "consequent": {
+                "type": "Literal",
+                "value": 1,
+                "raw": "1"
+              },
+              "alternate": {
+                "type": "BinaryExpression",
+                "operator": "*",
+                "left": {
+                  "type": "Identifier",
+                  "name": "n"
+                },
+                "right": {
+                  "type": "CallExpression",
+                  "callee": {
+                    "type": "Identifier",
+                    "name": "fact"
+                  },
+                  "arguments": [
+                    {
+                      "type": "BinaryExpression",
+                      "operator": "-",
+                      "left": {
+                        "type": "Identifier",
+                        "name": "n"
+                      },
+                      "right": {
+                        "type": "Literal",
+                        "value": 1,
+                        "raw": "1"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      },
+      "async": false,
+      "generator": false
+    },
+    {
+      "type": "ExpressionStatement",
+      "expression": {
+        "type": "CallExpression",
+        "callee": {
+          "type": "Identifier",
+          "name": "fact"
+        },
+        "arguments": [
+          {
+            "type": "Literal",
+            "value": 5,
+            "raw": "5"
+          }
+        ]
+      }
+    }
+  ]
+}

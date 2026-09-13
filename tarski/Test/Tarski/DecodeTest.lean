@@ -77,9 +77,9 @@ private def wholeSlice : Program :=
         { name := "seen", init := some (.boolLit false) } ],
     .varDecl .«const» [{ name := "limit", init := some (.numLit 2.5) }],
     .whileStmt (.binary .lt (.ident "n") (.ident "limit"))
-      (.block [.exprStmt (.assign "n" (.binary .add (.ident "n") (.numLit 1.0)))]),
+      (.block [.exprStmt (.assign (.ident "n") (.binary .add (.ident "n") (.numLit 1.0)))]),
     .ifStmt (.unary .not (.ident "seen"))
-      (.exprStmt (.assign "seen" (.boolLit true)))
+      (.exprStmt (.assign (.ident "seen") (.boolLit true)))
       (some (.exprStmt .nullLit)),
     .exprStmt (.cond (.binary .strictEq (.ident "n") (.numLit 3.0))
       (.ident "n") (.unary .neg (.numLit 1.0))),
@@ -191,3 +191,202 @@ private def wholeSlice : Program :=
 
 -- The root must be a `Program`.
 #guard decode "{\"type\":\"Identifier\",\"name\":\"x\"}" == "unsupported: Identifier"
+
+/-! ## Every node kind functions and objects added
+
+A second whole-slice document, so the two halves of the seam stay
+readable against one another as the slice grows. -/
+
+private def objectSliceJson : String := script <|
+  r#"{"type":"FunctionDeclaration","id":{"type":"Identifier","name":"add"},
+      "params":[{"type":"Identifier","name":"a"},{"type":"Identifier","name":"b"}],
+      "body":{"type":"BlockStatement","body":[
+        {"type":"ReturnStatement","argument":{
+          "type":"BinaryExpression","operator":"+",
+          "left":{"type":"Identifier","name":"a"},
+          "right":{"type":"Identifier","name":"b"}}}]},
+      "async":false,"generator":false},
+     {"type":"VariableDeclaration","kind":"const","declarations":[
+       {"type":"VariableDeclarator","id":{"type":"Identifier","name":"o"},
+        "init":{"type":"ObjectExpression","properties":[
+          {"type":"Property","key":{"type":"Identifier","name":"a"},
+           "value":{"type":"Literal","value":1,"raw":"1"},
+           "kind":"init","computed":false,"shorthand":false,"method":false},
+          {"type":"Property","key":{"type":"Literal","value":"b key","raw":"\"b key\""},
+           "value":{"type":"Literal","value":"s","raw":"\"s\""},
+           "kind":"init","computed":false,"shorthand":false,"method":false},
+          {"type":"Property","key":{"type":"Identifier","name":"m"},
+           "value":{"type":"FunctionExpression","id":null,"params":[],
+                    "body":{"type":"BlockStatement","body":[
+                      {"type":"ReturnStatement","argument":{"type":"ThisExpression"}}]},
+                    "async":false,"generator":false},
+           "kind":"init","computed":false,"shorthand":false,"method":false}]}}]},
+     {"type":"VariableDeclaration","kind":"const","declarations":[
+       {"type":"VariableDeclarator","id":{"type":"Identifier","name":"g"},
+        "init":{"type":"ArrowFunctionExpression","id":null,
+                "params":[{"type":"Identifier","name":"x"}],
+                "body":{"type":"Identifier","name":"x"},
+                "expression":true,"async":false,"generator":false}}]},
+     {"type":"ExpressionStatement","expression":{
+       "type":"AssignmentExpression","operator":"=",
+       "left":{"type":"MemberExpression","computed":false,
+               "object":{"type":"Identifier","name":"o"},
+               "property":{"type":"Identifier","name":"a"}},
+       "right":{"type":"Literal","value":2,"raw":"2"}}},
+     {"type":"ExpressionStatement","expression":{
+       "type":"CallExpression","arguments":[],
+       "callee":{"type":"MemberExpression","computed":false,
+                 "object":{"type":"Identifier","name":"o"},
+                 "property":{"type":"Identifier","name":"m"}}}},
+     {"type":"ExpressionStatement","expression":{
+       "type":"NewExpression","callee":{"type":"Identifier","name":"add"},"arguments":[]}},
+     {"type":"ExpressionStatement","expression":{
+       "type":"LogicalExpression","operator":"&&",
+       "left":{"type":"BinaryExpression","operator":"===",
+               "left":{"type":"MemberExpression","computed":true,
+                       "object":{"type":"Identifier","name":"o"},
+                       "property":{"type":"Literal","value":"b key","raw":"\"b key\""}},
+               "right":{"type":"Literal","value":"s","raw":"\"s\""}},
+       "right":{"type":"BinaryExpression","operator":"===",
+                "left":{"type":"UnaryExpression","operator":"typeof","prefix":true,
+                        "argument":{"type":"MemberExpression","computed":false,
+                                    "object":{"type":"Identifier","name":"o"},
+                                    "property":{"type":"Identifier","name":"a"}}},
+                "right":{"type":"Literal","value":"number","raw":"\"number\""}}}},
+     {"type":"ExpressionStatement","expression":{
+       "type":"CallExpression","callee":{"type":"Identifier","name":"g"},
+       "arguments":[{"type":"Literal","value":3,"raw":"3"}]}}"#
+
+/-- The same program as an AST term. A concise arrow body keeps its
+`ArrowBody.expr` shape here; the evaluator is what reads it as a
+`return`. -/
+private def objectSlice : Program :=
+  [ .funcDecl "add" ["a", "b"]
+      [.returnStmt (some (.binary .add (.ident "a") (.ident "b")))],
+    .varDecl .«const» [{ name := "o", init := some (.objectLit
+      [ ("a", .numLit 1.0),
+        ("b key", .strLit "s"),
+        ("m", .funcExpr none [] [.returnStmt (some .this)]) ]) }],
+    .varDecl .«const» [{ name := "g", init := some (.arrow ["x"] (.expr (.ident "x"))) }],
+    .exprStmt (.assign (.member (.ident "o") "a") (.numLit 2.0)),
+    .exprStmt (.call (.member (.ident "o") "m") []),
+    .exprStmt (.new (.ident "add") []),
+    .exprStmt (.logical .and
+      (.binary .strictEq (.index (.ident "o") (.strLit "b key")) (.strLit "s"))
+      (.binary .strictEq (.unary .typeof (.member (.ident "o") "a")) (.strLit "number"))),
+    .exprStmt (.call (.ident "g") [.numLit 3.0]) ]
+
+#guard decode objectSliceJson == toString (repr objectSlice)
+
+-- A string statement after the prologue is an ordinary expression
+-- statement: only a node carrying `directive` is one.
+#guard decode (script
+    r#"{"type":"ExpressionStatement","expression":{"type":"Literal","value":"x","raw":"\"x\""}}"#)
+  == toString (repr ([.exprStmt (.strLit "x")] : Program))
+
+-- A `return` with no argument.
+#guard decode (script
+    r#"{"type":"FunctionDeclaration","id":{"type":"Identifier","name":"f"},"params":[],
+        "body":{"type":"BlockStatement","body":[
+          {"type":"ReturnStatement","argument":null}]},
+        "async":false,"generator":false}"#)
+  == toString (repr ([.funcDecl "f" [] [.returnStmt none]] : Program))
+
+-- A block-bodied arrow.
+#guard decode (script
+    r#"{"type":"ExpressionStatement","expression":{
+        "type":"ArrowFunctionExpression","id":null,"params":[],
+        "body":{"type":"BlockStatement","body":[]},
+        "expression":false,"async":false,"generator":false}}"#)
+  == toString (repr ([.exprStmt (.arrow [] (.block []))] : Program))
+
+/-! ## Unsupported: functions and objects the slice refuses -/
+
+-- `async` and `generator` are real syntax the epic does not model, so
+-- the refusal names the flag and not the node kind.
+#guard decode (script
+    r#"{"type":"FunctionDeclaration","id":{"type":"Identifier","name":"f"},"params":[],
+        "body":{"type":"BlockStatement","body":[]},"async":true,"generator":false}"#)
+  == "unsupported: FunctionDeclaration async"
+
+#guard decode (script
+    r#"{"type":"ExpressionStatement","expression":{
+        "type":"FunctionExpression","id":null,"params":[],
+        "body":{"type":"BlockStatement","body":[]},"async":false,"generator":true}}"#)
+  == "unsupported: FunctionExpression generator"
+
+-- A default or rest parameter arrives as the `Parameter` it is, so the
+-- function survives and only the parameter is refused.
+#guard decode (script
+    r#"{"type":"FunctionDeclaration","id":{"type":"Identifier","name":"f"},
+        "params":[{"type":"Unsupported","kind":"Parameter"}],
+        "body":{"type":"BlockStatement","body":[]},"async":false,"generator":false}"#)
+  == "unsupported: Parameter"
+
+-- A destructured parameter names its pattern.
+#guard decode (script
+    r#"{"type":"FunctionDeclaration","id":{"type":"Identifier","name":"f"},
+        "params":[{"type":"Unsupported","kind":"ObjectBindingPattern"}],
+        "body":{"type":"BlockStatement","body":[]},"async":false,"generator":false}"#)
+  == "unsupported: ObjectBindingPattern"
+
+-- A numeric key is admitted by the schema and refused here.
+#guard decode (script
+    r#"{"type":"ExpressionStatement","expression":{
+        "type":"ObjectExpression","properties":[
+          {"type":"Property","key":{"type":"Literal","value":1,"raw":"1"},
+           "value":{"type":"Literal","value":2,"raw":"2"},
+           "kind":"init","computed":false,"shorthand":false,"method":false}]}}"#)
+  == "unsupported: Property numeric key"
+
+-- A shorthand, a method, an accessor, a computed key, and a spread all
+-- arrive as placeholders in place.
+#guard decode (script
+    r#"{"type":"ExpressionStatement","expression":{
+        "type":"ObjectExpression","properties":[
+          {"type":"Unsupported","kind":"ShorthandPropertyAssignment"}]}}"#)
+  == "unsupported: ShorthandPropertyAssignment"
+
+-- A private name is a property the slice does not read.
+#guard decode (script
+    r#"{"type":"ExpressionStatement","expression":{
+        "type":"MemberExpression","computed":false,
+        "object":{"type":"Identifier","name":"o"},
+        "property":{"type":"Unsupported","kind":"PrivateIdentifier"}}}"#)
+  == "unsupported: PrivateIdentifier"
+
+-- A spread argument is refused where it stands, not as the whole call.
+#guard decode (script
+    r#"{"type":"ExpressionStatement","expression":{
+        "type":"CallExpression","callee":{"type":"Identifier","name":"f"},
+        "arguments":[{"type":"Unsupported","kind":"SpreadElement"}]}}"#)
+  == "unsupported: SpreadElement"
+
+-- `??` is a logical operator the slice does not have.
+#guard decode (script
+    r#"{"type":"ExpressionStatement","expression":{
+        "type":"LogicalExpression","operator":"??",
+        "left":{"type":"Identifier","name":"a"},
+        "right":{"type":"Literal","value":1,"raw":"1"}}}"#)
+  == "unsupported: LogicalExpression ??"
+
+/-! ## Malformed: the new nodes, shaped wrongly -/
+
+#guard decode (script
+    r#"{"type":"ExpressionStatement","expression":{
+        "type":"CallExpression","callee":{"type":"Identifier","name":"f"}}}"#)
+  == "malformed: missing field \"arguments\""
+
+#guard decode (script
+    r#"{"type":"ExpressionStatement","expression":{
+        "type":"MemberExpression",
+        "object":{"type":"Identifier","name":"o"},
+        "property":{"type":"Identifier","name":"a"}}}"#)
+  == "malformed: missing field \"computed\""
+
+-- A function body that is not a block: the bridge cannot produce one,
+-- so this is the producer being broken rather than the slice's edge.
+#guard decode (script
+    r#"{"type":"FunctionDeclaration","id":{"type":"Identifier","name":"f"},"params":[],
+        "body":{"type":"Identifier","name":"x"},"async":false,"generator":false}"#)
+  == "malformed: function body is a Identifier"

@@ -56,12 +56,54 @@ private def optField (j : Json) (name : String) : DecodeM (Option Json) := do
   | .null => pure none
   | v => pure (some v)
 
+private def boolField (j : Json) (name : String) : DecodeM Bool := do
+  match (← field j name).getBool? with
+  | .ok b => .ok b
+  | .error _ => bad s!"field \"{name}\" is not a boolean"
+
+private def arrayField (j : Json) (name : String) : DecodeM (List Json) := do
+  match (← field j name).getArr? with
+  | .ok a => .ok a.toList
+  | .error _ => bad s!"field \"{name}\" is not an array"
+
+/-- A function form's body: a `BlockStatement`'s statement list. -/
+private def bodyField (j : Json) : DecodeM (List Json) := do
+  let body ← field j "body"
+  match ← nodeType body with
+  | "BlockStatement" => arrayField body "body"
+  | other => bad s!"function body is a {other}"
+
+/-- Refuse the two function flags whose semantics are outside this epic,
+naming the form so the message says which node it was. -/
+private def checkFunctionFlags (j : Json) (label : String) : DecodeM Unit := do
+  if ← boolField j "async" then .error (.unsupported s!"{label} async")
+  if ← boolField j "generator" then .error (.unsupported s!"{label} generator")
+
+/-- A parameter list. Only a plain identifier is in the slice; anything
+else arrived as the bridge's placeholder and names the kind it stood
+for, so a default parameter is refused as `Parameter` and a destructured
+one as its pattern. -/
+private def decodeParams : List Json → DecodeM (List String)
+  | [] => pure []
+  | p :: rest => do
+    match ← nodeType p with
+    | "Identifier" => pure ((← strField p "name") :: (← decodeParams rest))
+    | "Unsupported" => .error (.unsupported (← strField p "kind"))
+    | other => bad s!"parameter is a {other}"
+
 private def unaryOp (s : String) : DecodeM UnaryOp :=
   match s with
   | "-" => .ok .neg
   | "+" => .ok .plus
   | "!" => .ok .not
+  | "typeof" => .ok .typeof
   | _ => .error (.unsupported s!"UnaryExpression {s}")
+
+private def logicalOp (s : String) : DecodeM LogicalOp :=
+  match s with
+  | "&&" => .ok .and
+  | "||" => .ok .or
+  | _ => .error (.unsupported s!"LogicalExpression {s}")
 
 private def binaryOp (s : String) : DecodeM BinaryOp :=
   match s with
@@ -78,20 +120,28 @@ private def binaryOp (s : String) : DecodeM BinaryOp :=
   | "!==" => .ok .strictNe
   | _ => .error (.unsupported s!"BinaryExpression {s}")
 
-/-- A `Literal`, by the JSON type of its `value`. A string literal is not
-an expression in this slice: the only one the schema admits is a
-directive's, and `decodeProgram` consumes that before it gets here. -/
+/-- A `Literal`, by the JSON type of its `value`. -/
 private def decodeLiteral (j : Json) : DecodeM Expr := do
   match ← field j "value" with
   | .num n => pure (.numLit n.toFloat)
   | .bool b => pure (.boolLit b)
   | .null => pure .nullLit
-  | .str _ => .error (.unsupported "Literal string")
-  | _ => bad "Literal value is neither a number, a boolean, nor null"
+  | .str s => pure (.strLit s)
+  | _ => bad "Literal value is neither a number, a string, a boolean, nor null"
 
 /-- An identifier's name; `undefined` is the literal, not a reference. -/
 private def identExpr (name : String) : Expr :=
   if name == "undefined" then .undefLit else .ident name
+
+/-- What an assignment can write to. Reading the target as an expression
+first is what lets an out-of-slice one report itself: it arrived as the
+bridge's placeholder and `decodeExpr` already named the kind it stood
+for. -/
+private def toTarget : Expr → DecodeM Target
+  | .ident name => pure (.ident name)
+  | .member object name => pure (.member object name)
+  | .index object key => pure (.index object key)
+  | _ => .error (.unsupported "AssignmentExpression target")
 
 mutual
 
@@ -104,21 +154,85 @@ partial def decodeExpr (j : Json) : DecodeM Expr := do
   | "BinaryExpression" =>
     pure (.binary (← binaryOp (← strField j "operator"))
       (← decodeExpr (← field j "left")) (← decodeExpr (← field j "right")))
+  | "LogicalExpression" =>
+    pure (.logical (← logicalOp (← strField j "operator"))
+      (← decodeExpr (← field j "left")) (← decodeExpr (← field j "right")))
   | "ConditionalExpression" =>
     pure (.cond (← decodeExpr (← field j "test")) (← decodeExpr (← field j "consequent"))
       (← decodeExpr (← field j "alternate")))
+  | "ThisExpression" => pure .this
+  | "MemberExpression" => decodeMember j
+  | "CallExpression" =>
+    pure (.call (← decodeExpr (← field j "callee")) (← decodeExprs (← arrayField j "arguments")))
+  | "NewExpression" =>
+    pure (.new (← decodeExpr (← field j "callee")) (← decodeExprs (← arrayField j "arguments")))
+  | "ObjectExpression" =>
+    pure (.objectLit (← decodeProps (← arrayField j "properties")))
+  | "FunctionExpression" =>
+    checkFunctionFlags j "FunctionExpression"
+    let name ← match ← optField j "id" with
+      | some id => pure (some (← strField id "name"))
+      | none => pure none
+    pure (.funcExpr name (← decodeParams (← arrayField j "params"))
+      (← decodeStmts (← bodyField j)))
+  | "ArrowFunctionExpression" =>
+    checkFunctionFlags j "ArrowFunctionExpression"
+    let params ← decodeParams (← arrayField j "params")
+    if ← boolField j "expression" then
+      pure (.arrow params (.expr (← decodeExpr (← field j "body"))))
+    else
+      pure (.arrow params (.block (← decodeStmts (← bodyField j))))
   | "AssignmentExpression" =>
     let op ← strField j "operator"
     if op != "=" then .error (.unsupported s!"AssignmentExpression {op}")
     else
-      -- Decoding the target first lets an out-of-slice one report itself:
-      -- a member access arrives as the bridge's placeholder and names the
-      -- kind it stood for, rather than being swallowed here.
-      match ← decodeExpr (← field j "left") with
-      | .ident name => pure (.assign name (← decodeExpr (← field j "right")))
-      | _ => .error (.unsupported "AssignmentExpression target")
+      -- Decoding the target as an expression first lets an out-of-slice
+      -- one report itself: it arrived as the bridge's placeholder and
+      -- names the kind it stood for, rather than being swallowed here.
+      let target ← toTarget (← decodeExpr (← field j "left"))
+      pure (.assign target (← decodeExpr (← field j "right")))
   | "Unsupported" => .error (.unsupported (← strField j "kind"))
   | other => .error (.unsupported other)
+
+/-- A `MemberExpression`, whose `computed` flag says which spelling it
+was. A dot access needs an identifier property; a property that is the
+bridge's placeholder names the kind it stood for, which is how a private
+name reports itself. -/
+partial def decodeMember (j : Json) : DecodeM Expr := do
+  let object ← decodeExpr (← field j "object")
+  let property ← field j "property"
+  if ← boolField j "computed" then
+    pure (.index object (← decodeExpr property))
+  else
+    match ← nodeType property with
+    | "Identifier" => pure (.member object (← strField property "name"))
+    | "Unsupported" => .error (.unsupported (← strField property "kind"))
+    | other => bad s!"MemberExpression property is a {other}"
+
+partial def decodeExprs : List Json → DecodeM (List Expr)
+  | [] => pure []
+  | e :: rest => do pure ((← decodeExpr e) :: (← decodeExprs rest))
+
+/-- An object literal's members. A numeric key is admitted by the schema
+and refused here: `{ 1: x }` would need ToPropertyKey at parse time, and
+the slice's keys are written keys. -/
+partial def decodeProps : List Json → DecodeM (List (String × Expr))
+  | [] => pure []
+  | p :: rest => do
+    match ← nodeType p with
+    | "Property" =>
+      let key ← field p "key"
+      let name ← match ← nodeType key with
+        | "Identifier" => strField key "name"
+        | "Literal" =>
+          match ← field key "value" with
+          | .str s => pure s
+          | .num _ => .error (.unsupported "Property numeric key")
+          | _ => bad "Property key literal is neither a string nor a number"
+        | other => bad s!"Property key is a {other}"
+      pure ((name, ← decodeExpr (← field p "value")) :: (← decodeProps rest))
+    | "Unsupported" => .error (.unsupported (← strField p "kind"))
+    | other => .error (.unsupported other)
 
 partial def decodeDeclarator (j : Json) : DecodeM Declarator := do
   match ← nodeType j with
@@ -143,6 +257,15 @@ partial def decodeStmt (j : Json) : DecodeM Stmt := do
     | .ok ds =>
       if ds.isEmpty then bad "VariableDeclaration has no declarators"
       else pure (.varDecl kind (← decodeDeclarators ds.toList))
+  | "FunctionDeclaration" =>
+    checkFunctionFlags j "FunctionDeclaration"
+    let name ← strField (← field j "id") "name"
+    pure (.funcDecl name (← decodeParams (← arrayField j "params"))
+      (← decodeStmts (← bodyField j)))
+  | "ReturnStatement" =>
+    match ← optField j "argument" with
+    | some e => pure (.returnStmt (some (← decodeExpr e)))
+    | none => pure (.returnStmt none)
   | "IfStatement" =>
     let test ← decodeExpr (← field j "test")
     let consequent ← decodeStmt (← field j "consequent")
@@ -151,10 +274,7 @@ partial def decodeStmt (j : Json) : DecodeM Stmt := do
     | none => pure (.ifStmt test consequent none)
   | "WhileStatement" =>
     pure (.whileStmt (← decodeExpr (← field j "test")) (← decodeStmt (← field j "body")))
-  | "BlockStatement" =>
-    match (← field j "body").getArr? with
-    | .error _ => bad "BlockStatement body is not an array"
-    | .ok body => pure (.block (← decodeStmts body.toList))
+  | "BlockStatement" => pure (.block (← decodeStmts (← arrayField j "body")))
   | "Unsupported" => .error (.unsupported (← strField j "kind"))
   | other => .error (.unsupported other)
 
@@ -168,7 +288,9 @@ partial def decodeStmts : List Json → DecodeM (List Stmt)
 
 end
 
-/-- Whether a statement node is a directive-prologue entry. -/
+/-- Whether a statement node is a directive-prologue entry. A string
+literal after the prologue carries no `directive` field and so decodes as
+the ordinary expression statement it is. -/
 private def isDirective (j : Json) : Bool :=
   match j.getObjVal? "directive" with
   | .ok _ => true

@@ -1,0 +1,152 @@
+{
+  "type": "Program",
+  "sourceType": "script",
+  "body": [
+    {
+      "type": "ExpressionStatement",
+      "expression": {
+        "type": "Literal",
+        "value": "use strict",
+        "raw": "\"use strict\""
+      },
+      "directive": "use strict"
+    },
+    {
+      "type": "FunctionDeclaration",
+      "id": {
+        "type": "Identifier",
+        "name": "P"
+      },
+      "params": [],
+      "body": {
+        "type": "BlockStatement",
+        "body": []
+      },
+      "async": false,
+      "generator": false
+    },
+    {
+      "type": "ExpressionStatement",
+      "expression": {
+        "type": "AssignmentExpression",
+        "operator": "=",
+        "left": {
+          "type": "MemberExpression",
+          "object": {
+            "type": "MemberExpression",
+            "object": {
+              "type": "Identifier",
+              "name": "P"
+            },
+            "property": {
+              "type": "Identifier",
+              "name": "prototype"
+            },
+            "computed": false
+          },
+          "property": {
+            "type": "Identifier",
+            "name": "k"
+          },
+          "computed": false
+        },
+        "right": {
+          "type": "Literal",
+          "value": 5,
+          "raw": "5"
+        }
+      }
+    },
+    {
+      "type": "VariableDeclaration",
+      "kind": "const",
+      "declarations": [
+        {
+          "type": "VariableDeclarator",
+          "id": {
+            "type": "Identifier",
+            "name": "p"
+          },
+          "init": {
+            "type": "NewExpression",
+            "callee": {
+              "type": "Identifier",
+              "name": "P"
+            },
+            "arguments": []
+          }
+        }
+      ]
+    },
+    {
+      "type": "ExpressionStatement",
+      "expression": {
+        "type": "LogicalExpression",
+        "operator": "&&",
+        "left": {
+          "type": "LogicalExpression",
+          "operator": "&&",
+          "left": {
+            "type": "BinaryExpression",
+            "operator": "===",
+            "left": {
+              "type": "MemberExpression",
+              "object": {
+                "type": "Identifier",
+                "name": "p"
+              },
+              "property": {
+                "type": "Identifier",
+                "name": "k"
+              },
+              "computed": false
+            },
+            "right": {
+              "type": "Literal",
+              "value": 5,
+              "raw": "5"
+            }
+          },
+          "right": {
+            "type": "BinaryExpression",
+            "operator": "===",
+            "left": {
+              "type": "MemberExpression",
+              "object": {
+                "type": "Identifier",
+                "name": "p"
+              },
+              "property": {
+                "type": "Identifier",
+                "name": "constructor"
+              },
+              "computed": false
+            },
+            "right": {
+              "type": "Identifier",
+              "name": "P"
+            }
+          }
+        },
+        "right": {
+          "type": "BinaryExpression",
+          "operator": "===",
+          "left": {
+            "type": "UnaryExpression",
+            "operator": "typeof",
+            "argument": {
+              "type": "Identifier",
+              "name": "P"
+            },
+            "prefix": true
+          },
+          "right": {
+            "type": "Literal",
+            "value": "function",
+            "raw": "\"function\""
+          }
+        }
+      }
+    }
+  ]
+}

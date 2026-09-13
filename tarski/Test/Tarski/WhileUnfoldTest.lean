@@ -16,16 +16,21 @@ open Tarski
 private def program : Program :=
   [ .varDecl .«let» [{ name := "n", init := some (.numLit 0.0) }],
     .whileStmt (.binary .lt (.ident "n") (.numLit 3.0))
-      (.block [.exprStmt (.assign "n" (.binary .add (.ident "n") (.numLit 1.0)))]),
+      (.block [.exprStmt (.assign (.ident "n") (.binary .add (.ident "n") (.numLit 1.0)))]),
     .exprStmt (.ident "n") ]
 
 attribute [local simp] evalExpr evalStmt evalStmts evalDeclarators
-  allocCell readCell writeCell Env.lookup Heap.alloc Heap.read Heap.write
-  applyBinary applyUnary toNumberPrim toBooleanPrim strictEqValue updateEmpty
+  instantiateBlock hoistNames hoistDeclarators initFunctions
+  allocCell getCell readCell writeCell initCell
+  Env.lookup Heap.alloc Heap.read Heap.write
+  applyBinary applyUnary applyStrict BinaryOp.coerces toPrimitive
+  toNumberPrim toBooleanPrim strictEqValue updateEmpty
   DeclKind.isMutable Heap.empty runProgram evalProgram
+  ExceptT.run_bind Except.map throwJsError throwCompletion
 
 -- What each iteration's counter bump leaves behind. `simp +decide`
--- settles the loop test itself, which is a decidable binary64 comparison.
+-- settles the loop test itself, which is `decide (a < b)` over the
+-- library's binary64 order and so a decidable proposition.
 @[local simp] private theorem bump0 : (0.0 + 1.0 : Float) = 1.0 := by decide
 @[local simp] private theorem bump1 : (1.0 + 1.0 : Float) = 2.0 := by decide
 @[local simp] private theorem bump2 : (2.0 + 1.0 : Float) = 3.0 := by decide

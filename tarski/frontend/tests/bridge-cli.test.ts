@@ -91,20 +91,22 @@ describe("the bridge as a command", () => {
     }
   });
 
-  // The Lean side is run on its own copy of this document in CI, and the
-  // two must not drift: the schema is only a seam if both languages see
-  // the same bytes.
-  it("agrees with the copy the Lean tests are run against", () => {
-    const lean = path.join(
-      root,
-      "tarski",
-      "Test",
-      "Tarski",
-      "fixtures",
-      "numeric-loop.json",
-    );
-    expect(readFileSync(lean, "utf8")).toBe(golden("numeric-loop.estree.json"));
-  });
+  // The Lean side is run on its own copies of these documents in CI, and
+  // the two must not drift: the schema is only a seam if both languages
+  // see the same bytes.
+  for (const name of ["numeric-loop", "counter"]) {
+    it(`agrees with the copy the Lean tests are run against for ${name}`, () => {
+      const lean = path.join(
+        root,
+        "tarski",
+        "Test",
+        "Tarski",
+        "fixtures",
+        `${name}.json`,
+      );
+      expect(readFileSync(lean, "utf8")).toBe(golden(`${name}.estree.json`));
+    });
+  }
 });
 
 // The built file, run the way a person runs it: `node dist/.../
