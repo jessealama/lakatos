@@ -20,25 +20,40 @@ Exit codes:
 * `3` — the script contains a node the evaluator does not know.
   `unsupported:` and the node kind are on stderr.
 
+What the host's `print` was given is on stdout, one line per call, ahead
+of the completion value and ahead of any report on stderr. The lines are
+accumulated in the heap during the run (see `%PrintLog%` in
+`Tarski/Realm.lean`) and written out once, so a run that ends abruptly
+still shows what it printed before it did.
+
 Divergence is not an exit code. A program that does not terminate is a
 run this binary never returns from; the caller imposes a timeout and
 reads the answer from that. -/
 
 open Lean Tarski
 
+/-- Write out what `print` was given during the run, one line each. -/
+def printLog (h : Heap) : IO Unit :=
+  h.printedLines.forM IO.println
+
 /-- Run one decoded program and report it. -/
 def report (program : Program) : IO UInt32 :=
   match runScript program with
-  | some (.ok none, _) => pure 0
-  | some (.ok (some v), _) => do
+  | some (.ok none, h) => do
+    printLog h
+    pure 0
+  | some (.ok (some v), h) => do
+    printLog h
     IO.println (formatValue v)
     pure 0
   | some (.error (.throw v), h) => do
     -- The heap the throw came out with is where the thrown object is, so
     -- the report is computed in it.
+    printLog h
     IO.eprintln s!"Uncaught {describeThrown h v}"
     pure 1
-  | some (.error _, _) => do
+  | some (.error _, h) => do
+    printLog h
     -- A `return` outside any function, a `break` or `continue` outside
     -- any loop, or a jump to a label that is not on the stack. An engine
     -- refuses each as an early error, and early errors are outside the

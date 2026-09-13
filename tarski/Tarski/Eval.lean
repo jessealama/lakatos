@@ -390,7 +390,7 @@ def evalExpr (env : Env) : Expr → EvalM Value
     | none => throwJsError .referenceError s!"{name} is not defined"
   | .this =>
     -- No global object yet, so an unbound `this` is `undefined` rather
-    -- than a `ReferenceError`: #381 gives the top level a receiver.
+    -- than a `ReferenceError`: #389 gives the top level a receiver.
     match Env.lookup env thisName with
     | some r => readCell thisName r
     | none => pure undefValue
@@ -400,8 +400,20 @@ def evalExpr (env : Env) : Expr → EvalM Value
       let v ← evalExpr env operand
       pure (.prim (.bool (!toBooleanPrim v)))
     | .typeof => do
-      let v ← evalExpr env operand
-      pure (.prim (.str (← typeofValue v)))
+      -- `typeof` evaluates a *reference*, and an unresolvable one
+      -- answers `"undefined"` instead of throwing. That is the whole of
+      -- the exception, so only a bare identifier with no binding takes
+      -- this arm; every other operand is evaluated as usual.
+      match operand with
+      | .ident name =>
+        match Env.lookup env name with
+        | none => pure (.prim (.str "undefined"))
+        | some _ => do
+          let v ← evalExpr env operand
+          pure (.prim (.str (← typeofValue v)))
+      | _ => do
+        let v ← evalExpr env operand
+        pure (.prim (.str (← typeofValue v)))
     | _ => do
       let v ← evalExpr env operand
       pure (applyUnary op (← toPrimitive .number v))
@@ -812,6 +824,14 @@ def callNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Valu
           | .prim .undef :: _ => pure ","
           | v :: _ => toStringValue v
         pure (.prim (.str (← joinElements thisArg 0 len sep)))
+  | .print => do
+    -- The host's output binding. There is no IO in `EvalM`, so the line
+    -- is appended to `%PrintLog%` and the binary writes the log out once
+    -- the run is over; a run that diverges has no log, which is right —
+    -- the runner reads a timeout, not a partial transcript.
+    let s ← toStringValue (args.headD undefValue)
+    let _ ← callNative .arrayPush (.obj printLogRef) [.prim (.str s)]
+    pure undefValue
   partial_fixpoint
 
 /-- OrdinaryCreateFromConstructor: the instance `new` builds, linked to
@@ -1079,29 +1099,47 @@ realm it answered in. -/
 def runProgram (p : Program) : Option (Except Completion (Option Value)) :=
   (runScript p).map (·.1)
 
-/-- An Error object's `toString`, for the report. "Error object" here
-means the prototype chain reaches `Error.prototype` — which is what an
-`[[ErrorData]]` slot would say about everything this slice can build,
-there being no other way to get that prototype. -/
-def errorSummary (v : Value) : EvalM (Option String) := do
+/-- A thrown object's own ToString, for the report. This is
+`Error.prototype.toString` for an `Error`, and the harness's own
+`Test262Error.prototype.toString` for a `Test262Error` — which is not an
+`Error` subclass at all, so reading the chain would miss it. test262
+identifies the class of an uncaught error by name, and the name is what
+this line carries. A primitive has no `toString` to run, and an object
+with none of its own — every plain object until `Object.prototype`
+grows one (#389) — ends abruptly here; both answer `none` and fall back
+to the printed form. -/
+def thrownSummary (v : Value) : EvalM (Option String) := do
   match v with
   | .prim _ => pure none
-  | .obj r =>
-    if ← protoChainHas r ErrorKind.error.protoRef then
-      match ← callNative .errorToString v [] with
-      | .prim (.str s) => pure (some s)
-      | _ => pure none
-    else pure none
+  | .obj _ =>
+    match ← attempt (toStringValue v) with
+    | .ok s => pure (some s)
+    | .error _ => pure none
 
-/-- How the binary names a thrown value: `<name>: <message>` for an Error
-object, and its printed form for anything else — a script may `throw 1`.
-The summary is computed in the heap the throw came out with, since that
-is where the object is. A `toString` that itself ends abruptly falls back
-to the printed form rather than replacing one uncaught throw with
-another. -/
+/-- How the binary names a thrown value: the object's own ToString —
+`<name>: <message>` for an Error — and its printed form for anything
+else, since a script may `throw 1`. The summary is computed in the heap
+the throw came out with, since that is where the object is. A `toString`
+that itself ends abruptly falls back to the printed form rather than
+replacing one uncaught throw with another. -/
 def describeThrown (h : Heap) (v : Value) : String :=
-  match ((errorSummary v).run).run h with
+  match ((thrownSummary v).run).run h with
   | some (.ok (some s), _) => s
   | _ => formatValue v
+
+/-- What `print` wrote, in order: `%PrintLog%`'s index properties `0 …
+length - 1`, the strings among them. The binary reads this after the run
+and writes one line per entry. -/
+def Heap.printedLines (h : Heap) : List String :=
+  match h.objects[printLogRef]? with
+  | none => []
+  | some o =>
+    match o.kind with
+    | .ordinary => []
+    | .array len =>
+      (List.range len).filterMap fun i =>
+        match o.getOwn (toString i) with
+        | some (.prim (.str s)) => some s
+        | _ => none
 
 end Tarski

@@ -368,6 +368,69 @@ private def objectSlice : Program :=
         "arguments":[{"type":"Unsupported","kind":"SpreadElement"}]}}"#)
   == "unsupported: SpreadElement"
 
+/-! ## The `$262` host hooks
+
+The epic puts `evalScript`, `createRealm`, `detachArrayBuffer`, `gc`,
+`agent`, `global`, and `AbstractModuleSource` out of scope, and they are
+refused here so that a test reaching for one is *unsupported* rather
+than a failure. The refusal is syntactic: the dotted spelling on the
+`$262` identifier itself, and nothing else. -/
+
+#guard decode (script
+    r#"{"type":"ExpressionStatement","expression":{
+        "type":"CallExpression","callee":{
+          "type":"MemberExpression","computed":false,
+          "object":{"type":"Identifier","name":"$262"},
+          "property":{"type":"Identifier","name":"evalScript"}},
+        "arguments":[{"type":"Literal","value":1,"raw":"1"}]}}"#)
+  == "unsupported: $262.evalScript"
+
+-- The refusal is on the member access, so it reaches a caller through
+-- any expression around it.
+#guard decode (script
+    r#"{"type":"ExpressionStatement","expression":{
+        "type":"CallExpression","callee":{
+          "type":"MemberExpression","computed":false,
+          "object":{"type":"MemberExpression","computed":false,
+                    "object":{"type":"Identifier","name":"$262"},
+                    "property":{"type":"Identifier","name":"agent"}},
+          "property":{"type":"Identifier","name":"start"}},
+        "arguments":[{"type":"Literal","value":"","raw":"\"\""}]}}"#)
+  == "unsupported: $262.agent"
+
+#guard decode (script
+    r#"{"type":"ExpressionStatement","expression":{
+        "type":"MemberExpression","computed":false,
+        "object":{"type":"Identifier","name":"$262"},
+        "property":{"type":"Identifier","name":"global"}}}"#)
+  == "unsupported: $262.global"
+
+-- A property that is not a hook is an ordinary access: `IsHTMLDDA` is
+-- the one the suite reads to learn the host does not have it.
+#guard decode (script
+    r#"{"type":"ExpressionStatement","expression":{
+        "type":"MemberExpression","computed":false,
+        "object":{"type":"Identifier","name":"$262"},
+        "property":{"type":"Identifier","name":"IsHTMLDDA"}}}"#)
+  == toString (repr ([.exprStmt (.member (.ident "$262") "IsHTMLDDA")] : Program))
+
+-- The computed spelling escapes the refusal and reads an absent
+-- property: a documented limit of refusing syntactically.
+#guard decode (script
+    r#"{"type":"ExpressionStatement","expression":{
+        "type":"MemberExpression","computed":true,
+        "object":{"type":"Identifier","name":"$262"},
+        "property":{"type":"Literal","value":"evalScript","raw":"\"evalScript\""}}}"#)
+  == toString (repr ([.exprStmt (.index (.ident "$262") (.strLit "evalScript"))] : Program))
+
+-- The same property name on any other object is untouched.
+#guard decode (script
+    r#"{"type":"ExpressionStatement","expression":{
+        "type":"MemberExpression","computed":false,
+        "object":{"type":"Identifier","name":"o"},
+        "property":{"type":"Identifier","name":"evalScript"}}}"#)
+  == toString (repr ([.exprStmt (.member (.ident "o") "evalScript")] : Program))
+
 -- A hole and a spread are refused where they stand, the array literal
 -- around them surviving, as a call's spread argument is.
 #guard decode (script

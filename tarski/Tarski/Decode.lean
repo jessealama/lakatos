@@ -163,6 +163,16 @@ private def toTarget : Expr → DecodeM Target
   | .index object key => pure (.index object key)
   | _ => .error (.unsupported "AssignmentExpression target")
 
+/-- The `$262` hooks the epic puts out of scope. Each is refused here, by
+name, so a test that reaches for one is *unsupported* — the verdict the
+runner should file — rather than a failure against an evaluator that
+never claimed to have them. The `$262` object itself exists and is empty
+(see `Tarski/Realm.lean`), so `typeof $262` and the absent `IsHTMLDDA`
+read as the suite expects. -/
+def hostHooks : List String :=
+  ["evalScript", "createRealm", "detachArrayBuffer", "gc", "agent", "global",
+   "AbstractModuleSource"]
+
 mutual
 
 partial def decodeExpr (j : Json) : DecodeM Expr := do
@@ -222,7 +232,10 @@ partial def decodeExpr (j : Json) : DecodeM Expr := do
 /-- A `MemberExpression`, whose `computed` flag says which spelling it
 was. A dot access needs an identifier property; a property that is the
 bridge's placeholder names the kind it stood for, which is how a private
-name reports itself. -/
+name reports itself. A dotted `$262` hook is refused by name. The
+computed spelling `$262["evalScript"]` and any alias of the object
+escape that and read an absent property instead: a documented limit of
+refusing syntactically, not a hole to plug here. -/
 partial def decodeMember (j : Json) : DecodeM Expr := do
   let object ← decodeExpr (← field j "object")
   let property ← field j "property"
@@ -230,7 +243,13 @@ partial def decodeMember (j : Json) : DecodeM Expr := do
     pure (.index object (← decodeExpr property))
   else
     match ← nodeType property with
-    | "Identifier" => pure (.member object (← strField property "name"))
+    | "Identifier" =>
+      let name ← strField property "name"
+      match object with
+      | .ident "$262" =>
+        if hostHooks.contains name then .error (.unsupported s!"$262.{name}")
+        else pure (.member object name)
+      | _ => pure (.member object name)
     | "Unsupported" => .error (.unsupported (← strField property "kind"))
     | other => bad s!"MemberExpression property is a {other}"
 

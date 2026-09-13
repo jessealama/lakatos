@@ -119,6 +119,10 @@ inductive NativeFn where
   | arrayPush
   /-- `Array.prototype.join`. -/
   | arrayJoin
+  /-- `print`, the test262 host's one output binding. `EvalM` has no IO,
+  so ToString of the first argument is appended to the intrinsic array
+  `%PrintLog%` and the binary writes the log out after the run. -/
+  | print
 deriving Repr, DecidableEq, Inhabited
 
 /-- `[[Call]]`: user code or a built-in. -/

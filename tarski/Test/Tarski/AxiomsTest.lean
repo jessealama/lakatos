@@ -200,11 +200,16 @@ private def onlyStandard (n : Name) : CoreM Bool := do
 
 /-- info: true -/
 #guard_msgs in
-#eval onlyStandard ``Tarski.errorSummary
+#eval onlyStandard ``Tarski.thrownSummary
 
 /-- info: true -/
 #guard_msgs in
 #eval onlyStandard ``Tarski.describeThrown
+
+-- The host's output log is heap data the binary reads back out.
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.Heap.printedLines
 
 -- Catching a completion is an opaque definition with a monotonicity
 -- lemma of its own, because `partial_fixpoint` has none for `tryCatch`.
