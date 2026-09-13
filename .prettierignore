@@ -19,3 +19,8 @@ spec/
 
 # bd rewrites its own config and metadata
 .beads/
+
+# the evaluator's fixtures: parser inputs kept in the shape they test, and
+# goldens that are the bridge's output byte for byte
+tarski/frontend/tests/fixtures/
+tarski/Test/Tarski/fixtures/

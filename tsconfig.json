@@ -17,6 +17,7 @@
     "src",
     "lemma/src",
     "engines/pabst/src",
-    "engines/thales/frontend/src"
+    "engines/thales/frontend/src",
+    "tarski/frontend/src"
   ]
 }

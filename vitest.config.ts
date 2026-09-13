@@ -8,6 +8,7 @@ export default defineConfig({
       "lemma/tests/**/*.test.ts",
       "engines/pabst/tests/**/*.test.ts",
       "engines/thales/frontend/tests/**/*.test.ts",
+      "tarski/frontend/tests/**/*.test.ts",
       ".lakatos/**/*.test.ts",
     ],
     // Absolute: refute spawns vitest from a project directory that may sit
@@ -26,6 +27,7 @@ export default defineConfig({
         "lemma/src/**/*.ts",
         "engines/pabst/src/**/*.ts",
         "engines/thales/frontend/src/**/*.ts",
+        "tarski/frontend/src/**/*.ts",
       ],
       exclude: ["**/*.test.ts", "**/*.d.ts"],
       reporter: ["text", "html"],
@@ -56,12 +58,18 @@ export default defineConfig({
         // sites, leaving the construct and failed-member scans answering for
         // a property's own text alone — the arms only a body could reach were
         // deleted, and the ones a property cannot yet reach (a union place in
-        // an atom) carry their own ignores.
+        // an atom) carry their own ignores. Ratcheted 2026-09-13: the tarski
+        // parser bridge and its command joined the denominator fully covered.
+        //
+        // Measure this from a path with no dot-directory in it. The include
+        // globs above do not match through one, and a run from, say, a
+        // worktree under .claude/ silently reports every loaded file instead
+        // — different denominator, different numbers.
         autoUpdate: true,
-        statements: 99.57,
-        branches: 98.63,
+        statements: 99.58,
+        branches: 98.66,
         functions: 100,
-        lines: 99.66,
+        lines: 99.67,
       },
     },
   },

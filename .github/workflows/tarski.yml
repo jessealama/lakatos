@@ -50,5 +50,18 @@ jobs:
       - name: Build
         run: lake build
 
+      - name: Build the evaluator's binary
+        run: lake build tarski
+
       - name: Lean tests
         run: lake build TarskiTest
+
+      # The seam end to end: this document is the parser bridge's output,
+      # byte for byte (tarski/frontend/tests/bridge-cli.test.ts holds the
+      # two copies together), and the binary is what reads it. Node is not
+      # installed in this job, so the bridge itself runs in the lakatos
+      # workflow, not here.
+      - name: Run a script
+        run: |
+          out=$(.lake/build/bin/tarski run Test/Tarski/fixtures/numeric-loop.json)
+          test "$out" = "8" || { echo "expected 8, got $out"; exit 1; }
