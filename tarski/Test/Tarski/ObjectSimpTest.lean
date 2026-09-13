@@ -16,9 +16,9 @@ never joins a simp set, and for the same reason: its recursion is on the
 step at a time with `rw`, and the `rw` count is the step count — here one
 prototype link, which finds the property it is looking for.
 
-The literal's object lands at reference 15, just past the realm's fifteen
-intrinsics: a script starts from `Heap.initial`, not from an empty
-heap. -/
+The literal's object lands at reference 26, just past the realm's
+twenty-six intrinsics: a script starts from `Heap.initial`, not from an
+empty heap. -/
 
 open Tarski
 
@@ -35,7 +35,7 @@ attribute [local simp] evalExpr evalStmt evalStmts evalDeclarators evalProps
   instantiateBlock hoistNames hoistDeclarators initFunctions
   setProp
   allocCell getCell readCell writeCell initCell
-  allocObj readObj writeObj modifyObj
+  allocObj newObject readObj writeObj modifyObj
   Env.lookup Heap.alloc Heap.read Heap.write
   Heap.allocObj Heap.readObj Heap.writeObj
   Obj.getOwn Obj.setOwn propGet propSet

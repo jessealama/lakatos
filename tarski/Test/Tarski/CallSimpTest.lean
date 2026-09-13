@@ -25,7 +25,7 @@ attribute [local simp] evalExpr evalExprs evalStmt evalStmts evalDeclarators
   callFunction catchReturn makeFunction bindParams
   applyBinary toPrimitive BinaryOp.coerces toNumberPrim toBooleanPrim isStrPrim
   allocCell getCell readCell writeCell initCell
-  allocObj readObj writeObj modifyObj
+  allocObj newObject readObj writeObj modifyObj
   Env.lookup Heap.alloc Heap.read Heap.write
   Heap.allocObj Heap.readObj Heap.writeObj
   Obj.getOwn Obj.setOwn propGet propSet

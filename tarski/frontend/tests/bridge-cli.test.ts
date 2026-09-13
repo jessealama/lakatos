@@ -94,7 +94,14 @@ describe("the bridge as a command", () => {
   // The Lean side is run on its own copies of these documents in CI, and
   // the two must not drift: the schema is only a seam if both languages
   // see the same bytes.
-  for (const name of ["numeric-loop", "counter", "errors", "uncaught"]) {
+  for (const name of [
+    "numeric-loop",
+    "counter",
+    "errors",
+    "uncaught",
+    "harness-floor",
+    "compare-array",
+  ]) {
     it(`agrees with the copy the Lean tests are run against for ${name}`, () => {
       const lean = path.join(
         root,

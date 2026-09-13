@@ -1,0 +1,621 @@
+{
+  "type": "Program",
+  "sourceType": "script",
+  "body": [
+    {
+      "type": "ExpressionStatement",
+      "expression": {
+        "type": "Literal",
+        "value": "use strict",
+        "raw": "\"use strict\""
+      },
+      "directive": "use strict"
+    },
+    {
+      "type": "FunctionDeclaration",
+      "id": {
+        "type": "Identifier",
+        "name": "isSameValue"
+      },
+      "params": [
+        {
+          "type": "Identifier",
+          "name": "a"
+        },
+        {
+          "type": "Identifier",
+          "name": "b"
+        }
+      ],
+      "body": {
+        "type": "BlockStatement",
+        "body": [
+          {
+            "type": "IfStatement",
+            "test": {
+              "type": "BinaryExpression",
+              "operator": "===",
+              "left": {
+                "type": "Identifier",
+                "name": "a"
+              },
+              "right": {
+                "type": "Identifier",
+                "name": "b"
+              }
+            },
+            "consequent": {
+              "type": "BlockStatement",
+              "body": [
+                {
+                  "type": "ReturnStatement",
+                  "argument": {
+                    "type": "LogicalExpression",
+                    "operator": "||",
+                    "left": {
+                      "type": "BinaryExpression",
+                      "operator": "!==",
+                      "left": {
+                        "type": "Identifier",
+                        "name": "a"
+                      },
+                      "right": {
+                        "type": "Literal",
+                        "value": 0,
+                        "raw": "0"
+                      }
+                    },
+                    "right": {
+                      "type": "BinaryExpression",
+                      "operator": "===",
+                      "left": {
+                        "type": "BinaryExpression",
+                        "operator": "/",
+                        "left": {
+                          "type": "Literal",
+                          "value": 1,
+                          "raw": "1"
+                        },
+                        "right": {
+                          "type": "Identifier",
+                          "name": "a"
+                        }
+                      },
+                      "right": {
+                        "type": "BinaryExpression",
+                        "operator": "/",
+                        "left": {
+                          "type": "Literal",
+                          "value": 1,
+                          "raw": "1"
+                        },
+                        "right": {
+                          "type": "Identifier",
+                          "name": "b"
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "alternate": null
+          },
+          {
+            "type": "ReturnStatement",
+            "argument": {
+              "type": "LogicalExpression",
+              "operator": "&&",
+              "left": {
+                "type": "BinaryExpression",
+                "operator": "!==",
+                "left": {
+                  "type": "Identifier",
+                  "name": "a"
+                },
+                "right": {
+                  "type": "Identifier",
+                  "name": "a"
+                }
+              },
+              "right": {
+                "type": "BinaryExpression",
+                "operator": "!==",
+                "left": {
+                  "type": "Identifier",
+                  "name": "b"
+                },
+                "right": {
+                  "type": "Identifier",
+                  "name": "b"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "async": false,
+      "generator": false
+    },
+    {
+      "type": "FunctionDeclaration",
+      "id": {
+        "type": "Identifier",
+        "name": "compareArray"
+      },
+      "params": [
+        {
+          "type": "Identifier",
+          "name": "a"
+        },
+        {
+          "type": "Identifier",
+          "name": "b"
+        }
+      ],
+      "body": {
+        "type": "BlockStatement",
+        "body": [
+          {
+            "type": "IfStatement",
+            "test": {
+              "type": "BinaryExpression",
+              "operator": "!==",
+              "left": {
+                "type": "MemberExpression",
+                "object": {
+                  "type": "Identifier",
+                  "name": "b"
+                },
+                "property": {
+                  "type": "Identifier",
+                  "name": "length"
+                },
+                "computed": false
+              },
+              "right": {
+                "type": "MemberExpression",
+                "object": {
+                  "type": "Identifier",
+                  "name": "a"
+                },
+                "property": {
+                  "type": "Identifier",
+                  "name": "length"
+                },
+                "computed": false
+              }
+            },
+            "consequent": {
+              "type": "BlockStatement",
+              "body": [
+                {
+                  "type": "ReturnStatement",
+                  "argument": {
+                    "type": "Literal",
+                    "value": false,
+                    "raw": "false"
+                  }
+                }
+              ]
+            },
+            "alternate": null
+          },
+          {
+            "type": "VariableDeclaration",
+            "kind": "let",
+            "declarations": [
+              {
+                "type": "VariableDeclarator",
+                "id": {
+                  "type": "Identifier",
+                  "name": "i"
+                },
+                "init": {
+                  "type": "Literal",
+                  "value": 0,
+                  "raw": "0"
+                }
+              }
+            ]
+          },
+          {
+            "type": "WhileStatement",
+            "test": {
+              "type": "BinaryExpression",
+              "operator": "<",
+              "left": {
+                "type": "Identifier",
+                "name": "i"
+              },
+              "right": {
+                "type": "MemberExpression",
+                "object": {
+                  "type": "Identifier",
+                  "name": "a"
+                },
+                "property": {
+                  "type": "Identifier",
+                  "name": "length"
+                },
+                "computed": false
+              }
+            },
+            "body": {
+              "type": "BlockStatement",
+              "body": [
+                {
+                  "type": "IfStatement",
+                  "test": {
+                    "type": "UnaryExpression",
+                    "operator": "!",
+                    "argument": {
+                      "type": "CallExpression",
+                      "callee": {
+                        "type": "Identifier",
+                        "name": "isSameValue"
+                      },
+                      "arguments": [
+                        {
+                          "type": "MemberExpression",
+                          "object": {
+                            "type": "Identifier",
+                            "name": "b"
+                          },
+                          "property": {
+                            "type": "Identifier",
+                            "name": "i"
+                          },
+                          "computed": true
+                        },
+                        {
+                          "type": "MemberExpression",
+                          "object": {
+                            "type": "Identifier",
+                            "name": "a"
+                          },
+                          "property": {
+                            "type": "Identifier",
+                            "name": "i"
+                          },
+                          "computed": true
+                        }
+                      ]
+                    },
+                    "prefix": true
+                  },
+                  "consequent": {
+                    "type": "BlockStatement",
+                    "body": [
+                      {
+                        "type": "ReturnStatement",
+                        "argument": {
+                          "type": "Literal",
+                          "value": false,
+                          "raw": "false"
+                        }
+                      }
+                    ]
+                  },
+                  "alternate": null
+                },
+                {
+                  "type": "ExpressionStatement",
+                  "expression": {
+                    "type": "AssignmentExpression",
+                    "operator": "=",
+                    "left": {
+                      "type": "Identifier",
+                      "name": "i"
+                    },
+                    "right": {
+                      "type": "BinaryExpression",
+                      "operator": "+",
+                      "left": {
+                        "type": "Identifier",
+                        "name": "i"
+                      },
+                      "right": {
+                        "type": "Literal",
+                        "value": 1,
+                        "raw": "1"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "type": "ReturnStatement",
+            "argument": {
+              "type": "Literal",
+              "value": true,
+              "raw": "true"
+            }
+          }
+        ]
+      },
+      "async": false,
+      "generator": false
+    },
+    {
+      "type": "ExpressionStatement",
+      "expression": {
+        "type": "LogicalExpression",
+        "operator": "&&",
+        "left": {
+          "type": "LogicalExpression",
+          "operator": "&&",
+          "left": {
+            "type": "LogicalExpression",
+            "operator": "&&",
+            "left": {
+              "type": "LogicalExpression",
+              "operator": "&&",
+              "left": {
+                "type": "LogicalExpression",
+                "operator": "&&",
+                "left": {
+                  "type": "CallExpression",
+                  "callee": {
+                    "type": "Identifier",
+                    "name": "compareArray"
+                  },
+                  "arguments": [
+                    {
+                      "type": "ArrayExpression",
+                      "elements": [
+                        {
+                          "type": "Literal",
+                          "value": 1,
+                          "raw": "1"
+                        },
+                        {
+                          "type": "Literal",
+                          "value": 2,
+                          "raw": "2"
+                        },
+                        {
+                          "type": "Literal",
+                          "value": 3,
+                          "raw": "3"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "ArrayExpression",
+                      "elements": [
+                        {
+                          "type": "Literal",
+                          "value": 1,
+                          "raw": "1"
+                        },
+                        {
+                          "type": "Literal",
+                          "value": 2,
+                          "raw": "2"
+                        },
+                        {
+                          "type": "Literal",
+                          "value": 3,
+                          "raw": "3"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "right": {
+                  "type": "UnaryExpression",
+                  "operator": "!",
+                  "argument": {
+                    "type": "CallExpression",
+                    "callee": {
+                      "type": "Identifier",
+                      "name": "compareArray"
+                    },
+                    "arguments": [
+                      {
+                        "type": "ArrayExpression",
+                        "elements": [
+                          {
+                            "type": "Literal",
+                            "value": 1,
+                            "raw": "1"
+                          },
+                          {
+                            "type": "Literal",
+                            "value": 2,
+                            "raw": "2"
+                          }
+                        ]
+                      },
+                      {
+                        "type": "ArrayExpression",
+                        "elements": [
+                          {
+                            "type": "Literal",
+                            "value": 1,
+                            "raw": "1"
+                          },
+                          {
+                            "type": "Literal",
+                            "value": 2,
+                            "raw": "2"
+                          },
+                          {
+                            "type": "Literal",
+                            "value": 3,
+                            "raw": "3"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "prefix": true
+                }
+              },
+              "right": {
+                "type": "UnaryExpression",
+                "operator": "!",
+                "argument": {
+                  "type": "CallExpression",
+                  "callee": {
+                    "type": "Identifier",
+                    "name": "compareArray"
+                  },
+                  "arguments": [
+                    {
+                      "type": "ArrayExpression",
+                      "elements": [
+                        {
+                          "type": "Literal",
+                          "value": 1,
+                          "raw": "1"
+                        },
+                        {
+                          "type": "Literal",
+                          "value": 2,
+                          "raw": "2"
+                        },
+                        {
+                          "type": "Literal",
+                          "value": 3,
+                          "raw": "3"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "ArrayExpression",
+                      "elements": [
+                        {
+                          "type": "Literal",
+                          "value": 1,
+                          "raw": "1"
+                        },
+                        {
+                          "type": "Literal",
+                          "value": 2,
+                          "raw": "2"
+                        },
+                        {
+                          "type": "Literal",
+                          "value": 4,
+                          "raw": "4"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "prefix": true
+              }
+            },
+            "right": {
+              "type": "CallExpression",
+              "callee": {
+                "type": "Identifier",
+                "name": "compareArray"
+              },
+              "arguments": [
+                {
+                  "type": "ArrayExpression",
+                  "elements": [
+                    {
+                      "type": "BinaryExpression",
+                      "operator": "/",
+                      "left": {
+                        "type": "Literal",
+                        "value": 0,
+                        "raw": "0"
+                      },
+                      "right": {
+                        "type": "Literal",
+                        "value": 0,
+                        "raw": "0"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "type": "ArrayExpression",
+                  "elements": [
+                    {
+                      "type": "BinaryExpression",
+                      "operator": "/",
+                      "left": {
+                        "type": "Literal",
+                        "value": 0,
+                        "raw": "0"
+                      },
+                      "right": {
+                        "type": "Literal",
+                        "value": 0,
+                        "raw": "0"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "right": {
+            "type": "UnaryExpression",
+            "operator": "!",
+            "argument": {
+              "type": "CallExpression",
+              "callee": {
+                "type": "Identifier",
+                "name": "compareArray"
+              },
+              "arguments": [
+                {
+                  "type": "ArrayExpression",
+                  "elements": [
+                    {
+                      "type": "Literal",
+                      "value": 0,
+                      "raw": "0"
+                    }
+                  ]
+                },
+                {
+                  "type": "ArrayExpression",
+                  "elements": [
+                    {
+                      "type": "UnaryExpression",
+                      "operator": "-",
+                      "argument": {
+                        "type": "Literal",
+                        "value": 0,
+                        "raw": "0"
+                      },
+                      "prefix": true
+                    }
+                  ]
+                }
+              ]
+            },
+            "prefix": true
+          }
+        },
+        "right": {
+          "type": "CallExpression",
+          "callee": {
+            "type": "Identifier",
+            "name": "compareArray"
+          },
+          "arguments": [
+            {
+              "type": "ArrayExpression",
+              "elements": []
+            },
+            {
+              "type": "ArrayExpression",
+              "elements": []
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

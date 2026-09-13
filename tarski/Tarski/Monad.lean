@@ -122,6 +122,23 @@ def allocObj (o : Obj) : EvalM Ref := do
   set h'
   return r
 
+/-- OrdinaryObjectCreate against `%Object.prototype%`: the object an
+object literal, a function's `prototype`, and `Object()` all start
+from. -/
+def newObject : EvalM Ref :=
+  allocObj { proto := some objectProtoRef }
+
+/-- ArrayCreate: a fresh array holding the given elements, linked to
+`%Array.prototype%`. -/
+def newArray (elements : List Value) : EvalM Value := do
+  pure (.obj (← allocObj (Obj.array (some arrayProtoRef) elements)))
+
+/-- ArrayCreate with a length and no elements — `Array(n)`'s answer, an
+array of `n` holes, every index of which reads `undefined` off the empty
+property list. -/
+def newArrayOfLength (n : Nat) : EvalM Value := do
+  pure (.obj (← allocObj { proto := some arrayProtoRef, kind := .array n }))
+
 /-- Throw one of the evaluator's own runtime errors: a fresh object whose
 prototype is the kind's, carrying the message as an own property. The
 `name` it will report comes from that prototype, so the object is exactly

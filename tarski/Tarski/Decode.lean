@@ -186,6 +186,11 @@ partial def decodeExpr (j : Json) : DecodeM Expr := do
     pure (.call (← decodeExpr (← field j "callee")) (← decodeExprs (← arrayField j "arguments")))
   | "NewExpression" =>
     pure (.new (← decodeExpr (← field j "callee")) (← decodeExprs (← arrayField j "arguments")))
+  | "ArrayExpression" =>
+    -- A hole and a spread arrived as `Unsupported` elements in place, so
+    -- `decodeExpr` refuses the element and names the kind it stood for;
+    -- nothing here is special-cased.
+    pure (.arrayLit (← decodeExprs (← arrayField j "elements")))
   | "ObjectExpression" =>
     pure (.objectLit (← decodeProps (← arrayField j "properties")))
   | "FunctionExpression" =>

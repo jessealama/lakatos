@@ -109,6 +109,11 @@ export interface Property {
   method: false;
 }
 
+export interface ArrayExpression {
+  type: "ArrayExpression";
+  elements: Expression[];
+}
+
 export interface ObjectExpression {
   type: "ObjectExpression";
   properties: (Property | Unsupported)[];
@@ -158,6 +163,7 @@ export type Expression =
   | MemberExpression
   | CallExpression
   | NewExpression
+  | ArrayExpression
   | ObjectExpression
   | FunctionExpression
   | ArrowFunctionExpression
@@ -479,6 +485,19 @@ function expression(node: ts.Expression, sf: ts.SourceFile): Expression {
       arguments: callArguments(
         node.arguments ?? ts.factory.createNodeArray(),
         sf,
+      ),
+    };
+  }
+  if (ts.isArrayLiteralExpression(node)) {
+    // A hole and a spread are each refused where they stand, as a call's
+    // spread argument is, so the literal around them still reaches the
+    // Lean decoder.
+    return {
+      type: "ArrayExpression",
+      elements: node.elements.map((e) =>
+        ts.isOmittedExpression(e) || ts.isSpreadElement(e)
+          ? unsupported(e)
+          : expression(e, sf),
       ),
     };
   }

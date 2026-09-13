@@ -13,6 +13,16 @@
 # names — `Js.Number.FloatOps.tsRem`, `Js.floatNaN`, `Js.JsVal.typeof` —
 # is a `Js.` name and never matches.
 #
+# The evaluator performs exactly one conversion of its own, and it is not
+# a `Float` operation: `Nat.toFloat` (that is, `Float.ofNat`) turning a
+# length or an index into a Number, spelled once in `Value.ofNat`. It is
+# exact below 2^53, has no `extern`, and so reduces in the kernel. The
+# conversion in the other direction goes through `Tarski/Format.lean`'s
+# provisional formatter rather than a `Float` method, which is why
+# `uint32Of?` parses digits. Neither spelling matches the pattern below,
+# and neither is allow-listed: they are named here so that a third one
+# has to be argued for.
+#
 # The boundary is about arithmetic the evaluator *performs*, so each file
 # is stripped of its comments and its string-literal text before the
 # pattern runs: `Error.prototype.toString` is a JavaScript method this

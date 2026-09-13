@@ -1,0 +1,278 @@
+{
+  "type": "Program",
+  "sourceType": "script",
+  "body": [
+    {
+      "type": "ExpressionStatement",
+      "expression": {
+        "type": "Literal",
+        "value": "use strict",
+        "raw": "\"use strict\""
+      },
+      "directive": "use strict"
+    },
+    {
+      "type": "VariableDeclaration",
+      "kind": "const",
+      "declarations": [
+        {
+          "type": "VariableDeclarator",
+          "id": {
+            "type": "Identifier",
+            "name": "xs"
+          },
+          "init": {
+            "type": "ArrayExpression",
+            "elements": [
+              {
+                "type": "Literal",
+                "value": 1,
+                "raw": "1"
+              },
+              {
+                "type": "Literal",
+                "value": 2,
+                "raw": "2"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "type": "ExpressionStatement",
+      "expression": {
+        "type": "CallExpression",
+        "callee": {
+          "type": "MemberExpression",
+          "object": {
+            "type": "Identifier",
+            "name": "xs"
+          },
+          "property": {
+            "type": "Identifier",
+            "name": "push"
+          },
+          "computed": false
+        },
+        "arguments": [
+          {
+            "type": "Literal",
+            "value": 3,
+            "raw": "3"
+          }
+        ]
+      }
+    },
+    {
+      "type": "VariableDeclaration",
+      "kind": "const",
+      "declarations": [
+        {
+          "type": "VariableDeclarator",
+          "id": {
+            "type": "Identifier",
+            "name": "s"
+          },
+          "init": {
+            "type": "BinaryExpression",
+            "operator": "+",
+            "left": {
+              "type": "BinaryExpression",
+              "operator": "+",
+              "left": {
+                "type": "BinaryExpression",
+                "operator": "+",
+                "left": {
+                  "type": "Literal",
+                  "value": "n=",
+                  "raw": "\"n=\""
+                },
+                "right": {
+                  "type": "MemberExpression",
+                  "object": {
+                    "type": "Identifier",
+                    "name": "xs"
+                  },
+                  "property": {
+                    "type": "Identifier",
+                    "name": "length"
+                  },
+                  "computed": false
+                }
+              },
+              "right": {
+                "type": "Literal",
+                "value": ":",
+                "raw": "\":\""
+              }
+            },
+            "right": {
+              "type": "CallExpression",
+              "callee": {
+                "type": "MemberExpression",
+                "object": {
+                  "type": "Identifier",
+                  "name": "xs"
+                },
+                "property": {
+                  "type": "Identifier",
+                  "name": "join"
+                },
+                "computed": false
+              },
+              "arguments": [
+                {
+                  "type": "Literal",
+                  "value": ",",
+                  "raw": "\",\""
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "ExpressionStatement",
+      "expression": {
+        "type": "LogicalExpression",
+        "operator": "&&",
+        "left": {
+          "type": "LogicalExpression",
+          "operator": "&&",
+          "left": {
+            "type": "LogicalExpression",
+            "operator": "&&",
+            "left": {
+              "type": "LogicalExpression",
+              "operator": "&&",
+              "left": {
+                "type": "BinaryExpression",
+                "operator": "===",
+                "left": {
+                  "type": "Identifier",
+                  "name": "s"
+                },
+                "right": {
+                  "type": "Literal",
+                  "value": "n=3:1,2,3",
+                  "raw": "\"n=3:1,2,3\""
+                }
+              },
+              "right": {
+                "type": "BinaryExpression",
+                "operator": "<",
+                "left": {
+                  "type": "Literal",
+                  "value": "a",
+                  "raw": "\"a\""
+                },
+                "right": {
+                  "type": "Literal",
+                  "value": "b",
+                  "raw": "\"b\""
+                }
+              }
+            },
+            "right": {
+              "type": "CallExpression",
+              "callee": {
+                "type": "MemberExpression",
+                "object": {
+                  "type": "Identifier",
+                  "name": "Array"
+                },
+                "property": {
+                  "type": "Identifier",
+                  "name": "isArray"
+                },
+                "computed": false
+              },
+              "arguments": [
+                {
+                  "type": "Identifier",
+                  "name": "xs"
+                }
+              ]
+            }
+          },
+          "right": {
+            "type": "CallExpression",
+            "callee": {
+              "type": "MemberExpression",
+              "object": {
+                "type": "Identifier",
+                "name": "Object"
+              },
+              "property": {
+                "type": "Identifier",
+                "name": "is"
+              },
+              "computed": false
+            },
+            "arguments": [
+              {
+                "type": "UnaryExpression",
+                "operator": "-",
+                "argument": {
+                  "type": "Literal",
+                  "value": 0,
+                  "raw": "0"
+                },
+                "prefix": true
+              },
+              {
+                "type": "UnaryExpression",
+                "operator": "-",
+                "argument": {
+                  "type": "Literal",
+                  "value": 0,
+                  "raw": "0"
+                },
+                "prefix": true
+              }
+            ]
+          }
+        },
+        "right": {
+          "type": "UnaryExpression",
+          "operator": "!",
+          "argument": {
+            "type": "CallExpression",
+            "callee": {
+              "type": "MemberExpression",
+              "object": {
+                "type": "Identifier",
+                "name": "Object"
+              },
+              "property": {
+                "type": "Identifier",
+                "name": "is"
+              },
+              "computed": false
+            },
+            "arguments": [
+              {
+                "type": "Literal",
+                "value": 0,
+                "raw": "0"
+              },
+              {
+                "type": "UnaryExpression",
+                "operator": "-",
+                "argument": {
+                  "type": "Literal",
+                  "value": 0,
+                  "raw": "0"
+                },
+                "prefix": true
+              }
+            ]
+          },
+          "prefix": true
+        }
+      }
+    }
+  ]
+}

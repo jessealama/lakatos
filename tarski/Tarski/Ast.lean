@@ -44,7 +44,8 @@ deriving Repr, DecidableEq, Inhabited
 relations, and the two strict-equality tests. Loose `==` is absent — it
 coerces both operands by rules this slice does not model. -/
 inductive BinaryOp where
-  /-- `+`. Numeric addition only: string concatenation is #380's. -/
+  /-- `+`. Concatenation when either operand is a string, numeric
+  addition otherwise. -/
   | add
   /-- `-`. -/
   | sub
@@ -54,13 +55,14 @@ inductive BinaryOp where
   | div
   /-- `%`. -/
   | rem
-  /-- `<`. -/
+  /-- `<`. Code-point string order when both operands are strings,
+  numeric otherwise. -/
   | lt
-  /-- `<=`. -/
+  /-- `<=`. String order on two strings, numeric otherwise. -/
   | le
-  /-- `>`. -/
+  /-- `>`. String order on two strings, numeric otherwise. -/
   | gt
-  /-- `>=`. -/
+  /-- `>=`. String order on two strings, numeric otherwise. -/
   | ge
   /-- `===`. -/
   | strictEq
@@ -131,6 +133,11 @@ inductive Expr where
   | call (callee : Expr) (args : List Expr)
   /-- ESTree `NewExpression`. -/
   | new (callee : Expr) (args : List Expr)
+  /-- ESTree `ArrayExpression`. A hole and a spread are both outside the
+  slice and arrive as `Unsupported` elements in place — `OmittedExpression`
+  and `SpreadElement` — so the literal survives and only the element is
+  refused; evaluated holes and spread are #394's. -/
+  | arrayLit (elements : List Expr)
   /-- ESTree `ObjectExpression` whose members are all `kind: "init"`
   `Property` nodes with identifier or string keys, in source order.
   Shorthand, methods, accessors, computed keys, and spread are #395's. -/

@@ -4,8 +4,9 @@ import Tarski.Format
 /-! Objects: literals, property access, the prototype chain, `new`,
 `typeof`, and ToPrimitive.
 
-There are no property descriptors here and no `Object.prototype`, which
-is #389's; what this file pins is the shape the descriptors will be
+There are no property descriptors here, and `Object.prototype` carries
+`hasOwnProperty` and nothing else (#380); the rest of its surface is
+#389's. What this file pins is the shape the descriptors will be
 added to — own data properties in insertion order, a single prototype
 link, and a set that writes an own property rather than through the
 chain. -/
@@ -155,9 +156,10 @@ private def declareP : List Stmt :=
 /-! ## ToPrimitive -/
 
 -- `({}) + 1;` — OrdinaryToPrimitive finds neither `valueOf` nor
--- `toString`, because there is no `Object.prototype` to find them on.
--- #389 makes this `"[object Object]1"`; until then it throws, and that
--- is recorded here rather than left to be discovered.
+-- `toString`. `Object.prototype` exists as of #380, but it holds
+-- `hasOwnProperty` alone: #389 puts the two conversion methods on it and
+-- makes this `"[object Object]1"`. Until then it throws, and that is
+-- recorded here rather than left to be discovered.
 #guard outcome [.exprStmt (.binary .add (.objectLit []) (.numLit 1.0))] == "uncaught: TypeError: Cannot convert object to primitive value"
 
 -- `const o = { valueOf: function () { return 3; } }; o + 1;` — a

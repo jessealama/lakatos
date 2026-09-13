@@ -12,18 +12,20 @@ defined by `partial_fixpoint`, so the equations are theorems and a
 non-terminating program is `none`, not an axiom.
 
 The non-recursive helpers live outside the `mutual` block on purpose:
-their equations are ordinary and `simp` may use them freely. Two of the
+their equations are ordinary and `simp` may use them freely. Three of the
 recursive ones are never added to a simp set and are unfolded one step at
-a time with `rw`: `evalWhile` and `getProp`. The rule is not "recursive"
-but "recursive on something other than syntax" — `evalExpr` and its
-neighbours recurse on a concrete AST, which runs out, while a loop
-recurses until a heap value says stop and a prototype walk until a heap
-link does, and `simp` unfolds both under a binder it has not resolved,
-forever. What decides membership in the block is
-whether a definition can reach user code: `getProp` and `toPrimitive` can
-(a prototype chain is unbounded, and ToPrimitive calls `valueOf`), so
-they are inside; `instantiateBlock` and `makeFunction` only touch the
-heap, so they are outside.
+a time with `rw`: `evalWhile`, `getProp`, and `joinElements`. The rule is
+not "recursive" but "recursive on something other than syntax" —
+`evalExpr` and its neighbours recurse on a concrete AST, which runs out,
+while a loop recurses until a heap value says stop, a prototype walk
+until a heap link does, and a join until an array's length does, and
+`simp` unfolds all three under a binder it has not resolved, forever.
+What decides membership in the block is whether a definition can reach
+user code: `getProp`, `toPrimitive`, and `setProp` can (a prototype chain
+is unbounded, ToPrimitive calls `valueOf`, and ArraySetLength coerces its
+value with ToNumber, which is ToPrimitive on an object), so they are
+inside; `instantiateBlock` and `makeFunction` only touch the heap, so
+they are outside.
 
 A block's declarations are instantiated before its first statement runs.
 That is one mechanism answering three needs: the temporal dead zone (a
@@ -51,6 +53,11 @@ new refusal is written against a list rather than invented.
 | `instanceof` a non-callable                        | `TypeError`      | `Right-hand side of 'instanceof' is not callable`            |
 | `instanceof` a function with a non-object prototype | `TypeError`     | `Function has non-object prototype in instanceof check`      |
 | `Error.prototype.toString` on a primitive          | `TypeError`      | `Error.prototype.toString called on non-object`              |
+| `xs.length = v` with a `v` that is not a uint32    | `RangeError`     | `Invalid array length`                                       |
+| `Object.keys` of `undefined` or `null`             | `TypeError`      | `Cannot convert undefined or null to object`                 |
+| `Object(v)` or `hasOwnProperty` on a primitive     | `TypeError`      | `Cannot convert a primitive to an object`                    |
+| `push` on a non-array                              | `TypeError`      | `Array.prototype.push called on non-array`                   |
+| `join` on a non-array                              | `TypeError`      | `Array.prototype.join called on non-array`                   |
 
 `Tarski/Monad.lean` holds two more, for the two arms a reference the
 evaluator handed out cannot reach. -/
@@ -67,8 +74,9 @@ def DeclKind.isMutable : DeclKind → Bool
 /-- ToNumber on primitives. Not `JsVal.toNumber`, whose wrong-tag throw
 is the prover refusing a coercion rather than JS performing one: here the
 coercion is the semantics. An object never reaches this — ToPrimitive
-runs first — and the `str` arm is a placeholder until #380 gives strings
-their real conversion. -/
+runs first — and the `str` arm is a placeholder until #388 gives
+StringToNumber its real algorithm, which is why `"a" < 1` and
+`xs.length = "2"` answer as they do. -/
 def toNumberPrim : JsVal → Float
   | .num x => x
   | .bool b => if b then 1.0 else 0.0
@@ -118,6 +126,67 @@ def strictEqValue : Value → Value → Bool
   | .prim _, .obj _ => false
   | .obj _, .prim _ => false
 
+/-- `Object.is` on values: the library's `sameValue` on primitives —
+which is what makes `Object.is(NaN, NaN)` true and `Object.is(0, -0)`
+false — reference identity on objects, and `false` across the two. -/
+def sameValueValue : Value → Value → Bool
+  | .prim a, .prim b => JsVal.sameValue a b
+  | .obj r₁, .obj r₂ => r₁ == r₂
+  | .prim _, .obj _ => false
+  | .obj _, .prim _ => false
+
+/-- Which hint ToPrimitive was called with. `number` is the default and
+what `+`, the relations, and the unary operators use; `string` is what
+`String(v)`, `join`, and ToPropertyKey use. The difference is only the
+order the two methods are tried in. -/
+inductive PrimHint where
+  | number
+  | string
+deriving Repr, DecidableEq, Inhabited
+
+/-- The two method names OrdinaryToPrimitive tries, in the hint's
+order. -/
+def hintOrder : PrimHint → String × String
+  | .number => ("valueOf", "toString")
+  | .string => ("toString", "valueOf")
+
+/-- A string's `length`, in code points. `JsVal.str` is a Lean `String`,
+which cannot hold a lone surrogate, so this is UTF-16 code-unit length
+for every string this slice can build; #391 owns the difference, along
+with `String.prototype` and the wrapper object. -/
+def stringLength (s : String) : Nat := s.length
+
+/-- The one-character string at an index, or `none` past the end — the
+String exotic object's own index properties, in code points for the
+reason `stringLength` gives. -/
+def stringIndex? (s : String) (i : Nat) : Option String :=
+  s.toList[i]?.map String.singleton
+
+/-- ToUint32 restricted to the values that are already one: an array
+`length` and an `Array(n)` argument are integers in `[0, 2^32)` or a
+`RangeError`, so nothing here wraps. The digits are read back out of
+`formatNumber` rather than converted directly, because every Float→Nat
+spelling is behind the arithmetic boundary and the integer digits are
+exactly the part the provisional formatter gets right. `-0` prints `0`,
+so it is `0`. -/
+def uint32Of? (x : Float) : Option Nat :=
+  if decide (0.0 ≤ x) && decide (x < 4294967296.0) && Number.FloatOps.tsIsInteger x then
+    (formatNumber x).toNat?
+  else none
+
+/-- The index keys of something `length` long, as string values —
+`Object.keys` of a string, whose own properties are its indices. -/
+def indexKeys (n : Nat) : List Value :=
+  (List.range n).map (fun i => .prim (.str (Nat.repr i)))
+
+/-- Whether a built-in has a `[[Construct]]`. `String` does not: the
+wrapper object is #391's, so `new String("x")` refuses. -/
+def NativeFn.constructs : NativeFn → Bool
+  | .errorCtor _ => true
+  | .objectCtor => true
+  | .arrayCtor => true
+  | _ => false
+
 /-- The eight spellings `typeof` answers with. The library's
 `TypeofResult` is a closed enum with no string in it, because a proof
 compares tags; a script compares strings. -/
@@ -142,14 +211,18 @@ def applyUnary : UnaryOp → JsVal → Value
   | .typeof, v => .prim (.str (typeofName v.typeof))
 
 /-- Apply a coercing infix operator to its two operands, both of which
-ToPrimitive has already run on, left first. `+` is the one operator that
-looks at the operands' types: a string on either side makes it
-concatenation, which is here because this slice's own example builds a
-message with it — every other string operation is #380's. `%` is the
-library's `tsRem` — C `fmod`, not the IEEE remainder — and the relations
-are Lean's binary64 order, which is the library's model of it, so a NaN
-operand answers `false` on all four. Relational comparison of two strings
-is #380's too, so `"a" < "b"` is still NaN-against-NaN here. -/
+ToPrimitive has already run on, left first. Two operators look at the
+operands' types. `+` is concatenation when either side is a string and
+addition otherwise. Each of the four relations is code-point string
+order when *both* sides are strings and numeric otherwise, which is
+IsLessThan's own split: `"10" < "9"` is true and `"a" < 1` is false,
+the latter because ToNumber of a string is still the placeholder (#388).
+Lean's `String` order is `List Char` order on the code points, so it is
+UTF-16 code-unit order for every string this slice can build — a lone
+surrogate cannot live in a Lean `String`, and #391 owns the difference.
+`%` is the library's `tsRem` — C `fmod`, not the IEEE remainder — and the
+numeric relations are Lean's binary64 order, which is the library's model
+of it, so a NaN operand answers `false` on all four. -/
 def applyBinary : BinaryOp → JsVal → JsVal → Value
   | .add, l, r =>
     if isStrPrim l || isStrPrim r then .prim (.str (toStringPrim l ++ toStringPrim r))
@@ -158,10 +231,18 @@ def applyBinary : BinaryOp → JsVal → JsVal → Value
   | .mul, l, r => .prim (.num (toNumberPrim l * toNumberPrim r))
   | .div, l, r => .prim (.num (toNumberPrim l / toNumberPrim r))
   | .rem, l, r => .prim (.num (Number.FloatOps.tsRem (toNumberPrim l) (toNumberPrim r)))
-  | .lt, l, r => .prim (.bool (decide (toNumberPrim l < toNumberPrim r)))
-  | .le, l, r => .prim (.bool (decide (toNumberPrim l ≤ toNumberPrim r)))
-  | .gt, l, r => .prim (.bool (decide (toNumberPrim r < toNumberPrim l)))
-  | .ge, l, r => .prim (.bool (decide (toNumberPrim r ≤ toNumberPrim l)))
+  | .lt, l, r =>
+    if isStrPrim l && isStrPrim r then .prim (.bool (decide (toStringPrim l < toStringPrim r)))
+    else .prim (.bool (decide (toNumberPrim l < toNumberPrim r)))
+  | .le, l, r =>
+    if isStrPrim l && isStrPrim r then .prim (.bool (decide (toStringPrim l ≤ toStringPrim r)))
+    else .prim (.bool (decide (toNumberPrim l ≤ toNumberPrim r)))
+  | .gt, l, r =>
+    if isStrPrim l && isStrPrim r then .prim (.bool (decide (toStringPrim r < toStringPrim l)))
+    else .prim (.bool (decide (toNumberPrim r < toNumberPrim l)))
+  | .ge, l, r =>
+    if isStrPrim l && isStrPrim r then .prim (.bool (decide (toStringPrim r ≤ toStringPrim l)))
+    else .prim (.bool (decide (toNumberPrim r ≤ toNumberPrim l)))
   | .strictEq, l, r => .prim (.bool (strictEqValue (.prim l) (.prim r)))
   | .strictNe, l, r => .prim (.bool (!strictEqValue (.prim l) (.prim r)))
   -- `evalExpr` answers `instanceof` before reaching here, as it answers
@@ -221,14 +302,16 @@ def typeofValue (v : Value) : EvalM String := do
 /-- Allocate a function object. An ordinary function also gets a fresh
 `prototype` object whose `constructor` points back at it, which is what
 `new` links an instance to; an arrow gets neither, because it cannot be
-constructed. The function object's own `[[Prototype]]` stays null until
-`Function.prototype` exists (#389). -/
+constructed. That `prototype` is an ordinary object, so it is created
+against `Object.prototype` like any other; the function object's own
+`[[Prototype]]` stays null until `Function.prototype` exists (#389). -/
 def makeFunction (c : Closure) : EvalM Value := do
   let f ← allocObj { callable := some (.closure c) }
   match c.kind with
   | .arrow => pure (.obj f)
   | .ordinary => do
-    let proto ← allocObj { properties := [("constructor", .obj f)] }
+    let proto ← newObject
+    modifyObj proto (fun o => o.setOwn "constructor" (.obj f))
     modifyObj f (fun o => o.setOwn "prototype" (.obj proto))
     pure (.obj f)
 
@@ -292,18 +375,6 @@ def instantiateBlock (env : Env) (body : List Stmt) : EvalM Env := do
   initFunctions env' body
   pure env'
 
-/-- Set a property. Strict mode throughout, so a primitive base is a
-`TypeError` rather than a silent no-op. Outside the fixpoint block
-because nothing it does can reach user code: there are no writability
-checks and no prototype-chain setters, and descriptors and accessors are
-#389's, which is when this joins `getProp` inside. -/
-def setProp (base : Value) (key : String) (v : Value) : EvalM Unit :=
-  match base with
-  | .obj r => modifyObj r (fun o => o.setOwn key v)
-  | .prim _ =>
-    throwJsError .typeError
-      s!"Cannot set properties of {formatValue base} (setting '{key}')"
-
 mutual
 
 /-- Evaluate an expression. -/
@@ -333,7 +404,7 @@ def evalExpr (env : Env) : Expr → EvalM Value
       pure (.prim (.str (← typeofValue v)))
     | _ => do
       let v ← evalExpr env operand
-      pure (applyUnary op (← toPrimitive v))
+      pure (applyUnary op (← toPrimitive .number v))
   | .binary op left right => do
     let l ← evalExpr env left
     let r ← evalExpr env right
@@ -341,8 +412,8 @@ def evalExpr (env : Env) : Expr → EvalM Value
     | .instanceof => pure (.prim (.bool (← instanceOf l r)))
     | _ =>
       if op.coerces then do
-        let lp ← toPrimitive l
-        let rp ← toPrimitive r
+        let lp ← toPrimitive .number l
+        let rp ← toPrimitive .number r
         pure (applyBinary op lp rp)
       else
         pure (applyStrict op l r)
@@ -384,9 +455,10 @@ def evalExpr (env : Env) : Expr → EvalM Value
     let f ← evalExpr env callee
     construct f (← evalExprs env args)
   | .objectLit props => do
-    let r ← allocObj {}
+    let r ← newObject
     evalProps env props r
     pure (.obj r)
+  | .arrayLit elements => do newArray (← evalExprs env elements)
   | .funcExpr name params body =>
     match name with
     | none => makeFunction { params, body, env, kind := .ordinary }
@@ -456,9 +528,15 @@ def evalProps (env : Env) : List (String × Expr) → Ref → EvalM Unit
 
 /-- Get a property, walking the prototype chain. There is no fuel bound:
 a cyclic chain is a program that does not terminate, which is `none`, and
-that is the same answer the epic gives every other divergence. A
-primitive base other than `undefined` or `null` answers `undefined`
-because it has no wrapper prototype yet — `"x".length` waits for #380.
+that is the same answer the epic gives every other divergence.
+
+Two own properties do not live in a property list. A string answers its
+own `length` and its own index properties — the String exotic object's
+`[[GetOwnProperty]]` — and every other key on it is `undefined` until
+`String.prototype` exists (#391). An array answers its own `length` out
+of its kind, which is where the live length lives. Every other primitive
+base answers `undefined`, having no wrapper prototype yet (#382, #391).
+
 This is inside the fixpoint block for the walk today, and for #389's
 accessors, which will call user code from here. -/
 def getProp (base : Value) (key : String) : EvalM Value :=
@@ -467,33 +545,110 @@ def getProp (base : Value) (key : String) : EvalM Value :=
     throwJsError .typeError s!"Cannot read properties of undefined (reading '{key}')"
   | .prim .null =>
     throwJsError .typeError s!"Cannot read properties of null (reading '{key}')"
+  | .prim (.str s) =>
+    if key == "length" then pure (Value.ofNat (stringLength s))
+    else
+      match arrayIndex? key with
+      | some i => pure (((stringIndex? s i).map (fun c => Value.prim (.str c))).getD undefValue)
+      | none => pure undefValue
   | .prim _ => pure undefValue
   | .obj r => do
     let o ← readObj r
-    match o.getOwn key with
-    | some v => pure v
-    | none =>
-      match o.proto with
-      | some p => getProp (.obj p) key
-      | none => pure undefValue
+    match o.kind, key == "length" with
+    | .array len, true => pure (Value.ofNat len)
+    | _, _ =>
+      match o.getOwn key with
+      | some v => pure v
+      | none =>
+        match o.proto with
+        | some p => getProp (.obj p) key
+        | none => pure undefValue
   partial_fixpoint
 
-/-- ToPrimitive with hint number: `valueOf`, then `toString`, the first
-callable one whose result is a primitive wins, and a `TypeError` if
-neither gives one. Until #389 puts the intrinsics on
-`Object.prototype`, a plain object has neither method, so `{} + 1`
-throws here where an engine answers `"[object Object]1"`; a user-defined
-`valueOf` already works. -/
-def toPrimitive (v : Value) : EvalM JsVal :=
+/-- Set a property. Strict mode throughout, so a primitive base is a
+`TypeError` rather than a silent no-op. An array's own `length` is the
+one key whose write is not a property write: assigning to it truncates
+or grows, and assigning to an index at or past the end grows the length
+to hold it, which is the whole of the Array exotic object's
+`[[DefineOwnProperty]]` at this slice's fidelity. Inside the fixpoint
+block because that coercion can reach user code; writability checks and
+prototype-chain setters arrive with descriptors (#389). -/
+def setProp (base : Value) (key : String) (v : Value) : EvalM Unit :=
+  match base with
+  | .obj r => do
+    let o ← readObj r
+    match o.kind with
+    | .ordinary => writeObj r (o.setOwn key v)
+    | .array len =>
+      if key == "length" then setArrayLength r o v
+      else
+        match arrayIndex? key with
+        | some i => writeObj r { o.setOwn key v with kind := .array (max len (i + 1)) }
+        | none => writeObj r (o.setOwn key v)
+  | .prim _ =>
+    throwJsError .typeError
+      s!"Cannot set properties of {formatValue base} (setting '{key}')"
+  partial_fixpoint
+
+/-- ArraySetLength without descriptors: the new length is ToUint32 of
+ToNumber of the value, and anything else — a negative, a fraction, a
+string the placeholder ToNumber cannot read — is a `RangeError`.
+Shortening drops the elements it passes; there is no non-writable check
+and no partial truncation, both of which need descriptors (#389). -/
+def setArrayLength (r : Ref) (o : Obj) (v : Value) : EvalM Unit := do
+  match uint32Of? (toNumberPrim (← toPrimitive .number v)) with
+  | none => throwJsError .rangeError "Invalid array length"
+  | some n => writeObj r (o.truncate n)
+  partial_fixpoint
+
+/-- `Array.prototype.push`'s writes, left to right, each through
+`setProp` so that the array's `length` grows with them. -/
+def pushElements (arr : Value) (i : Nat) : List Value → EvalM Unit
+  | [] => pure ()
+  | v :: rest => do
+    setProp arr (Nat.repr i) v
+    pushElements arr (i + 1) rest
+  partial_fixpoint
+
+/-- `Array.prototype.join`'s fold: each element ToString'd, `undefined`
+and `null` contributing the empty string, joined by the separator. It
+recurses on the length rather than on syntax, so its equation is `rw`'s
+and never a simp set's. -/
+def joinElements (arr : Value) (i len : Nat) (sep : String) : EvalM String := do
+  if i < len then
+    let s ← match ← getProp arr (Nat.repr i) with
+      | .prim .undef => pure ""
+      | .prim .null => pure ""
+      | v => toStringValue v
+    let rest ← joinElements arr (i + 1) len sep
+    pure (if i + 1 < len then s ++ sep ++ rest else s ++ rest)
+  else pure ""
+  partial_fixpoint
+
+/-- ToPrimitive. `valueOf` then `toString` under the number hint,
+`toString` then `valueOf` under the string one; the first callable
+method whose result is a primitive wins, and a `TypeError` if neither
+gives one. Until #389 puts the intrinsics on `Object.prototype`, a plain
+object has neither method, so `{} + 1` throws here where an engine
+answers `"[object Object]1"`; a user-defined `valueOf` or `toString`
+already works. -/
+def toPrimitive (hint : PrimHint) (v : Value) : EvalM JsVal :=
   match v with
   | .prim p => pure p
   | .obj _ => do
-    match ← primitiveFrom v "valueOf" with
+    match ← primitiveFrom v (hintOrder hint).1 with
     | some p => pure p
     | none =>
-      match ← primitiveFrom v "toString" with
+      match ← primitiveFrom v (hintOrder hint).2 with
       | some p => pure p
       | none => throwJsError .typeError "Cannot convert object to primitive value"
+  partial_fixpoint
+
+/-- ToString on values: ToPrimitive with hint string, then ToString on
+the primitive. `String(v)`, `join`, and the `Error` constructor's
+`message` all spell it this way. -/
+def toStringValue (v : Value) : EvalM String := do
+  pure (toStringPrim (← toPrimitive .string v))
   partial_fixpoint
 
 /-- One step of OrdinaryToPrimitive: call the named method on the object
@@ -515,7 +670,7 @@ def toPropertyKey (v : Value) : EvalM String :=
   match v with
   | .prim p => pure (toStringPrim p)
   | .obj _ => do
-    let p ← toPrimitive v
+    let p ← toPrimitive .string v
     pure (toStringPrim p)
   partial_fixpoint
 
@@ -564,7 +719,17 @@ no `stack`.
 `.errorToString` is `Error.prototype.toString`: `name` and `message` off
 the receiver, each defaulting when absent, joined by `": "` unless one of
 them is empty. The uncaught-error report runs this same algorithm, which
-is the reason it is exposed at all. -/
+is the reason it is exposed at all.
+
+The rest are #380's floor. `String(v)` is ToString and nothing else —
+`new String(v)` refuses, the wrapper being #391's. `Object(v)` is an
+ordinary object for a nullish argument, the argument itself for an
+object, and a `TypeError` for any other primitive until the wrappers
+exist (#382, #391). `Object.keys` is OrdinaryOwnPropertyKeys of an
+object, the index keys of a string, and empty for any other non-nullish
+primitive. `push` and `join` require an Array exotic receiver: the
+generic array-like forms, and the rest of `Array.prototype`, are
+#390's. A missing argument is `undefined` throughout. -/
 def callNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Value :=
   match f with
   | .errorCtor _ => do
@@ -572,10 +737,7 @@ def callNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Valu
     | [] => pure thisArg
     | .prim .undef :: _ => pure thisArg
     | m :: _ => do
-      -- ToString, which `toPropertyKey` already is for every primitive
-      -- and which runs ToPrimitive on an object; #380 gives it its own
-      -- name.
-      setProp thisArg "message" (.prim (.str (← toPropertyKey m)))
+      setProp thisArg "message" (.prim (.str (← toStringValue m)))
       pure thisArg
   | .errorToString =>
     match thisArg with
@@ -583,13 +745,73 @@ def callNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Valu
     | .obj _ => do
       let name ← match ← getProp thisArg "name" with
         | .prim .undef => pure "Error"
-        | v => toPropertyKey v
+        | v => toStringValue v
       let msg ← match ← getProp thisArg "message" with
         | .prim .undef => pure ""
-        | v => toPropertyKey v
+        | v => toStringValue v
       if name.isEmpty then pure (.prim (.str msg))
       else if msg.isEmpty then pure (.prim (.str name))
       else pure (.prim (.str (name ++ ": " ++ msg)))
+  | .stringCtor =>
+    match args with
+    | [] => pure (.prim (.str ""))
+    | v :: _ => do pure (.prim (.str (← toStringValue v)))
+  | .objectCtor =>
+    match args with
+    | [] => do pure (.obj (← newObject))
+    | .prim .undef :: _ => do pure (.obj (← newObject))
+    | .prim .null :: _ => do pure (.obj (← newObject))
+    | .obj r :: _ => pure (.obj r)
+    | .prim _ :: _ => throwJsError .typeError "Cannot convert a primitive to an object"
+  | .objectIs =>
+    pure (.prim (.bool (sameValueValue (args[0]?.getD undefValue) (args[1]?.getD undefValue))))
+  | .objectKeys =>
+    match args[0]?.getD undefValue with
+    | .prim .undef => throwJsError .typeError "Cannot convert undefined or null to object"
+    | .prim .null => throwJsError .typeError "Cannot convert undefined or null to object"
+    | .obj r => do newArray ((← readObj r).ownKeys.map (fun k => .prim (.str k)))
+    | .prim (.str s) => newArray (indexKeys (stringLength s))
+    | .prim _ => newArray []
+  | .objectHasOwnProperty =>
+    match thisArg with
+    | .prim _ => throwJsError .typeError "Cannot convert a primitive to an object"
+    | .obj r => do
+      let key ← toPropertyKey (args[0]?.getD undefValue)
+      pure (.prim (.bool ((← readObj r).hasOwn key)))
+  | .arrayCtor =>
+    -- `Array(n)` with one Number argument is a length, not an element;
+    -- every other argument list is the elements themselves.
+    match args with
+    | [.prim (.num x)] =>
+      match uint32Of? x with
+      | none => throwJsError .rangeError "Invalid array length"
+      | some n => newArrayOfLength n
+    | vs => newArray vs
+  | .arrayIsArray =>
+    match args[0]?.getD undefValue with
+    | .obj r => do pure (.prim (.bool (← readObj r).isArray))
+    | .prim _ => pure (.prim (.bool false))
+  | .arrayPush =>
+    match thisArg with
+    | .prim _ => throwJsError .typeError "Array.prototype.push called on non-array"
+    | .obj r => do
+      match (← readObj r).kind with
+      | .ordinary => throwJsError .typeError "Array.prototype.push called on non-array"
+      | .array len => do
+        pushElements thisArg len args
+        pure (Value.ofNat (len + args.length))
+  | .arrayJoin =>
+    match thisArg with
+    | .prim _ => throwJsError .typeError "Array.prototype.join called on non-array"
+    | .obj r => do
+      match (← readObj r).kind with
+      | .ordinary => throwJsError .typeError "Array.prototype.join called on non-array"
+      | .array len => do
+        let sep ← match args with
+          | [] => pure ","
+          | .prim .undef :: _ => pure ","
+          | v :: _ => toStringValue v
+        pure (.prim (.str (← joinElements thisArg 0 len sep)))
   partial_fixpoint
 
 /-- OrdinaryCreateFromConstructor: the instance `new` builds, linked to
@@ -630,7 +852,12 @@ def construct (f : Value) (args : List Value) : EvalM Value :=
       -- return-object rule below holds trivially and is not written out.
       let fresh ← allocFromConstructor f
       callNative (.errorCtor k) (.obj fresh) args
-    | some (.native _) => throwJsError .typeError "not a constructor"
+    | some (.native n) =>
+      -- `Object` and `Array` allocate their own instance against the
+      -- intrinsic prototype, so `new` hands them no receiver at all and
+      -- NewTarget's `prototype` is ignored; subclassing is #384's.
+      if n.constructs then callNative n undefValue args
+      else throwJsError .typeError "not a constructor"
     | some (.closure c) =>
       match c.kind with
       | .arrow => throwJsError .typeError "not a constructor"

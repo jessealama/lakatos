@@ -3,8 +3,9 @@ import Tarski.Realm
 /-! The realm's literal against the realm's constants.
 
 `Heap.initial` is written out by hand, and every reference into it —
-`ErrorKind.protoRef`, `ctorRef`, `errorToStringRef`, `cellRef` — is a
-constant written out beside it. Nothing makes the two agree except this
+`ErrorKind.protoRef`, `ctorRef`, `errorToStringRef`, `cellRef`, and the
+`Object`, `Array`, and `String` references — is a constant written out
+beside it. Nothing makes the two agree except this
 file: a prototype moved without its constant, or a constructor pointing
 at the wrong `prototype`, would be a realm that is quietly wrong
 everywhere rather than a build that fails. So each case below reads one
@@ -14,8 +15,8 @@ open Tarski
 
 /-! ## The shape -/
 
-#guard Heap.initial.cells.size == 7
-#guard Heap.initial.objects.size == 15
+#guard Heap.initial.cells.size == 10
+#guard Heap.initial.objects.size == 26
 
 /-! ## Each kind's prototype
 
@@ -32,7 +33,7 @@ private def protoOf (k : ErrorKind) : Option Obj := Heap.initial.readObj k.proto
     o.getOwn "name" == some (.prim (.str k.name))
       && o.getOwn "message" == some (.prim (.str ""))
       && o.getOwn "constructor" == some (.obj k.ctorRef)
-      && o.proto == (if k == .error then none else some ErrorKind.error.protoRef)
+      && o.proto == (if k == .error then some objectProtoRef else some ErrorKind.error.protoRef)
 
 -- `Error.prototype` is the one that carries `toString`; the subclasses
 -- inherit it.
@@ -67,10 +68,106 @@ constructor object. -/
         | some c => c.value == some (.obj k.ctorRef)
         | none => false)
 
-#guard globalEnv.length == 7
+#guard globalEnv.length == 10
 
 /-! ## `Error.prototype.toString` -/
 
 #guard match Heap.initial.readObj errorToStringRef with
   | some { callable := some (.native .errorToString), .. } => true
   | _ => false
+
+/-! ## `Object.prototype` and `Object`
+
+`hasOwnProperty` is the whole of `Object.prototype`'s surface: `toString`
+and `valueOf` are #389's, and `ObjectsTest` pins that `{} + 1` still
+throws for want of them. -/
+
+#guard match Heap.initial.readObj objectProtoRef with
+  | some o =>
+    o.proto == none
+      && o.getOwn "constructor" == some (.obj objectCtorRef)
+      && o.getOwn "hasOwnProperty" == some (.obj objectHasOwnPropertyRef)
+      && o.getOwn "toString" == none
+      && o.getOwn "valueOf" == none
+      && o.kind == .ordinary
+  | none => false
+
+#guard match Heap.initial.readObj objectCtorRef with
+  | some o =>
+    o.getOwn "prototype" == some (.obj objectProtoRef)
+      && o.getOwn "is" == some (.obj objectIsRef)
+      && o.getOwn "keys" == some (.obj objectKeysRef)
+      && (match o.callable with
+          | some (.native .objectCtor) => true
+          | _ => false)
+  | none => false
+
+#guard match Heap.initial.readObj objectHasOwnPropertyRef with
+  | some { callable := some (.native .objectHasOwnProperty), .. } => true
+  | _ => false
+
+#guard match Heap.initial.readObj objectIsRef with
+  | some { callable := some (.native .objectIs), .. } => true
+  | _ => false
+
+#guard match Heap.initial.readObj objectKeysRef with
+  | some { callable := some (.native .objectKeys), .. } => true
+  | _ => false
+
+/-! ## `Array.prototype` and `Array`
+
+`Array.prototype` is itself an array of length 0, which the spec is
+explicit about and `Array.isArray(Array.prototype)` observes. -/
+
+#guard match Heap.initial.readObj arrayProtoRef with
+  | some o =>
+    o.kind == .array 0
+      && o.proto == some objectProtoRef
+      && o.getOwn "constructor" == some (.obj arrayCtorRef)
+      && o.getOwn "push" == some (.obj arrayPushRef)
+      && o.getOwn "join" == some (.obj arrayJoinRef)
+  | none => false
+
+#guard match Heap.initial.readObj arrayCtorRef with
+  | some o =>
+    o.getOwn "prototype" == some (.obj arrayProtoRef)
+      && o.getOwn "isArray" == some (.obj arrayIsArrayRef)
+      && (match o.callable with
+          | some (.native .arrayCtor) => true
+          | _ => false)
+  | none => false
+
+#guard match Heap.initial.readObj arrayPushRef with
+  | some { callable := some (.native .arrayPush), .. } => true
+  | _ => false
+
+#guard match Heap.initial.readObj arrayJoinRef with
+  | some { callable := some (.native .arrayJoin), .. } => true
+  | _ => false
+
+#guard match Heap.initial.readObj arrayIsArrayRef with
+  | some { callable := some (.native .arrayIsArray), .. } => true
+  | _ => false
+
+/-! ## `String`
+
+No `prototype` property: the wrapper object and `String.prototype` are
+#391's, so `new String("x")` refuses. -/
+
+#guard match Heap.initial.readObj stringCtorRef with
+  | some o =>
+    o.getOwn "prototype" == none
+      && (match o.callable with
+          | some (.native .stringCtor) => true
+          | _ => false)
+  | none => false
+
+/-! ## The three new global bindings -/
+
+#guard Env.lookup globalEnv "Object" == some objectCellRef
+#guard Env.lookup globalEnv "Array" == some arrayCellRef
+#guard Env.lookup globalEnv "String" == some stringCellRef
+
+#guard (Heap.initial.read objectCellRef).bind (·.value) == some (.obj objectCtorRef)
+#guard (Heap.initial.read arrayCellRef).bind (·.value) == some (.obj arrayCtorRef)
+#guard (Heap.initial.read stringCellRef).bind (·.value) == some (.obj stringCtorRef)

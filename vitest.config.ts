@@ -66,7 +66,9 @@ export default defineConfig({
         // cannot contain, and those two carry their own ignores. Ratcheted
         // again 2026-09-13: the bridge's `throw`, `try`, label, and jump
         // nodes joined it fully covered, so the denominator grew while the
-        // unreachable set did not.
+        // unreachable set did not. Ratcheted once more 2026-09-13: the
+        // bridge's array literal, with its hole and spread arms, joined it
+        // fully covered.
         //
         // Measure this from a path with no dot-directory in it. The include
         // globs above do not match through one, and a run from, say, a
@@ -74,7 +76,7 @@ export default defineConfig({
         // — different denominator, different numbers.
         autoUpdate: true,
         statements: 99.59,
-        branches: 98.69,
+        branches: 98.7,
         functions: 100,
         lines: 99.68,
       },
