@@ -639,7 +639,7 @@ def evalExpr (env : Env) : Expr → EvalM Value
       callFunction f undefValue (← evalExprs env args)
   | .new callee args => do
     let f ← evalExpr env callee
-    construct f (← evalExprs env args)
+    construct f f (← evalExprs env args)
   | .objectLit props => do
     let r ← newObject
     evalProps env props r
@@ -994,7 +994,7 @@ def callFunction (f : Value) (thisArg : Value) (args : List Value) : EvalM Value
       -- `Error("x")` is `new Error("x")`: an Error constructor called as
       -- a function constructs (20.5.1.1), because with no `new.target` it
       -- falls back to itself.
-      construct f args
+      construct f f args
     | some (.native n) => callNative n thisArg args
     | some (.closure c) => do
       let withThis ←
@@ -1060,18 +1060,45 @@ def numberArg : List Value → EvalM Float
 
 /-- What `new` does to a native that differs from calling it. Only the two
 wrappers do: `Number(v)` answers the Number and `new Number(v)` a wrapper
-object around it, off one conversion. `Object`, `Array`, and the `Error`
-constructors behave the same either way, so they fall through to
-`callNative`. NewTarget's `prototype` is ignored here as it is there
-(#384). -/
-def constructNative (n : NativeFn) (args : List Value) : EvalM Value :=
+object around it, off one conversion. The `Error` constructors are
+answered by `construct` itself, which allocates the receiver they fill
+in; `Object` and `Array` allocate here.
+
+**Each allocation honours NewTarget**, so `class A extends Array {}`
+gives its instances `A.prototype` and `class N extends Number {}` gives
+them `N.prototype`; the intrinsic prototype is only the fallback. -/
+def constructNative (n : NativeFn) (newTarget : Value) (args : List Value) : EvalM Value :=
   match n with
   | .numberCtor => do
     let x ← numberArg args
-    pure (.obj (← allocObj { proto := some numberProtoRef, kind := .number x }))
+    let proto ← allocFromConstructor newTarget numberProtoRef
+    modifyObj proto (fun o => { o with kind := .number x })
+    pure (.obj proto)
   | .booleanCtor => do
     let b := toBooleanPrim (args.headD undefValue)
-    pure (.obj (← allocObj { proto := some booleanProtoRef, kind := .boolean b }))
+    let proto ← allocFromConstructor newTarget booleanProtoRef
+    modifyObj proto (fun o => { o with kind := .boolean b })
+    pure (.obj proto)
+  | .objectCtor =>
+    -- `new Object(v)` with a non-nullish `v` answers `v` itself, exactly
+    -- as `Object(v)` does, and NewTarget does not enter.
+    match args with
+    | [] => do pure (.obj (← allocFromConstructor newTarget objectProtoRef))
+    | .prim .undef :: _ => do pure (.obj (← allocFromConstructor newTarget objectProtoRef))
+    | .prim .null :: _ => do pure (.obj (← allocFromConstructor newTarget objectProtoRef))
+    | _ => callNative .objectCtor undefValue args
+  | .arrayCtor => do
+    -- ArrayCreate is the native's; only the prototype link is NewTarget's,
+    -- so the array is re-pointed rather than copied into a second one.
+    let arr ← callNative .arrayCtor undefValue args
+    match arr with
+    | .obj a => do
+      match ← getProp newTarget "prototype" with
+      | .obj p => do
+        modifyObj a (fun o => { o with proto := some p })
+        pure arr
+      | .prim _ => pure arr
+    | v => pure v
   | _ => callNative n undefValue args
   partial_fixpoint
 
@@ -1319,16 +1346,43 @@ def callNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Valu
     pure undefValue
   partial_fixpoint
 
-/-- OrdinaryCreateFromConstructor: the instance `new` builds, linked to
-the constructor's `prototype` property when that is an object and to null
-otherwise. Shared by the two `construct` arms, which differ only in what
-runs afterwards. -/
-def allocFromConstructor (f : Value) : EvalM Ref := do
-  let protoVal ← getProp f "prototype"
+/-- GetPrototypeFromConstructor (10.1.13) and OrdinaryObjectCreate on
+its answer: the instance is linked to **NewTarget's** `prototype`
+property when that is an object, and to the intrinsic `fallback`
+otherwise. Reading NewTarget rather than the function being run is what
+makes `class B extends A {}` produce a `B` — `A`'s body allocates, but
+`B` is the NewTarget the allocation sees.
+
+The fallback is the specification's: the intrinsic prototype of the
+constructor doing the work, so `Error.prototype` for an `Error` and
+`Object.prototype` for an ordinary function. That is a change from the
+null this used to link to, and it is observable exactly once, as
+`Test/Tarski/ObjectsTest.lean` pins it: after `F.prototype = 1`, a
+`new F()` is still an `Object`. -/
+def allocFromConstructor (newTarget : Value) (fallback : Ref) : EvalM Ref := do
+  let protoVal ← getProp newTarget "prototype"
   let proto := match protoVal with
     | .obj p => some p
-    | .prim _ => none
+    | .prim _ => some fallback
   allocObj { proto }
+  partial_fixpoint
+
+/-- IsConstructor: whether `new` may be applied to a value. An ordinary
+function and a class constructor may; an arrow and a method may not, and
+neither may a built-in without a `[[Construct]]` of its own. `extends`
+asks this of its heritage, and so does `super()` of the parent it
+found. -/
+def isConstructor (v : Value) : EvalM Bool := do
+  match v with
+  | .prim _ => pure false
+  | .obj r =>
+    match (← readObj r).callable with
+    | none => pure false
+    | some (.native n) => pure n.constructs
+    | some (.closure c) =>
+      match c.kind with
+      | .ordinary => pure true
+      | .arrow => pure false
   partial_fixpoint
 
 /-- Whether `p` is on `o`'s prototype chain, `o` itself not counted —
@@ -1341,11 +1395,13 @@ def protoChainHas (o p : Ref) : EvalM Bool := do
   | some q => if q == p then pure true else protoChainHas q p
   partial_fixpoint
 
-/-- `new`. The instance's prototype is the function's `prototype`
-property when that is an object, and null otherwise; a constructor that
-returns an object returns that object, and one that returns anything else
-returns the instance. An arrow has no `[[Construct]]`. -/
-def construct (f : Value) (args : List Value) : EvalM Value :=
+/-- `[[Construct]]`. `newTarget` is the spec's NewTarget: the same
+function for a plain `new f()`, and the *derived* class for a `super()`
+call, which is what gives a subclass's instances the subclass's
+prototype. A constructor that returns an object returns that object, and
+one that returns anything else returns the instance. An arrow has no
+`[[Construct]]`. -/
+def construct (f : Value) (newTarget : Value) (args : List Value) : EvalM Value :=
   match f with
   | .prim _ => throwJsError .typeError "not a constructor"
   | .obj r => do
@@ -1355,20 +1411,16 @@ def construct (f : Value) (args : List Value) : EvalM Value :=
     | some (.native (.errorCtor k)) => do
       -- The native answers the object it was handed, so the
       -- return-object rule below holds trivially and is not written out.
-      let fresh ← allocFromConstructor f
+      let fresh ← allocFromConstructor newTarget k.protoRef
       callNative (.errorCtor k) (.obj fresh) args
     | some (.native n) =>
-      -- `Object`, `Array`, and the two wrappers allocate their own
-      -- instance against the intrinsic prototype, so `new` hands them no
-      -- receiver at all and NewTarget's `prototype` is ignored;
-      -- subclassing is #384's.
-      if n.constructs then constructNative n args
+      if n.constructs then constructNative n newTarget args
       else throwJsError .typeError "not a constructor"
     | some (.closure c) =>
       match c.kind with
       | .arrow => throwJsError .typeError "not a constructor"
       | .ordinary => do
-        let fresh ← allocFromConstructor f
+        let fresh ← allocFromConstructor newTarget objectProtoRef
         match ← callFunction f (.obj fresh) args with
         | .obj result => pure (.obj result)
         | .prim _ => pure (.obj fresh)

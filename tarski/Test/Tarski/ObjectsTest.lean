@@ -103,6 +103,19 @@ private def declareP : List Stmt :=
 
 /-! ## What `new` answers -/
 
+-- `function F() {} F.prototype = 1; new F() instanceof Object;` —
+-- GetPrototypeFromConstructor's fallback. When NewTarget's `prototype`
+-- is not an object the instance is linked to `Object.prototype`, which
+-- is the specification's default and what #384 changed it to; before
+-- that the instance had a null prototype and this answered `false`.
+-- `Object.getPrototypeOf` is #389's, so `instanceof` is how the link is
+-- observed.
+#guard outcome
+    [ .funcDecl "F" [] [],
+      .exprStmt (.assign (.member (.ident "F") "prototype") (.numLit 1.0)),
+      .exprStmt (.binary .instanceof (.new (.ident "F") []) (.ident "Object")) ]
+  == "true"
+
 -- `function F() { this.x = 1; } new F().x;` — the instance, with the
 -- constructor's writes on it.
 #guard outcome
