@@ -153,12 +153,21 @@ jobs:
           test "$out" = "true" || { echo "expected true, got $out"; exit 1; }
 
       # The four class fixtures `lakatos prove` proves `Theorem`s over,
-      # stripped of their types and of two constructor defaults (#393's),
-      # with each `@ensures` instantiated at one witness. This is the
-      # fragment the prover's own tests assume the evaluator agrees with.
+      # stripped of their types, with each `@ensures` instantiated at one
+      # witness. This is the fragment the prover's own tests assume the
+      # evaluator agrees with.
       - name: Run the emitter fixtures
         run: |
           out=$(.lake/build/bin/tarski run Test/Tarski/fixtures/emitter-classes.json)
+          test "$out" = "true" || { echo "expected true, got $out"; exit 1; }
+
+      # #393's example: a hoisted function read by `typeof` ahead of its
+      # own text, `arguments.length`, a labelled `continue` through a
+      # `switch`, and the dead zone at script level caught as a
+      # `ReferenceError`.
+      - name: Run the hoisting-arguments script
+        run: |
+          out=$(.lake/build/bin/tarski run Test/Tarski/fixtures/hoisting-arguments.json)
           test "$out" = "true" || { echo "expected true, got $out"; exit 1; }
 
       # And what an uncaught throw looks like from outside: the report on
@@ -219,7 +228,8 @@ jobs:
       # direction fails until it is written down.
       - name: test262 PR-gated slice
         # The two class directories #384 joined are about five thousand
-        # tests on their own, which roughly doubled the step's wall clock.
+        # tests on their own, which roughly doubled the step's wall clock,
+        # and #393's fifteen add about 2,600 more. Three minutes locally.
         timeout-minutes: 20
         run: |
           node ../dist/tarski/frontend/src/test262/cli.js \

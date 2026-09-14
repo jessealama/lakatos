@@ -95,18 +95,6 @@ private def checkFunctionFlags (j : Json) (label : String) : DecodeM Unit := do
   if ← boolField j "async" then .error (.unsupported s!"{label} async")
   if ← boolField j "generator" then .error (.unsupported s!"{label} generator")
 
-/-- A parameter list. Only a plain identifier is in the slice; anything
-else arrived as the bridge's placeholder and names the kind it stood
-for, so a default parameter is refused as `Parameter` and a destructured
-one as its pattern. -/
-private def decodeParams : List Json → DecodeM (List String)
-  | [] => pure []
-  | p :: rest => do
-    match ← nodeType p with
-    | "Identifier" => pure ((← strField p "name") :: (← decodeParams rest))
-    | "Unsupported" => .error (.unsupported (← strField p "kind"))
-    | other => bad s!"parameter is a {other}"
-
 /-- A `VariableDeclaration`'s keyword. `var` joined the slice with the
 `for` loop that needed it; every other spelling — there is none in ESTree
 — names itself. -/
@@ -327,6 +315,30 @@ partial def optExpr (j : Json) (name : String) : DecodeM (Option Expr) := do
   | none => pure none
   | some e => pure (some (← decodeExpr e))
 
+/-- A parameter list. A plain identifier and an `AssignmentPattern` over
+one are in the slice; anything else arrived as the bridge's placeholder
+and names the kind it stood for, so a rest parameter is refused as
+`Parameter` and a destructured one as its pattern. An
+`AssignmentPattern` whose `left` is not an `Identifier` is a binding
+pattern with a default, which the bridge refuses whole, so reaching it
+here is a broken producer rather than a program outside the slice. -/
+partial def decodeParams : List Json → DecodeM (List Param)
+  | [] => pure []
+  | p :: rest => do
+    match ← nodeType p with
+    | "Identifier" =>
+      pure ({ name := ← strField p "name", default := none } :: (← decodeParams rest))
+    | "AssignmentPattern" =>
+      let left ← field p "left"
+      match ← nodeType left with
+      | "Identifier" =>
+        let name ← strField left "name"
+        let d ← decodeExpr (← field p "right")
+        pure ({ name, default := some d } :: (← decodeParams rest))
+      | other => bad s!"AssignmentPattern left is a {other}"
+    | "Unsupported" => .error (.unsupported (← strField p "kind"))
+    | other => bad s!"parameter is a {other}"
+
 /-- An object literal's members. A numeric key is admitted by the schema
 and refused here: `{ 1: x }` would need ToPropertyKey at parse time, and
 the slice's keys are written keys. -/
@@ -457,6 +469,10 @@ partial def decodeStmt (j : Json) : DecodeM Stmt := do
     | none => pure (.ifStmt test consequent none)
   | "WhileStatement" =>
     pure (.whileStmt (← decodeExpr (← field j "test")) (← decodeStmt (← field j "body")))
+  | "DoWhileStatement" =>
+    -- The body comes first here as it does in the source: it runs before
+    -- the first test, which is the whole of the difference from `while`.
+    pure (.doWhileStmt (← decodeStmt (← field j "body")) (← decodeExpr (← field j "test")))
   | "ForStatement" =>
     let init ← match ← optField j "init" with
       | none => pure none

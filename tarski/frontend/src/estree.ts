@@ -55,6 +55,19 @@ export interface Literal {
   raw: string;
 }
 
+/** A parameter with a default. ESTree spells `function f(x = 1) {}`'s
+ * parameter this way; `left` is the parameter's name and `right` the
+ * initializer, which runs only when the argument is `undefined`. A
+ * binding pattern on the left is outside the slice, so the whole
+ * parameter is `Unsupported` instead, and an assignment pattern as a
+ * *destructuring target* is #394's — this node appears only in a
+ * parameter list. */
+export interface AssignmentPattern {
+  type: "AssignmentPattern";
+  left: Identifier;
+  right: Expression;
+}
+
 export interface UnaryExpression {
   type: "UnaryExpression";
   operator: string;
@@ -143,7 +156,7 @@ export interface ObjectExpression {
 export interface FunctionExpression {
   type: "FunctionExpression";
   id: Identifier | null;
-  params: (Identifier | Unsupported)[];
+  params: (Identifier | AssignmentPattern | Unsupported)[];
   body: BlockStatement;
   async: boolean;
   generator: boolean;
@@ -152,7 +165,7 @@ export interface FunctionExpression {
 export interface ArrowFunctionExpression {
   type: "ArrowFunctionExpression";
   id: null;
-  params: (Identifier | Unsupported)[];
+  params: (Identifier | AssignmentPattern | Unsupported)[];
   body: BlockStatement | Expression;
   expression: boolean;
   async: boolean;
@@ -265,6 +278,15 @@ export interface WhileStatement {
   body: Statement;
 }
 
+/** `do { … } while (…)`. The body runs before the first test, which is
+ * the whole of the difference from `while`; the body is named first here
+ * as it is in the source. */
+export interface DoWhileStatement {
+  type: "DoWhileStatement";
+  body: Statement;
+  test: Expression;
+}
+
 export interface EmptyStatement {
   type: "EmptyStatement";
 }
@@ -297,7 +319,7 @@ export interface BlockStatement {
 export interface FunctionDeclaration {
   type: "FunctionDeclaration";
   id: Identifier;
-  params: (Identifier | Unsupported)[];
+  params: (Identifier | AssignmentPattern | Unsupported)[];
   body: BlockStatement;
   async: boolean;
   generator: boolean;
@@ -350,6 +372,7 @@ export type Statement =
   | ReturnStatement
   | IfStatement
   | WhileStatement
+  | DoWhileStatement
   | ForStatement
   | SwitchStatement
   | EmptyStatement
@@ -477,28 +500,41 @@ function declarationName(node: ts.FunctionDeclaration): string {
   return node.name ? node.name.text : "";
 }
 
-/** The parts every function form shares. A parameter with a default or a
- * rest marker is refused as the `Parameter` it is; a binding pattern is
- * refused as the pattern and a parameter property as its modifier, which
- * are the more useful names. Either way only the parameter leaves the
- * slice, not the function. */
+/** The parts every function form shares. A named parameter with a
+ * default becomes an `AssignmentPattern`; a rest marker is refused as the
+ * `Parameter` it is, a binding pattern as the pattern, and a parameter
+ * property as its modifier, which are the more useful names. Either way
+ * only the parameter leaves the slice, not the function. */
 function functionParts(
   node: ts.FunctionDeclaration | ts.FunctionExpression | ts.ArrowFunction,
+  sf: ts.SourceFile,
 ): {
-  params: (Identifier | Unsupported)[];
+  params: (Identifier | AssignmentPattern | Unsupported)[];
   async: boolean;
   generator: boolean;
 } {
-  const params = node.parameters.map((p): Identifier | Unsupported => {
-    if (p.initializer || p.dotDotDotToken) return unsupported(p);
-    // A parameter property — `constructor(public x) {}` — declares and
-    // assigns a field, which is not something the parameter's name says,
-    // so the modifier itself is what leaves the slice.
-    const modifier = (ts.getModifiers(p) ?? [])[0];
-    if (modifier) return unsupported(modifier);
-    if (!ts.isIdentifier(p.name)) return unsupported(p.name);
-    return { type: "Identifier", name: p.name.text };
-  });
+  const params = node.parameters.map(
+    (p): Identifier | AssignmentPattern | Unsupported => {
+      if (p.dotDotDotToken) return unsupported(p);
+      // A parameter property — `constructor(public x) {}` — declares and
+      // assigns a field, which is not something the parameter's name says,
+      // so the modifier itself is what leaves the slice.
+      const modifier = (ts.getModifiers(p) ?? [])[0];
+      if (modifier) return unsupported(modifier);
+      // A binding pattern with a default is refused whole: the Lean
+      // decoder only reads an `AssignmentPattern` whose `left` is a name.
+      if (!ts.isIdentifier(p.name))
+        return p.initializer ? unsupported(p) : unsupported(p.name);
+      const name: Identifier = { type: "Identifier", name: p.name.text };
+      if (p.initializer)
+        return {
+          type: "AssignmentPattern",
+          left: name,
+          right: expression(p.initializer, sf),
+        };
+      return name;
+    },
+  );
   const isAsync = (node.modifiers ?? []).some(
     (m) => m.kind === ts.SyntaxKind.AsyncKeyword,
   );
@@ -570,7 +606,7 @@ function classMember(
   if (offending) return unsupported(offending);
   if (ts.isConstructorDeclaration(m)) {
     if (!m.body) return unsupported(m);
-    const parts = functionParts(m as unknown as ts.FunctionExpression);
+    const parts = functionParts(m as unknown as ts.FunctionExpression, sf);
     return {
       type: "MethodDefinition",
       key: { type: "Identifier", name: "constructor" },
@@ -603,7 +639,7 @@ function classMember(
     if (!m.body) return unsupported(m);
     const key = memberKey(m.name, sf);
     if (!key) return unsupported(m.name);
-    const parts = functionParts(m as unknown as ts.FunctionExpression);
+    const parts = functionParts(m as unknown as ts.FunctionExpression, sf);
     return {
       type: "MethodDefinition",
       key,
@@ -819,7 +855,7 @@ function expression(node: ts.Expression, sf: ts.SourceFile): Expression {
     };
   }
   if (ts.isFunctionExpression(node)) {
-    const parts = functionParts(node);
+    const parts = functionParts(node, sf);
     return {
       type: "FunctionExpression",
       id: node.name ? { type: "Identifier", name: node.name.text } : null,
@@ -830,7 +866,7 @@ function expression(node: ts.Expression, sf: ts.SourceFile): Expression {
     };
   }
   if (ts.isArrowFunction(node)) {
-    const parts = functionParts(node);
+    const parts = functionParts(node, sf);
     const concise = !ts.isBlock(node.body);
     return {
       type: "ArrowFunctionExpression",
@@ -1025,7 +1061,7 @@ function statement(node: ts.Statement, sf: ts.SourceFile): Statement {
     return { type: "ClassDeclaration", id, superClass, body };
   }
   if (ts.isFunctionDeclaration(node)) {
-    const parts = functionParts(node);
+    const parts = functionParts(node, sf);
     return {
       type: "FunctionDeclaration",
       id: { type: "Identifier", name: declarationName(node) },
@@ -1054,6 +1090,13 @@ function statement(node: ts.Statement, sf: ts.SourceFile): Statement {
       type: "WhileStatement",
       test: expression(node.expression, sf),
       body: statement(node.statement, sf),
+    };
+  }
+  if (ts.isDoStatement(node)) {
+    return {
+      type: "DoWhileStatement",
+      body: statement(node.statement, sf),
+      test: expression(node.expression, sf),
     };
   }
   if (ts.isForStatement(node)) {

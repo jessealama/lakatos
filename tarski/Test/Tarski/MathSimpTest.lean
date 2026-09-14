@@ -30,7 +30,12 @@ private def program : Program :=
 attribute [local simp] evalExpr evalExprs evalStmt evalStmts evalDeclarators
   instantiateBlock hoistNames hoistDeclarators initFunctions
   varNames varNamesStmt varNamesCases hoistVars putIdent applyCoercing
-  callFunction callNative catchReturn makeFunction bindParams pushElements
+  callFunction callNative catchReturn makeFunction instantiateFunction allocParams initParams hoistVarsFrom
+  Param.names hasDefaults expectedArgumentCount Value.ofNat mentionsArguments
+  mentionsArgumentsExpr mentionsArgumentsExprs mentionsArgumentsProps
+  mentionsArgumentsTarget mentionsArgumentsArrow mentionsArgumentsParams
+  mentionsArgumentsClass mentionsArgumentsStmts mentionsArgumentsStmt
+  mentionsArgumentsForInit mentionsArgumentsDecls mentionsArgumentsCases pushElements
   newObject newArray newArrayOfLength Obj.array indexProps
   Value.ofNat Obj.truncate Obj.ownKeys Obj.isArray Obj.hasOwn
   NativeFn.constructs getProp setProp getFrom findAccessor

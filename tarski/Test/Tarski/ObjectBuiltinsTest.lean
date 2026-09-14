@@ -153,10 +153,11 @@ private def keysOf (e : Expr) : Expr := .call (.member (.ident "Object") "keys")
   == "uncaught: TypeError: Cannot convert undefined or null to object"
 
 -- `Object.keys(function f() {}).join();` — pinned as pre-#389: an
--- engine hides `prototype` with an attribute this slice does not have.
+-- engine hides `length` and `prototype` with an attribute this slice
+-- does not have.
 #guard outcome
     (expr (.call (.member (keysOf (.funcExpr (some "f") [] [])) "join") []))
-  == "prototype"
+  == "length,prototype"
 
 /-! ## `Object` as a function and as a constructor
 

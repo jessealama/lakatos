@@ -746,8 +746,16 @@
               "id": null,
               "params": [
                 {
-                  "type": "Identifier",
-                  "name": "x"
+                  "type": "AssignmentPattern",
+                  "left": {
+                    "type": "Identifier",
+                    "name": "x"
+                  },
+                  "right": {
+                    "type": "Literal",
+                    "value": 0,
+                    "raw": "0"
+                  }
                 }
               ],
               "body": {
@@ -1092,8 +1100,75 @@
                 "type": "LogicalExpression",
                 "operator": "&&",
                 "left": {
-                  "type": "Identifier",
-                  "name": "ok"
+                  "type": "LogicalExpression",
+                  "operator": "&&",
+                  "left": {
+                    "type": "Identifier",
+                    "name": "ok"
+                  },
+                  "right": {
+                    "type": "CallExpression",
+                    "callee": {
+                      "type": "MemberExpression",
+                      "object": {
+                        "type": "Identifier",
+                        "name": "Object"
+                      },
+                      "property": {
+                        "type": "Identifier",
+                        "name": "is"
+                      },
+                      "computed": false
+                    },
+                    "arguments": [
+                      {
+                        "type": "CallExpression",
+                        "callee": {
+                          "type": "MemberExpression",
+                          "object": {
+                            "type": "NewExpression",
+                            "callee": {
+                              "type": "Identifier",
+                              "name": "Point"
+                            },
+                            "arguments": [
+                              {
+                                "type": "Literal",
+                                "value": 3,
+                                "raw": "3"
+                              }
+                            ]
+                          },
+                          "property": {
+                            "type": "Identifier",
+                            "name": "gap"
+                          },
+                          "computed": false
+                        },
+                        "arguments": [
+                          {
+                            "type": "NewExpression",
+                            "callee": {
+                              "type": "Identifier",
+                              "name": "Point"
+                            },
+                            "arguments": [
+                              {
+                                "type": "Literal",
+                                "value": 3,
+                                "raw": "3"
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "type": "Literal",
+                        "value": 0,
+                        "raw": "0"
+                      }
+                    ]
+                  }
                 },
                 "right": {
                   "type": "CallExpression",
@@ -1130,7 +1205,7 @@
                         },
                         "property": {
                           "type": "Identifier",
-                          "name": "gap"
+                          "name": "twice"
                         },
                         "computed": false
                       },
@@ -1175,50 +1250,40 @@
                 },
                 "arguments": [
                   {
-                    "type": "CallExpression",
-                    "callee": {
-                      "type": "MemberExpression",
-                      "object": {
-                        "type": "NewExpression",
-                        "callee": {
-                          "type": "Identifier",
-                          "name": "Point"
-                        },
-                        "arguments": [
-                          {
-                            "type": "Literal",
-                            "value": 3,
-                            "raw": "3"
-                          }
-                        ]
-                      },
-                      "property": {
+                    "type": "MemberExpression",
+                    "object": {
+                      "type": "NewExpression",
+                      "callee": {
                         "type": "Identifier",
-                        "name": "twice"
+                        "name": "Wrap"
                       },
-                      "computed": false
+                      "arguments": [
+                        {
+                          "type": "NewExpression",
+                          "callee": {
+                            "type": "Identifier",
+                            "name": "Point"
+                          },
+                          "arguments": [
+                            {
+                              "type": "Literal",
+                              "value": 5,
+                              "raw": "5"
+                            }
+                          ]
+                        }
+                      ]
                     },
-                    "arguments": [
-                      {
-                        "type": "NewExpression",
-                        "callee": {
-                          "type": "Identifier",
-                          "name": "Point"
-                        },
-                        "arguments": [
-                          {
-                            "type": "Literal",
-                            "value": 3,
-                            "raw": "3"
-                          }
-                        ]
-                      }
-                    ]
+                    "property": {
+                      "type": "Identifier",
+                      "name": "v"
+                    },
+                    "computed": false
                   },
                   {
                     "type": "Literal",
-                    "value": 0,
-                    "raw": "0"
+                    "value": 5,
+                    "raw": "5"
                   }
                 ]
               }
@@ -1239,40 +1304,32 @@
               },
               "arguments": [
                 {
-                  "type": "MemberExpression",
-                  "object": {
-                    "type": "NewExpression",
-                    "callee": {
-                      "type": "Identifier",
-                      "name": "Wrap"
-                    },
-                    "arguments": [
-                      {
-                        "type": "NewExpression",
-                        "callee": {
-                          "type": "Identifier",
-                          "name": "Point"
-                        },
-                        "arguments": [
-                          {
-                            "type": "Literal",
-                            "value": 5,
-                            "raw": "5"
-                          }
-                        ]
-                      }
-                    ]
-                  },
-                  "property": {
+                  "type": "CallExpression",
+                  "callee": {
                     "type": "Identifier",
-                    "name": "v"
+                    "name": "readX"
                   },
-                  "computed": false
+                  "arguments": [
+                    {
+                      "type": "NewExpression",
+                      "callee": {
+                        "type": "Identifier",
+                        "name": "Point"
+                      },
+                      "arguments": [
+                        {
+                          "type": "Literal",
+                          "value": 7,
+                          "raw": "7"
+                        }
+                      ]
+                    }
+                  ]
                 },
                 {
                   "type": "Literal",
-                  "value": 5,
-                  "raw": "5"
+                  "value": 7,
+                  "raw": "7"
                 }
               ]
             }
@@ -1293,32 +1350,25 @@
             },
             "arguments": [
               {
-                "type": "CallExpression",
-                "callee": {
-                  "type": "Identifier",
-                  "name": "readX"
+                "type": "MemberExpression",
+                "object": {
+                  "type": "NewExpression",
+                  "callee": {
+                    "type": "Identifier",
+                    "name": "Point"
+                  },
+                  "arguments": []
                 },
-                "arguments": [
-                  {
-                    "type": "NewExpression",
-                    "callee": {
-                      "type": "Identifier",
-                      "name": "Point"
-                    },
-                    "arguments": [
-                      {
-                        "type": "Literal",
-                        "value": 7,
-                        "raw": "7"
-                      }
-                    ]
-                  }
-                ]
+                "property": {
+                  "type": "Identifier",
+                  "name": "x"
+                },
+                "computed": false
               },
               {
                 "type": "Literal",
-                "value": 7,
-                "raw": "7"
+                "value": 0,
+                "raw": "0"
               }
             ]
           }
@@ -2000,8 +2050,16 @@
                   "name": "n"
                 },
                 {
-                  "type": "Identifier",
-                  "name": "on"
+                  "type": "AssignmentPattern",
+                  "left": {
+                    "type": "Identifier",
+                    "name": "on"
+                  },
+                  "right": {
+                    "type": "Literal",
+                    "value": false,
+                    "raw": "false"
+                  }
                 }
               ],
               "body": {
@@ -2138,8 +2196,47 @@
                 "type": "LogicalExpression",
                 "operator": "&&",
                 "left": {
-                  "type": "Identifier",
-                  "name": "ok"
+                  "type": "LogicalExpression",
+                  "operator": "&&",
+                  "left": {
+                    "type": "Identifier",
+                    "name": "ok"
+                  },
+                  "right": {
+                    "type": "BinaryExpression",
+                    "operator": ">=",
+                    "left": {
+                      "type": "CallExpression",
+                      "callee": {
+                        "type": "MemberExpression",
+                        "object": {
+                          "type": "NewExpression",
+                          "callee": {
+                            "type": "Identifier",
+                            "name": "Flag"
+                          },
+                          "arguments": [
+                            {
+                              "type": "Literal",
+                              "value": true,
+                              "raw": "true"
+                            }
+                          ]
+                        },
+                        "property": {
+                          "type": "Identifier",
+                          "name": "level"
+                        },
+                        "computed": false
+                      },
+                      "arguments": []
+                    },
+                    "right": {
+                      "type": "Literal",
+                      "value": 0,
+                      "raw": "0"
+                    }
+                  }
                 },
                 "right": {
                   "type": "BinaryExpression",
@@ -2147,8 +2244,11 @@
                   "left": {
                     "type": "CallExpression",
                     "callee": {
-                      "type": "MemberExpression",
-                      "object": {
+                      "type": "Identifier",
+                      "name": "pick"
+                    },
+                    "arguments": [
+                      {
                         "type": "NewExpression",
                         "callee": {
                           "type": "Identifier",
@@ -2157,18 +2257,12 @@
                         "arguments": [
                           {
                             "type": "Literal",
-                            "value": true,
-                            "raw": "true"
+                            "value": false,
+                            "raw": "false"
                           }
                         ]
-                      },
-                      "property": {
-                        "type": "Identifier",
-                        "name": "level"
-                      },
-                      "computed": false
-                    },
-                    "arguments": []
+                      }
+                    ]
                   },
                   "right": {
                     "type": "Literal",
@@ -2184,9 +2278,14 @@
                   "type": "CallExpression",
                   "callee": {
                     "type": "Identifier",
-                    "name": "pick"
+                    "name": "read"
                   },
                   "arguments": [
+                    {
+                      "type": "Literal",
+                      "value": 3,
+                      "raw": "3"
+                    },
                     {
                       "type": "NewExpression",
                       "callee": {
@@ -2196,8 +2295,8 @@
                       "arguments": [
                         {
                           "type": "Literal",
-                          "value": false,
-                          "raw": "false"
+                          "value": true,
+                          "raw": "true"
                         }
                       ]
                     }
@@ -2216,30 +2315,33 @@
               "left": {
                 "type": "CallExpression",
                 "callee": {
-                  "type": "Identifier",
-                  "name": "read"
-                },
-                "arguments": [
-                  {
-                    "type": "Literal",
-                    "value": 3,
-                    "raw": "3"
-                  },
-                  {
+                  "type": "MemberExpression",
+                  "object": {
                     "type": "NewExpression",
                     "callee": {
                       "type": "Identifier",
-                      "name": "Flag"
+                      "name": "Switch"
                     },
                     "arguments": [
                       {
                         "type": "Literal",
-                        "value": true,
-                        "raw": "true"
+                        "value": 1,
+                        "raw": "1"
+                      },
+                      {
+                        "type": "Literal",
+                        "value": false,
+                        "raw": "false"
                       }
                     ]
-                  }
-                ]
+                  },
+                  "property": {
+                    "type": "Identifier",
+                    "name": "level"
+                  },
+                  "computed": false
+                },
+                "arguments": []
               },
               "right": {
                 "type": "Literal",
@@ -2250,7 +2352,7 @@
           },
           "right": {
             "type": "BinaryExpression",
-            "operator": ">=",
+            "operator": "===",
             "left": {
               "type": "CallExpression",
               "callee": {
@@ -2264,13 +2366,8 @@
                   "arguments": [
                     {
                       "type": "Literal",
-                      "value": 1,
-                      "raw": "1"
-                    },
-                    {
-                      "type": "Literal",
-                      "value": false,
-                      "raw": "false"
+                      "value": 0,
+                      "raw": "0"
                     }
                   ]
                 },

@@ -28,7 +28,12 @@ private def program : Program :=
 attribute [local simp] evalExpr evalExprs evalStmt evalStmts evalDeclarators
   instantiateBlock hoistNames hoistDeclarators initFunctions
   varNames varNamesStmt varNamesCases hoistVars
-  callFunction catchReturn makeFunction bindParams
+  callFunction catchReturn makeFunction instantiateFunction allocParams initParams hoistVarsFrom
+  Param.names hasDefaults expectedArgumentCount Value.ofNat mentionsArguments
+  mentionsArgumentsExpr mentionsArgumentsExprs mentionsArgumentsProps
+  mentionsArgumentsTarget mentionsArgumentsArrow mentionsArgumentsParams
+  mentionsArgumentsClass mentionsArgumentsStmts mentionsArgumentsStmt
+  mentionsArgumentsForInit mentionsArgumentsDecls mentionsArgumentsCases
   evalBlock attempt liftCompletion
   applyBinary toPrimitive BinaryOp.coerces applyCoercing toNumberPrim toBooleanPrim isStrPrim
   allocCell getCell readCell writeCell initCell putIdent

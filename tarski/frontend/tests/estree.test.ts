@@ -28,7 +28,7 @@ const FIXTURES = [
   "factorial",
   "prototype-chain",
   "arrow-this",
-  "unsupported-default-param",
+  "default-param",
   "errors",
   "uncaught",
   "labeled-loops",
@@ -41,6 +41,7 @@ const FIXTURES = [
   "number-conversions",
   "class-box",
   "emitter-classes",
+  "hoisting-arguments",
 ];
 
 describe("parseScript", () => {
@@ -881,7 +882,8 @@ describe("parseScript", () => {
 
   // A parameter outside the slice is refused alone: the function node
   // survives, which is what lets the decoder say `Parameter` rather than
-  // `FunctionDeclaration`.
+  // `FunctionDeclaration`. A default is in the slice now, so `Parameter`
+  // means a rest parameter.
   it("replaces an out-of-slice parameter in place", () => {
     const program = parseScript(
       '"use strict";\nfunction f(a, b = 1, ...r) {}\nfunction g({ a }) {}\n',
@@ -890,12 +892,49 @@ describe("parseScript", () => {
     expect(program.body[1]).toMatchObject({
       params: [
         { type: "Identifier", name: "a" },
-        { type: "Unsupported", kind: "Parameter" },
+        {
+          type: "AssignmentPattern",
+          left: { type: "Identifier", name: "b" },
+          right: { type: "Literal", value: 1 },
+        },
         { type: "Unsupported", kind: "Parameter" },
       ],
     });
     expect(program.body[2]).toMatchObject({
       params: [{ type: "Unsupported", kind: "ObjectBindingPattern" }],
+    });
+    validate(program);
+  });
+
+  // A binding pattern *with* a default leaves the slice whole: the schema
+  // gives an AssignmentPattern an Identifier `left`, so there is nowhere
+  // for the pattern to go.
+  it("refuses a defaulted binding pattern as one parameter", () => {
+    const program = parseScript(
+      '"use strict";\nfunction f({ a } = {}) {}\n',
+      "dp.js",
+    );
+    expect(program.body[1]).toMatchObject({
+      params: [{ type: "Unsupported", kind: "Parameter" }],
+    });
+    validate(program);
+  });
+
+  // Every function form takes a default, not only a declaration.
+  it("gives an arrow and a constructor the same AssignmentPattern", () => {
+    const program = parseScript(
+      '"use strict";\nconst f = (x = 1) => x;\nclass A { constructor(x = 0) {} }\n',
+      "dd.js",
+    );
+    const pattern = {
+      type: "AssignmentPattern",
+      left: { type: "Identifier", name: "x" },
+    };
+    expect(program.body[1]).toMatchObject({
+      declarations: [{ init: { params: [pattern] } }],
+    });
+    expect(program.body[2]).toMatchObject({
+      body: { body: [{ value: { params: [pattern] } }] },
     });
     validate(program);
   });
@@ -1112,15 +1151,29 @@ describe("parseScript", () => {
     validate(program);
   });
 
-  // The three loop forms that are not in the slice, each named by its own
+  // The two loop forms that are not in the slice, each named by its own
   // tsc kind so the runner's histogram says which one to land next.
   it.each([
-    ["do {} while (x);", "DoStatement"],
     ["for (k in o) ;", "ForInStatement"],
     ["for (x of xs) ;", "ForOfStatement"],
   ])("refuses %s as %s", (source, kind) => {
     const program = parseScript(`"use strict";\n${source}\n`, "l.js");
     expect(program.body[1]).toEqual({ type: "Unsupported", kind });
+    validate(program);
+  });
+
+  // `do`/`while` is in the slice: the body comes first, as it does in
+  // the source.
+  it("emits a DoWhileStatement with the body ahead of the test", () => {
+    const program = parseScript(
+      '"use strict";\ndo { x++; } while (x < 3);\n',
+      "d.js",
+    );
+    expect(program.body[1]).toMatchObject({
+      type: "DoWhileStatement",
+      body: { type: "BlockStatement" },
+      test: { type: "BinaryExpression", operator: "<" },
+    });
     validate(program);
   });
 
@@ -1375,6 +1428,48 @@ describe("the schema as the seam", () => {
               type: "CallExpression",
               callee: { type: "Identifier", name: "f" },
             },
+          },
+        ],
+      },
+    ],
+    [
+      "an AssignmentPattern whose left is a MemberExpression",
+      {
+        type: "Program",
+        sourceType: "script",
+        body: [
+          {
+            type: "FunctionDeclaration",
+            id: { type: "Identifier", name: "f" },
+            params: [
+              {
+                type: "AssignmentPattern",
+                left: {
+                  type: "MemberExpression",
+                  object: { type: "Identifier", name: "o" },
+                  property: { type: "Identifier", name: "x" },
+                  computed: false,
+                },
+                right: { type: "Literal", value: 1, raw: "1" },
+              },
+            ],
+            body: { type: "BlockStatement", body: [] },
+            async: false,
+            generator: false,
+          },
+        ],
+      },
+    ],
+    [
+      "an AssignmentPattern as a Statement",
+      {
+        type: "Program",
+        sourceType: "script",
+        body: [
+          {
+            type: "AssignmentPattern",
+            left: { type: "Identifier", name: "x" },
+            right: { type: "Literal", value: 1, raw: "1" },
           },
         ],
       },

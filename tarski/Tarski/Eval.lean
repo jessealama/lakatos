@@ -14,8 +14,8 @@ non-terminating program is `none`, not an axiom.
 The non-recursive helpers live outside the `mutual` block on purpose:
 their equations are ordinary and `simp` may use them freely. Five of the
 recursive ones are never added to a simp set and are unfolded one step at
-a time with `rw`: `evalWhile`, `evalFor`, `getFromUp`, `findAccessorUp`,
-and `joinElements`. The rule is not "recursive" but "recursive on something
+a time with `rw`: `evalWhile`, `evalDoWhile`, `evalFor`, `getFromUp`,
+`findAccessorUp`, and `joinElements`. The rule is not "recursive" but "recursive on something
 other than syntax" — `evalExpr` and its neighbours recurse on a concrete
 AST, which runs out, while a loop recurses until a heap value says stop,
 a prototype walk until a heap link does, and a join until an array's
@@ -49,6 +49,19 @@ until its declaration runs. `evalClass` is ClassDefinitionEvaluation,
 `constructClass` a class constructor's `[[Construct]]`, and a field is a
 *definition* — never a write — evaluated per instance after `super()`
 has returned.
+
+FunctionDeclarationInstantiation (10.2.11) is `instantiateFunction`, the
+one place a call's scope is built. Parameters are cells in a dead zone of
+their own, initialized left to right, so a default may read a parameter
+to its left and not one to its right. With an initializer present the
+`var`s get a scope of their own whose cells start from the parameters'
+values (step 28); without one they share the parameters' cells (step
+27). `arguments` is a source name bound to an immutable cell when — and
+only when — the function's own code spells it, which `mentionsArguments`
+decides once per function object; without `eval` and the `Function`
+constructor, both outside this epic, an unspelled `arguments` cannot be
+observed. A function's `length` is ExpectedArgumentCount, an own data
+property `makeFunction` and `evalClass` define.
 
 A `var` is instantiated somewhere else and at another time. `varNames`
 collects VarDeclaredNames over a whole function body or script — through
@@ -104,6 +117,7 @@ new refusal is written against a list rather than invented.
 | a private read on an object without the element    | `TypeError`      | `Cannot read private member #{name} from an object whose class did not declare it` |
 | a private write on an object without the element   | `TypeError`      | `Cannot write private member #{name} to an object whose class did not declare it` |
 | a private field initialized twice                  | `TypeError`      | `Cannot initialize #{name} twice on the same object`          |
+| `arguments.callee` read or written                 | `TypeError`      | `'caller', 'callee', and 'arguments' properties may not be accessed on strict mode functions or the arguments objects for calls to them` |
 
 The two `SyntaxError`s stand in for early errors the epic does not
 check: they are raised where the construct is *used* rather than where
@@ -402,12 +416,19 @@ pushed by a call to a function that has one. -/
 def homeName : String := "%home"
 
 /-- NewTarget's binding, spelled as the meta-property itself so that
-#393's `MetaProperty` node reads the cell as it stands. -/
+#486's `MetaProperty` node reads the cell as it stands. -/
 def newTargetName : String := "new.target"
 
 /-- The running class constructor's own function object, which is what
 `super()` reads the parent constructor off. -/
 def activeFunctionName : String := "%function"
+
+/-- The name an `arguments` object is bound under. Unlike the four
+above it *is* a source name — `arguments` is an ordinary identifier that
+a strict-mode function may not declare or assign, which is an early
+error rather than anything checked here — so the binding is pushed only
+when the function's own code spells it. -/
+def argumentsName : String := "arguments"
 
 /-- Whether a value is a function: an object with a `[[Call]]`. -/
 def isCallable (v : Value) : EvalM Bool := do
@@ -439,14 +460,195 @@ def typeofValue (v : Value) : EvalM String := do
   | .prim p => pure (typeofName p.typeof)
   | .obj r => pure (if (← readObj r).callable.isSome then "function" else "object")
 
+mutual
+
+/-- ContainsArguments (10.2.11 step 18 reads it through
+CreateUnmappedArgumentsObject's guard) over this AST: whether a
+function's own code spells the name `arguments` anywhere in its
+parameters' initializers or its body.
+
+It descends into an arrow — an arrow has no `arguments` of its own, so
+one inside a function body is the function's — and into a class's
+`extends` expression, which is evaluated where the class is written. It
+stops at a `funcExpr`, a `funcDecl`, and every element of a class body,
+each of which has an `arguments` of its own; an `arguments` in a field
+initializer is an early error, which this epic does not check.
+
+Pure and structural, so a call still reduces under `simp`. -/
+def mentionsArgumentsExpr : Expr → Bool
+  | .ident name => name == "arguments"
+  | .numLit _ | .strLit _ | .boolLit _ | .undefLit | .nullLit | .this => false
+  | .unary _ operand => mentionsArgumentsExpr operand
+  | .binary _ l r => mentionsArgumentsExpr l || mentionsArgumentsExpr r
+  | .logical _ l r => mentionsArgumentsExpr l || mentionsArgumentsExpr r
+  | .cond t c a =>
+    mentionsArgumentsExpr t || mentionsArgumentsExpr c || mentionsArgumentsExpr a
+  | .member object _ => mentionsArgumentsExpr object
+  | .index object key => mentionsArgumentsExpr object || mentionsArgumentsExpr key
+  | .privateMember object _ => mentionsArgumentsExpr object
+  | .superMember _ => false
+  | .superIndex key => mentionsArgumentsExpr key
+  | .superCall args => mentionsArgumentsExprs args
+  | .call callee args => mentionsArgumentsExpr callee || mentionsArgumentsExprs args
+  | .new callee args => mentionsArgumentsExpr callee || mentionsArgumentsExprs args
+  | .arrayLit elements => mentionsArgumentsExprs elements
+  | .objectLit props => mentionsArgumentsProps props
+  -- A function of its own: its `arguments` is its own.
+  | .funcExpr _ _ _ => false
+  | .arrow params body => mentionsArgumentsParams params || mentionsArgumentsArrow body
+  | .assign target value => mentionsArgumentsTarget target || mentionsArgumentsExpr value
+  | .compoundAssign _ target value =>
+    mentionsArgumentsTarget target || mentionsArgumentsExpr value
+  | .update _ _ target => mentionsArgumentsTarget target
+  | .classExpr cls => mentionsArgumentsClass cls
+
+/-- A list of expressions; see `mentionsArgumentsExpr`. -/
+def mentionsArgumentsExprs : List Expr → Bool
+  | [] => false
+  | e :: rest => mentionsArgumentsExpr e || mentionsArgumentsExprs rest
+
+/-- An object literal's members; see `mentionsArgumentsExpr`. -/
+def mentionsArgumentsProps : List (String × Expr) → Bool
+  | [] => false
+  | (_, e) :: rest => mentionsArgumentsExpr e || mentionsArgumentsProps rest
+
+/-- An assignment target; see `mentionsArgumentsExpr`. A bare
+`arguments = 1` is an early error in strict mode, so the target's own
+name is not what this is looking for — but its object expression is. -/
+def mentionsArgumentsTarget : Target → Bool
+  | .ident name => name == "arguments"
+  | .member object _ => mentionsArgumentsExpr object
+  | .index object key => mentionsArgumentsExpr object || mentionsArgumentsExpr key
+  | .privateMember object _ => mentionsArgumentsExpr object
+
+/-- An arrow's body; see `mentionsArgumentsExpr`. -/
+def mentionsArgumentsArrow : ArrowBody → Bool
+  | .expr value => mentionsArgumentsExpr value
+  | .block body => mentionsArgumentsStmts body
+
+/-- A parameter list's initializers; see `mentionsArgumentsExpr`. -/
+def mentionsArgumentsParams : List Param → Bool
+  | [] => false
+  | ⟨_, none⟩ :: rest => mentionsArgumentsParams rest
+  | ⟨_, some d⟩ :: rest => mentionsArgumentsExpr d || mentionsArgumentsParams rest
+
+/-- A class's heritage; see `mentionsArgumentsExpr`. The elements are
+not descended into: each has an `arguments` of its own. -/
+def mentionsArgumentsClass : ClassDef → Bool
+  | ⟨_, none, _⟩ => false
+  | ⟨_, some e, _⟩ => mentionsArgumentsExpr e
+
+/-- A statement list; see `mentionsArgumentsExpr`. -/
+def mentionsArgumentsStmts : List Stmt → Bool
+  | [] => false
+  | s :: rest => mentionsArgumentsStmt s || mentionsArgumentsStmts rest
+
+/-- One statement; see `mentionsArgumentsExpr`. -/
+def mentionsArgumentsStmt : Stmt → Bool
+  | .exprStmt value => mentionsArgumentsExpr value
+  | .varDecl _ declarators => mentionsArgumentsDecls declarators
+  -- A nested function declaration has an `arguments` of its own.
+  | .funcDecl _ _ _ => false
+  | .returnStmt none => false
+  | .returnStmt (some e) => mentionsArgumentsExpr e
+  | .ifStmt test consequent none => mentionsArgumentsExpr test || mentionsArgumentsStmt consequent
+  | .ifStmt test consequent (some alternate) =>
+    mentionsArgumentsExpr test || mentionsArgumentsStmt consequent ||
+      mentionsArgumentsStmt alternate
+  | .whileStmt test body => mentionsArgumentsExpr test || mentionsArgumentsStmt body
+  | .doWhileStmt body test => mentionsArgumentsStmt body || mentionsArgumentsExpr test
+  | .forStmt init none none body => mentionsArgumentsForInit init || mentionsArgumentsStmt body
+  | .forStmt init (some t) none body =>
+    mentionsArgumentsForInit init || mentionsArgumentsExpr t || mentionsArgumentsStmt body
+  | .forStmt init none (some u) body =>
+    mentionsArgumentsForInit init || mentionsArgumentsExpr u || mentionsArgumentsStmt body
+  | .forStmt init (some t) (some u) body =>
+    mentionsArgumentsForInit init || mentionsArgumentsExpr t || mentionsArgumentsExpr u ||
+      mentionsArgumentsStmt body
+  | .switchStmt discriminant cases =>
+    mentionsArgumentsExpr discriminant || mentionsArgumentsCases cases
+  | .empty => false
+  | .block body => mentionsArgumentsStmts body
+  | .throwStmt argument => mentionsArgumentsExpr argument
+  | .tryStmt block none none => mentionsArgumentsStmts block
+  | .tryStmt block (some ⟨_, handler⟩) none =>
+    mentionsArgumentsStmts block || mentionsArgumentsStmts handler
+  | .tryStmt block none (some finalizer) =>
+    mentionsArgumentsStmts block || mentionsArgumentsStmts finalizer
+  | .tryStmt block (some ⟨_, handler⟩) (some finalizer) =>
+    mentionsArgumentsStmts block || mentionsArgumentsStmts handler ||
+      mentionsArgumentsStmts finalizer
+  | .labeled _ body => mentionsArgumentsStmt body
+  | .breakStmt _ | .continueStmt _ => false
+  | .classDecl _ cls => mentionsArgumentsClass cls
+
+/-- A `for` head; see `mentionsArgumentsExpr`. -/
+def mentionsArgumentsForInit : Option ForInit → Bool
+  | none => false
+  | some (.decl _ declarators) => mentionsArgumentsDecls declarators
+  | some (.expr value) => mentionsArgumentsExpr value
+
+/-- A declaration's initializers; see `mentionsArgumentsExpr`. -/
+def mentionsArgumentsDecls : List Declarator → Bool
+  | [] => false
+  | ⟨_, none⟩ :: rest => mentionsArgumentsDecls rest
+  | ⟨_, some e⟩ :: rest => mentionsArgumentsExpr e || mentionsArgumentsDecls rest
+
+/-- A `switch`'s clauses; see `mentionsArgumentsExpr`. -/
+def mentionsArgumentsCases : List SwitchCase → Bool
+  | [] => false
+  | ⟨none, body⟩ :: rest => mentionsArgumentsStmts body || mentionsArgumentsCases rest
+  | ⟨some e, body⟩ :: rest =>
+    mentionsArgumentsExpr e || mentionsArgumentsStmts body || mentionsArgumentsCases rest
+
+end
+
+/-- ContainsArguments over a whole function: its parameters'
+initializers and its body. `makeFunction` and `evalClass` compute it once
+into `Closure.needsArguments`. -/
+def mentionsArguments (params : List Param) (body : List Stmt) : Bool :=
+  mentionsArgumentsParams params || mentionsArgumentsStmts body
+
+/-- CreateUnmappedArgumentsObject (10.4.4.7), which is the only kind this
+epic has: the epic is strict-mode only, and a strict function's
+`arguments` does not alias its parameters, so writing `arguments[0]` does
+not move `a` and writing `a` does not move `arguments[0]`.
+
+`length` is the *argument* count, not the parameter count. `callee` is
+an accessor whose getter and setter are both `%ThrowTypeError%`, the one
+object the realm holds for it. `@@iterator` is #392's and enumerability
+#389's, so `Object.keys` of one still lists `length` and `callee`. -/
+def makeArguments (args : List Value) : EvalM Value := do
+  let r ← allocObj
+    { proto := some objectProtoRef,
+      kind := .arguments,
+      properties := ("length", Value.ofNat args.length) :: indexProps 0 args,
+      accessors :=
+        [("callee",
+          { getter := some (.obj throwTypeErrorRef),
+            setter := some (.obj throwTypeErrorRef) })] }
+  pure (.obj r)
+
 /-- Allocate a function object. An ordinary function also gets a fresh
 `prototype` object whose `constructor` points back at it, which is what
 `new` links an instance to; an arrow gets neither, because it cannot be
 constructed. That `prototype` is an ordinary object, so it is created
 against `Object.prototype` like any other; the function object's own
-`[[Prototype]]` stays null until `Function.prototype` exists (#389). -/
+`[[Prototype]]` stays null until `Function.prototype` exists (#389).
+
+Every function gets an own `length` — ExpectedArgumentCount, so the
+parameters before the first default — and every function but an arrow
+gets `needsArguments` computed from its own text here, once, rather than
+at each call. Writability and enumerability are #389's, as they are for
+`prototype`; `name` is #389's too. -/
 def makeFunction (c : Closure) : EvalM Value := do
-  let f ← allocObj { callable := some (.closure c) }
+  let needsArguments :=
+    match c.kind with
+    | .arrow => false
+    | _ => mentionsArguments c.params c.body
+  let f ← allocObj
+    { callable := some (.closure { c with needsArguments }),
+      properties := [("length", Value.ofNat (expectedArgumentCount c.params))] }
   match c.kind with
   -- A method has no `prototype` because it cannot be constructed, and a
   -- class constructor's is built by `evalClass`, which needs the object
@@ -458,18 +660,20 @@ def makeFunction (c : Closure) : EvalM Value := do
     modifyObj f (fun o => o.setOwn "prototype" (.obj proto))
     pure (.obj f)
 
-/-- Bind a call's arguments to its parameters, positionally: a missing
-argument is `undefined` and an extra one is dropped. Parameters are
-plain identifiers here, so nothing evaluates — defaults are #393's and
-patterns #394's. Every parameter is mutable. -/
-def bindParams (env : Env) : List String → List Value → EvalM Env
-  | [], _ => pure env
-  | p :: ps, args => do
-    let (v, rest) := match args with
-      | [] => (undefValue, ([] : List Value))
-      | a :: as => (a, as)
-    let r ← allocCell { mutable := true, value := some v }
-    bindParams ((p, r) :: env) ps rest
+/-- FunctionDeclarationInstantiation step 21: a mutable, *uninitialized*
+cell per parameter name, pushed in order. The cells exist before any
+initializer runs, which is what puts a parameter in its own temporal
+dead zone — `function f(a = b, b = 1) {}` called with no arguments reads
+`b` before initialization — and what lets a default read a parameter to
+its left. `initParams` is the step that fills them; the two are separate
+because filling one may run user code and allocating cannot. Duplicate
+parameter names are a strict-mode early error, so nothing deduplicates
+here. -/
+def allocParams (env : Env) : List Param → EvalM Env
+  | [] => pure env
+  | p :: ps => do
+    let r ← allocCell { mutable := true }
+    allocParams ((p.name, r) :: env) ps
 
 /-- Pass one of block instantiation: a cell per declared name, holding
 nothing. A `let` or `const` cell stays uninitialized until its declarator
@@ -501,6 +705,7 @@ def varNamesStmt : Stmt → List String
   | .ifStmt _ consequent none => varNamesStmt consequent
   | .ifStmt _ consequent (some alternate) => varNamesStmt consequent ++ varNamesStmt alternate
   | .whileStmt _ body => varNamesStmt body
+  | .doWhileStmt body _ => varNamesStmt body
   | .forStmt (some (.decl .«var» declarators)) _ _ body =>
     declarators.map (·.name) ++ varNamesStmt body
   | .forStmt _ _ _ body => varNamesStmt body
@@ -535,6 +740,30 @@ def hoistVars (env : Env) (skip : List String) : List String → EvalM Env
     else do
       let r ← allocCell { mutable := true, value := some undefValue }
       hoistVars ((n, r) :: env) (n :: skip) rest
+
+/-- FunctionDeclarationInstantiation step 28, the branch a parameter
+list *with* an initializer takes: the `var`s get a scope of their own,
+on top of the parameters', and a name that is also a parameter starts
+from that parameter's current value rather than from `undefined`. The
+copy is what makes the separate scope observable without `eval` — in
+`function f(g = () => a, a = 1) { var a = 2; return g(); }` the closure
+the default made keeps the parameter's cell, so `f()` is 1 while the
+body's `a` ends at 2. `params` is the parameter names, `seen` the names
+this pass has already given a cell, so `var x; var x;` allocates one. -/
+def hoistVarsFrom (env : Env) (params : List String) (seen : List String) :
+    List String → EvalM Env
+  | [] => pure env
+  | n :: rest =>
+    if seen.contains n then hoistVarsFrom env params seen rest
+    else do
+      let v ←
+        if params.contains n then
+          match Env.lookup env n with
+          | some r => pure ((← getCell r).value.getD undefValue)
+          | none => pure undefValue
+        else pure undefValue
+      let r ← allocCell { mutable := true, value := some v }
+      hoistVarsFrom ((n, r) :: env) params (n :: seen) rest
 
 /-- Point a name at another cell, innermost binding first. Replacing
 rather than pushing is what keeps a scope chain the same length across a
@@ -1245,6 +1474,60 @@ def toPropertyKey (v : Value) : EvalM String :=
     pure (toStringPrim p)
   partial_fixpoint
 
+/-- IteratorBindingInitialization for a list of single-name bindings
+(8.6.2, through FunctionDeclarationInstantiation step 24): the
+positional argument, `undefined` past the end of the list, and the
+parameter's initializer in place of an argument that *is* `undefined` —
+which is why `f(1, undefined)` runs the default and `f(1, null)` does
+not. Each initializer is evaluated in the whole parameter scope, so it
+sees every parameter to its left initialized and every one to its right
+in its dead zone. -/
+def initParams (env : Env) : List Param → List Value → EvalM Unit
+  | [], _ => pure ()
+  | p :: ps, args => do
+    let (a, rest) := match args with
+      | [] => (undefValue, ([] : List Value))
+      | a :: as => (a, as)
+    let v ← match p.default, a with
+      | some d, .prim .undef => evalExpr env d
+      | _, _ => pure a
+    match Env.lookup env p.name with
+    | some r => initCell r v
+    | none => pure ()
+    initParams env ps rest
+  partial_fixpoint
+
+/-- FunctionDeclarationInstantiation (10.2.11) over what this AST has,
+and the one place a call's scope is built: the `arguments` object when
+the function's own code spells the name, then the parameters' cells,
+then their initializers, then the `var`s, then the body's own
+declarations.
+
+The `var`s take one of two branches. With no parameter initializer the
+parameters' cells *are* the `var`s' (step 27), so `function f(a) { var
+a; }` keeps the argument — that is `hoistVars`, skipping the parameter
+names. With one present the `var`s get a scope of their own whose cells
+start from the parameters' values (step 28) — that is `hoistVarsFrom`.
+
+`arguments` is an immutable binding, as 10.2.11 step 19 makes it in
+strict mode, so `arguments = 1` inside a function is the same refusal an
+assignment to a `const` is. -/
+def instantiateFunction (env : Env) (c : Closure) (args : List Value) : EvalM Env := do
+  let withArgs ←
+    if c.needsArguments then do
+      let a ← makeArguments args
+      let r ← allocCell { mutable := false, value := some a }
+      pure ((argumentsName, r) :: env)
+    else pure env
+  let paramEnv ← allocParams withArgs c.params
+  initParams paramEnv c.params args
+  let names := Param.names c.params
+  let hoisted ←
+    if hasDefaults c.params then hoistVarsFrom paramEnv names [] (varNames c.body)
+    else hoistVars paramEnv names (varNames c.body)
+  instantiateBlock hoisted c.body
+  partial_fixpoint
+
 /-- Call a function. The callee's environment is its closure's, plus a
 `this` binding for an ordinary function or a method (an arrow pushes
 none, so `this` stays lexical), plus its home object when it has one,
@@ -1281,14 +1564,12 @@ def callFunction (f : Value) (thisArg : Value) (args : List Value) : EvalM Value
         | some h => do
           let hr ← allocCell { mutable := false, value := some (.obj h) }
           pure ((homeName, hr) :: withThis)
-      let bound ← bindParams withHome c.params args
-      -- FunctionDeclarationInstantiation 10.2.11 steps 27–28: the `var`s
-      -- first, skipping the parameters, so `function f(a) { var a; }`
-      -- keeps the argument; then the block's own declarations, whose
-      -- cells are pushed later and so shadow a `var` of the same name,
-      -- which is what makes `var f; function f() {}` end as the function.
-      let hoisted ← hoistVars bound c.params (varNames c.body)
-      let inner ← instantiateBlock hoisted c.body
+      -- FunctionDeclarationInstantiation: the `arguments` object, the
+      -- parameters, the `var`s, and then the block's own declarations,
+      -- whose cells are pushed last and so shadow a `var` of the same
+      -- name, which is what makes `var f; function f() {}` end as the
+      -- function.
+      let inner ← instantiateFunction withHome c args
       catchReturn do
         let _ ← evalStmts inner c.body none
         pure undefValue
@@ -1622,6 +1903,13 @@ def callNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Valu
     let s ← toStringValue (args.headD undefValue)
     let _ ← callNative .arrayPush (.obj printLogRef) [.prim (.str s)]
     pure undefValue
+  | .throwTypeError =>
+    -- %ThrowTypeError% (10.2.4.1). Both halves of a strict `arguments`
+    -- object's `callee` are this one object, so a read and a write of it
+    -- raise the same error.
+    throwJsError .typeError
+      ("'caller', 'callee', and 'arguments' properties may not be accessed on " ++
+        "strict mode functions or the arguments objects for calls to them")
   partial_fixpoint
 
 /-- GetPrototypeFromConstructor (10.1.13) and OrdinaryObjectCreate on
@@ -1760,9 +2048,7 @@ def runConstructor (r : Ref) (c : Closure) (thisValue : Option Value)
   let ntr ← allocCell { mutable := false, value := some newTarget }
   let afr ← allocCell { mutable := false, value := some (.obj r) }
   let env := (activeFunctionName, afr) :: (newTargetName, ntr) :: withHome
-  let bound ← bindParams env c.params args
-  let hoisted ← hoistVars bound c.params (varNames c.body)
-  let inner ← instantiateBlock hoisted c.body
+  let inner ← instantiateFunction env c args
   let returned ←
     match ← attempt (evalStmts inner c.body none) with
     | .ok _ => pure undefValue
@@ -1870,13 +2156,20 @@ def evalClass (env : Env) (d : ClassDef) : EvalM Value := do
   let (params, body, implicit) :=
     match d.constructor? with
     | some (ps, b) => (ps, b, false)
-    | none => (([] : List String), ([] : List Stmt), true)
+    | none => (([] : List Param), ([] : List Stmt), true)
   let ctor : Closure :=
     { params, body, env := inner, kind := .classCtor derived implicit,
-      homeObject := some proto, fields := d.instanceFields }
+      homeObject := some proto, fields := d.instanceFields,
+      needsArguments := mentionsArguments params body }
+  -- A class constructor's `length` is its parameter list's
+  -- ExpectedArgumentCount like any other function's; an implicit
+  -- constructor has none, which is the 0 the spec's `constructor(...args)`
+  -- also has.
   let F ← allocObj
     { proto := ctorParent, callable := some (.closure ctor),
-      properties := [("prototype", .obj proto)] }
+      properties :=
+        [("length", Value.ofNat (expectedArgumentCount params)),
+         ("prototype", .obj proto)] }
   modifyObj proto (fun o => o.defineData "constructor" (.obj F))
   defineMethods inner F proto d.elements
   match d.name with
@@ -1961,6 +2254,7 @@ def evalStmt (env : Env) : Stmt → Option Value → EvalM (Option Value)
     -- An unlabelled loop reached directly: no label names it, so only an
     -- unlabelled `continue` is its own.
     evalLoop env [] test body
+  | .doWhileStmt body test, _ => evalDoLoop env [] body test
   | .forStmt init test update body, _ => evalForLoop env [] init test update body
   | .switchStmt discriminant cases, _ => evalSwitch env discriminant cases
   | .empty, acc =>
@@ -2062,6 +2356,7 @@ def evalLabeled (env : Env) (labels : List String) :
       if l' == l then pure v else throwCompletion (.«break» (some l') v)
     | .error c => throwCompletion c
   | .whileStmt test body, _ => evalLoop env labels test body
+  | .doWhileStmt body test, _ => evalDoLoop env labels body test
   | .forStmt init test update body, _ => evalForLoop env labels init test update body
   | s, acc => evalStmt env s acc
   partial_fixpoint
@@ -2127,6 +2422,37 @@ def evalWhile (env : Env) (labels : List String) (test : Expr) (body : Stmt)
     | .error c => throwCompletion c
   else
     pure acc
+  partial_fixpoint
+
+/-- A `do`/`while` as a BreakableStatement — `evalLoop`'s twin. It is a
+pair of definitions of its own rather than a flag on the `while` pair
+because a body-first iteration is a different equation, and a proof that
+unfolds one iteration should do it with one `rw`. -/
+def evalDoLoop (env : Env) (labels : List String) (body : Stmt) (test : Expr) :
+    EvalM (Option Value) := do
+  match ← attempt (evalDoWhile env labels body test (some undefValue)) with
+  | .ok v => pure v
+  | .error (.«break» none v) => pure v
+  | .error c => throwCompletion c
+  partial_fixpoint
+
+/-- Run a `do`/`while`'s iterations (14.7.2.2) — `evalWhile`'s twin, with
+the body ahead of the test, which is the whole of the difference: the
+body runs once whatever the test says. A `continue` this loop answers for
+reaches the *test* with the value the body had, rather than leaving; any
+other completion, `break` included, leaves, and `evalDoLoop` is where an
+unlabelled `break` stops. Never in a simp set: like `evalWhile` it
+recurses until a heap value says stop, so it is unfolded one step at a
+time with `rw`. -/
+def evalDoWhile (env : Env) (labels : List String) (body : Stmt) (test : Expr)
+    (acc : Option Value) : EvalM (Option Value) := do
+  let v ← match ← attempt (evalStmt env body acc) with
+    | .ok v => pure v
+    | .error (.«continue» l v) =>
+      if loopContinues labels l then pure v else throwCompletion (.«continue» l v)
+    | .error c => throwCompletion c
+  let t ← evalExpr env test
+  if toBooleanPrim t then evalDoWhile env labels body test v else pure v
   partial_fixpoint
 
 /-- ForLoopEvaluation (14.7.4.2) and its two declaration forms. The head
