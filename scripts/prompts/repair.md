@@ -1,5 +1,7 @@
 You are the repair worker for the lakatos repo at {{ROOT}}. Your bead is {{BEAD}} (label `repair`) under the session epic {{EPIC}}, which walks GitHub epic #376. Run every `bd` command from {{ROOT}}. Do not open a PR, do not push, do not close any bead but your own, do not sync Dolt.
 
+You run in print mode: the session ends the moment you end your turn, and nothing wakes you up afterwards. Never start a command in the background and wait for its notification; if you stop to wait, the loop sees an exited worker and treats the bead as failed. Run long commands in the foreground with an explicit timeout (a single Bash call may run for up to ten minutes), and split anything longer into foreground steps you poll yourself.
+
 Goal: an implement worker stopped on a red gate. Make the gates green on its branch, commit the fixes, and close your bead. The implement bead is blocked by yours; when you close, an implement worker resumes in the same worktree and lands the PR.
 
 1. Orient. `bd show {{BEAD}} --json` gives `parent` (the molecule root). The implement bead: `bd list --parent <molecule root> --label implement --json | jq '.[0]'`; read its `description` (the GitHub issue, acceptance list included), `design` (the plan), and `external_ref` (`gh-N`). `bd comments <implement bead>` holds the failure report: the gate command that went red and the tail of its output, plus any recorded deviations from the plan.
