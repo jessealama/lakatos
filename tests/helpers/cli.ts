@@ -37,6 +37,51 @@ export async function runMain(argv: string[]): Promise<MainRun> {
   }
 }
 
+export interface RawRun {
+  code: number;
+  stdout: string;
+  stderr: string;
+}
+
+/**
+ * Run the CLI's main() with all four output paths captured as two strings.
+ * `exe` forwards the program's own bytes through `process.stdout.write`,
+ * which `runMain` does not see, and a test of it has to read stdout the
+ * way a shell does — as one stream, not a list of console.log calls.
+ */
+export async function runMainRaw(argv: string[]): Promise<RawRun> {
+  let stdout = "";
+  let stderr = "";
+  const outSpy = vi
+    .spyOn(process.stdout, "write")
+    .mockImplementation((chunk: unknown) => {
+      stdout += String(chunk);
+      return true;
+    });
+  const errSpy = vi
+    .spyOn(process.stderr, "write")
+    .mockImplementation((chunk: unknown) => {
+      stderr += String(chunk);
+      return true;
+    });
+  const logSpy = vi.spyOn(console, "log").mockImplementation((...args) => {
+    stdout += `${args.join(" ")}\n`;
+  });
+  const consoleErrSpy = vi
+    .spyOn(console, "error")
+    .mockImplementation((...args) => {
+      stderr += `${args.join(" ")}\n`;
+    });
+  try {
+    return { code: await main(argv), stdout, stderr };
+  } finally {
+    outSpy.mockRestore();
+    errSpy.mockRestore();
+    logSpy.mockRestore();
+    consoleErrSpy.mockRestore();
+  }
+}
+
 /** The tsconfig a scratch project gets when a suite supplies none: enough
  * for tsc to describe the program (lakatos forces strict itself). Excludes
  * the run root so generated artifacts never join the program. */

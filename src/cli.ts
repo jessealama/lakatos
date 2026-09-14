@@ -41,6 +41,7 @@ import {
   type PlannedProperty,
   type PropertyIdentity,
 } from "./envelope.js";
+import { executeSource } from "./exe.js";
 import { withInterruptGuard, type InterruptSignal } from "./interrupt.js";
 import { claimRunDir, RUN_ROOT, TYPECHECK_CACHE } from "./run-dir.js";
 
@@ -340,8 +341,83 @@ async function runCommand(spine: Spine, patterns: string[]): Promise<number> {
   });
 }
 
+const EXE_USAGE = "usage: lakatos exe <file.ts>";
+
+/** `exe`: one file, run on the tarski evaluator.
+ *
+ * It shares `prove`'s gate — the same `typecheckProject` call against the
+ * same cache, and the same three refusals — and nothing else: there is no
+ * envelope to emit (the issue says so), so no `Spine`, and no interrupt
+ * guard, since Ctrl-C should end lakatos and the binary together exactly
+ * as it would end `node`. The run directory is not announced either: this
+ * command's stderr belongs to the program. */
+async function runExe(patterns: string[]): Promise<number> {
+  if (patterns.length !== 1) {
+    console.error(EXE_USAGE);
+    return 2;
+  }
+  // A glob is allowed, but it has to name one file: `exe` runs a program,
+  // not a set of them.
+  const { files } = resolveFiles(patterns);
+  if (files.length !== 1) {
+    console.error(EXE_USAGE);
+    return 2;
+  }
+  const file = files[0]!;
+  const check = typecheckProject(
+    process.cwd(),
+    path.resolve(RUN_ROOT, TYPECHECK_CACHE),
+  );
+  if (check.kind === "missing") {
+    console.error(`lakatos: ${NO_TSCONFIG}`);
+    return 2;
+  }
+  if (check.kind === "failed") {
+    for (const d of check.diagnostics)
+      console.error(`error: ${formatTsDiagnostic(d)}`);
+    console.error(
+      "lakatos: the program does not type check under lakatos's required options",
+    );
+    return 2;
+  }
+  if (!check.programFiles.includes(file)) {
+    console.error(`lakatos: ${outsideProgram(file)}`);
+    return 2;
+  }
+  const runDir = claimRunDir(new Date().toISOString());
+  const outcome = executeSource(
+    readFileSync(file, "utf8"),
+    file,
+    path.join(runDir, "tarski"),
+  );
+  switch (outcome.kind) {
+    case "ran":
+      // Both streams are the program's own, forwarded byte for byte.
+      process.stdout.write(outcome.stdout);
+      process.stderr.write(outcome.stderr);
+      return outcome.status;
+    case "unsupported":
+      console.error(`lakatos: ${file}: unsupported syntax: ${outcome.node}`);
+      return 2;
+    case "no-project":
+      console.error(`lakatos: ${outcome.message}`);
+      return 2;
+    case "build-failed":
+      process.stderr.write(outcome.stdout);
+      process.stderr.write(outcome.stderr);
+      console.error("lakatos: lake build tarski failed");
+      return 2;
+    case "refused":
+      process.stderr.write(outcome.stderr);
+      console.error(
+        "lakatos: the evaluator refused the document lakatos handed it",
+      );
+      return 2;
+  }
+}
+
 const USAGE =
-  "usage: lakatos <prove|refute|check> [--seed <n>] [files-or-globs...]";
+  "usage: lakatos <prove|refute|check|exe> [--seed <n>] [files-or-globs...]";
 
 const HELP = `${USAGE}
 
@@ -352,6 +428,14 @@ commands:
   refute  generate property tests from @ensures annotations, run them, and
           print a JSON report to stdout
   check   prove and refute combined (not implemented yet)
+  exe     run one TypeScript file on the tarski evaluator (requires the Lean
+          toolchain); console.log goes to stdout, an uncaught throw's class
+          and message to stderr with exit 1
+
+exe accepts exactly the programs prove accepts (the same typecheck gate) and
+is honest to the same limits: only the primitives are shared between the
+evaluator and the prover's model until translation validation lands, and
+refute runs on Node, not on this evaluator.
 
 when no files are given, lakatos discovers your sources: the files that
 tsconfig.json would compile. declaration files (.d.ts) are skipped unless a
@@ -367,7 +451,7 @@ options:
   --seed <n>  reproduce a prior refute run's generation (echoed in the report)
   -h, --help  show this help`;
 
-const COMMANDS = ["prove", "refute", "check"] as const;
+const COMMANDS = ["prove", "refute", "check", "exe"] as const;
 type Command = (typeof COMMANDS)[number];
 
 export async function main(
@@ -413,6 +497,9 @@ export async function main(
   // to the documented exit-2 error mode; anything else is an internal bug
   // and crashes loudly.
   try {
+    // exe has no envelope and so no spine: it is the one verb whose stdout
+    // is the program's rather than lakatos's.
+    if (command === "exe") return await runExe(patterns);
     // The seed is parsed before anything else so a bad one is reported
     // without first resolving files.
     const spine =
