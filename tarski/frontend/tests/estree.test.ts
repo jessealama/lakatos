@@ -36,6 +36,7 @@ const FIXTURES = [
   "harness-floor",
   "compare-array",
   "print",
+  "number-math",
 ];
 
 describe("parseScript", () => {
@@ -365,6 +366,40 @@ describe("parseScript", () => {
         operator: "instanceof",
         left: { type: "Identifier", name: "x" },
         right: { type: "Identifier", name: "Y" },
+      },
+    });
+    validate(program);
+  });
+
+  // `**` is an ordinary `BinaryExpression` in ESTree, and the parser has
+  // already resolved its right-associativity, so the bridge has nothing
+  // to say about it: `2 ** 3 ** 2` nests to the right.
+  it("writes ** as a BinaryExpression operator", () => {
+    const program = parseScript('"use strict";\n2 ** 3;\n', "pow.js");
+    expect(program.body[1]).toMatchObject({
+      expression: {
+        type: "BinaryExpression",
+        operator: "**",
+        left: { type: "Literal", value: 2 },
+        right: { type: "Literal", value: 3 },
+      },
+    });
+    validate(program);
+  });
+
+  it("nests ** to the right", () => {
+    const program = parseScript('"use strict";\n2 ** 3 ** 2;\n', "pow2.js");
+    expect(program.body[1]).toMatchObject({
+      expression: {
+        type: "BinaryExpression",
+        operator: "**",
+        left: { type: "Literal", value: 2 },
+        right: {
+          type: "BinaryExpression",
+          operator: "**",
+          left: { type: "Literal", value: 3 },
+          right: { type: "Literal", value: 2 },
+        },
       },
     });
     validate(program);
