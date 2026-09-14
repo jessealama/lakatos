@@ -200,9 +200,10 @@ deriving Repr, Inhabited
 /-- The `Error` constructors the language has, in the order
 `Tarski/Realm.lean` lays them out. `AggregateError` is absent by design
 and not by omission: this is the set the evaluator itself throws and the
-set the emitter accepts by name, `AggregateError` is neither, and
-`ErrorKind.all`'s order fixes the realm's first references and cells. It
-is a `NativeFn` of its own instead. -/
+set `Project.lean`'s `errorKindOf` reads a thrown value against,
+`AggregateError` is neither, and `ErrorKind.all`'s order fixes the
+realm's first references and cells. It is a `NativeFn` of its own
+instead. -/
 inductive ErrorKind where
   | error
   | typeError
