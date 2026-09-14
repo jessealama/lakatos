@@ -1,4 +1,4 @@
-import Tarski.Eval
+import Tarski.Simp
 
 /-! A program that builds an array and calls a built-in on it reduces to
 its result under `simp`.
@@ -15,15 +15,15 @@ the index parse close by `decide` and not by `simp`, so each one the
 program reaches is a `@[local simp]` lemma here, as `WhileUnfoldTest`
 carries `bump0`.
 
-`getFromUp` and `findAccessorUp` — the prototype *steps* — are unfolded
-with `rw`, one per link climbed, for the reason `ObjectSimpTest` records.
-A write pays for the climb too now: `push` goes through `setProp`, which
-looks for a setter on the whole chain before writing, so the one element
-it stores costs two steps where before the accessor split it cost none.
-`Obj.ownKeys` and `Obj.truncate` are in
-the set but never reached: this program calls neither `Object.keys` nor a
-`length` write, so a stall on `List.mergeSort` would mean the set had
-grown a case the program does not have. -/
+`getFromUp` and `findAccessorUp` — the prototype *steps* — are taken by
+the guarded simprocs `Tarski/Simp.lean` declares, one firing per link
+climbed, for the reason `ObjectSimpTest` records. This program climbs
+three: `push` is one link up on `Array.prototype`, and the write pays for
+the climb too, since `push` goes through `setProp`, which looks for a
+setter on the whole chain before writing. `Obj.ownKeys` and `Obj.truncate`
+are in the set but never reached: this program calls neither
+`Object.keys` nor a `length` write, so a stall on `List.mergeSort` would
+mean the set had grown a case the program does not have. -/
 
 open Tarski
 
@@ -32,29 +32,6 @@ private def program : Program :=
   [ .varDecl .«const» [{ name := "xs", init := some (.arrayLit [.numLit 1.0]) }],
     .exprStmt (.call (.member (.ident "xs") "push") [.numLit 2.0]),
     .exprStmt (.member (.ident "xs") "length") ]
-
--- `CallSimpTest`'s set plus what an array and a native call add.
-attribute [local simp] evalExpr evalExprs evalStmt evalStmts evalDeclarators
-  instantiateBlock hoistNames hoistDeclarators initFunctions
-  varNames varNamesStmt varNamesCases hoistVars
-  callFunction callNative catchReturn makeFunction instantiateFunction allocParams initParams hoistVarsFrom
-  Param.names hasDefaults expectedArgumentCount Value.ofNat mentionsArguments
-  mentionsArgumentsExpr mentionsArgumentsExprs mentionsArgumentsProps
-  mentionsArgumentsTarget mentionsArgumentsArrow mentionsArgumentsParams
-  mentionsArgumentsClass mentionsArgumentsStmts mentionsArgumentsStmt
-  mentionsArgumentsForInit mentionsArgumentsDecls mentionsArgumentsCases pushElements
-  newObject newArray newArrayOfLength Obj.array indexProps
-  Value.ofNat Obj.truncate Obj.ownKeys Obj.isArray Obj.hasOwn
-  NativeFn.constructs getProp setProp getFrom findAccessor
-  applyBinary toPrimitive BinaryOp.coerces applyCoercing toNumberPrim toBooleanPrim isStrPrim
-  allocCell getCell readCell writeCell initCell putIdent
-  allocObj readObj writeObj modifyObj
-  Env.lookup Heap.alloc Heap.read Heap.write
-  Heap.allocObj Heap.readObj Heap.writeObj
-  Obj.getOwn Obj.setOwn propGet propSet Obj.getOwnAccessor accessorGet
-  undefValue thisName DeclKind.isMutable
-  Heap.initial globalEnv objectProtoRef arrayProtoRef runScript runProgram evalProgram
-  ExceptT.run_bind Except.map throwJsError throwCompletion
 
 @[local simp] private theorem repr_zero : Nat.repr 0 = "0" := by decide
 @[local simp] private theorem repr_one : Nat.repr 1 = "1" := by decide
@@ -66,10 +43,7 @@ attribute [local simp] evalExpr evalExprs evalStmt evalStmts evalDeclarators
 @[local simp] private theorem arrayIndex_one : arrayIndex? "1" = some 1 := by decide
 
 example : runProgram program = some (.ok (some (.prim (.num 2.0)))) := by
-  simp [program]
-  rw [getFromUp]; simp        -- `xs.push`: one link up, on `Array.prototype`
-  rw [findAccessorUp]; simp   -- the write: no setter on `Array.prototype`
-  rw [findAccessorUp]; simp   -- nor on `Object.prototype`
+  simp [tarski_eval, program]
 
 /-- info: some (Except.ok (some (Tarski.Value.prim (Js.JsVal.num 2.000000)))) -/
 #guard_msgs in

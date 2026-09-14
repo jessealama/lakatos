@@ -1,4 +1,4 @@
-import Tarski.Eval
+import Tarski.Simp
 
 /-! A program that calls two `Math` members reduces to its result under
 `simp`.
@@ -26,30 +26,6 @@ private def program : Program :=
       (.call (.member (.ident "Math") "trunc") [.numLit 2.5])
       (.call (.member (.ident "Math") "sign") [.unary .neg (.numLit 3.0)])) ]
 
--- `ArraySimpTest`'s set plus what a coercing unary built-in adds.
-attribute [local simp] evalExpr evalExprs evalStmt evalStmts evalDeclarators
-  instantiateBlock hoistNames hoistDeclarators initFunctions
-  varNames varNamesStmt varNamesCases hoistVars putIdent applyCoercing
-  callFunction callNative catchReturn makeFunction instantiateFunction allocParams initParams hoistVarsFrom
-  Param.names hasDefaults expectedArgumentCount Value.ofNat mentionsArguments
-  mentionsArgumentsExpr mentionsArgumentsExprs mentionsArgumentsProps
-  mentionsArgumentsTarget mentionsArgumentsArrow mentionsArgumentsParams
-  mentionsArgumentsClass mentionsArgumentsStmts mentionsArgumentsStmt
-  mentionsArgumentsForInit mentionsArgumentsDecls mentionsArgumentsCases pushElements
-  newObject newArray newArrayOfLength Obj.array indexProps
-  Value.ofNat Obj.truncate Obj.ownKeys Obj.isArray Obj.hasOwn
-  NativeFn.constructs getProp setProp getFrom findAccessor
-  applyUnary applyBinary toPrimitive BinaryOp.coerces toNumberPrim toBooleanPrim isStrPrim
-  toNumberValue mathUnary mathRef
-  allocCell getCell readCell writeCell initCell
-  allocObj readObj writeObj modifyObj
-  Env.lookup Heap.alloc Heap.read Heap.write
-  Heap.allocObj Heap.readObj Heap.writeObj
-  Obj.getOwn Obj.setOwn propGet propSet Obj.getOwnAccessor accessorGet
-  undefValue thisName DeclKind.isMutable
-  Heap.initial globalEnv objectProtoRef arrayProtoRef runScript runProgram evalProgram
-  ExceptT.run_bind Except.map throwJsError throwCompletion
-
 -- The library's operations reduce in the kernel but not under `simp`, so
 -- the two values this program reaches are one lemma each, as
 -- `ArraySimpTest` carries its `Nat.repr` literals.
@@ -60,7 +36,7 @@ attribute [local simp] evalExpr evalExprs evalStmt evalStmts evalDeclarators
 @[local simp] private theorem two_sub_one : (2.0 + -1.0 : Float) = 1.0 := by decide
 
 example : runProgram program = some (.ok (some (.prim (.num 1.0)))) := by
-  simp [program]
+  simp [tarski_eval, program]
 
 /-- info: some (Except.ok (some (Tarski.Value.prim (Js.JsVal.num 1.000000)))) -/
 #guard_msgs in

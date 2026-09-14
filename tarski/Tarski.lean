@@ -5,3 +5,6 @@ import Tarski.Monad
 import Tarski.Eval
 import Tarski.Format
 import Tarski.Decode
+import Tarski.SimpAttr
+import Tarski.Simp
+import Tarski.Project

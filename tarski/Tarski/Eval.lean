@@ -12,18 +12,22 @@ defined by `partial_fixpoint`, so the equations are theorems and a
 non-terminating program is `none`, not an axiom.
 
 The non-recursive helpers live outside the `mutual` block on purpose:
-their equations are ordinary and `simp` may use them freely. Five of the
-recursive ones are never added to a simp set and are unfolded one step at
-a time with `rw`: `evalWhile`, `evalDoWhile`, `evalFor`, `getFromUp`,
-`findAccessorUp`, and `joinElements`. The rule is not "recursive" but "recursive on something
-other than syntax" — `evalExpr` and its neighbours recurse on a concrete
-AST, which runs out, while a loop recurses until a heap value says stop,
-a prototype walk until a heap link does, and a join until an array's
-length does, and `simp` unfolds all three under a binder it has not
-resolved, forever. `getProp` and `getFrom` are not on the list: the
-first is the dispatch onto the second, and the second answers an own
-property without recursing — the two prototype *steps* are what recurse,
-and they are the two definitions above. What decides membership in the block is
+their equations are ordinary and `simp` may use them freely. The rule for
+the recursive ones is not "recursive" but "recursive on something other
+than syntax" — `evalExpr` and its neighbours recurse on a concrete AST,
+which runs out, while a loop recurses until a heap value says stop, a
+prototype walk until a heap link does, and a join until an array's length
+does, and `simp` unfolds all three under a binder it has not resolved,
+forever. So the loop arms — `evalWhile`, `evalDoWhile`, `evalFor` — and `joinElements`
+never join a simp set at all and are unfolded one step at a time with
+`rw`; `getFromUp`, `findAccessorUp`, `protoChainHas`, and `construct`
+join `tarski_eval` only as *guarded simprocs* (`Tarski/Simp.lean`), which
+fire when the reference they are handed is a literal — which is what a
+concrete heap has already resolved, and what the manual `rw` used to wait
+for. `getProp` and `getFrom` are plain members: the first is the dispatch
+onto the second, and the second answers an own property without
+recursing — the two prototype *steps* are what recurse, and they are the
+two guarded definitions above. What decides membership in the block is
 whether a definition can reach user code: `getProp`, `toPrimitive`, and
 `setProp` can (a getter or a setter is user code, ToPrimitive calls
 `valueOf`, and ArraySetLength coerces its value with ToNumber, which is
@@ -1541,11 +1545,16 @@ def callFunction (f : Value) (thisArg : Value) (args : List Value) : EvalM Value
     let o ← readObj r
     match o.callable with
     | none => throwJsError .typeError "not a function"
-    | some (.native (.errorCtor _)) =>
+    | some (.native (.errorCtor k)) => do
       -- `Error("x")` is `new Error("x")`: an Error constructor called as
       -- a function constructs (20.5.1.1), because with no `new.target` it
-      -- falls back to itself.
-      construct f f args
+      -- falls back to itself. Written out rather than delegated to
+      -- `construct` — this is exactly what `construct`'s own errorCtor
+      -- arm does after re-reading the same object — so that
+      -- `callFunction` does not mention `construct`, or the two unfold
+      -- through each other under `simp` and neither guard can stop it.
+      let fresh ← allocFromConstructor f k.protoRef
+      callNative (.errorCtor k) (.obj fresh) args
     | some (.native n) => callNative n thisArg args
     | some (.closure c) => do
       let withThis ←
