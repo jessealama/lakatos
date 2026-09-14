@@ -72,6 +72,60 @@ private def no : Expr := .boolLit false
        (.block [.exprStmt (.assign (.ident "n") (.binary .add (.ident "n") (.numLit 1.0)))])]
   == "2"
 
+-- `1; ;` — an empty statement completes empty, like a declaration.
+#guard outcome [one, .empty] == "1"
+
+-- `if (true) ;` — but `if` still starts from undefined, so an empty
+-- statement as its body does not pass 1 through.
+#guard outcome [one, .ifStmt yes .empty none] == "undefined"
+
+/-! ## `for` and `switch`
+
+Both are BreakableStatements, so both start from `undefined` rather than
+from the enclosing value, and both hand a `break` the value the body had
+reached. `for`'s head declaration completes empty, as every declaration
+does. -/
+
+/-- `for (let i = 0; i < <n>; i++) <body>` -/
+private def counting (n : Float) (body : Stmt) : Stmt :=
+  .forStmt (some (.decl .«let» [{ name := "i", init := some (.numLit 0.0) }]))
+    (some (.binary .lt (.ident "i") (.numLit n)))
+    (some (.update .inc false (.ident "i"))) body
+
+-- `1; for (let i = 0; i < 1; i++) { 3; }` — the body's value.
+#guard outcome [one, counting 1.0 (.block [.exprStmt (.numLit 3.0)])] == "3"
+
+-- `1; for (;false;) {}` — a loop whose body never runs still completes
+-- with a value.
+#guard outcome [one, .forStmt none (some no) none (.block [])] == "undefined"
+
+-- `1; for (let i = 0; i < 2; i++) { 4; break; }` — the `break` carries
+-- the value the body had reached.
+#guard outcome
+    [one, counting 2.0 (.block [.exprStmt (.numLit 4.0), .breakStmt none])]
+  == "4"
+
+-- `1; for (let i = 0; i < 2; i++) { if (i === 1) break; 4; }` — but a
+-- `break` inside an `if` does not, because `if` fills its arm's empty
+-- completion value with `undefined` before anything else sees it
+-- (14.6.2 step 4). Measured against `eval` in V8, which agrees.
+#guard outcome
+    [one,
+     counting 2.0
+       (.block
+         [.ifStmt (.binary .strictEq (.ident "i") (.numLit 1.0)) (.breakStmt none) none,
+          .exprStmt (.numLit 4.0)])]
+  == "undefined"
+
+-- `1; switch (1) { case 1: 5; }`
+#guard outcome
+    [one, .switchStmt (.numLit 1.0)
+      [{ test := some (.numLit 1.0), body := [.exprStmt (.numLit 5.0)] }]]
+  == "5"
+
+-- `2; switch (1) {}` — and an empty one completes with undefined.
+#guard outcome [.exprStmt (.numLit 2.0), .switchStmt (.numLit 1.0) []] == "undefined"
+
 /-! ## What ends a run early -/
 
 -- `undeclared;` — an unresolvable reference.

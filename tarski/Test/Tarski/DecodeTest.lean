@@ -71,6 +71,30 @@ private def wholeSliceJson : String := script <|
        "type":"BinaryExpression","operator":"**",
        "left":{"type":"Literal","value":2,"raw":"2"},
        "right":{"type":"Literal","value":3,"raw":"3"}}},
+     {"type":"ForStatement",
+      "init":{"type":"VariableDeclaration","kind":"let","declarations":[
+        {"type":"VariableDeclarator","id":{"type":"Identifier","name":"i"},
+         "init":{"type":"Literal","value":0,"raw":"0"}}]},
+      "test":{"type":"BinaryExpression","operator":"<",
+              "left":{"type":"Identifier","name":"i"},
+              "right":{"type":"Literal","value":2,"raw":"2"}},
+      "update":{"type":"UpdateExpression","operator":"++","prefix":false,
+                "argument":{"type":"Identifier","name":"i"}},
+      "body":{"type":"BlockStatement","body":[
+        {"type":"ExpressionStatement","expression":{
+          "type":"AssignmentExpression","operator":"+=",
+          "left":{"type":"Identifier","name":"n"},
+          "right":{"type":"Identifier","name":"i"}}},
+        {"type":"SwitchStatement",
+         "discriminant":{"type":"Identifier","name":"i"},
+         "cases":[
+           {"type":"SwitchCase","test":{"type":"Literal","value":0,"raw":"0"},
+            "consequent":[{"type":"BreakStatement","label":null}]},
+           {"type":"SwitchCase","test":null,"consequent":[{"type":"EmptyStatement"}]}]}]}},
+     {"type":"VariableDeclaration","kind":"var","declarations":[
+       {"type":"VariableDeclarator","id":{"type":"Identifier","name":"hoisted"},
+        "init":{"type":"UnaryExpression","operator":"void","prefix":true,
+                "argument":{"type":"Literal","value":0,"raw":"0"}}}]},
      {"type":"ExpressionStatement","expression":{"type":"Identifier","name":"undefined"}}"#
 
 /-- The same program as an AST term. `undefined` is an ESTree
@@ -91,6 +115,15 @@ private def wholeSlice : Program :=
     -- already resolved its right-associativity, so the decoder has
     -- nothing to say about it.
     .exprStmt (.binary .exponent (.numLit 2.0) (.numLit 3.0)),
+    .forStmt (some (.decl .«let» [{ name := "i", init := some (.numLit 0.0) }]))
+      (some (.binary .lt (.ident "i") (.numLit 2.0)))
+      (some (.update .inc false (.ident "i")))
+      (.block
+        [ .exprStmt (.compoundAssign .add (.ident "n") (.ident "i")),
+          .switchStmt (.ident "i")
+            [ { test := some (.numLit 0.0), body := [.breakStmt none] },
+              { test := none, body := [.empty] } ] ]),
+    .varDecl .«var» [{ name := "hoisted", init := some (.unary .void (.numLit 0.0)) }],
     .exprStmt .undefLit ]
 
 #guard decode wholeSliceJson == toString (repr wholeSlice)
@@ -116,13 +149,13 @@ private def wholeSlice : Program :=
   == "unsupported: TemplateExpression"
 
 -- A placeholder in statement position, not just expression position.
-#guard decode (script r#"{"type":"Unsupported","kind":"ForStatement"}"#)
-  == "unsupported: ForStatement"
+#guard decode (script r#"{"type":"Unsupported","kind":"ForInStatement"}"#)
+  == "unsupported: ForInStatement"
 
 -- A node type outside the schema altogether — what a producer other
 -- than the bridge might send.
-#guard decode (script r#"{"type":"ForStatement","init":null,"test":null,"update":null}"#)
-  == "unsupported: ForStatement"
+#guard decode (script r#"{"type":"WithStatement","object":null,"body":null}"#)
+  == "unsupported: WithStatement"
 
 -- An operator inside a known node but outside the slice.
 #guard decode (script
@@ -132,14 +165,35 @@ private def wholeSlice : Program :=
         "right":{"type":"Literal","value":1,"raw":"1"}}}"#)
   == "unsupported: BinaryExpression =="
 
--- Compound assignment is an `AssignmentExpression`, but not this
--- slice's.
+-- The five arithmetic compound operators decode; every other spelling
+-- names itself, because none of them has an operator the evaluator can
+-- delegate to.
 #guard decode (script
     r#"{"type":"ExpressionStatement","expression":{
-        "type":"AssignmentExpression","operator":"+=",
+        "type":"AssignmentExpression","operator":"**=",
         "left":{"type":"Identifier","name":"n"},
         "right":{"type":"Literal","value":1,"raw":"1"}}}"#)
-  == "unsupported: AssignmentExpression +="
+  == "unsupported: AssignmentExpression **="
+
+#guard decode (script
+    r#"{"type":"ExpressionStatement","expression":{
+        "type":"AssignmentExpression","operator":"&&=",
+        "left":{"type":"Identifier","name":"n"},
+        "right":{"type":"Literal","value":1,"raw":"1"}}}"#)
+  == "unsupported: AssignmentExpression &&="
+
+-- The two remaining unary operators ESTree spells here.
+#guard decode (script
+    r#"{"type":"ExpressionStatement","expression":{
+        "type":"UnaryExpression","operator":"~","prefix":true,
+        "argument":{"type":"Literal","value":1,"raw":"1"}}}"#)
+  == "unsupported: UnaryExpression ~"
+
+#guard decode (script
+    r#"{"type":"ExpressionStatement","expression":{
+        "type":"UnaryExpression","operator":"delete","prefix":true,
+        "argument":{"type":"Identifier","name":"n"}}}"#)
+  == "unsupported: UnaryExpression delete"
 
 -- A target the slice cannot assign through reports itself: the bridge's
 -- placeholder for the member access is what names the refusal.
@@ -159,11 +213,74 @@ private def wholeSlice : Program :=
         "right":{"type":"Literal","value":1,"raw":"1"}}}"#)
   == "unsupported: AssignmentExpression target"
 
--- `var` is a declaration kind the schema does not admit.
+-- A `for` head with nothing in it is three `none`s.
 #guard decode (script
-    r#"{"type":"VariableDeclaration","kind":"var","declarations":[
-         {"type":"VariableDeclarator","id":{"type":"Identifier","name":"x"},"init":null}]}"#)
-  == "unsupported: VariableDeclaration var"
+    r#"{"type":"ForStatement","init":null,"test":null,"update":null,
+        "body":{"type":"EmptyStatement"}}"#)
+  == toString (repr ([.forStmt none none none .empty] : Program))
+
+-- A head whose declaration binds a pattern arrived as the bridge's
+-- placeholder, and the pattern names the refusal; the loop around it did
+-- not have to be refused for it.
+#guard decode (script
+    r#"{"type":"ForStatement",
+        "init":{"type":"Unsupported","kind":"ArrayBindingPattern"},
+        "test":null,"update":null,"body":{"type":"EmptyStatement"}}"#)
+  == "unsupported: ArrayBindingPattern"
+
+-- A `var` head is the function's, and decodes like any other.
+#guard decode (script
+    r#"{"type":"ForStatement",
+        "init":{"type":"VariableDeclaration","kind":"var","declarations":[
+          {"type":"VariableDeclarator","id":{"type":"Identifier","name":"i"},
+           "init":{"type":"Literal","value":0,"raw":"0"}}]},
+        "test":null,"update":null,"body":{"type":"EmptyStatement"}}"#)
+  == toString (repr
+    ([.forStmt (some (.decl .«var» [{ name := "i", init := some (.numLit 0.0) }]))
+        none none .empty] : Program))
+
+-- An expression head is evaluated for its effect.
+#guard decode (script
+    r#"{"type":"ForStatement",
+        "init":{"type":"Literal","value":1,"raw":"1"},
+        "test":null,"update":null,"body":{"type":"EmptyStatement"}}"#)
+  == toString (repr ([.forStmt (some (.expr (.numLit 1.0))) none none .empty] : Program))
+
+-- The three loop forms that are not in the slice keep naming
+-- themselves, and so does `in`.
+#guard decode (script r#"{"type":"Unsupported","kind":"DoStatement"}"#)
+  == "unsupported: DoStatement"
+
+#guard decode (script r#"{"type":"Unsupported","kind":"ForOfStatement"}"#)
+  == "unsupported: ForOfStatement"
+
+#guard decode (script
+    r#"{"type":"ExpressionStatement","expression":{
+        "type":"BinaryExpression","operator":"in",
+        "left":{"type":"Literal","value":"a","raw":"\"a\""},
+        "right":{"type":"Identifier","name":"o"}}}"#)
+  == "unsupported: BinaryExpression in"
+
+-- `++` and `--` decode, both ways round; no other update operator
+-- exists, but a producer other than the bridge could send one.
+#guard decode (script
+    r#"{"type":"ExpressionStatement","expression":{
+        "type":"UpdateExpression","operator":"--","prefix":true,
+        "argument":{"type":"Identifier","name":"n"}}}"#)
+  == toString (repr ([.exprStmt (.update .dec true (.ident "n"))] : Program))
+
+#guard decode (script
+    r#"{"type":"ExpressionStatement","expression":{
+        "type":"UpdateExpression","operator":"??","prefix":true,
+        "argument":{"type":"Identifier","name":"n"}}}"#)
+  == "unsupported: UpdateExpression ??"
+
+-- An update through a target the slice cannot write reports that target.
+#guard decode (script
+    r#"{"type":"ExpressionStatement","expression":{
+        "type":"UpdateExpression","operator":"++","prefix":false,
+        "argument":{"type":"Literal","value":1,"raw":"1"}}}"#)
+  == "unsupported: AssignmentExpression target"
 
 /-! ## Malformed: whatever produced this is broken -/
 
@@ -463,6 +580,28 @@ than a failure. The refusal is syntactic: the dotted spelling on the
         "left":{"type":"Identifier","name":"a"},
         "right":{"type":"Literal","value":1,"raw":"1"}}}"#)
   == "unsupported: LogicalExpression ??"
+
+-- A `switch` whose clause list holds something that is not a clause:
+-- the bridge has no other node to put there, so the producer is broken
+-- rather than the program being outside the slice.
+#guard decode (script
+    r#"{"type":"SwitchStatement","discriminant":{"type":"Literal","value":1,"raw":"1"},
+        "cases":[{"type":"BlockStatement","body":[]}]}"#)
+  == "malformed: switch case is a BlockStatement"
+
+-- And a clause whose `consequent` is not a list of statements.
+#guard decode (script
+    r#"{"type":"SwitchStatement","discriminant":{"type":"Literal","value":1,"raw":"1"},
+        "cases":[{"type":"SwitchCase","test":null,"consequent":null}]}"#)
+  == "malformed: field \"consequent\" is not an array"
+
+-- A `for` head declaring nothing does not parse anywhere, so a document
+-- with one did not come from a program.
+#guard decode (script
+    r#"{"type":"ForStatement",
+        "init":{"type":"VariableDeclaration","kind":"let","declarations":[]},
+        "test":null,"update":null,"body":{"type":"EmptyStatement"}}"#)
+  == "malformed: VariableDeclaration has no declarators"
 
 /-! ## Malformed: the new nodes, shaped wrongly -/
 
