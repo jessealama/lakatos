@@ -1,4 +1,4 @@
-import Tarski.Eval
+import Tarski.Simp
 
 /-! A closed program that calls a function reduces to its result under
 `simp`.
@@ -17,32 +17,10 @@ private def program : Program :=
       [.returnStmt (some (.binary .add (.ident "x") (.numLit 1.0)))]) }],
     .exprStmt (.call (.ident "f") [.numLit 2.0]) ]
 
--- The simp set of `Test/Tarski/ObjectSimpTest.lean` plus what a call
--- adds. `getProp` is absent for the reason recorded there; this program
--- never reads a property, so it is never needed.
-attribute [local simp] evalExpr evalExprs evalStmt evalStmts evalDeclarators
-  instantiateBlock hoistNames hoistDeclarators initFunctions
-  varNames varNamesStmt varNamesCases hoistVars
-  callFunction catchReturn makeFunction instantiateFunction allocParams initParams hoistVarsFrom
-  Param.names hasDefaults expectedArgumentCount Value.ofNat mentionsArguments
-  mentionsArgumentsExpr mentionsArgumentsExprs mentionsArgumentsProps
-  mentionsArgumentsTarget mentionsArgumentsArrow mentionsArgumentsParams
-  mentionsArgumentsClass mentionsArgumentsStmts mentionsArgumentsStmt
-  mentionsArgumentsForInit mentionsArgumentsDecls mentionsArgumentsCases
-  applyBinary toPrimitive BinaryOp.coerces applyCoercing toNumberPrim toBooleanPrim isStrPrim
-  allocCell getCell readCell writeCell initCell putIdent
-  allocObj newObject readObj writeObj modifyObj
-  Env.lookup Heap.alloc Heap.read Heap.write
-  Heap.allocObj Heap.readObj Heap.writeObj
-  Obj.getOwn Obj.setOwn propGet propSet Obj.getOwnAccessor accessorGet
-  undefValue thisName DeclKind.isMutable
-  Heap.initial globalEnv runScript runProgram evalProgram
-  ExceptT.run_bind Except.map throwJsError throwCompletion
-
 @[local simp] private theorem two_plus_one : (2.0 + 1.0 : Float) = 3.0 := by decide
 
 example : runProgram program = some (.ok (some (.prim (.num 3.0)))) := by
-  simp [program]
+  simp [tarski_eval, program]
 
 /-- info: some (Except.ok (some (Tarski.Value.prim (Js.JsVal.num 3.000000)))) -/
 #guard_msgs in

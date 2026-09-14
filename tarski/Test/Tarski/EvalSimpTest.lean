@@ -1,4 +1,4 @@
-import Tarski.Eval
+import Tarski.Simp
 
 /-! A closed, loop-free program reduces to its result under `simp`.
 
@@ -23,27 +23,11 @@ private def program : Program :=
     .exprStmt (.cond (.binary .strictEq (.ident "y") (.numLit 7.5))
       (.numLit 1.0) (.numLit 0.0)) ]
 
--- The simp set: the evaluator's equations other than `evalWhile`'s and
--- `getProp`'s, the block instantiation and state helpers they bottom out
--- in, and the two binary64 facts left over once the program has run.
--- `ExceptT.run_bind` and `Except.map` are the transformer plumbing core
--- does not tag as `simp`; `Tarski/Monad.lean` says why. `Js.JsVal.strictEq`
--- is the library's `===`; the evaluator only dispatches to it.
-attribute [local simp] evalExpr evalStmt evalStmts evalDeclarators
-  instantiateBlock hoistNames hoistDeclarators initFunctions
-  varNames varNamesStmt varNamesCases hoistVars
-  allocCell getCell readCell writeCell initCell putIdent
-  Env.lookup Heap.alloc Heap.read Heap.write
-  applyBinary applyUnary applyStrict BinaryOp.coerces applyCoercing toPrimitive
-  toNumberPrim toBooleanPrim isStrPrim toStringPrim strictEqValue
-  DeclKind.isMutable Heap.initial globalEnv runScript runProgram evalProgram Js.JsVal.strictEq
-  ExceptT.run_bind Except.map throwJsError throwCompletion
-
 @[local simp] private theorem three_times_two_and_a_half : (3.0 * 2.5 : Float) = 7.5 := by decide
 @[local simp] private theorem seven_and_a_half_self : ((7.5 : Float) == 7.5) = true := by decide
 
 example : runProgram program = some (.ok (some (.prim (.num 1.0)))) := by
-  simp [program]
+  simp [tarski_eval, program]
 
 /-- info: some (Except.ok (some (Tarski.Value.prim (Js.JsVal.num 1.000000)))) -/
 #guard_msgs in
