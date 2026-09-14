@@ -2354,6 +2354,10 @@ type LocalTy = "num" | "bool" | { union: UnionTag[] } | { instance: ModelRef };
 type TStmt =
   | { t: "return"; expr: ts.Expression }
   | { t: "throw"; error: string }
+  /** A `throw new X(...)` whose `X` is not an error class: not a kind the
+   * model can throw, so a residual site that ends the path, arguments never
+   * walked (as a builtin throw's are not). */
+  | { t: "throw-site"; failure: FailedDecl }
   | {
       t: "decl";
       mutable: boolean;
@@ -2373,9 +2377,30 @@ type TStmt =
     }
   | { t: "opaque"; failure: FailedDecl };
 
-/** The error kind a `throw` carries: the constructor's name. The message is
- * discarded — the model distinguishes throws by kind alone. */
+/** The `ErrorKind`s of `tarski/Tarski/Value.lean`, in that declaration's
+ * order; `AggregateError` is absent there too. The check is on the spelling
+ * the source wrote, not on what the name resolves to. */
+const ERROR_KINDS: ReadonlySet<string> = new Set([
+  "Error",
+  "TypeError",
+  "RangeError",
+  "ReferenceError",
+  "SyntaxError",
+  "EvalError",
+  "URIError",
+]);
+
+/** The error kind a `throw` carries: one of the seven builtin constructors'
+ * names, the message discarded — the model distinguishes throws by kind
+ * alone. Any other constructed value is not an error the model has a kind
+ * for. */
 function errorKind(e: ts.Expression): string | undefined {
+  const name = thrownClass(e);
+  return name !== undefined && ERROR_KINDS.has(name) ? name : undefined;
+}
+
+/** The identifier a `throw new X(...)` constructs, whatever `X` is. */
+function thrownClass(e: ts.Expression): string | undefined {
   const inner = unwrapParens(e);
   if (!ts.isNewExpression(inner)) return undefined;
   if (!ts.isIdentifier(inner.expression)) return undefined;
@@ -2533,6 +2558,18 @@ function structureStmt(
   if (ts.isThrowStatement(s)) {
     const kind = errorKind(s.expression);
     if (kind !== undefined) return [{ t: "throw", error: kind }];
+    const cls = thrownClass(s.expression);
+    if (cls !== undefined) {
+      return [
+        {
+          t: "throw-site",
+          failure: {
+            construct: cls,
+            reason: `'${cls}' is not an error class`,
+          },
+        },
+      ];
+    }
   }
   if (ts.isVariableStatement(s)) {
     const stmts = declStmts(s, locals, sf, scope);
@@ -2599,6 +2636,7 @@ function stmtLeaves(s: TStmt): boolean {
   switch (s.t) {
     case "return":
     case "throw":
+    case "throw-site":
       return true;
     case "if":
       return s.else !== undefined && stmtsLeave(s.then) && stmtsLeave(s.else);
@@ -2645,6 +2683,19 @@ function lowerTree(
       return [{ kind: "return", expr: walk(s.expr, returns, vars) }];
     case "throw":
       return [{ kind: "throw", error: s.error }];
+    case "throw-site": {
+      // The path ends here as a builtin throw's does, but at a residual the
+      // prover reports only on the paths that reach it. A constructor cannot
+      // `return`, so its site runs for its effect and the arm falls to the
+      // instance return the renderer appends; the model over-approximates
+      // what follows the site, which is harmless because any path through a
+      // residual is stuck for every rung.
+      const err = new ModelError(s.failure.reason, s.failure.construct);
+      const at: WalkScope = { ...scope, vars: new Map(vars) };
+      return scope.ctorFields !== undefined
+        ? [{ kind: "discard", expr: residualAt(err, "num", at) }]
+        : [{ kind: "return", expr: residualAt(err, returns, at) }];
+    }
     case "decl": {
       // A binding whose scope is the rest of the list; a bind rather than
       // a substitution, so an unused initializer still evaluates. A union
@@ -2915,7 +2966,7 @@ function assignedFields(
         );
       }
       assigned.add(s.field);
-    } else if (s.t === "throw") {
+    } else if (s.t === "throw" || s.t === "throw-site") {
       return "leaves";
     } else if (s.t === "if") {
       const thn = assignedFields(s.then, assigned, className);
