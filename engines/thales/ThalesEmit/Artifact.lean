@@ -1,4 +1,5 @@
 import ThalesEmit.Render
+import ThalesEmit.Ast
 import ThalesEmit.Format
 import ThalesEmit.RoundTrip
 
@@ -39,6 +40,21 @@ def prettyLines (fmt : Format) : String :=
   String.intercalate "\n"
     (((fmt.pretty 100).splitOn "\n").map (·.dropEndWhile (· == ' ') |>.toString))
 
+/-- The declaration's AST, as text under its model name: the decoded
+closure as a `Tarski.Program` def, or — when the decoder refused a
+construct — one comment line in the decoder's own message shape, which is
+the recorded construct #481 turns into the model line's reason. A
+declaration with no AST prints nothing at all, so an emission from before
+this field renders exactly as it did. -/
+def astBlock (base : Ident) : Option DeclAst → CoreM (Option String)
+  | none => pure none
+  | some (.unsupported k) => pure (some s!"-- {astIdent base}: unsupported: {k}")
+  | some (.program p) => do
+    match RenderM.run (astCommand (astIdent base) p) with
+    | .error msg => throwError msg
+    | .ok cmd =>
+      pure (some (prettyLines (← PrettyPrinter.ppCommand ⟨unscope cmd.raw⟩)))
+
 /-- The class a residual site's owner names, for a member's site; none for
 a free function's, whose opaque stands on its own. -/
 def residualOwnerClass (r : EmitResidual) : Option String :=
@@ -77,18 +93,35 @@ def renderEmission (e : Emission) : CoreM String := do
     match d with
     | .fn f =>
       let cmd ← rendered (fnCommand f)
-      blocks := blocks.push
-        (commentLines f.source ++ "\n" ++ prettyLines (← ppCommand cmd))
+      -- The source echo introduces the AST, both being what was
+      -- written; the model def, which says what it means, is the block
+      -- after them. With no AST the echo introduces the def, as before.
+      let ast ← astBlock (← rendered' (modelIdent f.module f.name)) f.ast
+      if let some ast := ast then
+        blocks := blocks.push (commentLines f.source ++ "\n" ++ ast)
+        blocks := blocks.push (prettyLines (← ppCommand cmd))
+      else
+        blocks := blocks.push
+          (commentLines f.source ++ "\n" ++ prettyLines (← ppCommand cmd))
     | .const c =>
       let cmd ← rendered (constCommand c)
-      blocks := blocks.push
-        (commentLines c.source ++ "\n" ++ prettyLines (← ppCommand cmd))
+      let ast ← astBlock (← rendered' (modelIdent c.module c.name)) c.ast
+      if let some ast := ast then
+        blocks := blocks.push (commentLines c.source ++ "\n" ++ ast)
+        blocks := blocks.push (prettyLines (← ppCommand cmd))
+      else
+        blocks := blocks.push
+          (commentLines c.source ++ "\n" ++ prettyLines (← ppCommand cmd))
     | .cls c =>
       -- The source echo introduces the structure; the constructor and
       -- each getter follow as their own blocks.
       let st ← rendered (structCommand c)
       blocks := blocks.push
         (commentLines c.source ++ "\n" ++ prettyLines (← ppCommand st))
+      -- The members share the class's closure, so its AST sits with the
+      -- structure, ahead of the sites and the constructor.
+      if let some ast ← astBlock (← rendered' (classIdent c.module c.name)) c.ast then
+        blocks := blocks.push ast
       for (m, cls, r) in memberSites do
         if m == c.module && cls == c.name then
           blocks := blocks.push (prettyLines (← ppCommand (← rendered (residualCommand r))))
@@ -114,6 +147,10 @@ where
     match RenderM.run x with
     | .error msg => throwError msg
     | .ok cmd => pure cmd
+  rendered' (x : RenderM Ident) : CoreM Ident := do
+    match RenderM.run x with
+    | .error msg => throwError msg
+    | .ok id => pure id
   ppCommand (cmd : TSyntax `command) : CoreM Format :=
     PrettyPrinter.ppCommand ⟨unscope cmd.raw⟩
 
