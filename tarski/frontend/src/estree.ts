@@ -55,18 +55,67 @@ export interface Literal {
   raw: string;
 }
 
-/** A parameter with a default. ESTree spells `function f(x = 1) {}`'s
- * parameter this way; `left` is the parameter's name and `right` the
- * initializer, which runs only when the argument is `undefined`. A
- * binding pattern on the left is outside the slice, so the whole
- * parameter is `Unsupported` instead, and an assignment pattern as a
- * *destructuring target* is #394's — this node appears only in a
- * parameter list. */
+/** A target with a default. ESTree spells `function f(x = 1) {}`'s
+ * parameter this way, and `const [a = 1] = xs`'s element and
+ * `({ a = 1 } = o)`'s property too; `left` is the target and `right` the
+ * initializer, which runs only when the value is `undefined`. */
 export interface AssignmentPattern {
   type: "AssignmentPattern";
-  left: Identifier;
+  left: Pattern;
   right: Expression;
 }
+
+/** `...x` in an array literal, an argument list, or an object literal.
+ * In a *pattern* the same source is a `RestElement`. */
+export interface SpreadElement {
+  type: "SpreadElement";
+  argument: Expression;
+}
+
+/** `...x` in a pattern: a parameter list's last parameter, an array
+ * pattern's last element, or an object pattern's last property. The
+ * grammar allows a pattern argument only in the first two. */
+export interface RestElement {
+  type: "RestElement";
+  argument: Pattern;
+}
+
+/** `[a, , ...rest]` as a binding or assignment target. A `null` element
+ * is an elision. */
+export interface ArrayPattern {
+  type: "ArrayPattern";
+  elements: (Pattern | RestElement | null)[];
+}
+
+/** `{ a, b: c = 1, ...rest }` as a binding or assignment target. */
+export interface ObjectPattern {
+  type: "ObjectPattern";
+  properties: (PatternProperty | RestElement)[];
+}
+
+/** One property of an `ObjectPattern`: a `Property` whose `value` is a
+ * pattern. `shorthand` is true for `{ a }` and for `{ a = 1 }`, whose
+ * `value` is then an `AssignmentPattern` over the same name. */
+export interface PatternProperty {
+  type: "Property";
+  key: Expression;
+  value: Pattern;
+  kind: "init";
+  computed: boolean;
+  shorthand: boolean;
+  method: false;
+}
+
+/** What a binding or an assignment pattern may be written with. A
+ * `MemberExpression` leaf is legal only in an assignment pattern, which
+ * the Lean decoder is what enforces. */
+export type Pattern =
+  | Identifier
+  | MemberExpression
+  | ArrayPattern
+  | ObjectPattern
+  | AssignmentPattern
+  | Unsupported;
 
 export interface UnaryExpression {
   type: "UnaryExpression";
@@ -124,21 +173,20 @@ export interface MemberExpression {
 export interface CallExpression {
   type: "CallExpression";
   callee: Expression | Super;
-  arguments: Expression[];
+  arguments: (Expression | SpreadElement)[];
 }
 
 export interface NewExpression {
   type: "NewExpression";
   callee: Expression;
-  arguments: Expression[];
+  arguments: (Expression | SpreadElement)[];
 }
 
 /** One member of an object literal. `key` is an `Identifier` or a string
  * or numeric `Literal` unless `computed`, in which case it is any
  * expression. `value` is a `FunctionExpression` when `kind` is `"get"` or
  * `"set"` or when `method` is true; a shorthand's `value` is its own
- * `Identifier`. Spread is the one member form still outside the slice,
- * and stands in place as `Unsupported`. */
+ * `Identifier`. Spread is a `SpreadElement` among the properties. */
 export interface Property {
   type: "Property";
   key: Expression;
@@ -173,20 +221,22 @@ export interface TaggedTemplateExpression {
   quasi: TemplateLiteral;
 }
 
+/** An array literal. A `null` element is an elision — the source's
+ * `[1, , 2]` — and a `SpreadElement` is `...xs`. */
 export interface ArrayExpression {
   type: "ArrayExpression";
-  elements: Expression[];
+  elements: (Expression | SpreadElement | null)[];
 }
 
 export interface ObjectExpression {
   type: "ObjectExpression";
-  properties: (Property | Unsupported)[];
+  properties: (Property | SpreadElement | Unsupported)[];
 }
 
 export interface FunctionExpression {
   type: "FunctionExpression";
   id: Identifier | null;
-  params: (Identifier | AssignmentPattern | Unsupported)[];
+  params: (Pattern | RestElement)[];
   body: BlockStatement;
   async: boolean;
   generator: boolean;
@@ -195,7 +245,7 @@ export interface FunctionExpression {
 export interface ArrowFunctionExpression {
   type: "ArrowFunctionExpression";
   id: null;
-  params: (Identifier | AssignmentPattern | Unsupported)[];
+  params: (Pattern | RestElement)[];
   body: BlockStatement | Expression;
   expression: boolean;
   async: boolean;
@@ -209,10 +259,13 @@ export interface ConditionalExpression {
   alternate: Expression;
 }
 
+/** An assignment. `left` is an `ArrayPattern` or an `ObjectPattern` only
+ * when `operator` is `"="`: a compound operator does not take a
+ * pattern. */
 export interface AssignmentExpression {
   type: "AssignmentExpression";
   operator: string;
-  left: Expression;
+  left: Expression | ArrayPattern | ObjectPattern;
   right: Expression;
 }
 
@@ -287,7 +340,7 @@ export interface ExpressionStatement {
 
 export interface VariableDeclarator {
   type: "VariableDeclarator";
-  id: Identifier;
+  id: Pattern;
   init: Expression | null;
 }
 
@@ -332,14 +385,24 @@ export interface ForStatement {
 }
 
 /** ESTree `ForInStatement`. The head is a declaration of exactly one
- * declarator with no initializer, or an assignment target; the Lean
- * decoder refuses every other shape by name. `for`-`of` has no interface
- * here and arrives as `Unsupported`. */
+ * declarator with no initializer, an assignment target, or an assignment
+ * pattern; the Lean decoder refuses every other shape by name. */
 export interface ForInStatement {
   type: "ForInStatement";
-  left: VariableDeclaration | Expression;
+  left: VariableDeclaration | Expression | ArrayPattern | ObjectPattern;
   right: Expression;
   body: Statement;
+}
+
+/** ESTree `ForOfStatement`. `await` is always false: `for await` is
+ * async iteration, which is outside the epic, and the bridge refuses the
+ * modifier in place. */
+export interface ForOfStatement {
+  type: "ForOfStatement";
+  left: VariableDeclaration | Expression | ArrayPattern | ObjectPattern;
+  right: Expression;
+  body: Statement;
+  await: false;
 }
 
 export interface SwitchCase {
@@ -362,7 +425,7 @@ export interface BlockStatement {
 export interface FunctionDeclaration {
   type: "FunctionDeclaration";
   id: Identifier;
-  params: (Identifier | AssignmentPattern | Unsupported)[];
+  params: (Pattern | RestElement)[];
   body: BlockStatement;
   async: boolean;
   generator: boolean;
@@ -380,7 +443,7 @@ export interface ThrowStatement {
 
 export interface CatchClause {
   type: "CatchClause";
-  param: Identifier | Unsupported | null;
+  param: Pattern | null;
   body: BlockStatement;
 }
 
@@ -418,6 +481,7 @@ export type Statement =
   | DoWhileStatement
   | ForStatement
   | ForInStatement
+  | ForOfStatement
   | SwitchStatement
   | EmptyStatement
   | BlockStatement
@@ -481,15 +545,184 @@ function updateOperator(kind: ts.SyntaxKind): "++" | "--" | undefined {
   return undefined;
 }
 
-/** A call's arguments. A spread is outside the slice and stands in place
- * as `Unsupported`, so the call itself still reaches the Lean decoder. */
+/** A call's arguments, a spread in place. */
 function callArguments(
   args: ts.NodeArray<ts.Expression>,
   sf: ts.SourceFile,
-): Expression[] {
-  return args.map((a) =>
-    ts.isSpreadElement(a) ? unsupported(a) : expression(a, sf),
+): (Expression | SpreadElement)[] {
+  return args.map((a): Expression | SpreadElement =>
+    ts.isSpreadElement(a)
+      ? { type: "SpreadElement", argument: expression(a.expression, sf) }
+      : expression(a, sf),
   );
+}
+
+/** A binding name: an `Identifier`, or one of the two binding patterns
+ * through `bindingElement`. This is the *binding* half of the pattern
+ * grammar; `assignmentTarget` is the other. */
+function bindingName(name: ts.BindingName, sf: ts.SourceFile): Pattern {
+  if (ts.isIdentifier(name)) return { type: "Identifier", name: name.text };
+  if (ts.isArrayBindingPattern(name)) {
+    const elements = name.elements.map(
+      (e): Pattern | RestElement | null =>
+        ts.isOmittedExpression(e) ? null : bindingElement(e, sf),
+    );
+    return { type: "ArrayPattern", elements };
+  }
+  const properties = name.elements.map((e): PatternProperty | RestElement => {
+    const bound = bindingElement(e, sf);
+    if (bound.type === "RestElement") return bound;
+    const key = e.propertyName ? propertyKey(e.propertyName, sf) : undefined;
+    if (e.propertyName && !key) {
+      // A `BigIntLiteral` or a private name as a property name: ESTree
+      // has no node for either, so the property refuses in place.
+      return {
+        type: "Property",
+        key: { type: "Identifier", name: "" },
+        value: unsupported(e.propertyName),
+        kind: "init",
+        computed: false,
+        shorthand: false,
+        method: false,
+      };
+    }
+    const shorthandKey: Expression = ts.isIdentifier(e.name)
+      ? { type: "Identifier", name: e.name.text }
+      : /* v8 ignore next -- a shorthand element's name is an identifier */
+        unsupported(e.name);
+    return {
+      type: "Property",
+      key: key ? key.key : shorthandKey,
+      value: bound,
+      kind: "init",
+      computed: key ? key.computed : false,
+      shorthand: !e.propertyName,
+      method: false,
+    };
+  });
+  return { type: "ObjectPattern", properties };
+}
+
+/** One element of a binding pattern: a rest marker makes a
+ * `RestElement`, an initializer an `AssignmentPattern`, and the name
+ * itself is a pattern. */
+function bindingElement(e: ts.BindingElement, sf: ts.SourceFile): Pattern | RestElement {
+  const inner = bindingName(e.name, sf);
+  if (e.dotDotDotToken) return { type: "RestElement", argument: inner };
+  if (e.initializer)
+    return {
+      type: "AssignmentPattern",
+      left: inner,
+      right: expression(e.initializer, sf),
+    };
+  return inner;
+}
+
+/** An assignment target: the *assignment* half of the pattern grammar.
+ * tsc parses `[a, b] = xs` as an array literal on the left, so the
+ * literal is re-read as a pattern here; anything that is not a literal
+ * is an ordinary expression and the Lean decoder decides whether it is a
+ * reference. */
+function assignmentTarget(
+  node: ts.Expression,
+  sf: ts.SourceFile,
+): Pattern | Expression {
+  if (ts.isArrayLiteralExpression(node)) {
+    const elements = node.elements.map((e): Pattern | RestElement | null => {
+      if (ts.isOmittedExpression(e)) return null;
+      if (ts.isSpreadElement(e))
+        return {
+          type: "RestElement",
+          argument: patternTarget(e.expression, sf),
+        };
+      return patternTarget(e, sf);
+    });
+    return { type: "ArrayPattern", elements };
+  }
+  if (ts.isObjectLiteralExpression(node)) {
+    const properties = node.properties.map(
+      (m): PatternProperty | RestElement => {
+        if (ts.isSpreadAssignment(m))
+          return {
+            type: "RestElement",
+            argument: patternTarget(m.expression, sf),
+          };
+        if (ts.isShorthandPropertyAssignment(m)) {
+          const name: Identifier = {
+            type: "Identifier",
+            name: m.name.text,
+          };
+          const value: Pattern = m.objectAssignmentInitializer
+            ? {
+                type: "AssignmentPattern",
+                left: name,
+                right: expression(m.objectAssignmentInitializer, sf),
+              }
+            : name;
+          return {
+            type: "Property",
+            key: name,
+            value,
+            kind: "init",
+            computed: false,
+            shorthand: true,
+            method: false,
+          };
+        }
+        if (ts.isPropertyAssignment(m)) {
+          const key = propertyKey(m.name, sf);
+          return {
+            type: "Property",
+            key: key ? key.key : unsupported(m.name),
+            value: patternTarget(m.initializer, sf),
+            kind: "init",
+            computed: key ? key.computed : false,
+            shorthand: false,
+            method: false,
+          };
+        }
+        // A method or an accessor is not a target at all.
+        return {
+          type: "Property",
+          key: { type: "Identifier", name: "" },
+          value: unsupported(m),
+          kind: "init",
+          computed: false,
+          shorthand: false,
+          method: false,
+        };
+      },
+    );
+    return { type: "ObjectPattern", properties };
+  }
+  return expression(node, sf);
+}
+
+/** One element of an assignment pattern: a nested literal is a nested
+ * pattern, a `=` is an `AssignmentPattern`, and everything else is a
+ * reference the Lean decoder reads. */
+function patternTarget(node: ts.Expression, sf: ts.SourceFile): Pattern {
+  if (
+    ts.isBinaryExpression(node) &&
+    node.operatorToken.kind === ts.SyntaxKind.EqualsToken
+  ) {
+    return {
+      type: "AssignmentPattern",
+      left: patternTarget(node.left, sf),
+      right: expression(node.right, sf),
+    };
+  }
+  const inner = assignmentTarget(node, sf);
+  if (
+    inner.type === "ArrayPattern" ||
+    inner.type === "ObjectPattern" ||
+    inner.type === "Identifier" ||
+    inner.type === "MemberExpression" ||
+    inner.type === "Unsupported"
+  )
+    return inner;
+  // Any other expression is not a target; the Lean decoder names it.
+  return unsupported(node);
 }
 
 /** An object-literal member's key, and whether it was written in
@@ -562,14 +795,16 @@ function accessorKind(m: ts.Node): "get" | "set" | "method" {
   return "method";
 }
 
-/** One member of an object literal. Every form but spread is in the
- * slice: `key: value`, a shorthand, a computed key, a method, a getter,
- * and a setter. A spread stands in place as `Unsupported`, as it does in
- * an array literal and an argument list. */
+/** One member of an object literal. Every form is in the slice:
+ * `key: value`, a shorthand, a computed key, a method, a getter, a
+ * setter, and spread. */
 function objectMember(
   member: ts.ObjectLiteralElementLike,
   sf: ts.SourceFile,
-): Property | Unsupported {
+): Property | SpreadElement | Unsupported {
+  if (ts.isSpreadAssignment(member)) {
+    return { type: "SpreadElement", argument: expression(member.expression, sf) };
+  }
   if (ts.isShorthandPropertyAssignment(member)) {
     // `{ a = 1 }` is a CoverInitializedName: the cover grammar for a
     // destructuring pattern, not a literal member, so the `=` is what
@@ -648,41 +883,35 @@ function declarationName(node: ts.FunctionDeclaration): string {
   return node.name ? node.name.text : "";
 }
 
-/** The parts every function form shares. A named parameter with a
- * default becomes an `AssignmentPattern`; a rest marker is refused as the
- * `Parameter` it is, a binding pattern as the pattern, and a parameter
- * property as its modifier, which are the more useful names. Either way
- * only the parameter leaves the slice, not the function. */
+/** The parts every function form shares. A parameter with a default
+ * becomes an `AssignmentPattern`, a rest marker a `RestElement`, and a
+ * binding pattern the pattern it is; a parameter property is refused as
+ * its modifier, which is the more useful name, and only the parameter
+ * leaves the slice, not the function. */
 function functionParts(
   node: ts.FunctionDeclaration | ts.FunctionExpression | ts.ArrowFunction,
   sf: ts.SourceFile,
 ): {
-  params: (Identifier | AssignmentPattern | Unsupported)[];
+  params: (Pattern | RestElement)[];
   async: boolean;
   generator: boolean;
 } {
-  const params = node.parameters.map(
-    (p): Identifier | AssignmentPattern | Unsupported => {
-      if (p.dotDotDotToken) return unsupported(p);
-      // A parameter property — `constructor(public x) {}` — declares and
-      // assigns a field, which is not something the parameter's name says,
-      // so the modifier itself is what leaves the slice.
-      const modifier = (ts.getModifiers(p) ?? [])[0];
-      if (modifier) return unsupported(modifier);
-      // A binding pattern with a default is refused whole: the Lean
-      // decoder only reads an `AssignmentPattern` whose `left` is a name.
-      if (!ts.isIdentifier(p.name))
-        return p.initializer ? unsupported(p) : unsupported(p.name);
-      const name: Identifier = { type: "Identifier", name: p.name.text };
-      if (p.initializer)
-        return {
-          type: "AssignmentPattern",
-          left: name,
-          right: expression(p.initializer, sf),
-        };
-      return name;
-    },
-  );
+  const params = node.parameters.map((p): Pattern | RestElement => {
+    // A parameter property — `constructor(public x) {}` — declares and
+    // assigns a field, which is not something the parameter's name says,
+    // so the modifier itself is what leaves the slice.
+    const modifier = (ts.getModifiers(p) ?? [])[0];
+    if (modifier) return unsupported(modifier);
+    const inner = bindingName(p.name, sf);
+    if (p.dotDotDotToken) return { type: "RestElement", argument: inner };
+    if (p.initializer)
+      return {
+        type: "AssignmentPattern",
+        left: inner,
+        right: expression(p.initializer, sf),
+      };
+    return inner;
+  });
   const isAsync = (node.modifiers ?? []).some(
     (m) => m.kind === ts.SyntaxKind.AsyncKeyword,
   );
@@ -1045,15 +1274,16 @@ function expression(node: ts.Expression, sf: ts.SourceFile): Expression {
     };
   }
   if (ts.isArrayLiteralExpression(node)) {
-    // A hole and a spread are each refused where they stand, as a call's
-    // spread argument is, so the literal around them still reaches the
-    // Lean decoder.
+    // An elision is a `null` element and a spread a `SpreadElement`,
+    // which is ESTree's own shape for both.
     return {
       type: "ArrayExpression",
-      elements: node.elements.map((e) =>
-        ts.isOmittedExpression(e) || ts.isSpreadElement(e)
-          ? unsupported(e)
-          : expression(e, sf),
+      elements: node.elements.map((e): Expression | SpreadElement | null =>
+        ts.isOmittedExpression(e)
+          ? null
+          : ts.isSpreadElement(e)
+            ? { type: "SpreadElement", argument: expression(e.expression, sf) }
+            : expression(e, sf),
       ),
     };
   }
@@ -1130,10 +1360,19 @@ function expression(node: ts.Expression, sf: ts.SourceFile): Expression {
     // Assignment and the short-circuiting operators are their own nodes;
     // only the last group is a BinaryExpression there too.
     if (ASSIGNMENT_OPERATORS.has(operator)) {
+      // Only `=` takes a destructuring target; tsc parses that target as
+      // a literal, so it is re-read as a pattern here.
+      const left =
+        operator === "="
+          ? assignmentTarget(node.left, sf)
+          : expression(node.left, sf);
       return {
         type: "AssignmentExpression",
         operator,
-        left: expression(node.left, sf),
+        left:
+          left.type === "ArrayPattern" || left.type === "ObjectPattern"
+            ? left
+            : expression(node.left, sf),
         right: expression(node.right, sf),
       };
     }
@@ -1155,23 +1394,18 @@ function expression(node: ts.Expression, sf: ts.SourceFile): Expression {
   return unsupported(node);
 }
 
-/** A declaration list's declarators, or `null` when one of them binds a
- * destructuring pattern: the schema's `id` is an Identifier, so such a
- * declaration leaves the slice as a whole rather than piecewise. */
+/** A declaration list's declarators. A declarator's `id` is a binding
+ * name, so a destructuring declaration is a pattern here rather than a
+ * refusal. */
 function declarators(
   list: ts.VariableDeclarationList,
   sf: ts.SourceFile,
-): VariableDeclarator[] | null {
-  const out: VariableDeclarator[] = [];
-  for (const d of list.declarations) {
-    if (!ts.isIdentifier(d.name)) return null;
-    out.push({
-      type: "VariableDeclarator",
-      id: { type: "Identifier", name: d.name.text },
-      init: d.initializer ? expression(d.initializer, sf) : null,
-    });
-  }
-  return out;
+): VariableDeclarator[] {
+  return list.declarations.map((d) => ({
+    type: "VariableDeclarator" as const,
+    id: bindingName(d.name, sf),
+    init: d.initializer ? expression(d.initializer, sf) : null,
+  }));
 }
 
 /** `let`, `const`, or `var` — the keyword the declaration list carries. */
@@ -1189,38 +1423,35 @@ function blockStatement(node: ts.Block, sf: ts.SourceFile): BlockStatement {
 }
 
 /** A `catch` clause. The optional-binding form has no variable
- * declaration at all and gives `param: null`; a destructuring binding is
- * outside the slice and is refused in place, as an out-of-slice parameter
- * is, so the clause and the `try` around it survive. */
+ * declaration at all and gives `param: null`; every binding form,
+ * patterns included, is a `Pattern`. */
 function catchClause(node: ts.CatchClause, sf: ts.SourceFile): CatchClause {
   const declaration = node.variableDeclaration;
-  let param: Identifier | Unsupported | null;
-  if (!declaration) {
-    param = null;
-  } else if (ts.isIdentifier(declaration.name)) {
-    param = { type: "Identifier", name: declaration.name.text };
-  } else {
-    param = unsupported(declaration.name);
-  }
-  return { type: "CatchClause", param, body: blockStatement(node.block, sf) };
+  return {
+    type: "CatchClause",
+    param: declaration ? bindingName(declaration.name, sf) : null,
+    body: blockStatement(node.block, sf),
+  };
 }
 
-/** A loop head's declaration-or-expression part, which `for` and
- * `for`-`in` spell the same way. A declaration binding a pattern is
- * refused as a whole — the schema's declarator `id` is an Identifier —
- * and stands in the head's place, so the loop around it still reaches
- * the Lean decoder. */
+/** A loop head's declaration-or-expression part, which `for`, `for`-`in`,
+ * and `for`-`of` spell the same way. An array or object literal in an
+ * assignment head is re-read as a pattern, which is what
+ * `for ([a, b] of xs)` is. */
 function forHead(
   node: ts.ForInitializer,
   sf: ts.SourceFile,
-): VariableDeclaration | Expression {
-  if (!ts.isVariableDeclarationList(node)) return expression(node, sf);
-  const declarations = declarators(node, sf);
-  if (!declarations) return unsupported(node);
+): VariableDeclaration | Expression | ArrayPattern | ObjectPattern {
+  if (!ts.isVariableDeclarationList(node)) {
+    const target = assignmentTarget(node, sf);
+    if (target.type === "ArrayPattern" || target.type === "ObjectPattern")
+      return target;
+    return expression(node, sf);
+  }
   return {
     type: "VariableDeclaration",
     kind: declarationKind(node),
-    declarations,
+    declarations: declarators(node, sf),
   };
 }
 
@@ -1230,7 +1461,13 @@ function forInitializer(
   node: ts.ForInitializer | undefined,
   sf: ts.SourceFile,
 ): VariableDeclaration | Expression | null {
-  return node ? forHead(node, sf) : null;
+  if (!node) return null;
+  if (!ts.isVariableDeclarationList(node)) return expression(node, sf);
+  return {
+    type: "VariableDeclaration",
+    kind: declarationKind(node),
+    declarations: declarators(node, sf),
+  };
 }
 
 /** One `switch` clause. `default` is the one with no test; a clause is
@@ -1326,15 +1563,25 @@ function statement(node: ts.Statement, sf: ts.SourceFile): Statement {
       body: statement(node.statement, sf),
     };
   }
-  // A `for await (… of …)` is a `ForOfStatement` in tsc, so there is
-  // nothing to refuse here: `for`-`of` has no arm at all and leaves as
-  // `Unsupported`.
   if (ts.isForInStatement(node)) {
     return {
       type: "ForInStatement",
       left: forHead(node.initializer, sf),
       right: expression(node.expression, sf),
       body: statement(node.statement, sf),
+    };
+  }
+  if (ts.isForOfStatement(node)) {
+    // `for await (… of …)` is async iteration, which is outside the
+    // epic: the modifier is what leaves the slice, so the loop around it
+    // does not need an arm of its own.
+    if (node.awaitModifier) return unsupported(node.awaitModifier);
+    return {
+      type: "ForOfStatement",
+      left: forHead(node.initializer, sf),
+      right: expression(node.expression, sf),
+      body: statement(node.statement, sf),
+      await: false,
     };
   }
   if (ts.isSwitchStatement(node)) {

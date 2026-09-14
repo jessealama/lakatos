@@ -118,7 +118,7 @@ describe("tarski-test262", () => {
       "skipped:\n  intl402  1\n  parse-negative  1\n  resolution-negative  1",
     );
     expect(stdout).toContain(
-      "unsupported:\n  ForOfStatement  2\n  $262.evalScript  1",
+      "unsupported:\n  FunctionDeclaration generator  2\n  $262.evalScript  1",
     );
   });
 

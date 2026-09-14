@@ -2,15 +2,19 @@
 // the test that names it unsupported rather than failed.
 /*---
 description: |
-    A helper written with `for`-`of`, which the evaluator does not have.
+    A helper written with a generator, which the evaluator does not have.
 defines: [kindOf]
 ---*/
 
-const $fakeNeedsForOf = "fake: exit 3 unsupported: ForOfStatement";
+const $fakeNeedsGenerator = "fake: exit 3 unsupported: FunctionDeclaration generator";
+
+function* each(x) {
+  yield x;
+}
 
 function kindOf(x) {
   let kind = "?";
-  for (const c of [x]) {
+  for (const c of each(x)) {
     kind = typeof c === "number" ? "n" : "?";
   }
   return kind;
