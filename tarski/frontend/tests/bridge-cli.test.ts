@@ -114,6 +114,7 @@ describe("the bridge as a command", () => {
     "symbol-json-error",
     "string-builtins",
     "iterators",
+    "array-builtins",
   ]) {
     it(`agrees with the copy the Lean tests are run against for ${name}`, () => {
       const lean = path.join(

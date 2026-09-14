@@ -15,8 +15,9 @@ instantiation, jump, and `arguments` directories #393 added, the two
 `Object` and `Function` directories #389 added, the three template and
 object-literal directories #395 added, the seven `Symbol`, `JSON`, and
 `*Error` directories #392 added, `test/built-ins/String`, which #391
-added, and the ten iterator, `for`-`of`, spread, and array-literal
-directories #394 added — and
+added, the ten iterator, `for`-`of`, spread, and array-literal
+directories #394 added, and the forty-eight `Array` directories #390
+added — and
 `tarski/frontend/tests/test262-failures.test.ts` holds this file and
 `tarski/test262/expected.json` together: each directory named here is a key
 of that file, every directory with a positive `fail` count appears, and the
@@ -55,80 +56,34 @@ on #392 are gone, and no row has replaced them under that number — and
 code-unit answer — `length`, an index, an order, a surrogate pair —
 answering the wrong thing**. The 207 rows that waited on #391 are gone:
 the String wrapper object exists, and a string is a sequence of UTF-16
-code units.
+code units. And **not one row is a member of `Array.prototype` answering
+wrongly, a hole read as a value, a `length` grown or truncated by the
+wrong amount, or a species allocation building the wrong thing** — the
+rows that waited on #390 are gone.
 
-The 1,451 failures below, by owner: 915 what #376 excludes (`eval`,
+Nothing waits on #394 either: `for`-`of`, spread, destructuring, and the
+three iterators answer correctly. Two seams the merge of #390 and #394
+left are filed rather than classified under a closed issue — #531,
+`Array.from` never asking for `@@iterator`, and #532,
+`%IteratorPrototype%` carrying no `@@toStringTag` — and #533 is the
+destructuring evaluation order the two order tests see.
+
+The 1,644 failures below, by owner: 1,019 what #376 excludes (`eval`,
 `Date`, `RegExp`, `Proxy`, `Reflect`, typed arrays, the keyed
 collections, explicit resource management, the `Iterator` constructor and
 its helpers, `Error.prototype.stack`, `JSON.rawJSON` and the reviver's
-source text, the `Function` constructor's semantics, and
-`nativeFunctionMatcher.js`, which matches source text with a regular
-expression), 185 the global object (#487), 150 the transcendental `Math`
-members (#434), 80 the rest of `Array.prototype` and `@@species` (#390),
-65 the global `isNaN` and `isFinite` (#441), 15 the Unicode character
-database (#518), 13 `Math.clz32`/`imul` (#440), 10 the `@@split`,
-`@@replace`, and `@@match` lookups the `String` methods skip (#523), 5
-`Math.random` (#445), and 13 the seven filed defects (#436, #460, #496,
-#499, #512, #516, #522).
-
-**`test/built-ins/String` is 920 pass and 148 fail** over 41 rows, with
-152 unsupported and three not run. Not one of the 148 is a `String`
-member answering the wrong thing: 77 are regular expressions (#376),
-which is `match`, `matchAll`, `search`, and the regex arguments to
-`split` and `replace`; 15 are the
-Unicode character database (#518) — the case-mapping tests and the two
-`normalize` results, which are what ASCII case mapping and an identity
-`normalize` cost; 15 are the rest of `Array.prototype` (#390), reached
-as ToString of an array argument; 10 are the `@@split`, `@@replace`, and
-`@@match` protocol lookups (#523), which the plan for this slice left to
-#392 and #392, merging first, could not add to methods that did not yet
-exist; 9 are `eval`; three are `Reflect.construct`; three are the global
-object; and one is a non-callable `@@toPrimitive` falling through to
-OrdinaryToPrimitive (#516). The 152 unsupported are 99
-regular-expression literals, 21 `!=`, 11 BigInt literals, 7 the comma
-operator, and 4 the `Function` constructor.
-
-**The two `Object` and `Function` directories are 3,031 pass and 519
-fail** before this slice and are 3,075 and 483 after it: the 38 rows
-that waited on iterators are gone — `Object.fromEntries` is 25 pass and 0
-fail against 0 and 25, `Object.groupBy` 14 and 0 against 2 and 12 — and
-one `Object/keys` test that was unsupported now runs and reaches `Proxy`.
-Their 483: 292 `eval`, `Date`, `RegExp`, `Proxy`, `Reflect`, and typed
-arrays (#376); 143 the global object, whose `this` at top level a third
-of `Object`'s older tests reach for (#487); 39 the rest of
-`Array.prototype`, which the order tests reach through `map` and
-`indexOf` (#390); and 9 `Math` members the library does not model, read
-through `getOwnPropertyDescriptor` (#434, #445). None is a filed
-defect.
-**The `propertyHelper.js`-based tests run and pass**: `Math/abs` is 8 and
-0, and `length.js`, `name.js`, and `prop-desc.js` under it are three of
-them.
-
-`test/harness` is 61 pass and 20 fail, against 61 and 18: two more of
-`propertyHelper.js`'s own tests decode now, and both reach for the global
-object. What is left is `Array.prototype` (7), the global object (8),
-typed arrays (4), and `Date` (1).
-
-**The seven directories #392 added are 330 pass, 127 fail, and 52
-unsupported**: `Symbol` 68/9/19, `JSON` 114/37/14, `Error` 48/37/8,
-`NativeErrors` 74/14/6, `AggregateError` 17/6/2, `SuppressedError`
-0/20/2, and `ThrowTypeError` 9/4/1. Of the 132, 103 are what #376
-excludes — 32 `Error.prototype.stack`, which is not in the specification
-and is absent by design; 23 explicit resource management, which is the
-whole of `SuppressedError` and the two `Symbol.dispose` members; 22
-`Proxy`; 16 `JSON.rawJSON`, `JSON.isRawJSON`, and the reviver's `context`
-argument, a stage-3 proposal; 9 `isConstructor.js`, which needs
-`Reflect.construct`; and 1 `RegExp` — 11 the global object (#487), 7
-`Array.prototype` and `@@species` (#390), 2 a defect #392 found and
-filed (#512), and 1 `JSON.stringify` writing a lone
-surrogate as U+FFFD rather than its `\u` escape, because the JSON text
-is a Lean `String` (#522). **Not one is a symbol, a JSON text, or an
-`Error` member answering the wrong thing.**
-
-`%ThrowTypeError%` is extensible where 10.2.4.1 makes it frozen, which
-`ThrowTypeError/extensible.js` and `frozen.js` see. It is a realm
-literal's missing field rather than anything this slice wrote, so it is
-filed as #512 rather than fixed here.
+source text, `Array.fromAsync`, the `Function` constructor's semantics,
+and `nativeFunctionMatcher.js`, which matches source text with a regular
+expression), 191 the global object (#487), 151 the transcendental `Math`
+members (#434), 110 the six ES2023 `Array.prototype` members (#513), 70
+the global `isNaN` and `isFinite` (#441), 18 ToLength of an infinite
+`length` (#514), 16 the Unicode character database (#518), 14
+`Array.from` over an iterable (#531), 13 `Math.clz32`/`imul` (#440), 10
+the `@@split`, `@@replace`, and `@@match` lookups the `String` methods
+skip (#523), 5 `Array.prototype[@@unscopables]` (#524), 5 `Math.random`
+(#445), 2 `%IteratorPrototype%`'s `@@toStringTag` (#532), and 20 the nine
+filed defects (#436, #460, #496, #499, #512, #516, #520, #522, and
+#533).
 
 **Two class evaluations were wrong** when the class directories were
 first scored and are not wrong now. `super[super()]` read the key before
@@ -166,18 +121,73 @@ operator but `+`. It takes a Symbol operand to see, so the four
 slice; `addition`'s passes, `+` being the one operator whose order this
 matches. Fixing it is #436's, not this slice's.
 
-**The ten directories this slice added are 591 pass, 49 fail, and 149
-unsupported.** `statements/for-of` is 450 pass and 40 fail across its own
+**The ten directories #394 added are 600 pass, 46 fail, and 149
+unsupported.** `statements/for-of` is 453 pass and 37 fail across its own
 directory and its `dstr` subtree — the subtree itself is 403 and **0** —
-and not one of the 40 is the loop: 18 are typed arrays, 10 the keyed
-collections, 6 `eval`, 3 `Array.prototype.pop`, 2 `using` declarations,
-and 1 `Proxy`. `expressions/array` is 50 pass and 0 fail,
-`expressions/new` 54 and 0, `ArrayIteratorPrototype` 9 and 9 — those 9
-failures typed arrays and nothing else — and the four `Array.prototype`
-iterator members 28 and 0. **Every other directory's `dstr` subtree
-ratcheted with them**, which is where most of the 2,456 newly passing
-tests are, and the String iterator this slice added on top of #391's
-wrapper cleared `String/prototype/Symbol.iterator` to 6 pass and 0 fail.
+and not one of the 37 is the loop: 18 are typed arrays, 10 the keyed
+collections, 6 `eval`, 2 `using` declarations, and 1 `Proxy`. The three
+`Array.prototype.pop` rows that were among them before #390 are gone.
+`expressions/array` is 50 pass and 0 fail, `expressions/new` 54 and 0,
+`ArrayIteratorPrototype` 9 and 9 — those 9 failures typed arrays and
+nothing else — and the four `Array.prototype` iterator members 28 and 0.
+**Every other directory's `dstr` subtree ratcheted with them**, and the
+String iterator cleared `String/prototype/Symbol.iterator` to 6 pass and
+0 fail.
+
+**The forty-eight `Array` directories #390 added are 2,579 pass and 271
+fail**, with 108 unsupported and 124 not run — 88 `async`
+`Array.fromAsync` tests and 36 `noStrict` ones, neither of which this
+epic runs. Not one of the 271 is a member of `Array.prototype` answering
+the wrong thing: 110 are the six ES2023 members this slice does not write
+— `findLast`, `findLastIndex`, `toReversed`, `toSorted`, `toSpliced`, and
+`with`, which are #513's; 107 are what #376 excludes, `Proxy`, `Date`,
+regular expressions, typed arrays, `isConstructor.js`, `eval`,
+`Array.fromAsync`, and `Reflect` among them; 18 are ToLength of an
+infinite `length` (#514); 14 are `Array.from` never asking for
+`@@iterator` (#531); 7 are the global object (#487); 5 are
+`Array.prototype[@@unscopables]` (#524); 5 are the global `isNaN`
+(#441); 2 are ArraySetLength's double coercion (#520); 2 are the
+`Infinity` literal (#460); and 1 is a transcendental `Math` member
+(#434).
+
+**`test/built-ins/String` is 940 pass and 132 fail** over 41 rows, with
+148 unsupported and three not run. Not one of the 132 is a `String`
+member answering the wrong thing: 101 are what #376 excludes, 77 of them
+regular expressions; 16 are the Unicode character database (#518); 10 are
+the `@@split`, `@@replace`, and `@@match` protocol lookups (#523); 3 are
+the global object (#487); and 2 are a non-callable `@@toPrimitive`
+falling through to OrdinaryToPrimitive (#516).
+
+**The two `Object` and `Function` directories are 3,114 pass and 444
+fail**, against 3,031 and 519 before this slice: the rows that reached
+the rest of `Array.prototype` through `map` and `indexOf` are gone, and
+so are the ones that waited on iterators — `Object.fromEntries` is 25
+pass and 0 fail, `Object.groupBy` 14 and 0. Their 444: 289 what #376
+excludes; 143 the global object, whose `this` at top level a third of
+`Object`'s older tests reach for (#487); 9 `Math` members the library
+does not model, read through `getOwnPropertyDescriptor` (#434); 2
+`%IteratorPrototype%`'s missing `@@toStringTag` (#532); and 1
+`Math.random` (#445).
+
+**The `propertyHelper.js`-based tests run and pass**: `Math/abs` is 8 and
+0, and `length.js`, `name.js`, and `prop-desc.js` under it are three of
+them.
+
+`test/harness` is 70 pass and 11 fail, against 61 and 18: `compareArray`
+and `propertyHelper` reach the whole of `Array.prototype` now, and what
+is left is the global object (6), typed arrays and `Date` (5).
+
+**The seven directories #392 added are 340 pass, 122 fail, and 47
+unsupported.** Of the 122, 107 are what #376 excludes —
+`Error.prototype.stack`, which is not in the specification and is absent
+by design; explicit resource management, which is the whole of
+`SuppressedError`; `Proxy`; `JSON.rawJSON`, `JSON.isRawJSON`, and the
+reviver's `context` argument; and `isConstructor.js`, which needs
+`Reflect.construct` — 12 the global object (#487), 2 a defect #392 found
+and filed (#512), and 1 `JSON.stringify` writing a lone surrogate as
+U+FFFD rather than its `\u` escape, because the JSON text is a Lean
+`String` (#522). **Not one is a symbol, a JSON text, or an `Error` member
+answering the wrong thing.**
 
 ## The table
 
@@ -185,26 +195,116 @@ wrapper cleared `String/prototype/Symbol.iterator` to 6 pass and 0 fail.
 | --------------------------------------------------------------------- | ----- | ------------ | ------------------------------------------------------------------------------------------------------------------- | ----- |
 | `test/built-ins/AggregateError`                                       | 1     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
 | `test/built-ins/AggregateError`                                       | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                                                        | #376  |
-| `test/built-ins/AggregateError`                                       | 1     | out-of-scope | `promiseHelper.js` needs promises                                                                                   | #376  |
 | `test/built-ins/AggregateError`                                       | 1     | builtin      | there is no global object                                                                                           | #487  |
+| `test/built-ins/Array`                                                | 1     | builtin      | there is no global object, so a top-level `this` is `undefined`                                                     | #487  |
+| `test/built-ins/Array`                                                | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                                                        | #376  |
+| `test/built-ins/Array/from`                                           | 14    | builtin      | `Array.from` reads an array-like by index and does not take the iterable path                                       | #531  |
+| `test/built-ins/Array/from`                                           | 2     | builtin      | there is no global object, so a top-level `this` is `undefined`                                                     | #487  |
+| `test/built-ins/Array/from`                                           | 1     | out-of-scope | typed arrays and their buffers are excluded by the epic                                                             | #376  |
+| `test/built-ins/Array/fromAsync`                                      | 4     | out-of-scope | `Array.fromAsync` is async and outside the epic                                                                     | #376  |
+| `test/built-ins/Array/fromAsync`                                      | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                                                        | #376  |
+| `test/built-ins/Array/isArray`                                        | 2     | out-of-scope | `Proxy` is excluded by the epic                                                                                     | #376  |
+| `test/built-ins/Array/isArray`                                        | 1     | out-of-scope | `Date` is excluded by the epic                                                                                      | #376  |
+| `test/built-ins/Array/isArray`                                        | 1     | out-of-scope | regular expressions are excluded by the epic                                                                        | #376  |
+| `test/built-ins/Array/length`                                         | 2     | bug          | `ArraySetLength` coerces its value twice                                                                            | #520  |
+| `test/built-ins/Array/length`                                         | 1     | out-of-scope | `Reflect` is excluded by the epic                                                                                   | #376  |
+| `test/built-ins/Array/of`                                             | 1     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent                                          | #434  |
+| `test/built-ins/Array/of`                                             | 1     | out-of-scope | `Proxy` is excluded by the epic                                                                                     | #376  |
+| `test/built-ins/Array/prototype`                                      | 1     | builtin      | there is no global object, so a top-level `this` is `undefined`                                                     | #487  |
+| `test/built-ins/Array/prototype/Symbol.unscopables`                   | 5     | builtin      | `Array.prototype[@@unscopables]` is absent                                                                          | #524  |
+| `test/built-ins/Array/prototype/concat`                               | 6     | out-of-scope | `Proxy` is excluded by the epic                                                                                     | #376  |
+| `test/built-ins/Array/prototype/concat`                               | 2     | out-of-scope | typed arrays and their buffers are excluded by the epic                                                             | #376  |
+| `test/built-ins/Array/prototype/copyWithin`                           | 2     | out-of-scope | `Proxy` is excluded by the epic                                                                                     | #376  |
+| `test/built-ins/Array/prototype/every`                                | 3     | out-of-scope | `Date` is excluded by the epic                                                                                      | #376  |
+| `test/built-ins/Array/prototype/every`                                | 3     | out-of-scope | regular expressions are excluded by the epic                                                                        | #376  |
+| `test/built-ins/Array/prototype/every`                                | 2     | bug          | ToLength of an infinite `length` answers 0                                                                          | #514  |
+| `test/built-ins/Array/prototype/every`                                | 1     | builtin      | there is no global object, so a top-level `this` is `undefined`                                                     | #487  |
+| `test/built-ins/Array/prototype/every`                                | 1     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
+| `test/built-ins/Array/prototype/every`                                | 1     | out-of-scope | typed arrays and their buffers are excluded by the epic                                                             | #376  |
+| `test/built-ins/Array/prototype/filter`                               | 3     | out-of-scope | `Date` is excluded by the epic                                                                                      | #376  |
+| `test/built-ins/Array/prototype/filter`                               | 3     | out-of-scope | regular expressions are excluded by the epic                                                                        | #376  |
+| `test/built-ins/Array/prototype/filter`                               | 2     | out-of-scope | `Proxy` is excluded by the epic                                                                                     | #376  |
+| `test/built-ins/Array/prototype/filter`                               | 1     | builtin      | there is no global object, so a top-level `this` is `undefined`                                                     | #487  |
+| `test/built-ins/Array/prototype/filter`                               | 1     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
+| `test/built-ins/Array/prototype/filter`                               | 1     | out-of-scope | typed arrays and their buffers are excluded by the epic                                                             | #376  |
+| `test/built-ins/Array/prototype/find`                                 | 1     | out-of-scope | typed arrays and their buffers are excluded by the epic                                                             | #376  |
+| `test/built-ins/Array/prototype/findIndex`                            | 1     | out-of-scope | typed arrays and their buffers are excluded by the epic                                                             | #376  |
+| `test/built-ins/Array/prototype/findLast`                             | 15    | builtin      | the ES2023 `Array.prototype` members are absent                                                                     | #513  |
+| `test/built-ins/Array/prototype/findLast`                             | 1     | out-of-scope | typed arrays and their buffers are excluded by the epic                                                             | #376  |
+| `test/built-ins/Array/prototype/findLast`                             | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                                                        | #376  |
+| `test/built-ins/Array/prototype/findLastIndex`                        | 15    | builtin      | the ES2023 `Array.prototype` members are absent                                                                     | #513  |
+| `test/built-ins/Array/prototype/findLastIndex`                        | 1     | out-of-scope | typed arrays and their buffers are excluded by the epic                                                             | #376  |
+| `test/built-ins/Array/prototype/findLastIndex`                        | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                                                        | #376  |
+| `test/built-ins/Array/prototype/flat`                                 | 1     | out-of-scope | `Proxy` is excluded by the epic                                                                                     | #376  |
+| `test/built-ins/Array/prototype/flatMap`                              | 2     | out-of-scope | typed arrays and their buffers are excluded by the epic                                                             | #376  |
+| `test/built-ins/Array/prototype/flatMap`                              | 1     | out-of-scope | `Proxy` is excluded by the epic                                                                                     | #376  |
+| `test/built-ins/Array/prototype/forEach`                              | 2     | out-of-scope | `Date` is excluded by the epic                                                                                      | #376  |
+| `test/built-ins/Array/prototype/forEach`                              | 2     | out-of-scope | regular expressions are excluded by the epic                                                                        | #376  |
+| `test/built-ins/Array/prototype/forEach`                              | 1     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
+| `test/built-ins/Array/prototype/forEach`                              | 1     | out-of-scope | typed arrays and their buffers are excluded by the epic                                                             | #376  |
+| `test/built-ins/Array/prototype/includes`                             | 1     | bug          | ToLength of an infinite `length` answers 0                                                                          | #514  |
+| `test/built-ins/Array/prototype/includes`                             | 1     | out-of-scope | `Proxy` is excluded by the epic                                                                                     | #376  |
+| `test/built-ins/Array/prototype/indexOf`                              | 2     | bug          | ToLength of an infinite `length` answers 0                                                                          | #514  |
+| `test/built-ins/Array/prototype/indexOf`                              | 1     | bug          | a literal that overflows to `Infinity` reaches Lean as JSON `null`                                                  | #460  |
+| `test/built-ins/Array/prototype/indexOf`                              | 1     | out-of-scope | `Date` is excluded by the epic                                                                                      | #376  |
+| `test/built-ins/Array/prototype/indexOf`                              | 1     | out-of-scope | `Proxy` is excluded by the epic                                                                                     | #376  |
+| `test/built-ins/Array/prototype/indexOf`                              | 1     | out-of-scope | regular expressions are excluded by the epic                                                                        | #376  |
+| `test/built-ins/Array/prototype/lastIndexOf`                          | 2     | out-of-scope | regular expressions are excluded by the epic                                                                        | #376  |
+| `test/built-ins/Array/prototype/lastIndexOf`                          | 1     | bug          | a literal that overflows to `Infinity` reaches Lean as JSON `null`                                                  | #460  |
+| `test/built-ins/Array/prototype/lastIndexOf`                          | 1     | builtin      | the global `isNaN` and `isFinite` are absent                                                                        | #441  |
+| `test/built-ins/Array/prototype/lastIndexOf`                          | 1     | out-of-scope | `Date` is excluded by the epic                                                                                      | #376  |
+| `test/built-ins/Array/prototype/lastIndexOf`                          | 1     | out-of-scope | `Proxy` is excluded by the epic                                                                                     | #376  |
+| `test/built-ins/Array/prototype/lastIndexOf`                          | 1     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
+| `test/built-ins/Array/prototype/map`                                  | 3     | out-of-scope | `Proxy` is excluded by the epic                                                                                     | #376  |
+| `test/built-ins/Array/prototype/map`                                  | 2     | bug          | ToLength of an infinite `length` answers 0                                                                          | #514  |
+| `test/built-ins/Array/prototype/map`                                  | 2     | out-of-scope | `Date` is excluded by the epic                                                                                      | #376  |
+| `test/built-ins/Array/prototype/map`                                  | 2     | out-of-scope | regular expressions are excluded by the epic                                                                        | #376  |
+| `test/built-ins/Array/prototype/map`                                  | 1     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
+| `test/built-ins/Array/prototype/map`                                  | 1     | out-of-scope | typed arrays and their buffers are excluded by the epic                                                             | #376  |
+| `test/built-ins/Array/prototype/pop`                                  | 2     | bug          | ToLength of an infinite `length` answers 0                                                                          | #514  |
+| `test/built-ins/Array/prototype/push`                                 | 3     | bug          | ToLength of an infinite `length` answers 0                                                                          | #514  |
+| `test/built-ins/Array/prototype/reduce`                               | 2     | out-of-scope | `Date` is excluded by the epic                                                                                      | #376  |
+| `test/built-ins/Array/prototype/reduce`                               | 2     | out-of-scope | regular expressions are excluded by the epic                                                                        | #376  |
+| `test/built-ins/Array/prototype/reduce`                               | 1     | out-of-scope | typed arrays and their buffers are excluded by the epic                                                             | #376  |
+| `test/built-ins/Array/prototype/reduceRight`                          | 2     | out-of-scope | `Date` is excluded by the epic                                                                                      | #376  |
+| `test/built-ins/Array/prototype/reduceRight`                          | 2     | out-of-scope | regular expressions are excluded by the epic                                                                        | #376  |
+| `test/built-ins/Array/prototype/reduceRight`                          | 1     | out-of-scope | typed arrays and their buffers are excluded by the epic                                                             | #376  |
+| `test/built-ins/Array/prototype/reverse`                              | 1     | out-of-scope | `Proxy` is excluded by the epic                                                                                     | #376  |
+| `test/built-ins/Array/prototype/slice`                                | 4     | out-of-scope | `Proxy` is excluded by the epic                                                                                     | #376  |
+| `test/built-ins/Array/prototype/some`                                 | 3     | out-of-scope | `Date` is excluded by the epic                                                                                      | #376  |
+| `test/built-ins/Array/prototype/some`                                 | 3     | out-of-scope | regular expressions are excluded by the epic                                                                        | #376  |
+| `test/built-ins/Array/prototype/some`                                 | 2     | bug          | ToLength of an infinite `length` answers 0                                                                          | #514  |
+| `test/built-ins/Array/prototype/some`                                 | 1     | builtin      | there is no global object, so a top-level `this` is `undefined`                                                     | #487  |
+| `test/built-ins/Array/prototype/some`                                 | 1     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
+| `test/built-ins/Array/prototype/some`                                 | 1     | out-of-scope | typed arrays and their buffers are excluded by the epic                                                             | #376  |
+| `test/built-ins/Array/prototype/sort`                                 | 4     | builtin      | the global `isNaN` and `isFinite` are absent                                                                        | #441  |
+| `test/built-ins/Array/prototype/splice`                               | 5     | out-of-scope | `Proxy` is excluded by the epic                                                                                     | #376  |
+| `test/built-ins/Array/prototype/splice`                               | 2     | bug          | ToLength of an infinite `length` answers 0                                                                          | #514  |
+| `test/built-ins/Array/prototype/toReversed`                           | 15    | builtin      | the ES2023 `Array.prototype` members are absent                                                                     | #513  |
+| `test/built-ins/Array/prototype/toReversed`                           | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                                                        | #376  |
+| `test/built-ins/Array/prototype/toSorted`                             | 18    | builtin      | the ES2023 `Array.prototype` members are absent                                                                     | #513  |
+| `test/built-ins/Array/prototype/toSorted`                             | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                                                        | #376  |
+| `test/built-ins/Array/prototype/toSpliced`                            | 28    | builtin      | the ES2023 `Array.prototype` members are absent                                                                     | #513  |
+| `test/built-ins/Array/prototype/toSpliced`                            | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                                                        | #376  |
+| `test/built-ins/Array/prototype/unshift`                              | 2     | bug          | ToLength of an infinite `length` answers 0                                                                          | #514  |
+| `test/built-ins/Array/prototype/with`                                 | 19    | builtin      | the ES2023 `Array.prototype` members are absent                                                                     | #513  |
+| `test/built-ins/Array/prototype/with`                                 | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                                                        | #376  |
 | `test/built-ins/ArrayIteratorPrototype/next`                          | 9     | out-of-scope | typed arrays and their buffers are excluded by the epic                                                             | #376  |
+| `test/built-ins/Boolean`                                              | 1     | builtin      | there is no global object                                                                                           | #487  |
 | `test/built-ins/Boolean`                                              | 1     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/built-ins/Boolean`                                              | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                                                        | #376  |
-| `test/built-ins/Boolean`                                              | 1     | builtin      | there is no global object                                                                                           | #487  |
 | `test/built-ins/Boolean/prototype/toString`                           | 1     | out-of-scope | `Date` is excluded by the epic                                                                                      | #376  |
 | `test/built-ins/Boolean/prototype/valueOf`                            | 1     | builtin      | there is no global object                                                                                           | #487  |
+| `test/built-ins/Error`                                                | 1     | builtin      | there is no global object                                                                                           | #487  |
 | `test/built-ins/Error`                                                | 1     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
 | `test/built-ins/Error`                                                | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                                                        | #376  |
-| `test/built-ins/Error`                                                | 1     | builtin      | there is no global object                                                                                           | #487  |
-| `test/built-ins/Error/prototype/stack`                                | 32    | out-of-scope | `Error.prototype.stack` is not in the specification and is absent by design                                         | #376  |
-| `test/built-ins/Error/prototype/toString`                             | 2     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                                                        | #390  |
+| `test/built-ins/Error/prototype/stack`                                | 31    | out-of-scope | `Error.prototype.stack` is not in the specification and is absent by design                                         | #376  |
+| `test/built-ins/Error/prototype/toString`                             | 1     | builtin      | there is no global object, so a top-level `this` is `undefined`                                                     | #487  |
 | `test/built-ins/Function`                                             | 21    | builtin      | `Function.prototype.caller` and `arguments` are the `%ThrowTypeError%` accessors                                    | #487  |
-| `test/built-ins/Function`                                             | 5     | out-of-scope | the `Function` constructor is excluded by the epic                                                                  | #376  |
 | `test/built-ins/Function`                                             | 5     | builtin      | there is no global object                                                                                           | #487  |
+| `test/built-ins/Function`                                             | 5     | out-of-scope | the `Function` constructor is excluded by the epic                                                                  | #376  |
 | `test/built-ins/Function`                                             | 2     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
-| `test/built-ins/Function`                                             | 1     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                                                        | #390  |
 | `test/built-ins/Function/internals/Construct`                         | 1     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
-| `test/built-ins/Function/prototype`                                   | 1     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                                                        | #390  |
 | `test/built-ins/Function/prototype/Symbol.hasInstance`                | 1     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
 | `test/built-ins/Function/prototype/apply`                             | 1     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/built-ins/Function/prototype/bind`                              | 7     | builtin      | `Function.prototype.caller` and `arguments` are the `%ThrowTypeError%` accessors                                    | #487  |
@@ -219,7 +319,6 @@ wrapper cleared `String/prototype/Symbol.iterator` to 6 pass and 0 fail.
 | `test/built-ins/JSON/parse`                                           | 5     | out-of-scope | `JSON.rawJSON` and the reviver's source text are a stage-3 proposal                                                 | #376  |
 | `test/built-ins/JSON/rawJSON`                                         | 9     | out-of-scope | `JSON.rawJSON` and the reviver's source text are a stage-3 proposal                                                 | #376  |
 | `test/built-ins/JSON/stringify`                                       | 9     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
-| `test/built-ins/JSON/stringify`                                       | 1     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                                                        | #390  |
 | `test/built-ins/JSON/stringify`                                       | 1     | bug          | `JSON.stringify` quotes a string through a Lean `String`, so a lone surrogate is U+FFFD rather than its `\u` escape | #522  |
 | `test/built-ins/Math`                                                 | 1     | builtin      | there is no global object                                                                                           | #487  |
 | `test/built-ins/Math/acos`                                            | 7     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent                                          | #434  |
@@ -274,38 +373,33 @@ wrapper cleared `String/prototype/Symbol.iterator` to 6 pass and 0 fail.
 | `test/built-ins/Math/tan`                                             | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                                                        | #376  |
 | `test/built-ins/Math/tanh`                                            | 4     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent                                          | #434  |
 | `test/built-ins/Math/tanh`                                            | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                                                        | #376  |
-| `test/built-ins/NativeErrors`                                         | 2     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                                                        | #390  |
-| `test/built-ins/NativeErrors/EvalError`                               | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                                                        | #376  |
 | `test/built-ins/NativeErrors/EvalError`                               | 1     | builtin      | there is no global object                                                                                           | #487  |
-| `test/built-ins/NativeErrors/RangeError`                              | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                                                        | #376  |
+| `test/built-ins/NativeErrors/EvalError`                               | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                                                        | #376  |
 | `test/built-ins/NativeErrors/RangeError`                              | 1     | builtin      | there is no global object                                                                                           | #487  |
-| `test/built-ins/NativeErrors/ReferenceError`                          | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                                                        | #376  |
+| `test/built-ins/NativeErrors/RangeError`                              | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                                                        | #376  |
 | `test/built-ins/NativeErrors/ReferenceError`                          | 1     | builtin      | there is no global object                                                                                           | #487  |
-| `test/built-ins/NativeErrors/SyntaxError`                             | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                                                        | #376  |
+| `test/built-ins/NativeErrors/ReferenceError`                          | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                                                        | #376  |
 | `test/built-ins/NativeErrors/SyntaxError`                             | 1     | builtin      | there is no global object                                                                                           | #487  |
-| `test/built-ins/NativeErrors/TypeError`                               | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                                                        | #376  |
+| `test/built-ins/NativeErrors/SyntaxError`                             | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                                                        | #376  |
 | `test/built-ins/NativeErrors/TypeError`                               | 1     | builtin      | there is no global object                                                                                           | #487  |
-| `test/built-ins/NativeErrors/URIError`                                | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                                                        | #376  |
+| `test/built-ins/NativeErrors/TypeError`                               | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                                                        | #376  |
 | `test/built-ins/NativeErrors/URIError`                                | 1     | builtin      | there is no global object                                                                                           | #487  |
+| `test/built-ins/NativeErrors/URIError`                                | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                                                        | #376  |
 | `test/built-ins/Number`                                               | 2     | bug          | a numeric literal that overflows to `Infinity` reaches Lean as JSON `null`                                          | #460  |
-| `test/built-ins/Number`                                               | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                                                        | #376  |
 | `test/built-ins/Number`                                               | 1     | builtin      | there is no global object                                                                                           | #487  |
+| `test/built-ins/Number`                                               | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                                                        | #376  |
 | `test/built-ins/Number/NEGATIVE_INFINITY`                             | 2     | builtin      | the global `isNaN` and `isFinite` are not in the realm                                                              | #441  |
 | `test/built-ins/Number/POSITIVE_INFINITY`                             | 2     | builtin      | the global `isNaN` and `isFinite` are not in the realm                                                              | #441  |
-| `test/built-ins/Number/prototype/toExponential`                       | 1     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                                                        | #390  |
-| `test/built-ins/Number/prototype/toPrecision`                         | 1     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                                                        | #390  |
 | `test/built-ins/Number/prototype/toString`                            | 1     | out-of-scope | `Date` is excluded by the epic                                                                                      | #376  |
 | `test/built-ins/Number/prototype/valueOf`                             | 1     | out-of-scope | `Date` is excluded by the epic                                                                                      | #376  |
 | `test/built-ins/Object`                                               | 2     | builtin      | there is no global object                                                                                           | #487  |
 | `test/built-ins/Object`                                               | 1     | out-of-scope | `Date` is excluded by the epic                                                                                      | #376  |
 | `test/built-ins/Object`                                               | 1     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
 | `test/built-ins/Object`                                               | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                                                        | #376  |
-| `test/built-ins/Object`                                               | 1     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                                                        | #390  |
 | `test/built-ins/Object/assign`                                        | 4     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
 | `test/built-ins/Object/create`                                        | 12    | out-of-scope | `Date` is excluded by the epic                                                                                      | #376  |
 | `test/built-ins/Object/create`                                        | 11    | out-of-scope | regular expressions are excluded by the epic                                                                        | #376  |
 | `test/built-ins/Object/create`                                        | 10    | builtin      | there is no global object                                                                                           | #487  |
-| `test/built-ins/Object/create`                                        | 2     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                                                        | #390  |
 | `test/built-ins/Object/defineProperties`                              | 12    | out-of-scope | `Date` is excluded by the epic                                                                                      | #376  |
 | `test/built-ins/Object/defineProperties`                              | 12    | out-of-scope | regular expressions are excluded by the epic                                                                        | #376  |
 | `test/built-ins/Object/defineProperties`                              | 10    | builtin      | there is no global object                                                                                           | #487  |
@@ -313,14 +407,11 @@ wrapper cleared `String/prototype/Symbol.iterator` to 6 pass and 0 fail.
 | `test/built-ins/Object/defineProperty`                                | 26    | out-of-scope | `Date` is excluded by the epic                                                                                      | #376  |
 | `test/built-ins/Object/defineProperty`                                | 19    | out-of-scope | regular expressions are excluded by the epic                                                                        | #376  |
 | `test/built-ins/Object/defineProperty`                                | 11    | builtin      | there is no global object                                                                                           | #487  |
-| `test/built-ins/Object/defineProperty`                                | 10    | builtin      | the rest of `Array.prototype` is absent, `toString` among it                                                        | #390  |
-| `test/built-ins/Object/entries`                                       | 3     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                                                        | #390  |
 | `test/built-ins/Object/entries`                                       | 1     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
 | `test/built-ins/Object/freeze`                                        | 4     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
 | `test/built-ins/Object/freeze`                                        | 1     | out-of-scope | `Date` is excluded by the epic                                                                                      | #376  |
 | `test/built-ins/Object/freeze`                                        | 1     | out-of-scope | regular expressions are excluded by the epic                                                                        | #376  |
 | `test/built-ins/Object/getOwnPropertyDescriptor`                      | 47    | out-of-scope | `Date` is excluded by the epic                                                                                      | #376  |
-| `test/built-ins/Object/getOwnPropertyDescriptor`                      | 20    | builtin      | the rest of `Array.prototype` is absent, `toString` among it                                                        | #390  |
 | `test/built-ins/Object/getOwnPropertyDescriptor`                      | 11    | builtin      | there is no global object                                                                                           | #487  |
 | `test/built-ins/Object/getOwnPropertyDescriptor`                      | 11    | out-of-scope | regular expressions are excluded by the epic                                                                        | #376  |
 | `test/built-ins/Object/getOwnPropertyDescriptor`                      | 9     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent                                          | #434  |
@@ -328,24 +419,23 @@ wrapper cleared `String/prototype/Symbol.iterator` to 6 pass and 0 fail.
 | `test/built-ins/Object/getOwnPropertyDescriptors`                     | 3     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
 | `test/built-ins/Object/getOwnPropertyDescriptors`                     | 1     | builtin      | there is no global object                                                                                           | #487  |
 | `test/built-ins/Object/getOwnPropertyNames`                           | 4     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
-| `test/built-ins/Object/getOwnPropertyNames`                           | 1     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                                                        | #390  |
 | `test/built-ins/Object/getOwnPropertyNames`                           | 1     | builtin      | there is no global object                                                                                           | #487  |
 | `test/built-ins/Object/getOwnPropertySymbols`                         | 4     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
 | `test/built-ins/Object/getPrototypeOf`                                | 2     | out-of-scope | `Date` is excluded by the epic                                                                                      | #376  |
 | `test/built-ins/Object/getPrototypeOf`                                | 2     | out-of-scope | regular expressions are excluded by the epic                                                                        | #376  |
 | `test/built-ins/Object/getPrototypeOf`                                | 1     | builtin      | there is no global object                                                                                           | #487  |
 | `test/built-ins/Object/internals/DefineOwnProperty`                   | 3     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
+| `test/built-ins/Object/isExtensible`                                  | 2     | builtin      | there is no global object                                                                                           | #487  |
 | `test/built-ins/Object/isExtensible`                                  | 2     | out-of-scope | `Date` is excluded by the epic                                                                                      | #376  |
 | `test/built-ins/Object/isExtensible`                                  | 2     | out-of-scope | regular expressions are excluded by the epic                                                                        | #376  |
-| `test/built-ins/Object/isExtensible`                                  | 2     | builtin      | there is no global object                                                                                           | #487  |
 | `test/built-ins/Object/isFrozen`                                      | 2     | out-of-scope | `Date` is excluded by the epic                                                                                      | #376  |
 | `test/built-ins/Object/isFrozen`                                      | 2     | out-of-scope | regular expressions are excluded by the epic                                                                        | #376  |
-| `test/built-ins/Object/isFrozen`                                      | 1     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
 | `test/built-ins/Object/isFrozen`                                      | 1     | builtin      | there is no global object                                                                                           | #487  |
+| `test/built-ins/Object/isFrozen`                                      | 1     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
 | `test/built-ins/Object/isSealed`                                      | 2     | out-of-scope | `Date` is excluded by the epic                                                                                      | #376  |
 | `test/built-ins/Object/isSealed`                                      | 2     | out-of-scope | regular expressions are excluded by the epic                                                                        | #376  |
-| `test/built-ins/Object/isSealed`                                      | 1     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
 | `test/built-ins/Object/isSealed`                                      | 1     | builtin      | there is no global object                                                                                           | #487  |
+| `test/built-ins/Object/isSealed`                                      | 1     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
 | `test/built-ins/Object/keys`                                          | 5     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
 | `test/built-ins/Object/keys`                                          | 1     | out-of-scope | `Date` is excluded by the epic                                                                                      | #376  |
 | `test/built-ins/Object/preventExtensions`                             | 2     | out-of-scope | `Date` is excluded by the epic                                                                                      | #376  |
@@ -364,11 +454,9 @@ wrapper cleared `String/prototype/Symbol.iterator` to 6 pass and 0 fail.
 | `test/built-ins/Object/prototype/__proto__`                           | 2     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
 | `test/built-ins/Object/prototype/hasOwnProperty`                      | 1     | builtin      | there is no global object                                                                                           | #487  |
 | `test/built-ins/Object/prototype/isPrototypeOf`                       | 1     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
-| `test/built-ins/Object/prototype/toString`                            | 5     | out-of-scope | the keyed collections and promises are excluded by the epic                                                         | #376  |
+| `test/built-ins/Object/prototype/toString`                            | 8     | out-of-scope | `Date`, the keyed collections, promises, and BigInt are excluded by the epic                                        | #376  |
 | `test/built-ins/Object/prototype/toString`                            | 3     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
-| `test/built-ins/Object/prototype/toString`                            | 2     | out-of-scope | BigInt is excluded by the epic                                                                                      | #376  |
-| `test/built-ins/Object/prototype/toString`                            | 2     | out-of-scope | the `Iterator` constructor and its helpers are excluded by the epic                                                 | #376  |
-| `test/built-ins/Object/prototype/toString`                            | 1     | out-of-scope | `Date` is excluded by the epic                                                                                      | #376  |
+| `test/built-ins/Object/prototype/toString`                            | 2     | builtin      | `%IteratorPrototype%` has no `@@toStringTag`, so an iterator tags as `[object Object]`                              | #532  |
 | `test/built-ins/Object/seal`                                          | 14    | out-of-scope | typed arrays and their buffers are excluded by the epic                                                             | #376  |
 | `test/built-ins/Object/seal`                                          | 7     | out-of-scope | the keyed collections and promises are excluded by the epic                                                         | #376  |
 | `test/built-ins/Object/seal`                                          | 5     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
@@ -377,33 +465,26 @@ wrapper cleared `String/prototype/Symbol.iterator` to 6 pass and 0 fail.
 | `test/built-ins/Object/seal`                                          | 1     | out-of-scope | the `Function` constructor is excluded by the epic                                                                  | #376  |
 | `test/built-ins/Object/setPrototypeOf`                                | 1     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
 | `test/built-ins/Object/values`                                        | 2     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
-| `test/built-ins/String`                                               | 2     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
-| `test/built-ins/String`                                               | 2     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                                                        | #390  |
 | `test/built-ins/String`                                               | 2     | builtin      | there is no global object                                                                                           | #487  |
+| `test/built-ins/String`                                               | 2     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/built-ins/String`                                               | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                                                        | #376  |
 | `test/built-ins/String/prototype/charAt`                              | 1     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/built-ins/String/prototype/charCodeAt`                          | 1     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
-| `test/built-ins/String/prototype/codePointAt`                         | 1     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                                                        | #390  |
-| `test/built-ins/String/prototype/indexOf`                             | 4     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                                                        | #390  |
+| `test/built-ins/String/prototype/indexOf`                             | 2     | bug          | a non-callable `@@toPrimitive` handler falls back to OrdinaryToPrimitive instead of throwing                        | #516  |
 | `test/built-ins/String/prototype/indexOf`                             | 1     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
-| `test/built-ins/String/prototype/indexOf`                             | 1     | bug          | a non-callable `@@toPrimitive` handler falls back to OrdinaryToPrimitive instead of throwing                        | #516  |
-| `test/built-ins/String/prototype/lastIndexOf`                         | 1     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                                                        | #390  |
 | `test/built-ins/String/prototype/localeCompare`                       | 1     | builtin      | Lean has no Unicode character database: case mapping is ASCII-only and `normalize` answers its input                | #518  |
 | `test/built-ins/String/prototype/match`                               | 27    | out-of-scope | regular expressions are excluded by the epic                                                                        | #376  |
 | `test/built-ins/String/prototype/match`                               | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                                                        | #376  |
 | `test/built-ins/String/prototype/matchAll`                            | 12    | out-of-scope | `matchAll` needs `RegExp`, which is excluded by the epic                                                            | #376  |
-| `test/built-ins/String/prototype/normalize`                           | 2     | builtin      | Lean has no Unicode character database: case mapping is ASCII-only and `normalize` answers its input                | #518  |
-| `test/built-ins/String/prototype/normalize`                           | 1     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                                                        | #390  |
-| `test/built-ins/String/prototype/replace`                             | 2     | out-of-scope | regular expressions are excluded by the epic                                                                        | #376  |
+| `test/built-ins/String/prototype/normalize`                           | 3     | builtin      | Lean has no Unicode character database: case mapping is ASCII-only and `normalize` answers its input                | #518  |
 | `test/built-ins/String/prototype/replace`                             | 2     | builtin      | the `@@split`, `@@replace`, and `@@match` protocol lookups are absent from the `String` methods                     | #523  |
+| `test/built-ins/String/prototype/replace`                             | 2     | out-of-scope | regular expressions are excluded by the epic                                                                        | #376  |
 | `test/built-ins/String/prototype/replaceAll`                          | 5     | builtin      | the `@@split`, `@@replace`, and `@@match` protocol lookups are absent from the `String` methods                     | #523  |
 | `test/built-ins/String/prototype/search`                              | 31    | out-of-scope | regular expressions are excluded by the epic                                                                        | #376  |
 | `test/built-ins/String/prototype/search`                              | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                                                        | #376  |
 | `test/built-ins/String/prototype/split`                               | 13    | out-of-scope | regular expressions are excluded by the epic                                                                        | #376  |
 | `test/built-ins/String/prototype/split`                               | 3     | builtin      | the `@@split`, `@@replace`, and `@@match` protocol lookups are absent from the `String` methods                     | #523  |
-| `test/built-ins/String/prototype/split`                               | 1     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                                                        | #390  |
 | `test/built-ins/String/prototype/split`                               | 1     | builtin      | there is no global object                                                                                           | #487  |
-| `test/built-ins/String/prototype/substring`                           | 4     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                                                        | #390  |
 | `test/built-ins/String/prototype/toLocaleLowerCase`                   | 4     | builtin      | Lean has no Unicode character database: case mapping is ASCII-only and `normalize` answers its input                | #518  |
 | `test/built-ins/String/prototype/toLocaleLowerCase`                   | 1     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/built-ins/String/prototype/toLocaleLowerCase`                   | 1     | out-of-scope | regular expressions are excluded by the epic                                                                        | #376  |
@@ -416,36 +497,31 @@ wrapper cleared `String/prototype/Symbol.iterator` to 6 pass and 0 fail.
 | `test/built-ins/String/prototype/toUpperCase`                         | 2     | builtin      | Lean has no Unicode character database: case mapping is ASCII-only and `normalize` answers its input                | #518  |
 | `test/built-ins/String/prototype/toUpperCase`                         | 1     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/built-ins/String/prototype/toUpperCase`                         | 1     | out-of-scope | regular expressions are excluded by the epic                                                                        | #376  |
-| `test/built-ins/String/prototype/trim`                                | 1     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                                                        | #390  |
 | `test/built-ins/SuppressedError`                                      | 13    | out-of-scope | explicit resource management is excluded by the epic                                                                | #376  |
 | `test/built-ins/SuppressedError`                                      | 1     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
 | `test/built-ins/SuppressedError/prototype`                            | 6     | out-of-scope | explicit resource management is excluded by the epic                                                                | #376  |
-| `test/built-ins/Symbol`                                               | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                                                        | #376  |
 | `test/built-ins/Symbol`                                               | 1     | builtin      | there is no global object                                                                                           | #487  |
+| `test/built-ins/Symbol`                                               | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                                                        | #376  |
 | `test/built-ins/Symbol/asyncDispose`                                  | 2     | out-of-scope | explicit resource management is excluded by the epic                                                                | #376  |
 | `test/built-ins/Symbol/dispose`                                       | 2     | out-of-scope | explicit resource management is excluded by the epic                                                                | #376  |
 | `test/built-ins/Symbol/prototype/description`                         | 1     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
 | `test/built-ins/Symbol/species`                                       | 1     | out-of-scope | regular expressions are excluded by the epic                                                                        | #376  |
-| `test/built-ins/Symbol/species`                                       | 1     | builtin      | `Symbol.species` is absent from the constructors that have one                                                      | #390  |
+| `test/built-ins/Symbol/species`                                       | 1     | out-of-scope | the keyed collections and promises are excluded by the epic                                                         | #376  |
 | `test/built-ins/ThrowTypeError`                                       | 2     | bug          | `%ThrowTypeError%` is extensible where 10.2.4.1 makes it frozen                                                     | #512  |
-| `test/built-ins/ThrowTypeError`                                       | 1     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                                                        | #390  |
 | `test/built-ins/ThrowTypeError`                                       | 1     | builtin      | `Function.prototype.caller` and `arguments` are the `%ThrowTypeError%` accessors                                    | #487  |
 | `test/built-ins/parseFloat`                                           | 2     | builtin      | there is no global object                                                                                           | #487  |
 | `test/built-ins/parseInt`                                             | 2     | builtin      | there is no global object                                                                                           | #487  |
-| `test/harness`                                                        | 7     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                                                        | #390  |
-| `test/harness`                                                        | 8     | builtin      | there is no global object                                                                                           | #487  |
+| `test/harness`                                                        | 6     | builtin      | there is no global object                                                                                           | #487  |
 | `test/harness`                                                        | 4     | out-of-scope | typed arrays and their buffers are excluded by the epic                                                             | #376  |
 | `test/harness`                                                        | 1     | out-of-scope | `Date` is excluded by the epic                                                                                      | #376  |
 | `test/language/arguments-object`                                      | 2     | out-of-scope | an early-error test that reaches for `eval`                                                                         | #376  |
 | `test/language/expressions/addition`                                  | 5     | builtin      | the global `isNaN` and `isFinite` are not in the realm                                                              | #441  |
 | `test/language/expressions/addition`                                  | 1     | out-of-scope | `Date` is excluded by the epic                                                                                      | #376  |
 | `test/language/expressions/addition`                                  | 1     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
-| `test/language/expressions/arrow-function`                            | 1     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                                                        | #390  |
 | `test/language/expressions/arrow-function`                            | 1     | builtin      | `Function.prototype.caller` and `arguments` are the `%ThrowTypeError%` accessors                                    | #487  |
 | `test/language/expressions/arrow-function/arrow`                      | 4     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
-| `test/language/expressions/assignment`                                | 1     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                                                        | #390  |
 | `test/language/expressions/assignment`                                | 1     | protocol     | the bridge drops the parentheses that keep NamedEvaluation from naming a function                                   | #499  |
-| `test/language/expressions/assignment/destructuring`                  | 2     | builtin      | the rest of `Array.prototype` is absent, `map` among it                                                             | #390  |
+| `test/language/expressions/assignment/destructuring`                  | 2     | bug          | a destructuring target's property reference is evaluated in the wrong order                                         | #533  |
 | `test/language/expressions/call`                                      | 8     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/language/expressions/call`                                      | 1     | out-of-scope | an early-error test that reaches for `eval`                                                                         | #376  |
 | `test/language/expressions/class`                                     | 1     | builtin      | `Function.prototype.caller` and `arguments` are the `%ThrowTypeError%` accessors                                    | #487  |
@@ -472,20 +548,19 @@ wrapper cleared `String/prototype/Symbol.iterator` to 6 pass and 0 fail.
 | `test/language/expressions/logical-not`                               | 2     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/language/expressions/logical-or`                                | 1     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/language/expressions/modulus`                                   | 14    | builtin      | the global `isNaN` and `isFinite` are not in the realm                                                              | #441  |
-| `test/language/expressions/modulus`                                   | 1     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/language/expressions/modulus`                                   | 1     | bug          | the left operand is not converted fully before the right one                                                        | #436  |
+| `test/language/expressions/modulus`                                   | 1     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/language/expressions/multiplication`                            | 10    | builtin      | the global `isNaN` and `isFinite` are not in the realm                                                              | #441  |
-| `test/language/expressions/multiplication`                            | 1     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/language/expressions/multiplication`                            | 1     | bug          | the left operand is not converted fully before the right one                                                        | #436  |
+| `test/language/expressions/multiplication`                            | 1     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/language/expressions/object`                                    | 8     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/language/expressions/object`                                    | 3     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
-| `test/language/expressions/object`                                    | 1     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                                                        | #390  |
 | `test/language/expressions/object/dstr`                               | 3     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
 | `test/language/expressions/strict-does-not-equals`                    | 2     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/language/expressions/strict-equals`                             | 2     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/language/expressions/subtraction`                               | 9     | builtin      | the global `isNaN` and `isFinite` are not in the realm                                                              | #441  |
-| `test/language/expressions/subtraction`                               | 1     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/language/expressions/subtraction`                               | 1     | bug          | the left operand is not converted fully before the right one                                                        | #436  |
+| `test/language/expressions/subtraction`                               | 1     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/language/expressions/tagged-template`                           | 3     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/language/expressions/template-literal`                          | 1     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/language/expressions/unary-minus`                               | 3     | builtin      | the global `isNaN` and `isFinite` are not in the realm                                                              | #441  |
@@ -494,8 +569,8 @@ wrapper cleared `String/prototype/Symbol.iterator` to 6 pass and 0 fail.
 | `test/language/expressions/unary-plus`                                | 1     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/language/function-code`                                         | 6     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/language/statements/break`                                      | 1     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
-| `test/language/statements/class`                                      | 1     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/language/statements/class`                                      | 1     | builtin      | `Function.prototype.caller` and `arguments` are the `%ThrowTypeError%` accessors                                    | #487  |
+| `test/language/statements/class`                                      | 1     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/language/statements/class/definition`                           | 1     | builtin      | `Function.prototype.caller` and `arguments` are the `%ThrowTypeError%` accessors                                    | #487  |
 | `test/language/statements/class/elements`                             | 32    | out-of-scope | an early-error test that reaches for `eval`                                                                         | #376  |
 | `test/language/statements/class/elements`                             | 22    | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
@@ -531,13 +606,12 @@ wrapper cleared `String/prototype/Symbol.iterator` to 6 pass and 0 fail.
 | `test/language/statements/for-of`                                     | 18    | out-of-scope | typed arrays and their buffers are excluded by the epic                                                             | #376  |
 | `test/language/statements/for-of`                                     | 10    | out-of-scope | the keyed collections are excluded by the epic                                                                      | #376  |
 | `test/language/statements/for-of`                                     | 6     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
-| `test/language/statements/for-of`                                     | 3     | builtin      | the rest of `Array.prototype` is absent, `pop` among it                                                             | #390  |
 | `test/language/statements/for-of`                                     | 2     | out-of-scope | explicit resource management (`using`) is excluded by the epic                                                      | #376  |
 | `test/language/statements/for-of`                                     | 1     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
 | `test/language/statements/function`                                   | 4     | builtin      | `Function.prototype.caller` and `arguments` are the `%ThrowTypeError%` accessors                                    | #487  |
 | `test/language/statements/function`                                   | 3     | out-of-scope | an early-error test that reaches for `eval`                                                                         | #376  |
-| `test/language/statements/function`                                   | 2     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/language/statements/function`                                   | 2     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent                                          | #434  |
+| `test/language/statements/function`                                   | 2     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/language/statements/function`                                   | 1     | out-of-scope | the `Function` constructor is excluded by the epic                                                                  | #376  |
 | `test/language/statements/if`                                         | 9     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/language/statements/labeled`                                    | 2     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
@@ -545,76 +619,9 @@ wrapper cleared `String/prototype/Symbol.iterator` to 6 pass and 0 fail.
 | `test/language/statements/return`                                     | 1     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent                                          | #434  |
 | `test/language/statements/switch`                                     | 21    | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/language/statements/switch`                                     | 1     | builtin      | the global `isNaN` and `isFinite` are not in the realm                                                              | #441  |
-| `test/language/statements/throw`                                      | 1     | builtin      | the rest of `Array.prototype` is absent                                                                             | #390  |
 | `test/language/statements/try`                                        | 12    | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/language/statements/try`                                        | 2     | out-of-scope | an early-error test that reaches for `eval`                                                                         | #376  |
-| `test/language/statements/try`                                        | 1     | builtin      | the rest of `Array.prototype` is absent                                                                             | #390  |
 | `test/language/statements/variable`                                   | 7     | out-of-scope | an early-error test that reaches for `eval`                                                                         | #376  |
 | `test/language/statements/variable`                                   | 6     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/language/statements/variable`                                   | 2     | builtin      | there is no global object                                                                                           | #487  |
 | `test/language/statements/while`                                      | 7     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
-
-## The unsupported column
-
-A test in the `unsupported` column is not a failure: the decoder refused
-the document by name before the evaluator saw it, which is the verdict the
-runner should file for a program outside the fragment. The kinds, and who
-owns them:
-
-| kind                                                                                                                                                     | owner                                                                         |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `BinaryExpression ,`, the shifts and the bitwise forms, `AssignmentExpression >>>=`                                                                      | #376 — operators the epic does not model                                      |
-| `BigIntLiteral`                                                                                                                                          | #376 — BigInt is out of scope                                                 |
-| `FunctionExpression generator`, `FunctionDeclaration generator`, `FunctionExpression async`, `ArrowFunctionExpression async`, `RegularExpressionLiteral` | #376 — generators, async, and regular expressions are out of scope            |
-| `ComputedPropertyName`                                                                                                                                   | #384 — a computed _class_ key; every object-literal one is in the slice       |
-| `MethodDefinition private`, `ClassStaticBlockDeclaration`, `AccessorKeyword`, `AssignmentExpression super target`                                        | #473 — private methods and accessors, static blocks, and `super.x = v`        |
-| `MethodDefinition generator`, `MethodDefinition async`, `Property generator`, `Property async`, `Decorator`                                              | #376 — generators, async, and decorators are out of scope                     |
-| `MethodDefinition numeric key`                                                                                                                           | #384 — a numeric _class_ key; a literal's is a computed key in the slice      |
-| `Parameter`                                                                                                                                              | #376 — a TypeScript parameter property, which declares and assigns a field    |
-| `Function constructor`                                                                                                                                   | #376 — the constructor's semantics are `eval` by another spelling             |
-| `AssignmentExpression target`, `LogicalExpression ??`, `BinaryExpression ==`, `BinaryExpression !=`                                                      | #376 — loose equality, nullish coalescing, and targets with no reference form |
-| `MetaProperty`                                                                                                                                           | #486 — `new.target` as syntax                                                 |
-| `WithStatement`                                                                                                                                          | #376 — `with` is not strict-mode syntax and the epic is strict mode only      |
-| `$262.createRealm`, `$262.detachArrayBuffer`                                                                                                             | #376 — the host hooks are refused by name                                     |
-
-The counts, from the same run. They are not tested — only the table above
-is — but they are what names the next slice to land.
-
-```
-  MethodDefinition generator  1436
-  MethodDefinition private  881
-  FunctionExpression generator  540
-  ComputedPropertyName  331
-  FunctionDeclaration generator  300
-  BinaryExpression ,  266
-  MethodDefinition async  217
-  Property generator  197
-  Function constructor  192
-  RegularExpressionLiteral  184
-  BigIntLiteral  109
-  $262.createRealm  58
-  Property async  50
-  BinaryExpression ==  34
-  ClassStaticBlockDeclaration  34
-  BinaryExpression !=  30
-  MethodDefinition numeric key  29
-  Decorator  12
-  AssignmentExpression super target  7
-  FunctionExpression async  6
-  MetaProperty  6
-  ArrowFunctionExpression async  4
-  BinaryExpression &  4
-  FunctionDeclaration async  4
-  PropertyDefinition numeric key  4
-  AssignmentExpression >>>=  3
-  $262.detachArrayBuffer  2
-  AccessorKeyword  2
-  LogicalExpression ??  2
-  AssignmentExpression &&=  1
-  AssignmentExpression ??=  1
-  AssignmentExpression |=  1
-  AssignmentExpression ||=  1
-  BinaryExpression >>  1
-  BinaryExpression >>>  1
-  WithStatement  1
-```

@@ -62,7 +62,7 @@ private def accumulated : Option Value :=
 attribute [local simp] evalExpr evalNamed evalStmt evalStmts bindForIn
   bindPattern evalLeafRef writeLeaf patternLeafRef Pattern.boundNames targetBoundNames allocNames
   iteratorStep createIterResult callFunction callNative callIteratorNative
-  toLengthValue toIntegerOrInfinityValue toNumberValue toNumberPrim
+  toLengthValue toIntegerOrInfinityValue toNumberValue toNumberPrim maxArrayLength
   DeclKind.isMutable
   allocCell getCell readCell writeCell initCell putIdent
   allocObj newObject readObj writeObj modifyObj Env.lookup
@@ -79,6 +79,8 @@ attribute [local simp] evalExpr evalNamed evalStmt evalStmts bindForIn
 -- The array's `length` goes through ToLength, whose integer part closes
 -- by `decide` and not by `simp`; the one length this program reads is
 -- therefore one lemma, as `ArraySimpTest` carries its index parse.
+-- ToLength's `min` against `maxArrayLength` is why that constant is in
+-- the list above, as it is in `tarski_eval`.
 @[local simp] private theorem len_two :
     Js.Number.FloatOps.integerOrInfinity? 2.0 = some 2 := by decide
 

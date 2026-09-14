@@ -81,6 +81,23 @@ private def simprocIn (n : Name) : CoreM Bool := do
   ``Tarski.evalForOf, ``Tarski.iteratorToList, ``Tarski.fromEntriesInto,
   ``Tarski.groupByInto].anyM unfoldsIn)
 
+-- The `Array` surface's own walks, and the dispatcher over them. Each
+-- recurses on a length or a list the heap named, which is a loop by
+-- another spelling, so none of them is a plain unfolding either;
+-- `callArrayNative` is out for `callReflectNative`'s reason, its
+-- twenty-nine arms being past the depth at which Lean generates a
+-- match's equation lemmas.
+/-- info: false -/
+#guard_msgs in
+#eval (#[``Tarski.callArrayNative, ``Tarski.callReflectNative,
+  ``Tarski.visitElements, ``Tarski.reduceFrom, ``Tarski.reduceRightFrom,
+  ``Tarski.firstPresent, ``Tarski.lastPresent, ``Tarski.indexOfFrom,
+  ``Tarski.lastIndexOfFrom, ``Tarski.includesFrom, ``Tarski.fillFrom,
+  ``Tarski.reverseFrom, ``Tarski.copyElements, ``Tarski.moveElements,
+  ``Tarski.deleteFrom, ``Tarski.flattenInto, ``Tarski.toLocaleStringFrom,
+  ``Tarski.collectPresent, ``Tarski.mergeSortValues,
+  ``Tarski.mergeValues, ``Tarski.fromArrayLike].anyM unfoldsIn)
+
 -- The four heap recursions are in the set, as simprocs.
 /-- info: true -/
 #guard_msgs in

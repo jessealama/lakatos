@@ -22,10 +22,13 @@ three: `push` is one link up on `Array.prototype`, and the write pays for
 the climb too, since `push` goes through `setProp`, which looks for the
 first property on the whole chain before writing, so the one element it
 stores costs two steps where before the descriptor fold it cost none.
-`Obj.ownKeys` and `Obj.truncate` are in the set but never reached: this
-program calls neither `Object.keys` nor a `length` write, so a stall on
-`List.mergeSort` would mean the set had grown a case the program does
-not have. -/
+`Obj.ownKeys` is in the set but never reached: this program calls
+`Object.keys` nowhere, so a stall on its `List.mergeSort` would mean the
+set had grown a case the program does not have. `Obj.truncate` *is*
+reached, since `push` is generic over an array-like now and so finishes
+with a write to `length` (23.1.3.23 step 5) rather than leaving the kind
+to grow on its own; nothing is dropped, so its own sort runs on the empty
+list. -/
 
 open Tarski
 
@@ -43,9 +46,17 @@ private def program : Program :=
 -- and the digit fold under it stalls on an opaque `Nat.toDigits`. The
 -- index the program actually parses is one literal, so it is one lemma.
 @[local simp] private theorem arrayIndex_one : arrayIndex? "1" = some 1 := by decide
+@[local simp] private theorem arrayIndex_zero : arrayIndex? "0" = some 0 := by decide
 
--- The realm is a hundred and fifty-six objects now, so `simp` walks a
--- deeper literal than the default recursion limit allows.
+-- `push` finishes with a write to `length` (23.1.3.23 step 5), which is
+-- ArraySetLength and so a ToUint32; the conversion is over floats and
+-- closes by `decide`, one literal like the three above.
+@[local simp] private theorem uint32_two : uint32Of? 2.0 = some 2 := by decide
+
+-- The realm is a hundred and eighty-six objects now, so the term
+-- `simp` carries through the heap literal is deeper than the default
+-- recursion limit admits; `Test/Tarski/TrySimpTest.lean` says the same
+-- and #471 is the issue.
 set_option maxRecDepth 4000 in
 example : runProgram program = some (.ok (some (.prim (.num 2.0)))) := by
   simp [tarski_eval, program]

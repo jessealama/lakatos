@@ -1030,3 +1030,145 @@ object's own operations are here beside it. -/
 /-- info: true -/
 #guard_msgs in
 #eval onlyStandard ``Tarski.Property.accepts
+
+/-! ## The `Array` surface
+
+The twenty-nine members 23.1.2 and 23.1.3 add, their helpers, and the
+nineteen walks under them — each of the last by its `eq_def`, since that
+is the equation a proof unfolding one step reaches for. -/
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.relativeIndex
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.lastIndexStart
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.spliceDeleteCount
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.flatDepth
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.sameValueZeroValue
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.maxArrayLength
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.arrayCreate
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.requireCallable
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.lengthOfArrayLike
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.createDataPropertyOrThrow
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.arraySpeciesCreate
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.spreadInto
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.defineElements
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.sortCompare
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.callArrayNative
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.visitElements.eq_def
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.reduceFrom.eq_def
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.reduceRightFrom.eq_def
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.firstPresent.eq_def
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.lastPresent.eq_def
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.indexOfFrom.eq_def
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.lastIndexOfFrom.eq_def
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.includesFrom.eq_def
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.fillFrom.eq_def
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.reverseFrom.eq_def
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.copyElements.eq_def
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.moveElements.eq_def
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.deleteFrom.eq_def
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.flattenInto.eq_def
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.toLocaleStringFrom.eq_def
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.collectPresent.eq_def
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.mergeSortValues.eq_def
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.mergeValues.eq_def
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.fromArrayLike.eq_def

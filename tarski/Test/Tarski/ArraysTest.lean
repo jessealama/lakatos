@@ -11,9 +11,12 @@ lists it and truncation is one write. What that buys is pinned below:
 `xs[5] = 1` on an empty array makes `length` 6 without making five
 properties, and `xs.length = 1` drops what it passes.
 
-`Array.prototype` has `push` and `join` and nothing else; both require an
-Array receiver here, the generic array-like forms and the rest of the
-prototype being #390's. -/
+`push` and `join` are **generic over an array-like**, as 23.1.3 has every
+member of `Array.prototype`: the receiver goes through ToObject, its
+length through LengthOfArrayLike, and the elements through `getProp` and
+`setProp`. The rest of the prototype is
+`Test/Tarski/ArrayBuiltinsTest.lean`'s and
+`Test/Tarski/ArrayIterationTest.lean`'s. -/
 
 open Tarski
 
@@ -180,21 +183,55 @@ private def setLength (v : Expr) (thenExpr : Expr) : Program :=
 -- `const xs = ["a"]; xs.push();` — no argument, so the length stands.
 #guard outcome [declareXs (.arrayLit [.strLit "a"]), .exprStmt (callOnXs "push" [])] == "1"
 
--- `const o = {}; o.push = Array.prototype.push; o.push(1);` — pinned as
--- #390's: the generic array-like form is not here.
+/-! ### `push` on an array-like
+
+23.1.3.23 is generic: a plain object with a `length` takes the write and
+has its `length` written back. -/
+
+/-- `const o = {}; o.push = Array.prototype.push; o.push(1); <tail>` -/
+private def pushOnPlainObject (tail : Expr) : Program :=
+  [ .varDecl .«const» [{ target := "o", init := some (.objectLit []) }],
+    .exprStmt (.assign (.member (.ident "o") "push")
+      (.member (.member (.ident "Array") "prototype") "push")),
+    .exprStmt (.call (.member (.ident "o") "push") [.numLit 1.0]),
+    .exprStmt tail ]
+
+-- An absent `length` is ToLength of `undefined`, which is 0, so the one
+-- element lands at `0` and `length` is written back as 1.
+#guard outcome (pushOnPlainObject (.member (.ident "o") "length")) == "1"
+#guard outcome (pushOnPlainObject (.index (.ident "o") (.numLit 0.0))) == "1"
+
+-- A `length` already past 2^53 - 1 refuses before anything is written
+-- (23.1.3.23 step 4).
 #guard outcome
-    [ .varDecl .«const» [{ target := "o", init := some (.objectLit []) }],
+    [ .varDecl .«const» [{ target := "o", init := some (.objectLit
+        [.init "length" (.numLit 9007199254740991.0)]) }],
       .exprStmt (.assign (.member (.ident "o") "push")
         (.member (.member (.ident "Array") "prototype") "push")),
       .exprStmt (.call (.member (.ident "o") "push") [.numLit 1.0]) ]
-  == "uncaught: TypeError: Array.prototype.push called on non-array"
+  == "uncaught: TypeError: Array length exceeds 2**53 - 1"
+
+-- The final `length` write is observable: a frozen array refuses a
+-- zero-argument `push`, which an engine does too.
+#guard outcome
+    [ declareXs (.call (.member (.ident "Object") "freeze") [nums [1.0]]),
+      .exprStmt (callOnXs "push" []) ]
+  == "uncaught: TypeError: Cannot assign to read only property 'length' of object '#<Object>'"
+
+-- A string receiver is boxed by ToObject (#391's wrapper), and a String
+-- exotic object's `length` is not writable, so `push`'s final write is
+-- what refuses rather than ToObject.
+#guard outcome
+    (expr (.call (.member (.member (.member (.ident "Array") "prototype") "push") "call")
+      [.strLit "abc"]))
+  == "uncaught: TypeError: Cannot assign to read only property 'length' of object '#<Object>'"
 
 /-! ## `join`
 
 The acceptance criterion includes the empty array, which joins to the
 empty string. `undefined` and `null` elements contribute nothing; every
-other element is ToString'd, which for an object means ToPrimitive and
-so, until #390 gives `Array.prototype` a `toString`, a `TypeError`. -/
+other element is ToString'd, which for a nested array is
+`Array.prototype.toString` and so that array's own `join`. -/
 
 #guard outcome (expr (.call (.member (.arrayLit []) "join") [])) == ""
 #guard outcome (expr (.call (.member (nums [1.0, 2.0]) "join") [])) == "1,2"
@@ -206,18 +243,16 @@ so, until #390 gives `Array.prototype` a `toString`, a `TypeError`. -/
     (expr (.call (.member (.arrayLit [.strLit "a", .boolLit true, .numLit 2.5]) "join")
       [.strLit " "]))
   == "a true 2.5"
--- A nested array's ToString is `Object.prototype.toString`'s tag:
--- `Array.prototype.toString` is #390's, and makes this `1`.
-#guard outcome (expr (.call (.member (.arrayLit [nums [1.0]]) "join") []))
-  == "[object Array]"
+-- A nested array's ToString is `Array.prototype.toString`, which is its
+-- own `join`.
+#guard outcome (expr (.call (.member (.arrayLit [nums [1.0]]) "join") [])) == "1"
 
--- `const o = {}; o.join = Array.prototype.join; o.join();`
+-- `Array.prototype.join.call({ length: 2, 0: "a", 1: "b" });` — generic
+-- over an array-like, as 23.1.3.18 has it.
 #guard outcome
-    [ .varDecl .«const» [{ target := "o", init := some (.objectLit []) }],
-      .exprStmt (.assign (.member (.ident "o") "join")
-        (.member (.member (.ident "Array") "prototype") "join")),
-      .exprStmt (.call (.member (.ident "o") "join") []) ]
-  == "uncaught: TypeError: Array.prototype.join called on non-array"
+    (expr (.call (.member (.member (.member (.ident "Array") "prototype") "join") "call")
+      [.objectLit [.init "length" (.numLit 2.0), .init "0" (.strLit "a"), .init "1" (.strLit "b")]]))
+  == "a,b"
 
 /-! ## `Array.isArray` -/
 
