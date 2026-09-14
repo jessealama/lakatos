@@ -52,3 +52,21 @@ example : Float.isNaN floatInf = false := by decide
 
 example : Float.isNaN (-0.0) = false := by decide
 #guard Float.isNaN (-0.0) == false
+
+/-! The same four operations under the `Js.` names the evaluator must use:
+`scripts/check-boundary.sh` bans every `Float.` spelling under `Tarski/`,
+so `Js/Number/FloatOps.lean` aliases them. They are `abbrev`s, hence the
+same terms, and they close by `decide` exactly as the originals do — which
+is what "the same term" has to mean here. -/
+
+example : Js.Number.FloatOps.tsAbs (-3.5) = 3.5 := by decide
+#guard decide (Js.Number.FloatOps.tsAbs (-3.5) = 3.5)
+
+example : Js.Number.FloatOps.tsSqrt 4.0 = 2.0 := by decide +kernel
+#guard decide (Js.Number.FloatOps.tsSqrt 4.0 = 2.0)
+
+example : Js.Number.FloatOps.tsIsNaN floatNaN = true := by decide
+#guard Js.Number.FloatOps.tsIsNaN floatNaN
+
+example : Js.Number.FloatOps.tsIsFinite floatInf = false := by decide
+#guard Js.Number.FloatOps.tsIsFinite floatInf == false

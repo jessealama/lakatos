@@ -199,4 +199,121 @@ correspondence on both evaluation paths — so the model is its `Bool`
 face. -/
 def sameValue (x y : Float) : Bool := decide (x = y)
 
+
+/-! ## The core operations under `Js.` names
+
+`Math.abs`, `Math.sqrt`, `Number.isFinite`, and `Number.isNaN` are
+exactly specified, and core's own operations _are_ the model:
+`Init.Data.Float.Model.Float` gives `abs`, `sqrt`, `isFinite`, and
+`isNaN` a logical model, so `decide` closes claims about them and
+nothing written here would improve on them. The emitter names them as
+`Float.*` directly, which `Test/Js/FloatBuiltinsTest.lean` pins. These
+aliases exist so the evaluator — whose boundary check
+(`scripts/check-boundary.sh`) forbids every `Float.` spelling under
+`Tarski/` — can name the same terms through the library, which is the
+sanctioned route. Being `abbrev`s they _are_ the same terms, so a later
+correspondence proof sees one definition rather than two.
+-/
+
+/-- `Math.abs`: core's `Float.abs` under a `Js.` name. -/
+abbrev tsAbs : Float → Float := Float.abs
+
+/-- `Math.sqrt`: core's `Float.sqrt` under a `Js.` name. -/
+abbrev tsSqrt : Float → Float := Float.sqrt
+
+/-- `Number.isFinite`'s numeric core: core's `Float.isFinite` under a
+`Js.` name. -/
+abbrev tsIsFinite : Float → Bool := Float.isFinite
+
+/-- `Number.isNaN`'s numeric core: core's `Float.isNaN` under a `Js.`
+name. -/
+abbrev tsIsNaN : Float → Bool := Float.isNaN
+
+/-! ## Exponentiation
+
+`Number::exponentiate` is the meaning of both `**` and `Math.pow`. Its
+special-case table is exact, and is transcribed below in the
+specification's own order. Its last step — a finite nonzero base raised
+to a finite nonzero exponent — the specification leaves
+*implementation-approximated*, and repeated squaring over Lean's own `*`
+is one such approximation: exact whenever the true power is
+representable (`2 ** 53`, `2 ** -52`, `10 ** 22`), and correctly rounded
+nowhere in general.
+
+A **non-integral** exponent has no answer here at all. This library is
+built from `Float.Model` and never from an `extern`, core's `Float.pow`,
+`Float.exp`, and `Float.log` carry no model, and a transcendental model
+is its own piece of work (GitHub #434). So that case answers `floatNaN`,
+the same kind of honest placeholder as `Tarski.Format.formatNumber` on a
+value needing an exponent: `Test/Js/FloatPowTest.lean` pins
+`tsPow 4.0 0.5` as a limit rather than as the truth.
+-/
+
+/-- The magnitude of an integral finite value, as a `Nat`: the mantissa
+shifted by the exponent, the sign dropped. Anything else — a zero, an
+infinity, a NaN, or a finite value with a fraction — answers `0`, so a
+caller must have established integrality first. -/
+def natOfIntegral : UnpackedFloat → Nat
+  | .finite _ m e _ => if e ≥ 0 then m <<< e.toNat else m >>> (-e).toNat
+  | _ => 0
+
+/-- `b ^ n` by repeated squaring: `b ^ n = (b * b) ^ (n / 2)`, times `b`
+again when `n` is odd. The recursion is structural in `fuel` rather than
+well-founded in `n`, so the kernel reduces it; `powNat` passes `n`
+itself, and `n / 2` reaches `0` within `log₂ n + 1 ≤ n` steps. Every
+multiplication rounds, which is the approximation the section header
+describes. -/
+def powNatAux (b : Float) : Nat → Nat → Float
+  | _, 0 => 1.0
+  | 0, _ => 1.0
+  | fuel + 1, n =>
+    let half := powNatAux (b * b) fuel (n / 2)
+    if n % 2 == 0 then half else b * half
+
+/-- `b ^ n` for a natural exponent. -/
+def powNat (b : Float) (n : Nat) : Float := powNatAux b n n
+
+/-- Whether a value is an odd integral Number, which is what decides the
+sign of an infinite or a zero base raised to a power. -/
+def isOddInteger (e : Float) : Bool :=
+  tsIsInteger e && Float.abs (tsRem e 2.0) == 1.0
+
+/-- `Number::exponentiate`: `**` and `Math.pow` are this one definition.
+The arms are the specification's table in its order — the exponent's NaN
+and zeros first, then the base's NaN, infinities, and zeros, then an
+infinite exponent against `abs(base)` versus 1, then finite against
+finite.
+
+In that last arm an integral exponent is `powNat` of its magnitude,
+divided into 1 when it is negative. A non-integral exponent is
+`floatNaN`: for a negative base that is the specification's own answer,
+and for a positive base it is the placeholder the section header
+describes (#434). -/
+def tsPow (base exponent : Float) : Float :=
+  match base.toModel.unpack, exponent.toModel.unpack with
+  | _, .notANumber => floatNaN
+  | _, .zero _ => 1.0
+  | .notANumber, _ => floatNaN
+  -- Neither NaN nor zero, so the exponent's own sign decides.
+  | .infinity .positive, _ => if exponent > 0.0 then floatInf else 0.0
+  | .infinity .negative, _ =>
+    if exponent > 0.0 then (if isOddInteger exponent then -floatInf else floatInf)
+    else if isOddInteger exponent then -0.0 else 0.0
+  | .zero .positive, _ => if exponent > 0.0 then 0.0 else floatInf
+  | .zero .negative, _ =>
+    if exponent > 0.0 then (if isOddInteger exponent then -0.0 else 0.0)
+    else if isOddInteger exponent then -floatInf else floatInf
+  | .finite .., .infinity expSign =>
+    let magnitude := Float.abs base
+    if magnitude == 1.0 then floatNaN
+    else
+      match expSign with
+      | .positive => if magnitude > 1.0 then floatInf else 0.0
+      | .negative => if magnitude > 1.0 then 0.0 else floatInf
+  | .finite .., unpackedExponent@(.finite ..) =>
+    if !tsIsInteger exponent then floatNaN
+    else
+      let magnitude := powNat base (natOfIntegral unpackedExponent)
+      if exponent < 0.0 then 1.0 / magnitude else magnitude
+
 end Js.Number.FloatOps
