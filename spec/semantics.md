@@ -341,6 +341,16 @@ strings, objects); and the theorems about them. A proof that rests on
 anything beyond Lean's standard axioms, or on an island it treated as
 opaque, says so in the verdict's `axioms` (the table above).
 
+A `throw new X(...)` is part of that model only when `X` is one of the
+seven builtin error constructors — `Error`, `TypeError`, `RangeError`,
+`ReferenceError`, `SyntaxError`, `EvalError`, `URIError` — in which case
+it is modeled as a thrown error of that kind and its arguments are
+dropped, the model distinguishing throws by kind alone. A throw of
+anything else is code outside the model: the declaration is still
+modeled, but the throw becomes a site the model says nothing about, and a
+property whose path reaches that site is reported `Inappropriate`, never
+proved.
+
 Every primitive operation in that model is the same Lean definition that
 `tarski`, this repository's JavaScript evaluator, executes when it runs a
 program. There are not two accounts of what `%`, `Math.fround`, or `===`

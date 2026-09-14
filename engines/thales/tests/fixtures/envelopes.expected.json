@@ -1413,6 +1413,23 @@
       "reason": "the property reaches code outside the model: 'probe' could not be modeled: unmapped TypeScript construct 'DeclareKeyword' at 3:1; 'probe' could not be modeled: unmapped TypeScript construct 'DeclareKeyword' at 3:1"
     }
   ],
+  "engines/thales/tests/conformance/theorem/custom-throw-unreached.ts": [
+    {
+      "function": "guard",
+      "property": "positive",
+      "szs": "Theorem",
+      "reason": "proved by a decision procedure over the bounded domain, kernel-checked as TsProof.thm_10286852699318424476",
+      "axioms": []
+    }
+  ],
+  "engines/thales/tests/conformance/inappropriate/custom-throw-reached.ts": [
+    {
+      "function": "guard",
+      "property": "positive",
+      "szs": "Inappropriate",
+      "reason": "the property reaches code outside the model: 'Foo' is not an error class"
+    }
+  ],
   "engines/thales/tests/conformance/theorem/imported-scale/main.ts": [
     {
       "function": "twice",
