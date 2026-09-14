@@ -56,9 +56,20 @@ set -l last_state ''
 while true
     # `bd ready --label-any` does not filter (bd 1.2.2 returns unlabelled
     # beads too), so claim one label at a time with the AND filter.
+    # `--claim` also skips a ready bead that still carries an assignee (a
+    # bead a reviewer reopened keeps the old worker's name), so when the
+    # claim finds nothing but a ready bead exists, clear its stale assignee
+    # and claim again.
     set -l claimed ''
     for l in (string split , $labels)
         set claimed (bd -C $root ready --parent $epic --label $l --claim --json | jq -r '.[0].id // empty')
+        if test -z "$claimed"
+            set -l stale (bd -C $root ready --parent $epic --label $l --json | jq -r '.[0] | select(.assignee != null) | .id // empty')
+            if test -n "$stale"
+                bd -C $root update $stale --assignee "" -q
+                set claimed (bd -C $root ready --parent $epic --label $l --claim --json | jq -r '.[0].id // empty')
+            end
+        end
         test -n "$claimed"; and break
     end
 
