@@ -251,6 +251,19 @@ describe("tarski-test262", () => {
       expect(document).toContain("| test/pass |");
     });
 
+    it("writes either file on its own", () => {
+      // Each writer is its own flag: the script asks for both, and a
+      // person reading the table by hand asks for one.
+      const markdown = path.join(scratch, "alone.md");
+      const result = invoke(overPass("--markdown", markdown));
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain(`wrote ${markdown}`);
+      expect(result.stdout).not.toContain(".json");
+      expect(
+        readFileSync(markdown, "utf8").startsWith("# test262 results\n"),
+      ).toBe(true);
+    });
+
     it("labels the table with the checkout's HEAD and warns off the pin", () => {
       const copy = path.join(
         mkdtempSync(path.join(tmpdir(), "test262-copy-")),
