@@ -19,8 +19,13 @@ import { readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { parseFrontMatter } from "./frontmatter.js";
 
-/** Why a test was counted but not run. Each is a column of its own. */
-export type NotRunReason = "noStrict" | "raw" | "async" | "module";
+/**
+ * Why a test was counted but not run. Each is a column of its own.
+ * `budget` is the one no plan produces: the overall budget ran out before
+ * this test's turn, so it was listed and counted but never spawned, and
+ * the denominator stays honest about what a truncated run covered.
+ */
+export type NotRunReason = "noStrict" | "raw" | "async" | "module" | "budget";
 
 /** Why a test is outside the table entirely. */
 export type SkipReason = "intl402" | "parse-negative" | "resolution-negative";
