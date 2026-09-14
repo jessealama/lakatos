@@ -372,8 +372,12 @@ private def onlyStandard (n : Name) : CoreM Bool := do
 #guard_msgs in
 #eval onlyStandard ``Tarski.protoChainHas.eq_def
 
--- `joinElements` is the third: it recurses on an array's length, and
--- `evalFor` the fourth, `evalWhile`'s twin.
+-- `joinElements` is the third: it recurses on an array's length.
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.joinElements.eq_def
+
+-- `evalFor` is the fourth, `evalWhile`'s twin.
 /-- info: true -/
 #guard_msgs in
 #eval onlyStandard ``Tarski.evalFor.eq_def
