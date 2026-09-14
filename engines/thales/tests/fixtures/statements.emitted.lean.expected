@@ -12,6 +12,13 @@ set_option autoImplicit false
 --   }
 --   return y;
 -- }
+def TsModel.floorAtOne.ast : Tarski.Program :=
+  [.funcDecl "floorAtOne" ["x"]
+      [.varDecl .«let» [{ name := "y", init := some (.ident "x") }],
+        .ifStmt (.binary .lt (.ident "x") (.numLit 1))
+          (.block [.exprStmt (.assign (.ident "y") (.numLit 1))]) none,
+        .returnStmt (some (.ident "y"))]]
+
 @[js_norm, grind]
 def TsModel.floorAtOne (x : JsNumber) : JsM JsNumber := do
   let mut y : JsNumber := x
@@ -34,6 +41,22 @@ def TsModel.floorAtOne (x : JsNumber) : JsM JsNumber := do
 --   }
 --   return rank * 100;
 -- }
+def TsModel.grade.ast : Tarski.Program :=
+  [.funcDecl "grade" ["score"]
+      [.varDecl .«const» [{ name := "bonus", init := some (.numLit 2) }],
+        .ifStmt (.binary .lt (.ident "score") (.numLit 0))
+          (.block
+            [.throwStmt
+                (.new (.ident "RangeError") [.template ["negative score: ", ""] [.ident "score"]])])
+          (some
+            (.ifStmt (.binary .lt (.ident "score") (.numLit 10))
+              (.block [.returnStmt (some (.binary .add (.ident "score") (.ident "bonus")))]) none)),
+        .varDecl .«let» [{ name := "rank", init := some (.numLit 0) }],
+        .ifStmt (.binary .lt (.ident "score") (.numLit 20))
+          (.block [.exprStmt (.assign (.ident "rank") (.numLit 1))])
+          (some (.block [.exprStmt (.assign (.ident "rank") (.numLit 2))])),
+        .returnStmt (some (.binary .mul (.ident "rank") (.numLit 100)))]]
+
 @[js_norm, grind]
 def TsModel.grade (score : JsNumber) : JsM JsNumber := do
   let bonus : JsNumber := 2
@@ -54,6 +77,12 @@ def TsModel.grade (score : JsNumber) : JsM JsNumber := do
 --   }
 --   return x;
 -- }
+def TsModel.clampUp.ast : Tarski.Program :=
+  [.funcDecl "clampUp" ["x"]
+      [.ifStmt (.binary .lt (.ident "x") (.numLit 1))
+          (.block [.exprStmt (.assign (.ident "x") (.numLit 1))]) none,
+        .returnStmt (some (.ident "x"))]]
+
 @[js_norm, grind]
 def TsModel.clampUp (x : JsNumber) : JsM JsNumber := do
   let mut x := x

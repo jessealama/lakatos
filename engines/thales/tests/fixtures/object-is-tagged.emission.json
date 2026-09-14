@@ -58,7 +58,109 @@
             "lit": "1"
           }
         }
-      ]
+      ],
+      "ast": {
+        "type": "Program",
+        "sourceType": "script",
+        "body": [
+          {
+            "type": "ExpressionStatement",
+            "expression": {
+              "type": "Literal",
+              "value": "use strict",
+              "raw": "\"use strict\""
+            },
+            "directive": "use strict"
+          },
+          {
+            "type": "FunctionDeclaration",
+            "id": {
+              "type": "Identifier",
+              "name": "skipMixed"
+            },
+            "params": [
+              {
+                "type": "Identifier",
+                "name": "x"
+              }
+            ],
+            "body": {
+              "type": "BlockStatement",
+              "body": [
+                {
+                  "type": "IfStatement",
+                  "test": {
+                    "type": "CallExpression",
+                    "callee": {
+                      "type": "MemberExpression",
+                      "object": {
+                        "type": "Identifier",
+                        "name": "Object"
+                      },
+                      "property": {
+                        "type": "Identifier",
+                        "name": "is"
+                      },
+                      "computed": false
+                    },
+                    "arguments": [
+                      {
+                        "type": "CallExpression",
+                        "callee": {
+                          "type": "MemberExpression",
+                          "object": {
+                            "type": "Identifier",
+                            "name": "Number"
+                          },
+                          "property": {
+                            "type": "Identifier",
+                            "name": "isFinite"
+                          },
+                          "computed": false
+                        },
+                        "arguments": [
+                          {
+                            "type": "Identifier",
+                            "name": "x"
+                          }
+                        ]
+                      },
+                      {
+                        "type": "Identifier",
+                        "name": "x"
+                      }
+                    ]
+                  },
+                  "consequent": {
+                    "type": "BlockStatement",
+                    "body": [
+                      {
+                        "type": "ReturnStatement",
+                        "argument": {
+                          "type": "Literal",
+                          "value": 0,
+                          "raw": "0"
+                        }
+                      }
+                    ]
+                  },
+                  "alternate": null
+                },
+                {
+                  "type": "ReturnStatement",
+                  "argument": {
+                    "type": "Literal",
+                    "value": 1,
+                    "raw": "1"
+                  }
+                }
+              ]
+            },
+            "async": false,
+            "generator": false
+          }
+        ]
+      }
     },
     {
       "kind": "function",
@@ -106,7 +208,92 @@
             "lit": "1"
           }
         }
-      ]
+      ],
+      "ast": {
+        "type": "Program",
+        "sourceType": "script",
+        "body": [
+          {
+            "type": "ExpressionStatement",
+            "expression": {
+              "type": "Literal",
+              "value": "use strict",
+              "raw": "\"use strict\""
+            },
+            "directive": "use strict"
+          },
+          {
+            "type": "FunctionDeclaration",
+            "id": {
+              "type": "Identifier",
+              "name": "definedOnly"
+            },
+            "params": [
+              {
+                "type": "Identifier",
+                "name": "x"
+              }
+            ],
+            "body": {
+              "type": "BlockStatement",
+              "body": [
+                {
+                  "type": "IfStatement",
+                  "test": {
+                    "type": "CallExpression",
+                    "callee": {
+                      "type": "MemberExpression",
+                      "object": {
+                        "type": "Identifier",
+                        "name": "Object"
+                      },
+                      "property": {
+                        "type": "Identifier",
+                        "name": "is"
+                      },
+                      "computed": false
+                    },
+                    "arguments": [
+                      {
+                        "type": "Identifier",
+                        "name": "x"
+                      },
+                      {
+                        "type": "Identifier",
+                        "name": "undefined"
+                      }
+                    ]
+                  },
+                  "consequent": {
+                    "type": "BlockStatement",
+                    "body": [
+                      {
+                        "type": "ReturnStatement",
+                        "argument": {
+                          "type": "Literal",
+                          "value": 0,
+                          "raw": "0"
+                        }
+                      }
+                    ]
+                  },
+                  "alternate": null
+                },
+                {
+                  "type": "ReturnStatement",
+                  "argument": {
+                    "type": "Literal",
+                    "value": 1,
+                    "raw": "1"
+                  }
+                }
+              ]
+            },
+            "async": false,
+            "generator": false
+          }
+        ]
+      }
     },
     {
       "kind": "function",
@@ -126,7 +313,49 @@
             "name": "n"
           }
         }
-      ]
+      ],
+      "ast": {
+        "type": "Program",
+        "sourceType": "script",
+        "body": [
+          {
+            "type": "ExpressionStatement",
+            "expression": {
+              "type": "Literal",
+              "value": "use strict",
+              "raw": "\"use strict\""
+            },
+            "directive": "use strict"
+          },
+          {
+            "type": "FunctionDeclaration",
+            "id": {
+              "type": "Identifier",
+              "name": "probe"
+            },
+            "params": [
+              {
+                "type": "Identifier",
+                "name": "n"
+              }
+            ],
+            "body": {
+              "type": "BlockStatement",
+              "body": [
+                {
+                  "type": "ReturnStatement",
+                  "argument": {
+                    "type": "Identifier",
+                    "name": "n"
+                  }
+                }
+              ]
+            },
+            "async": false,
+            "generator": false
+          }
+        ]
+      }
     },
     {
       "kind": "function",
@@ -146,7 +375,49 @@
             "name": "n"
           }
         }
-      ]
+      ],
+      "ast": {
+        "type": "Program",
+        "sourceType": "script",
+        "body": [
+          {
+            "type": "ExpressionStatement",
+            "expression": {
+              "type": "Literal",
+              "value": "use strict",
+              "raw": "\"use strict\""
+            },
+            "directive": "use strict"
+          },
+          {
+            "type": "FunctionDeclaration",
+            "id": {
+              "type": "Identifier",
+              "name": "claimMixed"
+            },
+            "params": [
+              {
+                "type": "Identifier",
+                "name": "n"
+              }
+            ],
+            "body": {
+              "type": "BlockStatement",
+              "body": [
+                {
+                  "type": "ReturnStatement",
+                  "argument": {
+                    "type": "Identifier",
+                    "name": "n"
+                  }
+                }
+              ]
+            },
+            "async": false,
+            "generator": false
+          }
+        ]
+      }
     },
     {
       "kind": "function",
@@ -166,7 +437,49 @@
             "name": "n"
           }
         }
-      ]
+      ],
+      "ast": {
+        "type": "Program",
+        "sourceType": "script",
+        "body": [
+          {
+            "type": "ExpressionStatement",
+            "expression": {
+              "type": "Literal",
+              "value": "use strict",
+              "raw": "\"use strict\""
+            },
+            "directive": "use strict"
+          },
+          {
+            "type": "FunctionDeclaration",
+            "id": {
+              "type": "Identifier",
+              "name": "ident"
+            },
+            "params": [
+              {
+                "type": "Identifier",
+                "name": "n"
+              }
+            ],
+            "body": {
+              "type": "BlockStatement",
+              "body": [
+                {
+                  "type": "ReturnStatement",
+                  "argument": {
+                    "type": "Identifier",
+                    "name": "n"
+                  }
+                }
+              ]
+            },
+            "async": false,
+            "generator": false
+          }
+        ]
+      }
     },
     {
       "kind": "function",
@@ -221,7 +534,110 @@
             "lit": "0"
           }
         }
-      ]
+      ],
+      "ast": {
+        "type": "Program",
+        "sourceType": "script",
+        "body": [
+          {
+            "type": "ExpressionStatement",
+            "expression": {
+              "type": "Literal",
+              "value": "use strict",
+              "raw": "\"use strict\""
+            },
+            "directive": "use strict"
+          },
+          {
+            "type": "FunctionDeclaration",
+            "id": {
+              "type": "Identifier",
+              "name": "classify"
+            },
+            "params": [
+              {
+                "type": "Identifier",
+                "name": "v"
+              }
+            ],
+            "body": {
+              "type": "BlockStatement",
+              "body": [
+                {
+                  "type": "IfStatement",
+                  "test": {
+                    "type": "CallExpression",
+                    "callee": {
+                      "type": "MemberExpression",
+                      "object": {
+                        "type": "Identifier",
+                        "name": "Object"
+                      },
+                      "property": {
+                        "type": "Identifier",
+                        "name": "is"
+                      },
+                      "computed": false
+                    },
+                    "arguments": [
+                      {
+                        "type": "Identifier",
+                        "name": "v"
+                      },
+                      {
+                        "type": "CallExpression",
+                        "callee": {
+                          "type": "MemberExpression",
+                          "object": {
+                            "type": "Identifier",
+                            "name": "Number"
+                          },
+                          "property": {
+                            "type": "Identifier",
+                            "name": "isNaN"
+                          },
+                          "computed": false
+                        },
+                        "arguments": [
+                          {
+                            "type": "Literal",
+                            "value": 0,
+                            "raw": "0"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "consequent": {
+                    "type": "BlockStatement",
+                    "body": [
+                      {
+                        "type": "ReturnStatement",
+                        "argument": {
+                          "type": "Literal",
+                          "value": 1,
+                          "raw": "1"
+                        }
+                      }
+                    ]
+                  },
+                  "alternate": null
+                },
+                {
+                  "type": "ReturnStatement",
+                  "argument": {
+                    "type": "Literal",
+                    "value": 0,
+                    "raw": "0"
+                  }
+                }
+              ]
+            },
+            "async": false,
+            "generator": false
+          }
+        ]
+      }
     }
   ],
   "obligations": [

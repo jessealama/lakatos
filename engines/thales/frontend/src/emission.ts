@@ -33,6 +33,8 @@ import {
   moduleQualifier,
   resolveImport,
 } from "./module-graph.js";
+import { attachAsts, bridgeModule, type ModuleScript } from "./emission-ast.js";
+import type { Program } from "../../../../tarski/frontend/src/estree.js";
 
 /** A JS expression in the shapes the plain-Lean emitter renders. The
  * frontend records operator text verbatim; what an operator means is the
@@ -171,6 +173,10 @@ export interface EmitFunction {
    * through a callee that does. A valueless opaque compiles to `pure`, so
    * without this the evaluation rung would prove straight through one. */
   noncomputable?: true;
+  /** The ESTree of the declaration's dependency closure as tarski's bridge
+   * produced it, a strict script; absent when no closed script could be
+   * assembled (see `emission-ast.ts`). */
+  ast?: Program;
 }
 
 export interface EmitGetter {
@@ -213,6 +219,11 @@ export interface EmitClass {
   ctor: { params: EmitParam[]; body: EmitStmt[]; noncomputable?: true };
   getters: EmitGetter[];
   methods: EmitMethod[];
+  /** The ESTree of the class's dependency closure as tarski's bridge
+   * produced it, a strict script; absent when no closed script could be
+   * assembled (see `emission-ast.ts`). The members share it: a member's
+   * replay runs the class's own program. */
+  ast?: Program;
 }
 
 /** A module-level `const` whose initializer is a constant expression: a
@@ -233,6 +244,10 @@ export interface EmitConstant {
    * source's derivation rather than a value the reader must re-derive. */
   init: EmitExpr;
   source: string;
+  /** The ESTree of the constant's dependency closure as tarski's bridge
+   * produced it, a strict script; absent when no closed script could be
+   * assembled (see `emission-ast.ts`). */
+  ast?: Program;
 }
 
 /** One residual site: the opaque its owner declares — one component below
@@ -2934,6 +2949,9 @@ function defaultOpenings(
  * constructor model, and the names Lean's structure command generates. */
 const RESERVED_MEMBERS = new Set([
   "construct",
+  // The declaration's AST def sits one component below the class,
+  // `TsModel.C.ast`, which is where a member of that name would render.
+  "ast",
   "mk",
   "rec",
   "recOn",
@@ -4482,6 +4500,10 @@ interface EmitClosure {
   classes: Map<string, ClassShape>;
   constants: Set<string>;
   aliases: Map<string, BuiltinEntry>;
+  /** Every module the walk bridged, in completion order: a dependency's
+   * walk finishes inside its importer's binding loop, so dependencies
+   * precede the entry, which is the order a closure's script wants. */
+  scripts: ModuleScript[];
 }
 
 /** The initializer a module-scope declarator pins, when the model admits
@@ -4810,6 +4832,11 @@ function walkEmitModule(
       c.failed.set(key(name.text), constructAt(name, stmt.kind, sf));
     }
   }
+  // The same text the evaluator would run, through the same bridge: what
+  // a declaration carries is a selection of these statements, never a node
+  // this file wrote.
+  const program = bridgeModule(text, label);
+  if (program !== undefined) c.scripts.push({ qualifier, program, names });
   return names;
 }
 
@@ -4952,11 +4979,13 @@ export function emitModule(
     classes: new Map(),
     constants: new Set(),
     aliases: new Map(),
+    scripts: [],
   };
   // The entry's qualifier is empty: its names are the ones annotations
   // are written about, so they keep their source spelling.
   const names = walkEmitModule(entry, file, text, "", closure);
   markNoncomputable(closure.declarations);
+  attachAsts(closure.declarations, closure.scripts);
   const { declarations, mapped, failed } = closure;
   const module = "";
   const key = (name: string) => modelKey({ module, name });

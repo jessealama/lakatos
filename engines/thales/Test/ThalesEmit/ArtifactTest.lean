@@ -174,3 +174,21 @@ def rendersOk (emissionPath : String) : CoreM Unit := do
     | throwError "the conclusion carries no return line:\n{raw}"
   unless (returnLine.splitOn "applyConversionFactors y").length == 1 do
     throwError "the conclusion did not break at all, so the pin proves nothing:\n{raw}"
+
+-- A closure the decoder refused renders no def at all: the construct it
+-- named is one comment line, in the decoder's own message shape, which is
+-- what the model line reports as the reason a declaration has no run.
+#eval show CoreM Unit from do
+  let e : Emission := {
+    file := "t.ts"
+    declarations := #[
+      .fn { name := "f", params := #[], source := "async function f() { }",
+            body := #[.ret (.num "1")],
+            ast := some (.unsupported "FunctionDeclaration async") }]
+    obligations := #[] }
+  let rendered ← renderEmission e
+  unless (rendered.splitOn
+      "-- TsModel.f.ast: unsupported: FunctionDeclaration async").length == 2 do
+    throwError "the refused construct was not recorded:\n{rendered}"
+  unless (rendered.splitOn "TsModel.f.ast :").length == 1 do
+    throwError "a refused closure still rendered an ast def:\n{rendered}"

@@ -8,7 +8,40 @@
         "kind": "num",
         "lit": "1000"
       },
-      "source": "const millisecondsInSecond = 1000;"
+      "source": "const millisecondsInSecond = 1000;",
+      "ast": {
+        "type": "Program",
+        "sourceType": "script",
+        "body": [
+          {
+            "type": "ExpressionStatement",
+            "expression": {
+              "type": "Literal",
+              "value": "use strict",
+              "raw": "\"use strict\""
+            },
+            "directive": "use strict"
+          },
+          {
+            "type": "VariableDeclaration",
+            "kind": "const",
+            "declarations": [
+              {
+                "type": "VariableDeclarator",
+                "id": {
+                  "type": "Identifier",
+                  "name": "millisecondsInSecond"
+                },
+                "init": {
+                  "type": "Literal",
+                  "value": 1000,
+                  "raw": "1000"
+                }
+              }
+            ]
+          }
+        ]
+      }
     },
     {
       "kind": "constant",
@@ -25,7 +58,66 @@
           "lit": "60"
         }
       },
-      "source": "const millisecondsInMinute = millisecondsInSecond * 60;"
+      "source": "const millisecondsInMinute = millisecondsInSecond * 60;",
+      "ast": {
+        "type": "Program",
+        "sourceType": "script",
+        "body": [
+          {
+            "type": "ExpressionStatement",
+            "expression": {
+              "type": "Literal",
+              "value": "use strict",
+              "raw": "\"use strict\""
+            },
+            "directive": "use strict"
+          },
+          {
+            "type": "VariableDeclaration",
+            "kind": "const",
+            "declarations": [
+              {
+                "type": "VariableDeclarator",
+                "id": {
+                  "type": "Identifier",
+                  "name": "millisecondsInSecond"
+                },
+                "init": {
+                  "type": "Literal",
+                  "value": 1000,
+                  "raw": "1000"
+                }
+              }
+            ]
+          },
+          {
+            "type": "VariableDeclaration",
+            "kind": "const",
+            "declarations": [
+              {
+                "type": "VariableDeclarator",
+                "id": {
+                  "type": "Identifier",
+                  "name": "millisecondsInMinute"
+                },
+                "init": {
+                  "type": "BinaryExpression",
+                  "operator": "*",
+                  "left": {
+                    "type": "Identifier",
+                    "name": "millisecondsInSecond"
+                  },
+                  "right": {
+                    "type": "Literal",
+                    "value": 60,
+                    "raw": "60"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
     },
     {
       "kind": "constant",
@@ -42,7 +134,92 @@
           "lit": "60"
         }
       },
-      "source": "const millisecondsInHour = millisecondsInMinute * 60;"
+      "source": "const millisecondsInHour = millisecondsInMinute * 60;",
+      "ast": {
+        "type": "Program",
+        "sourceType": "script",
+        "body": [
+          {
+            "type": "ExpressionStatement",
+            "expression": {
+              "type": "Literal",
+              "value": "use strict",
+              "raw": "\"use strict\""
+            },
+            "directive": "use strict"
+          },
+          {
+            "type": "VariableDeclaration",
+            "kind": "const",
+            "declarations": [
+              {
+                "type": "VariableDeclarator",
+                "id": {
+                  "type": "Identifier",
+                  "name": "millisecondsInSecond"
+                },
+                "init": {
+                  "type": "Literal",
+                  "value": 1000,
+                  "raw": "1000"
+                }
+              }
+            ]
+          },
+          {
+            "type": "VariableDeclaration",
+            "kind": "const",
+            "declarations": [
+              {
+                "type": "VariableDeclarator",
+                "id": {
+                  "type": "Identifier",
+                  "name": "millisecondsInMinute"
+                },
+                "init": {
+                  "type": "BinaryExpression",
+                  "operator": "*",
+                  "left": {
+                    "type": "Identifier",
+                    "name": "millisecondsInSecond"
+                  },
+                  "right": {
+                    "type": "Literal",
+                    "value": 60,
+                    "raw": "60"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "type": "VariableDeclaration",
+            "kind": "const",
+            "declarations": [
+              {
+                "type": "VariableDeclarator",
+                "id": {
+                  "type": "Identifier",
+                  "name": "millisecondsInHour"
+                },
+                "init": {
+                  "type": "BinaryExpression",
+                  "operator": "*",
+                  "left": {
+                    "type": "Identifier",
+                    "name": "millisecondsInMinute"
+                  },
+                  "right": {
+                    "type": "Literal",
+                    "value": 60,
+                    "raw": "60"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
     },
     {
       "kind": "function",
@@ -70,7 +247,75 @@
             }
           }
         }
-      ]
+      ],
+      "ast": {
+        "type": "Program",
+        "sourceType": "script",
+        "body": [
+          {
+            "type": "ExpressionStatement",
+            "expression": {
+              "type": "Literal",
+              "value": "use strict",
+              "raw": "\"use strict\""
+            },
+            "directive": "use strict"
+          },
+          {
+            "type": "VariableDeclaration",
+            "kind": "const",
+            "declarations": [
+              {
+                "type": "VariableDeclarator",
+                "id": {
+                  "type": "Identifier",
+                  "name": "millisecondsInSecond"
+                },
+                "init": {
+                  "type": "Literal",
+                  "value": 1000,
+                  "raw": "1000"
+                }
+              }
+            ]
+          },
+          {
+            "type": "FunctionDeclaration",
+            "id": {
+              "type": "Identifier",
+              "name": "secondsToMilliseconds"
+            },
+            "params": [
+              {
+                "type": "Identifier",
+                "name": "seconds"
+              }
+            ],
+            "body": {
+              "type": "BlockStatement",
+              "body": [
+                {
+                  "type": "ReturnStatement",
+                  "argument": {
+                    "type": "BinaryExpression",
+                    "operator": "*",
+                    "left": {
+                      "type": "Identifier",
+                      "name": "seconds"
+                    },
+                    "right": {
+                      "type": "Identifier",
+                      "name": "millisecondsInSecond"
+                    }
+                  }
+                }
+              ]
+            },
+            "async": false,
+            "generator": false
+          }
+        ]
+      }
     },
     {
       "kind": "function",
@@ -97,7 +342,83 @@
             ]
           }
         }
-      ]
+      ],
+      "ast": {
+        "type": "Program",
+        "sourceType": "script",
+        "body": [
+          {
+            "type": "ExpressionStatement",
+            "expression": {
+              "type": "Literal",
+              "value": "use strict",
+              "raw": "\"use strict\""
+            },
+            "directive": "use strict"
+          },
+          {
+            "type": "VariableDeclaration",
+            "kind": "const",
+            "declarations": [
+              {
+                "type": "VariableDeclarator",
+                "id": {
+                  "type": "Identifier",
+                  "name": "safeMathAbs"
+                },
+                "init": {
+                  "type": "MemberExpression",
+                  "object": {
+                    "type": "Identifier",
+                    "name": "Math"
+                  },
+                  "property": {
+                    "type": "Identifier",
+                    "name": "abs"
+                  },
+                  "computed": false
+                }
+              }
+            ]
+          },
+          {
+            "type": "FunctionDeclaration",
+            "id": {
+              "type": "Identifier",
+              "name": "magnitude"
+            },
+            "params": [
+              {
+                "type": "Identifier",
+                "name": "n"
+              }
+            ],
+            "body": {
+              "type": "BlockStatement",
+              "body": [
+                {
+                  "type": "ReturnStatement",
+                  "argument": {
+                    "type": "CallExpression",
+                    "callee": {
+                      "type": "Identifier",
+                      "name": "safeMathAbs"
+                    },
+                    "arguments": [
+                      {
+                        "type": "Identifier",
+                        "name": "n"
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            "async": false,
+            "generator": false
+          }
+        ]
+      }
     },
     {
       "kind": "function",
@@ -117,7 +438,49 @@
             "name": "s"
           }
         }
-      ]
+      ],
+      "ast": {
+        "type": "Program",
+        "sourceType": "script",
+        "body": [
+          {
+            "type": "ExpressionStatement",
+            "expression": {
+              "type": "Literal",
+              "value": "use strict",
+              "raw": "\"use strict\""
+            },
+            "directive": "use strict"
+          },
+          {
+            "type": "FunctionDeclaration",
+            "id": {
+              "type": "Identifier",
+              "name": "keepBelowSecond"
+            },
+            "params": [
+              {
+                "type": "Identifier",
+                "name": "s"
+              }
+            ],
+            "body": {
+              "type": "BlockStatement",
+              "body": [
+                {
+                  "type": "ReturnStatement",
+                  "argument": {
+                    "type": "Identifier",
+                    "name": "s"
+                  }
+                }
+              ]
+            },
+            "async": false,
+            "generator": false
+          }
+        ]
+      }
     },
     {
       "kind": "function",
@@ -145,7 +508,127 @@
             }
           }
         }
-      ]
+      ],
+      "ast": {
+        "type": "Program",
+        "sourceType": "script",
+        "body": [
+          {
+            "type": "ExpressionStatement",
+            "expression": {
+              "type": "Literal",
+              "value": "use strict",
+              "raw": "\"use strict\""
+            },
+            "directive": "use strict"
+          },
+          {
+            "type": "VariableDeclaration",
+            "kind": "const",
+            "declarations": [
+              {
+                "type": "VariableDeclarator",
+                "id": {
+                  "type": "Identifier",
+                  "name": "millisecondsInSecond"
+                },
+                "init": {
+                  "type": "Literal",
+                  "value": 1000,
+                  "raw": "1000"
+                }
+              }
+            ]
+          },
+          {
+            "type": "VariableDeclaration",
+            "kind": "const",
+            "declarations": [
+              {
+                "type": "VariableDeclarator",
+                "id": {
+                  "type": "Identifier",
+                  "name": "millisecondsInMinute"
+                },
+                "init": {
+                  "type": "BinaryExpression",
+                  "operator": "*",
+                  "left": {
+                    "type": "Identifier",
+                    "name": "millisecondsInSecond"
+                  },
+                  "right": {
+                    "type": "Literal",
+                    "value": 60,
+                    "raw": "60"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "type": "VariableDeclaration",
+            "kind": "const",
+            "declarations": [
+              {
+                "type": "VariableDeclarator",
+                "id": {
+                  "type": "Identifier",
+                  "name": "millisecondsInHour"
+                },
+                "init": {
+                  "type": "BinaryExpression",
+                  "operator": "*",
+                  "left": {
+                    "type": "Identifier",
+                    "name": "millisecondsInMinute"
+                  },
+                  "right": {
+                    "type": "Literal",
+                    "value": 60,
+                    "raw": "60"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "type": "FunctionDeclaration",
+            "id": {
+              "type": "Identifier",
+              "name": "hoursToMilliseconds"
+            },
+            "params": [
+              {
+                "type": "Identifier",
+                "name": "hours"
+              }
+            ],
+            "body": {
+              "type": "BlockStatement",
+              "body": [
+                {
+                  "type": "ReturnStatement",
+                  "argument": {
+                    "type": "BinaryExpression",
+                    "operator": "*",
+                    "left": {
+                      "type": "Identifier",
+                      "name": "hours"
+                    },
+                    "right": {
+                      "type": "Identifier",
+                      "name": "millisecondsInHour"
+                    }
+                  }
+                }
+              ]
+            },
+            "async": false,
+            "generator": false
+          }
+        ]
+      }
     },
     {
       "kind": "constant",
@@ -161,7 +644,57 @@
           }
         ]
       },
-      "source": "const root2 = Math.sqrt(2);"
+      "source": "const root2 = Math.sqrt(2);",
+      "ast": {
+        "type": "Program",
+        "sourceType": "script",
+        "body": [
+          {
+            "type": "ExpressionStatement",
+            "expression": {
+              "type": "Literal",
+              "value": "use strict",
+              "raw": "\"use strict\""
+            },
+            "directive": "use strict"
+          },
+          {
+            "type": "VariableDeclaration",
+            "kind": "const",
+            "declarations": [
+              {
+                "type": "VariableDeclarator",
+                "id": {
+                  "type": "Identifier",
+                  "name": "root2"
+                },
+                "init": {
+                  "type": "CallExpression",
+                  "callee": {
+                    "type": "MemberExpression",
+                    "object": {
+                      "type": "Identifier",
+                      "name": "Math"
+                    },
+                    "property": {
+                      "type": "Identifier",
+                      "name": "sqrt"
+                    },
+                    "computed": false
+                  },
+                  "arguments": [
+                    {
+                      "type": "Literal",
+                      "value": 2,
+                      "raw": "2"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
     },
     {
       "kind": "constant",
@@ -170,7 +703,39 @@
         "kind": "num",
         "lit": "Infinity"
       },
-      "source": "const noLimit = Infinity;"
+      "source": "const noLimit = Infinity;",
+      "ast": {
+        "type": "Program",
+        "sourceType": "script",
+        "body": [
+          {
+            "type": "ExpressionStatement",
+            "expression": {
+              "type": "Literal",
+              "value": "use strict",
+              "raw": "\"use strict\""
+            },
+            "directive": "use strict"
+          },
+          {
+            "type": "VariableDeclaration",
+            "kind": "const",
+            "declarations": [
+              {
+                "type": "VariableDeclarator",
+                "id": {
+                  "type": "Identifier",
+                  "name": "noLimit"
+                },
+                "init": {
+                  "type": "Identifier",
+                  "name": "Infinity"
+                }
+              }
+            ]
+          }
+        ]
+      }
     },
     {
       "kind": "constant",
@@ -180,7 +745,47 @@
         "object": "Number",
         "member": "EPSILON"
       },
-      "source": "const epsilon = Number.EPSILON;"
+      "source": "const epsilon = Number.EPSILON;",
+      "ast": {
+        "type": "Program",
+        "sourceType": "script",
+        "body": [
+          {
+            "type": "ExpressionStatement",
+            "expression": {
+              "type": "Literal",
+              "value": "use strict",
+              "raw": "\"use strict\""
+            },
+            "directive": "use strict"
+          },
+          {
+            "type": "VariableDeclaration",
+            "kind": "const",
+            "declarations": [
+              {
+                "type": "VariableDeclarator",
+                "id": {
+                  "type": "Identifier",
+                  "name": "epsilon"
+                },
+                "init": {
+                  "type": "MemberExpression",
+                  "object": {
+                    "type": "Identifier",
+                    "name": "Number"
+                  },
+                  "property": {
+                    "type": "Identifier",
+                    "name": "EPSILON"
+                  },
+                  "computed": false
+                }
+              }
+            ]
+          }
+        ]
+      }
     },
     {
       "kind": "function",
@@ -208,7 +813,92 @@
             }
           }
         }
-      ]
+      ],
+      "ast": {
+        "type": "Program",
+        "sourceType": "script",
+        "body": [
+          {
+            "type": "ExpressionStatement",
+            "expression": {
+              "type": "Literal",
+              "value": "use strict",
+              "raw": "\"use strict\""
+            },
+            "directive": "use strict"
+          },
+          {
+            "type": "VariableDeclaration",
+            "kind": "const",
+            "declarations": [
+              {
+                "type": "VariableDeclarator",
+                "id": {
+                  "type": "Identifier",
+                  "name": "root2"
+                },
+                "init": {
+                  "type": "CallExpression",
+                  "callee": {
+                    "type": "MemberExpression",
+                    "object": {
+                      "type": "Identifier",
+                      "name": "Math"
+                    },
+                    "property": {
+                      "type": "Identifier",
+                      "name": "sqrt"
+                    },
+                    "computed": false
+                  },
+                  "arguments": [
+                    {
+                      "type": "Literal",
+                      "value": 2,
+                      "raw": "2"
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "type": "FunctionDeclaration",
+            "id": {
+              "type": "Identifier",
+              "name": "diagonal"
+            },
+            "params": [
+              {
+                "type": "Identifier",
+                "name": "x"
+              }
+            ],
+            "body": {
+              "type": "BlockStatement",
+              "body": [
+                {
+                  "type": "ReturnStatement",
+                  "argument": {
+                    "type": "BinaryExpression",
+                    "operator": "*",
+                    "left": {
+                      "type": "Identifier",
+                      "name": "x"
+                    },
+                    "right": {
+                      "type": "Identifier",
+                      "name": "root2"
+                    }
+                  }
+                }
+              ]
+            },
+            "async": false,
+            "generator": false
+          }
+        ]
+      }
     },
     {
       "kind": "function",
@@ -236,7 +926,74 @@
             }
           }
         }
-      ]
+      ],
+      "ast": {
+        "type": "Program",
+        "sourceType": "script",
+        "body": [
+          {
+            "type": "ExpressionStatement",
+            "expression": {
+              "type": "Literal",
+              "value": "use strict",
+              "raw": "\"use strict\""
+            },
+            "directive": "use strict"
+          },
+          {
+            "type": "VariableDeclaration",
+            "kind": "const",
+            "declarations": [
+              {
+                "type": "VariableDeclarator",
+                "id": {
+                  "type": "Identifier",
+                  "name": "noLimit"
+                },
+                "init": {
+                  "type": "Identifier",
+                  "name": "Infinity"
+                }
+              }
+            ]
+          },
+          {
+            "type": "FunctionDeclaration",
+            "id": {
+              "type": "Identifier",
+              "name": "shrink"
+            },
+            "params": [
+              {
+                "type": "Identifier",
+                "name": "x"
+              }
+            ],
+            "body": {
+              "type": "BlockStatement",
+              "body": [
+                {
+                  "type": "ReturnStatement",
+                  "argument": {
+                    "type": "BinaryExpression",
+                    "operator": "/",
+                    "left": {
+                      "type": "Identifier",
+                      "name": "x"
+                    },
+                    "right": {
+                      "type": "Identifier",
+                      "name": "noLimit"
+                    }
+                  }
+                }
+              ]
+            },
+            "async": false,
+            "generator": false
+          }
+        ]
+      }
     },
     {
       "kind": "function",
@@ -264,7 +1021,82 @@
             }
           }
         }
-      ]
+      ],
+      "ast": {
+        "type": "Program",
+        "sourceType": "script",
+        "body": [
+          {
+            "type": "ExpressionStatement",
+            "expression": {
+              "type": "Literal",
+              "value": "use strict",
+              "raw": "\"use strict\""
+            },
+            "directive": "use strict"
+          },
+          {
+            "type": "VariableDeclaration",
+            "kind": "const",
+            "declarations": [
+              {
+                "type": "VariableDeclarator",
+                "id": {
+                  "type": "Identifier",
+                  "name": "epsilon"
+                },
+                "init": {
+                  "type": "MemberExpression",
+                  "object": {
+                    "type": "Identifier",
+                    "name": "Number"
+                  },
+                  "property": {
+                    "type": "Identifier",
+                    "name": "EPSILON"
+                  },
+                  "computed": false
+                }
+              }
+            ]
+          },
+          {
+            "type": "FunctionDeclaration",
+            "id": {
+              "type": "Identifier",
+              "name": "nudge"
+            },
+            "params": [
+              {
+                "type": "Identifier",
+                "name": "x"
+              }
+            ],
+            "body": {
+              "type": "BlockStatement",
+              "body": [
+                {
+                  "type": "ReturnStatement",
+                  "argument": {
+                    "type": "BinaryExpression",
+                    "operator": "+",
+                    "left": {
+                      "type": "Identifier",
+                      "name": "x"
+                    },
+                    "right": {
+                      "type": "Identifier",
+                      "name": "epsilon"
+                    }
+                  }
+                }
+              ]
+            },
+            "async": false,
+            "generator": false
+          }
+        ]
+      }
     }
   ],
   "obligations": [

@@ -29,13 +29,31 @@ const read = () => fs.readFileSync(FIXTURE, "utf8");
 const expectValidEmission = schemaValidator(
   new URL("../../../../schemas/thales-emission.schema.json", import.meta.url),
   "emission",
+  // A declaration's `ast` is the ESTree schema's `Program`, referenced
+  // across files: the relative `$ref` resolves against the emission
+  // schema's `$id` to the ESTree schema's own.
+  [new URL("../../../../schemas/tarski-estree.schema.json", import.meta.url)],
 );
+
+/** A declaration with the AST it now carries dropped. What the closure is
+ * belongs to `emission-ast.test.ts`, where it is computed by the bridge
+ * rather than spelled as node literals; a body-IR pin has no business
+ * restating one. */
+function withoutAst<T extends object>(d: T): T {
+  const { ast: _ast, ...rest } = d as T & { ast?: unknown };
+  return rest as T;
+}
+
+/** The emission's declarations, each without its AST. */
+function irOf(declarations: readonly EmitDecl[]): EmitDecl[] {
+  return declarations.map(withoutAst);
+}
 
 describe("emitModule on the tracer fixture", () => {
   test("maps add with its body IR", () => {
     const { emission } = emitModule(read(), FIXTURE);
     expect(emission.file).toBe(FIXTURE);
-    expect(emission.declarations).toEqual([
+    expect(irOf(emission.declarations)).toEqual([
       {
         kind: "function",
         name: "add",
@@ -3967,7 +3985,7 @@ function classWith(members: string): string {
 describe("class declarations (#129)", () => {
   test("a number-typed class models as a class declaration", () => {
     const { emission } = emitModule(BOX, "t.ts");
-    expect(emission.declarations).toEqual([
+    expect(irOf(emission.declarations)).toEqual([
       {
         kind: "class",
         name: "Box",
@@ -7632,7 +7650,7 @@ describe("module-level const bindings", () => {
     const { emission, classified } = emitModule(src, "init-call.ts");
     expect(classified).toEqual([]);
     expectValidEmission(emission);
-    expect(emission.declarations[0]).toEqual({
+    expect(withoutAst(emission.declarations[0]!)).toEqual({
       kind: "constant",
       name: "root2",
       init: {
@@ -8261,7 +8279,7 @@ describe("module-level const bindings", () => {
     ].join("\n");
     const { emission, classified } = emitModule(src, "module-const.ts");
     expect(classified).toEqual([]);
-    expect(emission.declarations).toEqual([
+    expect(irOf(emission.declarations)).toEqual([
       {
         kind: "constant",
         name: "millisecondsInSecond",
@@ -8305,7 +8323,7 @@ describe("module-level const bindings", () => {
     ].join("\n");
     const { emission, classified } = emitModule(src, "ladder.ts");
     expect(classified).toEqual([]);
-    expect(emission.declarations.slice(0, 3)).toEqual([
+    expect(irOf(emission.declarations.slice(0, 3))).toEqual([
       {
         kind: "constant",
         name: "s",
@@ -8368,7 +8386,7 @@ describe("module-level const bindings", () => {
     ].join("\n");
     const { emission, classified } = emitModule(src, "ops.ts");
     expect(classified).toEqual([]);
-    expect(emission.declarations[1]).toEqual({
+    expect(withoutAst(emission.declarations[1]!)).toEqual({
       kind: "constant",
       name: "q",
       init: {

@@ -1,4 +1,5 @@
 import Lean.Data.Json
+import Tarski.Decode
 
 /-! The emission IR: the shapes `schemas/thales-emission.schema.json`
 fixes, decoded strictly — an unknown kind or a missing field is a decode
@@ -7,6 +8,20 @@ error naming the offender, and the whole run fails cleanly on it. -/
 namespace ThalesEmit
 
 open Lean
+
+/-- A declaration's dependency closure, as `Tarski.Decode` read the
+ESTree the frontend attached: the program itself, or the construct the
+decoder refused. The refusal travels as a string rather than vanishing
+because that construct is the one thing #481's model line needs to say
+why a declaration carries no validated run. A closure the decoder calls
+*malformed* is not here at all — a broken producer fails the emission by
+name, like every other schema violation. -/
+inductive DeclAst where
+  /-- The closure, decoded. -/
+  | program (p : Tarski.Program)
+  /-- The node kind the decoder does not evaluate, as it spells it. -/
+  | unsupported (construct : String)
+deriving Repr, Inhabited
 
 /-- A union member's keyword tag — the six the model admits, carried in
 the normalization order the frontend sorts them into. -/
@@ -121,6 +136,9 @@ structure EmitFn where
   body : Array JsStmt
   /-- The body reaches a residual site, directly or through a callee. -/
   tainted : Bool := false
+  /-- The declaration's dependency closure as ESTree, decoded; none when
+  the frontend could assemble no closed script for it. -/
+  ast : Option DeclAst := none
 deriving Repr, Inhabited
 
 structure EmitGetter where
@@ -159,6 +177,9 @@ structure EmitClass where
   getters : Array EmitGetter
   methods : Array EmitMethod := #[]
   ctorTainted : Bool := false
+  /-- The class's dependency closure as ESTree, decoded; its members
+  share it, since a member's replay runs the class's own program. -/
+  ast : Option DeclAst := none
 deriving Repr, Inhabited
 
 /-- A module-level `const` whose initializer is a constant expression,
@@ -171,6 +192,8 @@ structure EmitConstant where
   arithmetic — so the def preserves the source's derivation. -/
   init : JsExpr
   source : String
+  /-- The constant's dependency closure as ESTree, decoded. -/
+  ast : Option DeclAst := none
 deriving Repr, Inhabited
 
 /-- One residual site: the opaque its owner declares — one component
@@ -511,6 +534,20 @@ def decodeParams (j : Json) (field : String) : Except String (Array Param) := do
   (← getArr j field).mapM fun p =>
     (decodeParam p).mapError fun m => s!"field '{field}': {m}"
 
+/-- The optional `ast` field, through the evaluator's own decoder. An
+absent field is a declaration the frontend assembled no closed script
+for; `unsupported` is a construct outside the evaluated fragment and
+travels; `malformed` is the producer being broken, so it fails the run by
+name, the rule every field in this file follows. -/
+def decodeAst (j : Json) : Except String (Option DeclAst) :=
+  match j.getObjVal? "ast" with
+  | .error _ => pure none
+  | .ok v =>
+    match Tarski.decodeProgram v with
+    | .ok p => pure (some (.program p))
+    | .error (.unsupported k) => pure (some (.unsupported k))
+    | .error (.malformed m) => throw s!"field 'ast': malformed: {m}"
+
 def decodeFn (j : Json) : Except String EmitFn := do
   pure { name := ← getStr j "name"
          module := ← getStrOpt j "module"
@@ -518,7 +555,8 @@ def decodeFn (j : Json) : Except String EmitFn := do
          params := ← decodeParams j "params"
          source := ← getStr j "source"
          body := ← (← getArr j "body").mapM decodeStmt
-         tainted := ← getBoolOpt j "noncomputable" }
+         tainted := ← getBoolOpt j "noncomputable"
+         ast := ← decodeAst j }
 
 def decodeGetter (j : Json) : Except String EmitGetter := do
   pure { name := ← getStr j "name"
@@ -546,13 +584,15 @@ def decodeClass (j : Json) : Except String EmitClass := do
          ctorBody := ← (← getArr ctor "body").mapM decodeStmt
          getters := ← (← getArr j "getters").mapM decodeGetter
          methods := ← (← getArr j "methods").mapM decodeMethod
-         ctorTainted := ← getBoolOpt ctor "noncomputable" }
+         ctorTainted := ← getBoolOpt ctor "noncomputable"
+         ast := ← decodeAst j }
 
 def decodeConstant (j : Json) : Except String EmitConstant := do
   pure { name := ← getStr j "name"
          module := ← getStrOpt j "module"
          init := ← decodeExpr (← j.getObjVal? "init")
-         source := ← getStr j "source" }
+         source := ← getStr j "source"
+         ast := ← decodeAst j }
 
 def decodeResidual (j : Json) : Except String EmitResidual := do
   pure { owner := ← getStr j "owner"

@@ -444,7 +444,7 @@ def ctorParamJson (n : String) : Json :=
      ("init", Json.mkObj [("kind", "num"), ("lit", "-10")]),
      ("source", "const cap = -10;")]))
   matches .ok (.const { name := "cap", module := none, init := .num "-10",
-                        source := "const cap = -10;" })
+                        source := "const cap = -10;", ast := none })
 #guard
   (decodeDecl (Json.mkObj
     [("kind", "constant"), ("name", "m"),
@@ -455,7 +455,7 @@ def ctorParamJson (n : String) : Json :=
      ("source", "const m = s * 60;")]))
   matches .ok (.const { name := "m", module := none,
                         init := .binop "*" (.constRead "s" none) (.num "60"),
-                        source := "const m = s * 60;" })
+                        source := "const m = s * 60;", ast := none })
 -- The literal field is gone from the wire: a constant with no initializer
 -- expression is a decode error, not a literal.
 #guard
@@ -555,3 +555,63 @@ def payloadShell (guards : Json) : Json :=
   (decodeFn (Json.mkObj
     [("name", "f"), ("params", Json.arr #[]), ("source", "s"), ("body", Json.arr #[])]))
   matches .ok { name := "f", tainted := false, .. }
+
+/-! ## The declaration's AST
+
+`ast` travels through the evaluator's own decoder, so what a declaration
+carries is what `tarski` reads and not a second reading of the same JSON.
+The three outcomes are different things: an absent field is a declaration
+the frontend assembled no closed script for, `unsupported` is a construct
+outside the evaluated fragment and travels as the construct's name, and
+`malformed` is the producer being broken, which fails the run by name like
+every other schema violation here. -/
+
+private def prologueJson : Json :=
+  Json.mkObj
+    [("type", "ExpressionStatement"),
+     ("expression", Json.mkObj
+       [("type", "Literal"), ("value", "use strict"), ("raw", "\"use strict\"")]),
+     ("directive", "use strict")]
+
+private def programJson (body : Array Json) : Json :=
+  Json.mkObj
+    [("type", "Program"), ("sourceType", "script"),
+     ("body", Json.arr (#[prologueJson] ++ body))]
+
+#guard (decodeAst (Json.mkObj [("name", "f")])) matches .ok none
+#guard (decodeAst (Json.mkObj [("ast", programJson #[])])) matches .ok (some (.program []))
+#guard
+  (decodeAst (Json.mkObj
+    [("ast", programJson
+      #[Json.mkObj [("type", "Unsupported"), ("kind", "AwaitExpression")]])]))
+  matches .ok (some (.unsupported "AwaitExpression"))
+#guard
+  (decodeAst (Json.mkObj [("ast", Json.mkObj [("type", "Program")])]))
+  matches .error "field 'ast': malformed: missing field \"sourceType\""
+-- The epic is strict-mode only, so a script without the directive is a
+-- broken producer rather than a program outside the fragment.
+#guard
+  (decodeAst (Json.mkObj
+    [("ast", Json.mkObj
+      [("type", "Program"), ("sourceType", "script"), ("body", Json.arr #[])])]))
+  matches .error "field 'ast': malformed: no \"use strict\" directive"
+
+-- The field travels into each of the three declarations that carry one.
+#guard
+  ((decodeDecl (Json.mkObj
+    [("kind", "function"), ("name", "f"), ("params", Json.arr #[]),
+     ("source", ""), ("body", Json.arr #[]), ("ast", programJson #[])]))
+   matches .ok (.fn { ast := some (.program []), .. }))
+#guard
+  ((decodeDecl (Json.mkObj
+    [("kind", "constant"), ("name", "k"),
+     ("init", Json.mkObj [("kind", "num"), ("lit", "1")]),
+     ("source", ""), ("ast", programJson #[])]))
+   matches .ok (.const { ast := some (.program []), .. }))
+#guard
+  ((decodeDecl (Json.mkObj
+    [("kind", "class"), ("name", "C"), ("source", ""), ("fields", Json.arr #[]),
+     ("ctor", Json.mkObj [("params", Json.arr #[]), ("body", Json.arr #[])]),
+     ("getters", Json.arr #[]), ("methods", Json.arr #[]),
+     ("ast", programJson #[])]))
+   matches .ok (.cls { ast := some (.program []), .. }))

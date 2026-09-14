@@ -19,6 +19,14 @@ structure TsModel.Box where
   «#v» : JsNumber
   deriving Inhabited
 
+def TsModel.Box.ast : Tarski.Program :=
+  [.classDecl "Box"
+      { name := some "Box", superClass := none,
+        elements :=
+          [.field false (.«private» "v") none,
+            .ctor ["v"] [.exprStmt (.assign (.privateMember .this "v") (.ident "v"))],
+            .method .getter false "v" [] [.returnStmt (some (.privateMember .this "v"))]] }]
+
 @[js_norm, grind]
 def TsModel.Box.construct (v : JsNumber) : JsM TsModel.Box := do
   let «this.#v» : JsNumber := v
@@ -45,6 +53,17 @@ def TsModel.Box.v (self : TsModel.Box) : JsM JsNumber := do
 structure TsModel.Gate where
   «#lo» : JsNumber
   deriving Inhabited
+
+def TsModel.Gate.ast : Tarski.Program :=
+  [.classDecl "Gate"
+      { name := some "Gate", superClass := none,
+        elements :=
+          [.field false (.«private» "lo") none,
+            .ctor ["a"]
+              [.ifStmt (.binary .lt (.ident "a") (.numLit 0))
+                  (.block [.throwStmt (.new (.ident "RangeError") [.strLit "negative"])])
+                  (some (.block [.exprStmt (.assign (.privateMember .this "lo") (.ident "a"))]))],
+            .method .getter false "lo" [] [.returnStmt (some (.privateMember .this "lo"))]] }]
 
 @[js_norm, grind]
 def TsModel.Gate.construct (a : JsNumber) : JsM TsModel.Gate := do
@@ -79,6 +98,21 @@ def TsModel.Gate.lo (self : TsModel.Gate) : JsM JsNumber := do
 structure TsModel.Doubler where
   «#v» : JsNumber
   deriving Inhabited
+
+def TsModel.Doubler.ast : Tarski.Program :=
+  [.classDecl "Doubler"
+      { name := some "Doubler", superClass := none,
+        elements :=
+          [.field false (.«private» "v") none,
+            .ctor ["v"] [.exprStmt (.assign (.privateMember .this "v") (.ident "v"))],
+            .method .method false "double" []
+              [.returnStmt (some (.binary .mul (.privateMember .this "v") (.numLit 2)))],
+            .method .method false "base" [] [.returnStmt (some (.privateMember .this "v"))],
+            .method .method false "twice" []
+              [.returnStmt
+                  (some
+                    (.binary .add (.call (.member .this "base") [])
+                      (.call (.member .this "base") [])))]] }]
 
 @[js_norm, grind]
 def TsModel.Doubler.construct (v : JsNumber) : JsM TsModel.Doubler := do
