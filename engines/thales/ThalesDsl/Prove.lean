@@ -18,9 +18,12 @@ open Lean Elab Command
 open Js
 
 /-- Successful proofs are added to the environment so the kernel — not just
-the elaborator — has checked them. -/
-def freshTheoremName (env : Environment) (identity : Identity) : Name := Id.run do
-  let base := `TsProof ++
+the elaborator — has checked them. `ns` tells the two kinds of theorem an
+artifact carries apart: a proved property under `TsProof`, a validated
+correspondence under `TsValidated`. -/
+def freshTheoremName (env : Environment) (identity : Identity)
+    (ns : Name := `TsProof) : Name := Id.run do
+  let base := ns ++
     Name.mkSimple s!"thm_{hash s!"{identity.file}#{identity.function}#{identity.property}"}"
   let mut name := base
   let mut i : Nat := 1

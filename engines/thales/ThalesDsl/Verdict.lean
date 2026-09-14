@@ -86,4 +86,68 @@ def Verdict.sentinel : String := "thales-verdict:"
 def Verdict.emit (v : Verdict) : IO Unit :=
   IO.println (Verdict.sentinel ++ v.toJson.compress)
 
+/-! ## The model channel
+
+The second sentinel. A verdict says what was proved about a declaration's
+*model*; a model line says whether that model is the declaration — whether
+the evaluator's run of the declaration's own AST, projected, equals it.
+The two are independent: an unvalidated model never changes a verdict
+(the design record's D7), it only marks how far the verdict's trust
+reaches. -/
+
+/-- Whether a declaration's model was proved equal to its evaluator run. -/
+inductive ModelStatus where
+  | validated
+  | unvalidated
+  deriving DecidableEq
+
+/-- The wire spelling: each constructor's own name, lowercased as the
+statuses are written in the envelope. -/
+def ModelStatus.toString : ModelStatus → String
+  | .validated => "validated"
+  | .unvalidated => "unvalidated"
+
+/-- One `#thales_validate` result, printed as a single JSON line on
+stdout. This is the trust marker D7 defines, one per validated
+declaration rather than one per annotation: `run.ts` joins it onto every
+annotation of that function. `reason` is present exactly when the status
+is `unvalidated`. -/
+structure ModelLine where
+  file : String
+  /-- The declaration's plain name, the spelling a verdict's identity
+  carries in its second position. -/
+  function : String
+  status : ModelStatus
+  reason : Option String := none
+
+/-- A declaration whose model is the evaluator's run of its own AST. -/
+def ModelLine.validated (file fn : String) : ModelLine :=
+  ⟨file, fn, .validated, none⟩
+
+/-- A declaration whose model was not established. An empty reason is a
+contract violation on the CLI side — and a contract violation fails the
+whole artifact — so an empty one is replaced rather than shipped. -/
+def ModelLine.unvalidated (file fn reason : String) : ModelLine :=
+  ⟨file, fn, .unvalidated, some (if reason.isEmpty then "no reason given" else reason)⟩
+
+def ModelLine.toJson (m : ModelLine) : Lean.Json :=
+  Lean.Json.mkObj <|
+    [
+      ("file", .str m.file),
+      ("function", .str m.function),
+      ("status", .str m.status.toString)
+    ] ++
+    match m.reason with
+    | none => []
+    | some r => [("reason", .str r)]
+
+/-- Frames each model line, beside `Verdict.sentinel` on the same stream.
+`run.ts` reads both. -/
+def ModelLine.sentinel : String := "thales-model:"
+
+/-- Model lines must be one line each: `Json.compress` never emits
+newlines. -/
+def ModelLine.emit (m : ModelLine) : IO Unit :=
+  IO.println (ModelLine.sentinel ++ m.toJson.compress)
+
 end ThalesDsl
