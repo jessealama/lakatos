@@ -967,9 +967,9 @@
       }
     },
     "test/harness": {
-      "pass": 0,
-      "fail": 0,
-      "unsupported": 99,
+      "pass": 26,
+      "fail": 19,
+      "unsupported": 54,
       "timeout": 0,
       "harnessError": 0,
       "notRun": {
@@ -978,6 +978,461 @@
         "async": 17,
         "module": 0,
         "budget": 0
+      }
+    },
+    "test/language/expressions/addition": {
+      "pass": 8,
+      "fail": 33,
+      "unsupported": 6,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 1,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/language/expressions/assignment": {
+      "pass": 64,
+      "fail": 8,
+      "unsupported": 14,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 11,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/language/expressions/assignment/destructuring": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 7,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 1,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/language/expressions/assignment/dstr": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 223,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 67,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/language/expressions/conditional": {
+      "pass": 9,
+      "fail": 9,
+      "unsupported": 2,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/language/expressions/division": {
+      "pass": 11,
+      "fail": 27,
+      "unsupported": 6,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 1,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/language/expressions/greater-than": {
+      "pass": 17,
+      "fail": 23,
+      "unsupported": 8,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 1,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/language/expressions/greater-than-or-equal": {
+      "pass": 13,
+      "fail": 23,
+      "unsupported": 6,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 1,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/language/expressions/less-than": {
+      "pass": 13,
+      "fail": 23,
+      "unsupported": 8,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 1,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/language/expressions/less-than-or-equal": {
+      "pass": 17,
+      "fail": 23,
+      "unsupported": 6,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 1,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/language/expressions/logical-and": {
+      "pass": 10,
+      "fail": 7,
+      "unsupported": 0,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 1,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/language/expressions/logical-not": {
+      "pass": 9,
+      "fail": 9,
+      "unsupported": 1,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/language/expressions/logical-or": {
+      "pass": 8,
+      "fail": 9,
+      "unsupported": 0,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 1,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/language/expressions/modulus": {
+      "pass": 9,
+      "fail": 24,
+      "unsupported": 6,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 1,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/language/expressions/multiplication": {
+      "pass": 9,
+      "fail": 25,
+      "unsupported": 5,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 1,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/language/expressions/strict-does-not-equals": {
+      "pass": 12,
+      "fail": 9,
+      "unsupported": 8,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 1,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/language/expressions/strict-equals": {
+      "pass": 12,
+      "fail": 9,
+      "unsupported": 8,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 1,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/language/expressions/subtraction": {
+      "pass": 8,
+      "fail": 24,
+      "unsupported": 5,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 1,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/language/expressions/unary-minus": {
+      "pass": 3,
+      "fail": 8,
+      "unsupported": 3,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/language/expressions/unary-plus": {
+      "pass": 4,
+      "fail": 12,
+      "unsupported": 1,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/language/statements/block": {
+      "pass": 7,
+      "fail": 0,
+      "unsupported": 0,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/language/statements/const": {
+      "pass": 9,
+      "fail": 1,
+      "unsupported": 6,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/language/statements/const/dstr": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 87,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/language/statements/const/syntax": {
+      "pass": 5,
+      "fail": 0,
+      "unsupported": 2,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/language/statements/for": {
+      "pass": 38,
+      "fail": 16,
+      "unsupported": 8,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 7,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/language/statements/for/dstr": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 267,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/language/statements/if": {
+      "pass": 14,
+      "fail": 10,
+      "unsupported": 3,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 2,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/language/statements/let": {
+      "pass": 12,
+      "fail": 1,
+      "unsupported": 6,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/language/statements/let/dstr": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 87,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/language/statements/let/syntax": {
+      "pass": 8,
+      "fail": 0,
+      "unsupported": 3,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 1,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/language/statements/return": {
+      "pass": 5,
+      "fail": 1,
+      "unsupported": 0,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/language/statements/throw": {
+      "pass": 12,
+      "fail": 1,
+      "unsupported": 1,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/language/statements/variable": {
+      "pass": 7,
+      "fail": 18,
+      "unsupported": 9,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 7,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/language/statements/variable/dstr": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 89,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/language/statements/while": {
+      "pass": 11,
+      "fail": 7,
+      "unsupported": 2,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 2,
+        "raw": 0,
+        "async": 0,
+        "module": 0
       }
     }
   }

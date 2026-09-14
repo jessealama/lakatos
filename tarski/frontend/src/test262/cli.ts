@@ -4,8 +4,12 @@
 //   tarski-test262 setup [--pin <pin.json>]
 //   tarski-test262 test/harness [--check test262/expected.json]
 //   tarski-test262 test/language --summary --markdown results.md
+//   tarski-test262 --slice-file test262/slice.txt --check test262/expected.json
 //
-// A slice is a directory or a file under the checkout. Every test is
+// A slice is a directory or a file under the checkout, named as a bare
+// argument or a line of a `--slice-file`; the PR-gated slice is the
+// committed `tarski/test262/slice.txt`, so growing it is a line in a file
+// rather than an edit to a workflow command. Every test is
 // planned (`plan.ts`), run once against the binary (`run.ts`), and
 // counted into a per-directory table (`report.ts`). `--check` compares
 // the table against a committed expectations file and exits 1 on any
@@ -79,7 +83,23 @@ const FLAGS = [
   "--write",
   "--markdown",
   "--json",
+  "--slice-file",
 ] as const;
+
+/** The slices a file names: one per line, in file order, `#` comments and
+ * blank lines skipped. */
+function readSliceFile(file: string): string[] {
+  let text: string;
+  try {
+    text = readFileSync(file, "utf8");
+  } catch {
+    throw new UsageError(`cannot read ${file}`);
+  }
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith("#"));
+}
 
 function parseArgs(argv: readonly string[]): Options {
   const options: Options = {
@@ -119,7 +139,9 @@ function parseArgs(argv: readonly string[]): Options {
       if (!Number.isInteger(ms) || ms < 0)
         throw new UsageError(`--budget needs a non-negative integer`);
       options.budget = ms;
-    } else {
+    } else if (arg === "--slice-file")
+      options.slices.push(...readSliceFile(value));
+    else {
       const ms = Number(value);
       if (!Number.isInteger(ms) || ms <= 0)
         throw new UsageError(`--timeout needs a positive integer`);
@@ -263,9 +285,11 @@ export function main(argv: readonly string[]): number {
   } catch (e) {
     console.error(`tarski-test262: ${(e as UsageError).message}`);
     console.error(
-      "usage: tarski-test262 <slice>... [--test262 <dir>] [--binary <path>]",
+      "usage: tarski-test262 <slice>... [--slice-file <path>] [--test262 <dir>]",
     );
-    console.error("       [--timeout <ms>] [--budget <ms>] [--summary]");
+    console.error(
+      "       [--binary <path>] [--timeout <ms>] [--budget <ms>] [--summary]",
+    );
     console.error("       [--check <expected.json>] [--write <expected.json>]");
     console.error("       [--markdown <file>] [--json <file>]");
     return 2;

@@ -310,6 +310,72 @@ describe("tarski-test262", () => {
     });
   });
 
+  describe("--slice-file", () => {
+    it("reads the slices out of a file, comments and blanks skipped", () => {
+      const file = path.join(scratch, "slice.txt");
+      writeFileSync(
+        file,
+        "# what this slice is\n\ntest/pass\n  test/fail  \n\n# trailing note\n",
+      );
+      const fromFile = invoke([
+        "--slice-file",
+        file,
+        "--test262",
+        TREE,
+        "--binary",
+        FAKE,
+      ]);
+      const fromArguments = invoke([
+        "test/pass",
+        "test/fail",
+        "--test262",
+        TREE,
+        "--binary",
+        FAKE,
+      ]);
+      expect(fromFile.status).toBe(0);
+      expect(fromFile.stdout).toBe(fromArguments.stdout);
+    });
+
+    it("appends to the slices named as bare arguments", () => {
+      const file = path.join(scratch, "one.txt");
+      writeFileSync(file, "test/fail\n");
+      const result = invoke([
+        "test/pass",
+        "--slice-file",
+        file,
+        "--test262",
+        TREE,
+        "--binary",
+        FAKE,
+      ]);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("test/pass");
+      expect(result.stdout).toContain("test/fail");
+    });
+
+    it("exits 2 when the file is not there", () => {
+      const missing = path.join(scratch, "nowhere.txt");
+      const result = invoke(["--slice-file", missing, "--test262", TREE]);
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain(`cannot read ${missing}`);
+    });
+
+    it("exits 2 when the flag has no value", () => {
+      const result = invoke(["--slice-file"]);
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain("--slice-file needs a value");
+    });
+
+    it("counts an empty file as no slices at all", () => {
+      const file = path.join(scratch, "empty.txt");
+      writeFileSync(file, "# nothing here yet\n");
+      const result = invoke(["--slice-file", file, "--test262", TREE]);
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain("at least one slice is needed");
+    });
+  });
+
   describe("usage", () => {
     it("needs at least one slice", () => {
       const result = invoke(["--test262", TREE]);
@@ -529,16 +595,41 @@ describe("the committed files", () => {
     ] as const) {
       expect(Number.isInteger(harness.notRun[reason])).toBe(true);
     }
-    // The floor as measured at the pin: `assert.js` opens with a `switch`,
-    // so every non-async test in the slice is refused at it.
-    expect(harness).toEqual({
-      pass: 0,
-      fail: 0,
-      unsupported: 99,
-      timeout: 0,
-      harnessError: 0,
-      notRun: { noStrict: 0, raw: 0, async: 17, module: 0, budget: 0 },
-    });
+    // No literal here any more: the harness row moves with every slice of
+    // syntax that lands, and `--check` is what pins its value. What this
+    // asks is that the row is the shape `--check` reads.
+    expect(harness.pass + harness.fail + harness.unsupported).toBeGreaterThan(
+      0,
+    );
+  });
+
+  it("names only slices the expectations file has rows for", () => {
+    const slices = readFileSync(
+      path.join(root, "tarski", "test262", "slice.txt"),
+      "utf8",
+    )
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0 && !line.startsWith("#"));
+    expect(slices.length).toBeGreaterThan(0);
+    const expectations = JSON.parse(
+      readFileSync(
+        path.join(root, "tarski", "test262", "expected.json"),
+        "utf8",
+      ),
+    ) as Expectations;
+    const directories = Object.keys(expectations.directories);
+    // A slice is a directory; its tests are tabulated under it or under a
+    // subdirectory of it, so a slice with no row at all is one that was
+    // added to the file and never run.
+    for (const slice of slices) {
+      expect({
+        slice,
+        covered: directories.some(
+          (d) => d === slice || d.startsWith(`${slice}/`),
+        ),
+      }).toEqual({ slice, covered: true });
+    }
   });
 
   // The scheduled run's output, committed from a local run of

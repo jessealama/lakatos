@@ -28,6 +28,9 @@
         { "$ref": "#/definitions/ReturnStatement" },
         { "$ref": "#/definitions/IfStatement" },
         { "$ref": "#/definitions/WhileStatement" },
+        { "$ref": "#/definitions/ForStatement" },
+        { "$ref": "#/definitions/SwitchStatement" },
+        { "$ref": "#/definitions/EmptyStatement" },
         { "$ref": "#/definitions/BlockStatement" },
         { "$ref": "#/definitions/ThrowStatement" },
         { "$ref": "#/definitions/TryStatement" },
@@ -61,7 +64,7 @@
     },
 
     "VariableDeclaration": {
-      "description": "`var` is admitted here and refused by the Lean decoder: function-scoped bindings, hoisting, and the temporal dead zone are a later slice, and the decoder is where the slice's boundary is stated.",
+      "description": "All three keywords are in the slice. A `var` is function-scoped and hoisted — its binding exists, holding `undefined`, before the declaration is reached — while `let` and `const` are block-scoped and have a temporal dead zone.",
       "type": "object",
       "properties": {
         "type": { "const": "VariableDeclaration" },
@@ -111,6 +114,71 @@
         "body": { "$ref": "#/definitions/Statement" }
       },
       "required": ["type", "test", "body"],
+      "additionalProperties": false
+    },
+
+    "ForStatement": {
+      "description": "Each of the head's three parts is null when it is absent, so `for (;;)` has three. `init` is a VariableDeclaration for a declaration head and an Expression for an expression one; a head declaring a binding pattern is outside the slice and arrives as `Unsupported` in the head's place, so the loop around it still reaches the Lean decoder. `for`-`in` and `for`-`of` are not this node — the whole statement arrives as `Unsupported`.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "ForStatement" },
+        "init": {
+          "oneOf": [
+            { "$ref": "#/definitions/VariableDeclaration" },
+            { "$ref": "#/definitions/Expression" },
+            { "type": "null" }
+          ]
+        },
+        "test": {
+          "oneOf": [{ "$ref": "#/definitions/Expression" }, { "type": "null" }]
+        },
+        "update": {
+          "oneOf": [{ "$ref": "#/definitions/Expression" }, { "type": "null" }]
+        },
+        "body": { "$ref": "#/definitions/Statement" }
+      },
+      "required": ["type", "init", "test", "update", "body"],
+      "additionalProperties": false
+    },
+
+    "SwitchStatement": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "SwitchStatement" },
+        "discriminant": { "$ref": "#/definitions/Expression" },
+        "cases": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/SwitchCase" }
+        }
+      },
+      "required": ["type", "discriminant", "cases"],
+      "additionalProperties": false
+    },
+
+    "SwitchCase": {
+      "description": "`test` is null for the `default` clause, which may sit anywhere among the others. `consequent` is the statements between this label and the next one: a bare list, not a block, and not a scope of its own — the whole case block is one scope.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "SwitchCase" },
+        "test": {
+          "oneOf": [{ "$ref": "#/definitions/Expression" }, { "type": "null" }]
+        },
+        "consequent": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Statement" }
+        }
+      },
+      "required": ["type", "test", "consequent"],
+      "additionalProperties": false
+    },
+
+    "EmptyStatement": {
+      "description": "The bare `;`. It completes empty, so it leaves the running completion value standing.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "EmptyStatement" }
+      },
+      "required": ["type"],
       "additionalProperties": false
     },
 
@@ -220,6 +288,7 @@
         { "$ref": "#/definitions/Identifier" },
         { "$ref": "#/definitions/ThisExpression" },
         { "$ref": "#/definitions/UnaryExpression" },
+        { "$ref": "#/definitions/UpdateExpression" },
         { "$ref": "#/definitions/BinaryExpression" },
         { "$ref": "#/definitions/LogicalExpression" },
         { "$ref": "#/definitions/ConditionalExpression" },
@@ -292,6 +361,7 @@
     },
 
     "UnaryExpression": {
+      "description": "`-`, `+`, `!`, `typeof`, and `void` are in the slice; `~` and `delete` are admitted here and refused by the Lean decoder. `++` and `--` are not here — ESTree makes them an UpdateExpression, and so does this schema.",
       "type": "object",
       "properties": {
         "type": { "const": "UnaryExpression" },
@@ -300,6 +370,19 @@
         },
         "argument": { "$ref": "#/definitions/Expression" },
         "prefix": { "const": true }
+      },
+      "required": ["type", "operator", "argument", "prefix"],
+      "additionalProperties": false
+    },
+
+    "UpdateExpression": {
+      "description": "`++` and `--`, which ESTree separates from UnaryExpression because the side the operator sits on decides the expression's value: the prefix form answers the new number and the postfix form the old one.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "UpdateExpression" },
+        "operator": { "enum": ["++", "--"] },
+        "argument": { "$ref": "#/definitions/Expression" },
+        "prefix": { "type": "boolean" }
       },
       "required": ["type", "operator", "argument", "prefix"],
       "additionalProperties": false
@@ -356,7 +439,7 @@
     },
 
     "AssignmentExpression": {
-      "description": "The evaluator takes plain `=` to an identifier or a member; the schema admits every assignment operator and every target expression so that a compound assignment or an out-of-slice target reaches the Lean decoder and is refused there by name.",
+      "description": "The evaluator takes `=` and the five arithmetic compound operators — `+=`, `-=`, `*=`, `/=`, `%=` — to an identifier or a member. The schema admits every assignment operator and every target expression so that `**=`, the shifts, the bitwise and logical forms, and an out-of-slice target reach the Lean decoder and are refused there by name.",
       "type": "object",
       "properties": {
         "type": { "const": "AssignmentExpression" },
