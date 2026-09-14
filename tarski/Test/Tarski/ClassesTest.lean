@@ -530,7 +530,7 @@ private def classWithM : Stmt :=
     [ cls "A" [],
       subcls "B" "A"
         [.ctor [] [.exprStmt (.superCall []),
-                   .returnStmt (some (.objectLit [("tag", .numLit 1.0)]))]],
+                   .returnStmt (some (.objectLit [.init "tag" (.numLit 1.0)]))]],
       .exprStmt (.member (.new (.ident "B") []) "tag") ]
   == "1"
 

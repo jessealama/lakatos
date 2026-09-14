@@ -551,7 +551,10 @@ def mentionsArgumentsExpr : Expr → Bool
   | .call callee args => mentionsArgumentsExpr callee || mentionsArgumentsExprs args
   | .new callee args => mentionsArgumentsExpr callee || mentionsArgumentsExprs args
   | .arrayLit elements => mentionsArgumentsExprs elements
-  | .objectLit props => mentionsArgumentsProps props
+  | .objectLit props => mentionsArgumentsPropDefs props
+  | .template _ exprs => mentionsArgumentsExprs exprs
+  | .taggedTemplate tag _ _ exprs =>
+    mentionsArgumentsExpr tag || mentionsArgumentsExprs exprs
   -- A function of its own: its `arguments` is its own.
   | .funcExpr _ _ _ => false
   | .arrow params body => mentionsArgumentsParams params || mentionsArgumentsArrow body
@@ -567,10 +570,24 @@ def mentionsArgumentsExprs : List Expr → Bool
   | [] => false
   | e :: rest => mentionsArgumentsExpr e || mentionsArgumentsExprs rest
 
-/-- An object literal's members; see `mentionsArgumentsExpr`. -/
-def mentionsArgumentsProps : List (String × Expr) → Bool
+/-- An object literal's members; see `mentionsArgumentsExpr`. A method's
+body and parameters are not descended into — a method has an `arguments`
+of its own — but its *key* is, because a computed key is evaluated where
+the literal is written. -/
+def mentionsArgumentsPropDefs : List PropDef → Bool
   | [] => false
-  | (_, e) :: rest => mentionsArgumentsExpr e || mentionsArgumentsProps rest
+  | .init key value :: rest =>
+    mentionsArgumentsPropKey key || mentionsArgumentsExpr value
+      || mentionsArgumentsPropDefs rest
+  | .method _ key _ _ :: rest =>
+    mentionsArgumentsPropKey key || mentionsArgumentsPropDefs rest
+  | .proto value :: rest =>
+    mentionsArgumentsExpr value || mentionsArgumentsPropDefs rest
+
+/-- An object literal member's key; see `mentionsArgumentsExpr`. -/
+def mentionsArgumentsPropKey : PropKey → Bool
+  | .name _ => false
+  | .computed e => mentionsArgumentsExpr e
 
 /-- An assignment target; see `mentionsArgumentsExpr`. A bare
 `arguments = 1` is an early error in strict mode, so the target's own
@@ -1127,6 +1144,32 @@ def defineMethods (env : Env) (F proto : Ref) : List ClassElement → EvalM Unit
     defineMethods env F proto rest
   | _ :: rest => defineMethods env F proto rest
 
+/-- GetTemplateObject (13.2.8.4). The realm's `[[TemplateMap]]` is
+`%TemplateMap%`, an object whose own keys are the decoder's site numbers,
+so one site evaluated twice hands its tag the *identical* object and two
+sites with the same text do not. The template object is an array of the
+cooked strings — `undefined` where the cooked value is absent — carrying
+the raw strings as `raw`, a non-writable, non-enumerable, non-configurable
+property; both arrays are frozen, as steps 12 and 15 have them, so a
+write to either is the strict-mode `TypeError` a frozen write is.
+
+Outside the fixpoint block with `makeFunction`: it only touches the
+heap, and nothing it does can reach user code. -/
+def getTemplateObject (site : Nat) (strings : List TemplateString) : EvalM Value := do
+  let key := Nat.repr site
+  match (← readObj templateMapRef).getOwn key with
+  | some t => pure t
+  | none => do
+    let raw ← allocObj ((Obj.array (some arrayProtoRef)
+      (strings.map (fun s => Value.prim (.str s.raw)))).setIntegrity true)
+    let t ← allocObj ((Obj.array (some arrayProtoRef)
+      (strings.map (fun s =>
+        match s.cooked with
+        | some c => Value.prim (.str c)
+        | none => undefValue))).define "raw" (Property.constant (.obj raw)) |>.setIntegrity true)
+    modifyObj templateMapRef (fun o => o.setOwn key (.obj t))
+    pure (.obj t)
+
 -- The interpreter's block is one `partial_fixpoint` strongly connected
 -- component of some sixty definitions, and both elaboration and code
 -- generation run past the default heartbeat limit on it. That limit
@@ -1257,45 +1300,23 @@ def evalExpr (env : Env) : Expr → EvalM Value
     | e => do
       let _ ← evalExpr env e
       pure (.prim (.bool true))
-  | .call callee args =>
-    -- A property call passes its base as the receiver, and evaluates
-    -- that base once: `o.f()` and `o[k]()` are the only shapes with a
-    -- `this`, because nothing here has a `with` or a global object.
-    match callee with
-    | .member object name => do
-      let base ← evalExpr env object
-      let f ← getProp base name
-      callFunction f base (← evalExprs env args)
-    | .index object key => do
-      let base ← evalExpr env object
-      let k ← evalExpr env key
-      let f ← getProp base (← toPropertyKey k)
-      callFunction f base (← evalExprs env args)
-    | .privateMember object name => do
-      let base ← evalExpr env object
-      let f ← readPrivate env base name
-      callFunction f base (← evalExprs env args)
-    -- `super.m()` is a method call on the *current* receiver: the
-    -- function comes off the parent, the `this` it is handed does not.
-    | .superMember name => do
-      let (parent, receiver) ← superBase env
-      let f ← superRead parent receiver name
-      callFunction f receiver (← evalExprs env args)
-    | .superIndex key => do
-      let (parent, receiver) ← superBase env
-      let k ← evalExpr env key
-      let f ← superRead parent receiver (← toPropertyKey k)
-      callFunction f receiver (← evalExprs env args)
-    | _ => do
-      let f ← evalExpr env callee
-      callFunction f undefValue (← evalExprs env args)
+  | .call callee args => do
+    let fr ← evalCallee env callee
+    callFunction fr.1 fr.2 (← evalExprs env args)
   | .new callee args => do
     let f ← evalExpr env callee
     construct f f (← evalExprs env args)
   | .objectLit props => do
     let r ← newObject
-    evalProps env props r
+    evalPropDefs env props r
     pure (.obj r)
+  | .template strings exprs => evalTemplate env strings exprs ""
+  -- 13.3.11.1: the tag's reference first, then GetTemplateObject, then
+  -- the substitutions, which the tag receives after the template object.
+  | .taggedTemplate tag site strings exprs => do
+    let fr ← evalCallee env tag
+    let t ← getTemplateObject site strings
+    callFunction fr.1 fr.2 (t :: (← evalExprs env exprs))
   | .arrayLit elements => do newArray (← evalExprs env elements)
   | .funcExpr name params body =>
     match name with
@@ -1470,18 +1491,124 @@ def evalExprs (env : Env) : List Expr → EvalM (List Value)
     pure (v :: vs)
   partial_fixpoint
 
-/-- Evaluate an object literal's properties into an already-allocated
-object, left to right, so a repeated key keeps the last value. -/
-def evalProps (env : Env) : List (String × Expr) → Ref → EvalM Unit
+/-- PropertyDefinitionEvaluation over an object literal's members, into
+an already-allocated object: left to right, and within a member the key
+before the value, so a repeated key keeps the last value and a throwing
+key leaves nothing after it defined.
+
+Every member is a *definition* rather than a write: `Obj.define`
+replaces an accessor of the name rather than calling its setter, which is
+what makes `{ get a() {}, a: 1 }` a data property. A method, a getter,
+and a setter are each a `.method` closure whose home object is the
+literal, so `super.x` inside one reads through the literal's prototype;
+a getter and a setter of one name merge into one accessor property. -/
+def evalPropDefs (env : Env) : List PropDef → Ref → EvalM Unit
   | [], _ => pure ()
-  | (k, e) :: rest, r => do
+  | .init key value :: rest, r => do
     -- CreateDataPropertyOrThrow, which is a *definition*: an object
     -- literal's member is writable, enumerable, and configurable
     -- whatever the prototype chain says. The key is NamedEvaluation's
-    -- name, so `{ m: function () {} }.m.name` is `"m"`.
-    let v ← evalNamed env k e
+    -- name, so `{ m: function () {} }.m.name` is `"m"` and
+    -- `{ [k]: () => {} }` takes the key's ToPropertyKey.
+    let k ← evalPropKey env key
+    let v ← evalNamed env k value
     modifyObj r (fun o => o.define k (Property.ordinary v))
-    evalProps env rest r
+    evalPropDefs env rest r
+  | .method kind key params body :: rest, r => do
+    -- MethodDefinitionEvaluation with `enumerable: true` (15.4.5 step 6),
+    -- which is where a literal's member differs from a class's: a class
+    -- method is not enumerable, a literal's is. The name is SetFunctionName
+    -- with the `get`/`set` prefix.
+    let k ← evalPropKey env key
+    let fname := match kind with
+      | .method => k
+      | .getter => "get " ++ k
+      | .setter => "set " ++ k
+    let f ← makeFunction { params, body, env, kind := .method, homeObject := some r } fname
+    modifyObj r (fun o =>
+      match kind with
+      | .method => o.define k (Property.ordinary f)
+      | .getter => o.defineAccessorHalf k (some f) none true true
+      | .setter => o.defineAccessorHalf k none (some f) true true)
+    evalPropDefs env rest r
+  -- B.3.1: `__proto__: v` sets `[[Prototype]]` when `v` is an object or
+  -- `null`, and does nothing at all otherwise — no property is made.
+  | .proto value :: rest, r => do
+    match ← evalExpr env value with
+    | .obj p => modifyObj r (fun o => { o with proto := some p })
+    | .prim .null => modifyObj r (fun o => { o with proto := none })
+    | _ => pure ()
+    evalPropDefs env rest r
+  partial_fixpoint
+
+/-- An object literal member's key. A written key is already a string; a
+computed one is its expression's value run through ToPropertyKey, which
+is also how a numeric key gets its spelling. -/
+def evalPropKey (env : Env) : PropKey → EvalM String
+  | .name s => pure s
+  | .computed e => do toPropertyKey (← evalExpr env e)
+  partial_fixpoint
+
+/-- EvaluateCall's reference half (13.3.6.2 through 13.3.5.1): the
+callee's value and the `this` a call through it passes. A property callee
+passes its base as the receiver and evaluates that base *once*, which is
+what `o.f()` and `o[k]()` need; a `super` callee passes the current
+receiver rather than the parent; anything else passes `undefined`,
+because nothing here has a `with` or a global object.
+
+A tagged template shares this: it is EvaluateCall with a template object
+in front of the substitutions, so a member tag gets its object as
+`this`.
+
+Both callers read the pair with `.1` and `.2` rather than destructuring
+it in the bind: a pattern-matching bind puts a `match` on a pair between
+`evalCallee` and `callFunction`, and `simp` pays for it — spelled this
+way `Test/Tarski/CallSimpTest.lean` runs in the time it took before this
+definition existed, and spelled the other way it took three times as
+long (#471). -/
+def evalCallee (env : Env) : Expr → EvalM (Value × Value)
+  | .member object name => do
+    let base ← evalExpr env object
+    let f ← getProp base name
+    pure (f, base)
+  | .index object key => do
+    let base ← evalExpr env object
+    let k ← evalExpr env key
+    let f ← getProp base (← toPropertyKey k)
+    pure (f, base)
+  | .privateMember object name => do
+    let base ← evalExpr env object
+    let f ← readPrivate env base name
+    pure (f, base)
+  -- `super.m()` is a method call on the *current* receiver: the function
+  -- comes off the parent, the `this` it is handed does not.
+  | .superMember name => do
+    let (parent, receiver) ← superBase env
+    let f ← superRead parent receiver name
+    pure (f, receiver)
+  | .superIndex key => do
+    let (parent, receiver) ← superBase env
+    let k ← evalExpr env key
+    let f ← superRead parent receiver (← toPropertyKey k)
+    pure (f, receiver)
+  | callee => do
+    let f ← evalExpr env callee
+    pure (f, undefValue)
+  partial_fixpoint
+
+/-- SubstitutionEvaluation and TemplateStrings woven together: the cooked
+string is built one substitution at a time, ToString running after each
+expression is evaluated, so a later expression's throw comes after an
+earlier value's `toString` has already run. The two lists are walked
+together and the strings are one longer; a mismatch is a document the
+decoder already refused, and answers what was built so far. -/
+def evalTemplate (env : Env) : List String → List Expr → String → EvalM Value
+  | [s], [], acc => pure (.prim (.str (acc ++ s)))
+  | s :: strs, e :: es, acc => do
+    let v ← evalExpr env e
+    let t ← toStringValue v
+    evalTemplate env strs es (acc ++ s ++ t)
+  | _, _, acc => pure (.prim (.str acc))
   partial_fixpoint
 
 /-- NamedEvaluation (8.6.2) as one definition rather than a hint

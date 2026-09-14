@@ -80,3 +80,11 @@ test/language/block-scope
 # The Object and Function built-ins and the property protocol (#389).
 test/built-ins/Object
 test/built-ins/Function
+
+# Template literals and object-literal members (#395). `object/dstr` and
+# `object/method-definition` come with `object` and stay mostly
+# unsupported: patterns are #394's, generators and `async` methods the
+# epic's.
+test/language/expressions/template-literal
+test/language/expressions/tagged-template
+test/language/expressions/object

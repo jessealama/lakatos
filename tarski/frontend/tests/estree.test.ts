@@ -23,7 +23,7 @@ const FIXTURES = [
   "arithmetic",
   "if-else-block",
   "const-reassign",
-  "unsupported-template",
+  "template",
   "counter",
   "factorial",
   "prototype-chain",
@@ -44,6 +44,7 @@ const FIXTURES = [
   "hoisting-arguments",
   "exe-example",
   "object-function",
+  "template-object",
 ];
 
 describe("parseScript", () => {
@@ -227,20 +228,11 @@ describe("parseScript", () => {
     validate(program);
   });
 
-  // An object-literal member outside the slice stands where it appeared,
-  // so the literal itself still reaches the Lean decoder.
-  const MEMBERS: [string, string][] = [
-    ["a shorthand property", "{ a }"],
-    ["a computed key", "{ [k]: 1 }"],
-    ["a method", "{ m() {} }"],
-    ["a getter", "{ get m() { return 1; } }"],
-    ["a spread", "{ ...o }"],
-  ];
+  // Spread is the one object-literal member still outside the slice; it
+  // stands where it appeared, so the literal itself still reaches the
+  // Lean decoder.
+  const MEMBERS: [string, string][] = [["a spread", "{ ...o }"]];
   const MEMBER_KINDS: Record<string, string> = {
-    "{ a }": "ShorthandPropertyAssignment",
-    "{ [k]: 1 }": "ComputedPropertyName",
-    "{ m() {} }": "MethodDeclaration",
-    "{ get m() { return 1; } }": "GetAccessor",
     "{ ...o }": "SpreadAssignment",
   };
 
@@ -256,6 +248,174 @@ describe("parseScript", () => {
             init: {
               type: "ObjectExpression",
               properties: [{ type: "Unsupported", kind: MEMBER_KINDS[source] }],
+            },
+          },
+        ],
+      });
+      validate(program);
+    });
+  }
+
+  // Every other member form is in the slice, and each carries the three
+  // flags that say which spelling it was.
+  const LITERAL_MEMBERS: [string, string, unknown][] = [
+    [
+      "a shorthand property",
+      "{ a }",
+      {
+        type: "Property",
+        key: { type: "Identifier", name: "a" },
+        value: { type: "Identifier", name: "a" },
+        kind: "init",
+        computed: false,
+        shorthand: true,
+        method: false,
+      },
+    ],
+    [
+      "a computed key",
+      "{ [k]: 1 }",
+      {
+        type: "Property",
+        key: { type: "Identifier", name: "k" },
+        value: { type: "Literal", value: 1 },
+        kind: "init",
+        computed: true,
+        shorthand: false,
+        method: false,
+      },
+    ],
+    [
+      "a numeric key",
+      "{ 1: 2 }",
+      {
+        type: "Property",
+        key: { type: "Literal", value: 1, raw: "1" },
+        kind: "init",
+        computed: false,
+        shorthand: false,
+        method: false,
+      },
+    ],
+    [
+      "a method",
+      "{ m() {} }",
+      {
+        type: "Property",
+        key: { type: "Identifier", name: "m" },
+        value: { type: "FunctionExpression", id: null, generator: false },
+        kind: "init",
+        computed: false,
+        shorthand: false,
+        method: true,
+      },
+    ],
+    [
+      "a getter",
+      "{ get g() { return 1; } }",
+      {
+        type: "Property",
+        key: { type: "Identifier", name: "g" },
+        value: { type: "FunctionExpression", params: [] },
+        kind: "get",
+        computed: false,
+        shorthand: false,
+        method: false,
+      },
+    ],
+    [
+      "a setter",
+      "{ set s(v) {} }",
+      {
+        type: "Property",
+        key: { type: "Identifier", name: "s" },
+        value: { type: "FunctionExpression" },
+        kind: "set",
+        computed: false,
+        shorthand: false,
+        method: false,
+      },
+    ],
+    [
+      // The flag is on the value, where the Lean decoder refuses it under
+      // the name every other function form's does.
+      "an async method",
+      "{ async m() {} }",
+      {
+        type: "Property",
+        value: { type: "FunctionExpression", async: true },
+        kind: "init",
+        method: true,
+      },
+    ],
+    [
+      "a generator method",
+      "{ *g() {} }",
+      {
+        type: "Property",
+        value: { type: "FunctionExpression", generator: true },
+        kind: "init",
+        method: true,
+      },
+    ],
+    [
+      // B.3.1's `__proto__` is an ordinary `Property` here; what it means
+      // is the Lean side's business.
+      "a __proto__ member",
+      "{ __proto__: null }",
+      {
+        type: "Property",
+        key: { type: "Identifier", name: "__proto__" },
+        value: { type: "Literal", value: null },
+        kind: "init",
+        computed: false,
+        shorthand: false,
+        method: false,
+      },
+    ],
+  ];
+
+  for (const [what, source, member] of LITERAL_MEMBERS) {
+    it(`emits ${what} as a Property`, () => {
+      const program = parseScript(
+        `"use strict";\nconst o = ${source};\n`,
+        "p.js",
+      );
+      expect(program.body[1]).toMatchObject({
+        declarations: [
+          {
+            init: { type: "ObjectExpression", properties: [member] },
+          },
+        ],
+      });
+      validate(program);
+    });
+  }
+
+  // What a member may still not spell. `{ a = 1 }` is a
+  // CoverInitializedName — a destructuring pattern caught in an
+  // expression position — and the other two are TypeScript.
+  const REFUSED_MEMBERS: [string, string, string][] = [
+    ["an initialized shorthand", "{ a = 1 }", "EqualsToken"],
+    ["a BigInt key", "{ 1n: 2 }", "BigIntLiteral"],
+    ["a BigInt method key", "{ 1n() {} }", "BigIntLiteral"],
+    ["a TypeScript modifier", "{ readonly m() {} }", "ReadonlyKeyword"],
+    ["a return type annotation", "{ m(): number {} }", "NumberKeyword"],
+    ["a type parameter", "{ m<T>() {} }", "TypeParameter"],
+  ];
+
+  for (const [what, source, kind] of REFUSED_MEMBERS) {
+    it(`refuses ${what} in place`, () => {
+      const program = parseScript(
+        `"use strict";\nconst o = ${source};\n`,
+        "p.js",
+      );
+      expect(program.body[1]).toMatchObject({
+        declarations: [
+          {
+            init: {
+              type: "ObjectExpression",
+              properties: [{ type: "Unsupported", kind }],
             },
           },
         ],
@@ -941,16 +1101,131 @@ describe("parseScript", () => {
     validate(program);
   });
 
-  // A template with no substitutions is a string, but not a
-  // StringLiteral: it stays outside the slice.
-  it("keeps a substitution-free template outside the slice", () => {
+  // A template with no substitutions is a node kind of its own in tsc and
+  // an ordinary `TemplateLiteral` here: one quasi, no expressions.
+  it("emits a substitution-free template as a TemplateLiteral", () => {
     const program = parseScript('"use strict";\n`x`;\n', "tp.js");
     expect(program.body[1]).toMatchObject({
       expression: {
-        type: "Unsupported",
-        kind: "NoSubstitutionTemplateLiteral",
+        type: "TemplateLiteral",
+        quasis: [
+          {
+            type: "TemplateElement",
+            value: { cooked: "x", raw: "x" },
+            tail: true,
+          },
+        ],
+        expressions: [],
       },
     });
+    validate(program);
+  });
+
+  it("emits a template's quasis one longer than its expressions", () => {
+    const program = parseScript('"use strict";\n`a${1}b`;\n', "tp.js");
+    expect(program.body[1]).toMatchObject({
+      expression: {
+        type: "TemplateLiteral",
+        quasis: [
+          { value: { cooked: "a", raw: "a" }, tail: false },
+          { value: { cooked: "b", raw: "b" }, tail: true },
+        ],
+        expressions: [{ type: "Literal", value: 1 }],
+      },
+    });
+    validate(program);
+  });
+
+  // The cooked value is the escape resolved; the raw value is the source.
+  it("gives a template piece both its cooked and its raw text", () => {
+    const program = parseScript('"use strict";\n`\\n`;\n', "tp.js");
+    expect(program.body[1]).toMatchObject({
+      expression: {
+        quasis: [{ value: { cooked: "\n", raw: "\\n" } }],
+      },
+    });
+    validate(program);
+  });
+
+  // TRV normalizes both line-terminator spellings to `<LF>`; tsc's
+  // `rawText` does not, so the bridge does.
+  it("normalizes a CRLF inside a template's raw text", () => {
+    const program = parseScript('"use strict";\n`line\r\ncont`;\n', "tp.js");
+    expect(program.body[1]).toMatchObject({
+      expression: {
+        quasis: [{ value: { cooked: "line\ncont", raw: "line\ncont" } }],
+      },
+    });
+    validate(program);
+  });
+
+  // An escape the cooked grammar refuses is a parse error in an untagged
+  // template and a null cooked value under a tag.
+  it("gives a tagged template a null cooked value for an invalid escape", () => {
+    const program = parseScript('"use strict";\ntag`\\unicode`;\n', "tp.js");
+    expect(program.body[1]).toMatchObject({
+      expression: {
+        type: "TaggedTemplateExpression",
+        tag: { type: "Identifier", name: "tag" },
+        quasi: {
+          type: "TemplateLiteral",
+          quasis: [{ value: { cooked: null, raw: "\\unicode" } }],
+        },
+      },
+    });
+    validate(program);
+  });
+
+  it("refuses an invalid escape in an untagged template", () => {
+    expect(() => parseScript('"use strict";\n`\\unicode`;\n', "tp.js")).toThrow(
+      ParseError,
+    );
+  });
+
+  it("gives a member tag a MemberExpression", () => {
+    const program = parseScript('"use strict";\no.m`r`;\n', "tp.js");
+    expect(program.body[1]).toMatchObject({
+      expression: {
+        type: "TaggedTemplateExpression",
+        tag: {
+          type: "MemberExpression",
+          object: { type: "Identifier", name: "o" },
+          property: { type: "Identifier", name: "m" },
+          computed: false,
+        },
+      },
+    });
+    validate(program);
+  });
+
+  // `new tag`x`` is a `new` whose callee is the tagged node, not a tag
+  // applied to a `new`.
+  it("puts a tagged template under a NewExpression's callee", () => {
+    const program = parseScript('"use strict";\nnew tag`x`;\n', "tp.js");
+    expect(program.body[1]).toMatchObject({
+      expression: {
+        type: "NewExpression",
+        callee: { type: "TaggedTemplateExpression" },
+        arguments: [],
+      },
+    });
+    validate(program);
+  });
+
+  it("nests a chained tagged template", () => {
+    const program = parseScript('"use strict";\ntag`a``b`;\n', "tp.js");
+    expect(program.body[1]).toMatchObject({
+      expression: {
+        type: "TaggedTemplateExpression",
+        tag: {
+          type: "TaggedTemplateExpression",
+          tag: { type: "Identifier", name: "tag" },
+          quasi: { quasis: [{ value: { raw: "a" } }] },
+        },
+        quasi: { quasis: [{ value: { raw: "b" } }] },
+      },
+    });
+    validate(program);
   });
 
   // The schema admits every assignment and binary operator so the Lean
@@ -1324,7 +1599,7 @@ describe("the schema as the seam", () => {
       },
     ],
     [
-      "a Property with a computed key",
+      "a Property with a kind outside the three",
       {
         type: "Program",
         sourceType: "script",
@@ -1338,12 +1613,35 @@ describe("the schema as the seam", () => {
                   type: "Property",
                   key: { type: "Identifier", name: "a" },
                   value: { type: "Literal", value: 1, raw: "1" },
-                  kind: "init",
-                  computed: true,
+                  kind: "accessor",
+                  computed: false,
                   shorthand: false,
                   method: false,
                 },
               ],
+            },
+          },
+        ],
+      },
+    ],
+    [
+      "a TemplateElement with no raw text",
+      {
+        type: "Program",
+        sourceType: "script",
+        body: [
+          {
+            type: "ExpressionStatement",
+            expression: {
+              type: "TemplateLiteral",
+              quasis: [
+                {
+                  type: "TemplateElement",
+                  value: { cooked: "x" },
+                  tail: true,
+                },
+              ],
+              expressions: [],
             },
           },
         ],

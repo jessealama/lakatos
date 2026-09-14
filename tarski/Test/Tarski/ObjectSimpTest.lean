@@ -18,15 +18,15 @@ property of the object the literal built. `getProp` and `getFrom` are
 ordinary members: the first dispatches, the second answers an own
 property, and neither calls itself.
 
-The literal's object lands at reference 91, just past the realm's
-ninety-one intrinsics: a script starts from `Heap.initial`, not from an
+The literal's object lands at reference 92, just past the realm's
+ninety-two intrinsics: a script starts from `Heap.initial`, not from an
 empty heap. -/
 
 open Tarski
 
 /-- `const o = { a: 1 }; o.a;` -/
 private def program : Program :=
-  [ .varDecl .«const» [{ name := "o", init := some (.objectLit [("a", .numLit 1.0)]) }],
+  [ .varDecl .«const» [{ name := "o", init := some (.objectLit [.init "a" (.numLit 1.0)]) }],
     .exprStmt (.member (.ident "o") "a") ]
 
 example : runProgram program = some (.ok (some (.prim (.num 1.0)))) := by

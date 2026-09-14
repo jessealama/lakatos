@@ -133,14 +133,44 @@ export interface NewExpression {
   arguments: Expression[];
 }
 
+/** One member of an object literal. `key` is an `Identifier` or a string
+ * or numeric `Literal` unless `computed`, in which case it is any
+ * expression. `value` is a `FunctionExpression` when `kind` is `"get"` or
+ * `"set"` or when `method` is true; a shorthand's `value` is its own
+ * `Identifier`. Spread is the one member form still outside the slice,
+ * and stands in place as `Unsupported`. */
 export interface Property {
   type: "Property";
-  key: Literal | Identifier;
+  key: Expression;
   value: Expression;
-  kind: "init";
-  computed: false;
-  shorthand: false;
-  method: false;
+  kind: "init" | "get" | "set";
+  computed: boolean;
+  shorthand: boolean;
+  method: boolean;
+}
+
+/** One piece of a template's text. `cooked` is null only under a tag:
+ * an escape the cooked grammar refuses is a parse error in an untagged
+ * template, and the bridge refuses a program that does not parse. `raw`
+ * is the TRV, so its line terminators are normalized to `\n`. */
+export interface TemplateElement {
+  type: "TemplateElement";
+  value: { cooked: string | null; raw: string };
+  tail: boolean;
+}
+
+/** A template literal: one more quasi than there are expressions, so a
+ * template with no substitutions is one quasi and no expressions. */
+export interface TemplateLiteral {
+  type: "TemplateLiteral";
+  quasis: TemplateElement[];
+  expressions: Expression[];
+}
+
+export interface TaggedTemplateExpression {
+  type: "TaggedTemplateExpression";
+  tag: Expression;
+  quasi: TemplateLiteral;
 }
 
 export interface ArrayExpression {
@@ -240,6 +270,8 @@ export type Expression =
   | ArrowFunctionExpression
   | AssignmentExpression
   | ClassExpression
+  | TemplateLiteral
+  | TaggedTemplateExpression
   | Unsupported;
 
 export interface Directive {
@@ -460,34 +492,138 @@ function callArguments(
   );
 }
 
-/** One member of an object literal. Only `key: value` with an identifier,
- * string, or numeric key is in the slice; shorthand, methods, accessors,
- * computed keys, and spread stand in place as `Unsupported`. */
+/** An object-literal member's key, and whether it was written in
+ * brackets. A key ESTree has no node for — a `BigIntLiteral`, a private
+ * name — is `undefined`, and the member is refused where it stands. */
+function propertyKey(
+  name: ts.PropertyName,
+  sf: ts.SourceFile,
+): { key: Expression; computed: boolean } | undefined {
+  if (ts.isComputedPropertyName(name)) {
+    return { key: expression(name.expression, sf), computed: true };
+  }
+  if (ts.isIdentifier(name)) {
+    return { key: { type: "Identifier", name: name.text }, computed: false };
+  }
+  if (ts.isStringLiteral(name)) {
+    return {
+      key: { type: "Literal", value: name.text, raw: rawText(name, sf) },
+      computed: false,
+    };
+  }
+  if (ts.isNumericLiteral(name)) {
+    return {
+      key: {
+        type: "Literal",
+        value: Number(name.text),
+        raw: rawText(name, sf),
+      },
+      computed: false,
+    };
+  }
+  return undefined;
+}
+
+/** The `FunctionExpression` a method, getter, or setter's value is — in
+ * a class body or in an object literal, which spell the same thing. A
+ * TypeScript-only part of it refuses the member where it stands: a type
+ * annotation, a `?` marker, a type parameter, or a missing body, which is
+ * an ambient declaration a script cannot contain. */
+function methodValue(
+  m:
+    | ts.MethodDeclaration
+    | ts.GetAccessorDeclaration
+    | ts.SetAccessorDeclaration,
+  sf: ts.SourceFile,
+): FunctionExpression | Unsupported {
+  if (m.type) return unsupported(m.type);
+  const questionToken = (m as ts.MethodDeclaration).questionToken;
+  if (questionToken) return unsupported(questionToken);
+  const typeParameter = (m as ts.MethodDeclaration).typeParameters?.[0];
+  if (typeParameter) return unsupported(typeParameter);
+  if (!m.body) return unsupported(m);
+  const parts = functionParts(m as unknown as ts.FunctionExpression, sf);
+  return {
+    type: "FunctionExpression",
+    id: null,
+    params: parts.params,
+    body: blockStatement(m.body, sf),
+    async: parts.async,
+    generator: parts.generator,
+  };
+}
+
+/** Which of the three a method-like member defines. ESTree spells a
+ * plain method as `kind: "init"` with `method: true`, and an accessor by
+ * its `kind`. */
+function accessorKind(m: ts.Node): "get" | "set" | "method" {
+  if (ts.isGetAccessorDeclaration(m)) return "get";
+  if (ts.isSetAccessorDeclaration(m)) return "set";
+  return "method";
+}
+
+/** One member of an object literal. Every form but spread is in the
+ * slice: `key: value`, a shorthand, a computed key, a method, a getter,
+ * and a setter. A spread stands in place as `Unsupported`, as it does in
+ * an array literal and an argument list. */
 function objectMember(
   member: ts.ObjectLiteralElementLike,
   sf: ts.SourceFile,
 ): Property | Unsupported {
-  if (!ts.isPropertyAssignment(member)) return unsupported(member);
-  const name = member.name;
-  let key: Literal | Identifier;
-  if (ts.isIdentifier(name)) {
-    key = { type: "Identifier", name: name.text };
-  } else if (ts.isStringLiteral(name)) {
-    key = { type: "Literal", value: name.text, raw: rawText(name, sf) };
-  } else if (ts.isNumericLiteral(name)) {
-    key = { type: "Literal", value: Number(name.text), raw: rawText(name, sf) };
-  } else {
-    return unsupported(name);
+  if (ts.isShorthandPropertyAssignment(member)) {
+    // `{ a = 1 }` is a CoverInitializedName: the cover grammar for a
+    // destructuring pattern, not a literal member, so the `=` is what
+    // leaves the slice.
+    if (member.objectAssignmentInitializer) {
+      return unsupported(member.equalsToken!);
+    }
+    const name: Identifier = { type: "Identifier", name: member.name.text };
+    return {
+      type: "Property",
+      key: name,
+      value: name,
+      kind: "init",
+      computed: false,
+      shorthand: true,
+      method: false,
+    };
   }
-  return {
-    type: "Property",
-    key,
-    value: expression(member.initializer, sf),
-    kind: "init",
-    computed: false,
-    shorthand: false,
-    method: false,
-  };
+  if (ts.isPropertyAssignment(member)) {
+    const key = propertyKey(member.name, sf);
+    if (!key) return unsupported(member.name);
+    return {
+      type: "Property",
+      key: key.key,
+      value: expression(member.initializer, sf),
+      kind: "init",
+      computed: key.computed,
+      shorthand: false,
+      method: false,
+    };
+  }
+  if (
+    ts.isMethodDeclaration(member) ||
+    ts.isGetAccessorDeclaration(member) ||
+    ts.isSetAccessorDeclaration(member)
+  ) {
+    const offending = offendingModifier(member);
+    if (offending) return unsupported(offending);
+    const value = methodValue(member, sf);
+    if (value.type === "Unsupported") return value;
+    const key = propertyKey(member.name, sf);
+    if (!key) return unsupported(member.name);
+    const kind = accessorKind(member);
+    return {
+      type: "Property",
+      key: key.key,
+      value,
+      kind: kind === "method" ? "init" : kind,
+      computed: key.computed,
+      shorthand: false,
+      method: kind === "method",
+    };
+  }
+  return unsupported(member);
 }
 
 /** A function's body. One without a body is an ambient declaration,
@@ -640,34 +776,15 @@ function classMember(
     ts.isGetAccessorDeclaration(m) ||
     ts.isSetAccessorDeclaration(m)
   ) {
-    if ((m as ts.MethodDeclaration).type) {
-      return unsupported((m as ts.MethodDeclaration).type!);
-    }
-    if ((m as ts.MethodDeclaration).questionToken) {
-      return unsupported((m as ts.MethodDeclaration).questionToken!);
-    }
-    const typeParameter = (m as ts.MethodDeclaration).typeParameters?.[0];
-    if (typeParameter) return unsupported(typeParameter);
-    if (!m.body) return unsupported(m);
+    const value = methodValue(m, sf);
+    if (value.type === "Unsupported") return value;
     const key = memberKey(m.name, sf);
     if (!key) return unsupported(m.name);
-    const parts = functionParts(m as unknown as ts.FunctionExpression, sf);
     return {
       type: "MethodDefinition",
       key,
-      value: {
-        type: "FunctionExpression",
-        id: null,
-        params: parts.params,
-        body: blockStatement(m.body, sf),
-        async: parts.async,
-        generator: parts.generator,
-      },
-      kind: ts.isGetAccessorDeclaration(m)
-        ? "get"
-        : ts.isSetAccessorDeclaration(m)
-          ? "set"
-          : "method",
+      value,
+      kind: accessorKind(m),
       computed: false,
       static: isStatic(m),
     };
@@ -745,6 +862,65 @@ function memberObject(
     : expression(node, sf);
 }
 
+/** `ts.TokenFlags.ContainsInvalidEscape`, which the public typings do not
+ * export. tsc sets it on a template piece whose raw text holds an escape
+ * the cooked grammar refuses, and then puts the raw text in `text` where
+ * the cooked value would be — so the flag is the only way to tell the
+ * two apart. Only a *tagged* template can carry one: elsewhere the escape
+ * is a parse diagnostic, which `parseScript` reports as a `ParseError`. */
+const CONTAINS_INVALID_ESCAPE = 2048;
+
+/** One piece of a template's text. TRV normalizes `<CR><LF>` and a lone
+ * `<CR>` to `<LF>`; tsc's `rawText` does not, so the bridge does. */
+function templateElement(
+  piece: ts.TemplateLiteralLikeNode,
+  tail: boolean,
+): TemplateElement {
+  // tsc sets `templateFlags` on every piece it scans — `TokenFlags.None`
+  // where there is nothing to say — but does not declare it in the public
+  // typings.
+  const flags = (piece as unknown as { templateFlags: number }).templateFlags;
+  /* v8 ignore next -- every piece the parser produces has its raw text */
+  const raw = piece.rawText ?? piece.text;
+  return {
+    type: "TemplateElement",
+    value: {
+      cooked: flags & CONTAINS_INVALID_ESCAPE ? null : piece.text,
+      raw: raw.replace(/\r\n?/g, "\n"),
+    },
+    tail,
+  };
+}
+
+/** A template's quasis and substitutions, tagged or not. tsc gives the
+ * substitution-free form a literal node of its own and the other form a
+ * head plus one span per substitution; ESTree spells both as two lists,
+ * the quasis one longer. */
+function templateLiteral(
+  node: ts.TemplateLiteral,
+  sf: ts.SourceFile,
+): TemplateLiteral {
+  if (ts.isNoSubstitutionTemplateLiteral(node)) {
+    return {
+      type: "TemplateLiteral",
+      quasis: [templateElement(node, true)],
+      expressions: [],
+    };
+  }
+  const quasis: TemplateElement[] = [templateElement(node.head, false)];
+  const expressions: Expression[] = [];
+  for (const span of node.templateSpans) {
+    expressions.push(expression(span.expression, sf));
+    quasis.push(
+      templateElement(
+        span.literal,
+        span.literal.kind === ts.SyntaxKind.TemplateTail,
+      ),
+    );
+  }
+  return { type: "TemplateLiteral", quasis, expressions };
+}
+
 function expression(node: ts.Expression, sf: ts.SourceFile): Expression {
   if (ts.isNumericLiteral(node)) {
     return {
@@ -763,9 +939,22 @@ function expression(node: ts.Expression, sf: ts.SourceFile): Expression {
     return { type: "Literal", value: null, raw: "null" };
   }
   if (ts.isStringLiteral(node)) {
-    // A template with no substitutions is a different node kind, and a
-    // different literal: it stays outside the slice.
     return { type: "Literal", value: node.text, raw: rawText(node, sf) };
+  }
+  // A template with no substitutions is a node kind of its own, and it is
+  // still a `TemplateLiteral`: one quasi, no expressions.
+  if (
+    ts.isNoSubstitutionTemplateLiteral(node) ||
+    ts.isTemplateExpression(node)
+  ) {
+    return templateLiteral(node, sf);
+  }
+  if (ts.isTaggedTemplateExpression(node)) {
+    return {
+      type: "TaggedTemplateExpression",
+      tag: expression(node.tag, sf),
+      quasi: templateLiteral(node.template, sf),
+    };
   }
   if (ts.isIdentifier(node)) {
     return { type: "Identifier", name: node.text };

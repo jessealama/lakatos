@@ -45,7 +45,7 @@ private def objectIs (a b : Expr) : Expr := .call (.member (.ident "Object") "is
 /-- An object whose `valueOf` answers `<e>`, so ToPrimitive runs user
 code. -/
 private def valueOfObj (e : Expr) : Expr :=
-  .objectLit [("valueOf", .funcExpr none [] [.returnStmt (some e)])]
+  .objectLit [.init "valueOf" (.funcExpr none [] [.returnStmt (some e)])]
 
 /-! ## `Math.abs` and `Math.sqrt`, the two core operations behind aliases -/
 
@@ -150,18 +150,18 @@ NaN. A fold that coerced lazily would print `a`. -/
       .varDecl .«const»
         [ { name := "a",
             init := some (.objectLit
-              [ ("valueOf",
-                 .funcExpr none []
+              [ .init "valueOf"
+                 (.funcExpr none []
                    [ .exprStmt (.assign (.ident "log")
                        (.binary .add (.ident "log") (.strLit "a"))),
-                     .returnStmt (some (.ident "NaN")) ]) ]) },
+                     .returnStmt (some (.ident "NaN")) ])]) },
           { name := "b",
             init := some (.objectLit
-              [ ("valueOf",
-                 .funcExpr none []
+              [ .init "valueOf"
+                 (.funcExpr none []
                    [ .exprStmt (.assign (.ident "log")
                        (.binary .add (.ident "log") (.strLit "b"))),
-                     .returnStmt (some (.numLit 1.0)) ]) ]) } ],
+                     .returnStmt (some (.numLit 1.0)) ])]) } ],
       .exprStmt (math "max" [.ident "a", .ident "b"]),
       .exprStmt (.ident "log") ]
   == "ab"

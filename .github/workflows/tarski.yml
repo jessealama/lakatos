@@ -170,6 +170,14 @@ jobs:
           out=$(.lake/build/bin/tarski run Test/Tarski/fixtures/hoisting-arguments.json)
           test "$out" = "true" || { echo "expected true, got $out"; exit 1; }
 
+      # #395's example: a shorthand, a computed key, a method reading
+      # `this`, a getter, a cooked template with two substitutions, and a
+      # tagged template whose tag reads `raw` and counts its arguments.
+      - name: Run the template-object script
+        run: |
+          out=$(.lake/build/bin/tarski run Test/Tarski/fixtures/template-object.json)
+          test "$out" = "true" || { echo "expected true, got $out"; exit 1; }
+
       # And what an uncaught throw looks like from outside: the report on
       # stderr, nothing on stdout, exit 1.
       - name: Report an uncaught throw

@@ -24,7 +24,7 @@ private def outcome (p : Program) : String :=
 
 /-- `const o = { a: 1 };`, the object every read below starts from. -/
 private def declareO : Stmt :=
-  .varDecl .«const» [{ name := "o", init := some (.objectLit [("a", .numLit 1.0)]) }]
+  .varDecl .«const» [{ name := "o", init := some (.objectLit [.init "a" (.numLit 1.0)]) }]
 
 /-! ## Reading and writing own properties -/
 
@@ -126,7 +126,7 @@ private def declareP : List Stmt :=
 -- `function F() { return { y: 2 }; } new F().y;` — an explicitly
 -- returned object wins.
 #guard outcome
-    [ .funcDecl "F" [] [.returnStmt (some (.objectLit [("y", .numLit 2.0)]))],
+    [ .funcDecl "F" [] [.returnStmt (some (.objectLit [.init "y" (.numLit 2.0)]))],
       .exprStmt (.member (.new (.ident "F") []) "y") ]
   == "2"
 
@@ -178,7 +178,7 @@ private def declareP : List Stmt :=
 -- user-defined `valueOf` already works.
 #guard outcome
     [ .varDecl .«const» [{ name := "o", init := some (.objectLit
-        [("valueOf", .funcExpr none [] [.returnStmt (some (.numLit 3.0))])]) }],
+        [.init "valueOf" (.funcExpr none [] [.returnStmt (some (.numLit 3.0))])]) }],
       .exprStmt (.binary .add (.ident "o") (.numLit 1.0)) ]
   == "4"
 
@@ -186,12 +186,12 @@ private def declareP : List Stmt :=
 -- `valueOf` never runs and identity is the answer.
 #guard outcome
     [ .varDecl .«const» [{ name := "o", init := some (.objectLit
-        [("valueOf", .funcExpr none [] [.returnStmt (some (.numLit 3.0))])]) }],
+        [.init "valueOf" (.funcExpr none [] [.returnStmt (some (.numLit 3.0))])]) }],
       .exprStmt (.binary .strictEq (.ident "o") (.ident "o")) ]
   == "true"
 
 -- `({ a: 1 }) === ({ a: 1 });` — and two literals are two objects.
 #guard outcome
     [ .exprStmt (.binary .strictEq
-        (.objectLit [("a", .numLit 1.0)]) (.objectLit [("a", .numLit 1.0)])) ]
+        (.objectLit [.init "a" (.numLit 1.0)]) (.objectLit [.init "a" (.numLit 1.0)])) ]
   == "false"

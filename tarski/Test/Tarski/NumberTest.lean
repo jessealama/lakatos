@@ -114,7 +114,7 @@ is NaN. -/
 -- `Number({ valueOf: function () { return 7; } });`
 #guard outcome
     (expr (numberCall
-      [.objectLit [("valueOf", .funcExpr none [] [.returnStmt (some (.numLit 7.0))])]]))
+      [.objectLit [.init "valueOf" (.funcExpr none [] [.returnStmt (some (.numLit 7.0))])]]))
   == "7"
 
 -- `Number({});` — ToPrimitive gives `"[object Object]"`, whose
@@ -307,8 +307,8 @@ runs. -/
       .varDecl .«const»
         [ { name := "k",
             init := some (.objectLit
-              [ ("toString",
-                 .funcExpr none []
+              [ .init "toString"
+                 (.funcExpr none []
                    [ .exprStmt (.assign (.ident "flag") (.boolLit true)),
                      .returnStmt (some (.strLit "x")) ]) ]) } ],
       .exprStmt (.call (.member (.numLit 1.0) "hasOwnProperty") [.ident "k"]),
@@ -423,7 +423,7 @@ private def methodOn (recv : Expr) (name : String) (args : List Expr) : Expr :=
 
 /-- `{ valueOf: function () { throw <e>; } }` -/
 private def poison (e : Expr) : Expr :=
-  .objectLit [("valueOf", .funcExpr none [] [.throwStmt e])]
+  .objectLit [.init "valueOf" (.funcExpr none [] [.throwStmt e])]
 
 #guard outcome (expr (methodOn (.numLit 3.0) "toFixed" [.numLit 0.0])) == "3"
 #guard outcome (expr (methodOn (.numLit 1000000000000000128) "toFixed" [.numLit 0.0]))
@@ -520,10 +520,10 @@ radix, which is what the log below observes. -/
 #guard outcome
     [ .varDecl .«let» [{ name := "log", init := some (.strLit "") }],
       .exprStmt (.call (.ident "parseInt")
-        [ .objectLit [("toString", .funcExpr none []
+        [ .objectLit [.init "toString" (.funcExpr none []
             [ .exprStmt (.assign (.ident "log") (.binary .add (.ident "log") (.strLit "s"))),
               .returnStmt (some (.strLit "1")) ])],
-          .objectLit [("valueOf", .funcExpr none []
+          .objectLit [.init "valueOf" (.funcExpr none []
             [ .exprStmt (.assign (.ident "log") (.binary .add (.ident "log") (.strLit "r"))),
               .returnStmt (some (.numLit 10.0)) ])] ]),
       .exprStmt (.ident "log") ]

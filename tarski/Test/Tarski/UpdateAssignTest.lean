@@ -93,7 +93,7 @@ private def x : Expr := .ident "x"
 
 -- `const o = { n: 1 }; o.n++; o["n"];`
 #guard outcome
-    [ .varDecl .«const» [{ name := "o", init := some (.objectLit [("n", num 1.0)]) }],
+    [ .varDecl .«const» [{ name := "o", init := some (.objectLit [.init "n" (num 1.0)]) }],
       .exprStmt (.update .inc false (.member (.ident "o") "n")),
       .exprStmt (.index (.ident "o") (.strLit "n")) ]
   == "2"
@@ -168,7 +168,7 @@ private def compound (op : BinaryOp) (start amount : Float) : String :=
 
 -- `const o = { n: 1 }; o.n += 2; o.n;`
 #guard outcome
-    [ .varDecl .«const» [{ name := "o", init := some (.objectLit [("n", num 1.0)]) }],
+    [ .varDecl .«const» [{ name := "o", init := some (.objectLit [.init "n" (num 1.0)]) }],
       .exprStmt (.compoundAssign .add (.member (.ident "o") "n") (num 2.0)),
       .exprStmt (.member (.ident "o") "n") ]
   == "3"

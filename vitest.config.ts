@@ -87,6 +87,13 @@ export default defineConfig({
         // `tarski/frontend/src/binary.ts`, both fully covered, including
         // the arms a spawn that never started reaches (both streams null
         // beside an error).
+        // Ratcheted again 2026-09-14: the bridge grew the template nodes
+        // and every object-literal member — a shorthand, a computed key,
+        // a numeric key, a method, a getter, a setter — with a test for
+        // each arm, including the three a member is still refused under:
+        // a `CoverInitializedName`, a BigInt key, and a TypeScript
+        // modifier. The one ignore added with them is a template piece's
+        // raw text, which the parser always sets.
         //
         // Measure this from a path with no dot-directory in it. The include
         // globs above do not match through one, and a run from, say, a
@@ -94,7 +101,7 @@ export default defineConfig({
         // — different denominator, different numbers.
         autoUpdate: true,
         statements: 99.65,
-        branches: 98.87,
+        branches: 98.88,
         functions: 100,
         lines: 99.73,
       },

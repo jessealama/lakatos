@@ -205,8 +205,8 @@ private def classSlice : Program :=
 -- The bridge's placeholder names the tsc kind it stood for, and that is
 -- what the binary prints.
 #guard decode (script
-    r#"{"type":"ExpressionStatement","expression":{"type":"Unsupported","kind":"TemplateExpression"}}"#)
-  == "unsupported: TemplateExpression"
+    r#"{"type":"ExpressionStatement","expression":{"type":"Unsupported","kind":"SpreadElement"}}"#)
+  == "unsupported: SpreadElement"
 
 -- A placeholder in statement position, not just expression position.
 #guard decode (script r#"{"type":"Unsupported","kind":"ForInStatement"}"#)
@@ -476,9 +476,9 @@ private def objectSlice : Program :=
   [ .funcDecl "add" ["a", "b"]
       [.returnStmt (some (.binary .add (.ident "a") (.ident "b")))],
     .varDecl .«const» [{ name := "o", init := some (.objectLit
-      [ ("a", .numLit 1.0),
-        ("b key", .strLit "s"),
-        ("m", .funcExpr none [] [.returnStmt (some .this)]) ]) }],
+      [ .init "a" (.numLit 1.0),
+        .init "b key" (.strLit "s"),
+        .init "m" (.funcExpr none [] [.returnStmt (some .this)])]) }],
     .varDecl .«const» [{ name := "g", init := some (.arrow ["x"] (.expr (.ident "x"))) }],
     .exprStmt (.assign (.member (.ident "o") "a") (.numLit 2.0)),
     .exprStmt (.call (.member (.ident "o") "m") []),
@@ -559,22 +559,205 @@ private def objectSlice : Program :=
         "body":{"type":"BlockStatement","body":[]},"async":false,"generator":false}"#)
   == "unsupported: ObjectBindingPattern"
 
--- A numeric key is admitted by the schema and refused here.
+-- A numeric key decodes as a *computed* key over its literal, so
+-- ToPropertyKey at evaluation is what spells it.
 #guard decode (script
     r#"{"type":"ExpressionStatement","expression":{
         "type":"ObjectExpression","properties":[
           {"type":"Property","key":{"type":"Literal","value":1,"raw":"1"},
            "value":{"type":"Literal","value":2,"raw":"2"},
            "kind":"init","computed":false,"shorthand":false,"method":false}]}}"#)
-  == "unsupported: Property numeric key"
+  == toString (repr ([.exprStmt (.objectLit
+      [.init (.computed (.numLit 1.0)) (.numLit 2.0)])] : Program))
 
--- A shorthand, a method, an accessor, a computed key, and a spread all
--- arrive as placeholders in place.
+-- Spread is the one member form still refused, and it arrives as a
+-- placeholder in place.
 #guard decode (script
     r#"{"type":"ExpressionStatement","expression":{
         "type":"ObjectExpression","properties":[
-          {"type":"Unsupported","kind":"ShorthandPropertyAssignment"}]}}"#)
-  == "unsupported: ShorthandPropertyAssignment"
+          {"type":"Unsupported","kind":"SpreadAssignment"}]}}"#)
+  == "unsupported: SpreadAssignment"
+
+/-! ## Templates -/
+
+/-- A `TemplateElement` with the given cooked and raw text; `cooked` is
+written out so a case can spell JSON `null`. -/
+private def quasi (cooked raw : String) (tail : Bool) : String :=
+  "{\"type\":\"TemplateElement\",\"value\":{\"cooked\":" ++ cooked ++
+    ",\"raw\":\"" ++ raw ++ "\"},\"tail\":" ++ (if tail then "true" else "false") ++ "}"
+
+/-- One `TemplateLiteral` as an expression statement. -/
+private def templateStmt (quasis exprs : String) : String :=
+  "{\"type\":\"ExpressionStatement\",\"expression\":{\"type\":\"TemplateLiteral\"," ++
+    "\"quasis\":[" ++ quasis ++ "],\"expressions\":[" ++ exprs ++ "]}}"
+
+-- `` `a${1}b` ``
+#guard decode (script (templateStmt
+    (quasi "\"a\"" "a" false ++ "," ++ quasi "\"b\"" "b" true)
+    "{\"type\":\"Literal\",\"value\":1,\"raw\":\"1\"}"))
+  == toString (repr ([.exprStmt (.template ["a", "b"] [.numLit 1.0])] : Program))
+
+-- `` `x` `` — one quasi, no expressions.
+#guard decode (script (templateStmt (quasi "\"x\"" "x" true) ""))
+  == toString (repr ([.exprStmt (.template ["x"] [])] : Program))
+
+-- One more quasi than there are expressions, always.
+#guard decode (script (templateStmt (quasi "\"a\"" "a" true)
+    "{\"type\":\"Literal\",\"value\":1,\"raw\":\"1\"}"))
+  == "malformed: TemplateLiteral has 1 quasis for 1 expressions"
+
+-- A null cooked value is a tagged template's alone.
+#guard decode (script (templateStmt (quasi "null" "\\\\u" true) ""))
+  == "malformed: TemplateElement cooked is null outside a tag"
+
+-- Under a tag it is kept, and the raw text with it.
+#guard decode (script
+    ("{\"type\":\"ExpressionStatement\",\"expression\":{" ++
+     "\"type\":\"TaggedTemplateExpression\"," ++
+     "\"tag\":{\"type\":\"Identifier\",\"name\":\"tag\"}," ++
+     "\"quasi\":{\"type\":\"TemplateLiteral\",\"quasis\":[" ++
+     quasi "null" "\\\\u" true ++ "],\"expressions\":[]}}}"))
+  == toString (repr ([.exprStmt (.taggedTemplate (.ident "tag") 0
+      [{ cooked := none, raw := "\\u" }] [])] : Program))
+
+/-- A tagged template over `tag` with one quasi of the given text. -/
+private def taggedStmt (text : String) : String :=
+  "{\"type\":\"ExpressionStatement\",\"expression\":{" ++
+    "\"type\":\"TaggedTemplateExpression\"," ++
+    "\"tag\":{\"type\":\"Identifier\",\"name\":\"tag\"}," ++
+    "\"quasi\":{\"type\":\"TemplateLiteral\",\"quasis\":[" ++
+    quasi ("\"" ++ text ++ "\"") text true ++ "],\"expressions\":[]}}}"
+
+-- Sites are numbered in document order, and a template inside a function
+-- body is numbered where its text is.
+#guard decode (script
+    (taggedStmt "a" ++ "," ++ taggedStmt "b" ++ "," ++
+     "{\"type\":\"FunctionDeclaration\",\"id\":{\"type\":\"Identifier\",\"name\":\"f\"}," ++
+     "\"params\":[],\"body\":{\"type\":\"BlockStatement\",\"body\":[" ++
+     taggedStmt "c" ++ "]},\"async\":false,\"generator\":false}"))
+  == toString (repr ([ .exprStmt (.taggedTemplate (.ident "tag") 0 [⟨some "a", "a"⟩] []),
+      .exprStmt (.taggedTemplate (.ident "tag") 1 [⟨some "b", "b"⟩] []),
+      .funcDecl "f" []
+        [.exprStmt (.taggedTemplate (.ident "tag") 2 [⟨some "c", "c"⟩] [])] ] : Program))
+
+-- A `quasi` that is not a `TemplateLiteral` is a broken producer.
+#guard decode (script
+    ("{\"type\":\"ExpressionStatement\",\"expression\":{" ++
+     "\"type\":\"TaggedTemplateExpression\"," ++
+     "\"tag\":{\"type\":\"Identifier\",\"name\":\"tag\"}," ++
+     "\"quasi\":{\"type\":\"Literal\",\"value\":\"x\",\"raw\":\"\\\"x\\\"\"}}}"))
+  == "malformed: TaggedTemplateExpression quasi is a Literal"
+
+/-! ## Object-literal members -/
+
+/-- One `ObjectExpression` statement around the given members. -/
+private def literal (members : String) : String :=
+  script ("{\"type\":\"ExpressionStatement\",\"expression\":{" ++
+    "\"type\":\"ObjectExpression\",\"properties\":[" ++ members ++ "]}}")
+
+/-- What `literal` decodes to, as a program. -/
+private def literalOf (props : List PropDef) : String :=
+  toString (repr ([.exprStmt (.objectLit props)] : Program))
+
+-- A shorthand's `value` is its own `Identifier`, so it needs no arm.
+#guard decode (literal
+    r#"{"type":"Property","key":{"type":"Identifier","name":"a"},
+        "value":{"type":"Identifier","name":"a"},
+        "kind":"init","computed":false,"shorthand":true,"method":false}"#)
+  == literalOf [.init "a" (.ident "a")]
+
+-- A computed key is the expression in the brackets.
+#guard decode (literal
+    r#"{"type":"Property","key":{"type":"Identifier","name":"k"},
+        "value":{"type":"Literal","value":1,"raw":"1"},
+        "kind":"init","computed":true,"shorthand":false,"method":false}"#)
+  == literalOf [.init (.computed (.ident "k")) (.numLit 1.0)]
+
+-- A method.
+#guard decode (literal
+    r#"{"type":"Property","key":{"type":"Identifier","name":"m"},
+        "value":{"type":"FunctionExpression","id":null,"params":[],
+                 "body":{"type":"BlockStatement","body":[]},
+                 "async":false,"generator":false},
+        "kind":"init","computed":false,"shorthand":false,"method":true}"#)
+  == literalOf [.method .method "m" [] []]
+
+-- A getter and a setter, by their `kind`.
+#guard decode (literal
+    r#"{"type":"Property","key":{"type":"Identifier","name":"g"},
+        "value":{"type":"FunctionExpression","id":null,"params":[],
+                 "body":{"type":"BlockStatement","body":[]},
+                 "async":false,"generator":false},
+        "kind":"get","computed":false,"shorthand":false,"method":false}"#)
+  == literalOf [.method .getter "g" [] []]
+
+#guard decode (literal
+    r#"{"type":"Property","key":{"type":"Identifier","name":"s"},
+        "value":{"type":"FunctionExpression","id":null,
+                 "params":[{"type":"Identifier","name":"v"}],
+                 "body":{"type":"BlockStatement","body":[]},
+                 "async":false,"generator":false},
+        "kind":"set","computed":false,"shorthand":false,"method":false}"#)
+  == literalOf [.method .setter "s" ["v"] []]
+
+-- An `async` or generator member is refused under the name every other
+-- function form's flags are refused under.
+#guard decode (literal
+    r#"{"type":"Property","key":{"type":"Identifier","name":"m"},
+        "value":{"type":"FunctionExpression","id":null,"params":[],
+                 "body":{"type":"BlockStatement","body":[]},
+                 "async":true,"generator":false},
+        "kind":"init","computed":false,"shorthand":false,"method":true}"#)
+  == "unsupported: Property async"
+
+#guard decode (literal
+    r#"{"type":"Property","key":{"type":"Identifier","name":"g"},
+        "value":{"type":"FunctionExpression","id":null,"params":[],
+                 "body":{"type":"BlockStatement","body":[]},
+                 "async":false,"generator":true},
+        "kind":"init","computed":false,"shorthand":false,"method":true}"#)
+  == "unsupported: Property generator"
+
+-- A `kind` outside the three is a producer the schema would have caught.
+#guard decode (literal
+    r#"{"type":"Property","key":{"type":"Identifier","name":"a"},
+        "value":{"type":"Literal","value":1,"raw":"1"},
+        "kind":"accessor","computed":false,"shorthand":false,"method":false}"#)
+  == "unsupported: Property accessor"
+
+-- An accessor whose `value` is not a function is a broken producer.
+#guard decode (literal
+    r#"{"type":"Property","key":{"type":"Identifier","name":"g"},
+        "value":{"type":"Literal","value":1,"raw":"1"},
+        "kind":"get","computed":false,"shorthand":false,"method":false}"#)
+  == "malformed: Property get value is a Literal"
+
+-- B.3.1: a written `__proto__` sets the prototype, spelled as an
+-- identifier or as a string literal.
+#guard decode (literal
+    r#"{"type":"Property","key":{"type":"Identifier","name":"__proto__"},
+        "value":{"type":"Literal","value":null,"raw":"null"},
+        "kind":"init","computed":false,"shorthand":false,"method":false}"#)
+  == literalOf [.proto .nullLit]
+
+#guard decode (literal
+    r#"{"type":"Property","key":{"type":"Literal","value":"__proto__","raw":"\"__proto__\""},
+        "value":{"type":"Literal","value":null,"raw":"null"},
+        "kind":"init","computed":false,"shorthand":false,"method":false}"#)
+  == literalOf [.proto .nullLit]
+
+-- A computed or shorthand `__proto__` does not.
+#guard decode (literal
+    r#"{"type":"Property","key":{"type":"Literal","value":"__proto__","raw":"\"__proto__\""},
+        "value":{"type":"Literal","value":null,"raw":"null"},
+        "kind":"init","computed":true,"shorthand":false,"method":false}"#)
+  == literalOf [.init (.computed (.strLit "__proto__")) .nullLit]
+
+#guard decode (literal
+    r#"{"type":"Property","key":{"type":"Identifier","name":"__proto__"},
+        "value":{"type":"Identifier","name":"__proto__"},
+        "kind":"init","computed":false,"shorthand":true,"method":false}"#)
+  == literalOf [.init "__proto__" (.ident "__proto__")]
 
 -- A private name is a name the class's scope resolves, not a property
 -- key, so it decodes to a member form of its own.

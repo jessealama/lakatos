@@ -16,7 +16,7 @@ open Tarski
 /-! ## The shape -/
 
 #guard Heap.initial.cells.size == 21
-#guard Heap.initial.objects.size == 91
+#guard Heap.initial.objects.size == 92
 
 /-! ## Each kind's prototype
 
@@ -486,6 +486,16 @@ private def mathMembers : List (String × Ref) :=
   | some o =>
     ["cbrt", "random", "hypot", "exp", "log", "log2", "log10", "atan2", "sin", "cos",
       "clz32", "imul", "f16round", "sumPrecise"].all fun k => o.getOwn k == none
+  | none => false
+
+/-! ## `%TemplateMap%`
+
+The realm's `[[TemplateMap]]` starts as a bare object with a null
+prototype, no properties, and nothing callable: GetTemplateObject is the
+only thing that ever writes to it, and no source name reaches it. -/
+
+#guard match Heap.initial.readObj templateMapRef with
+  | some o => o.proto == none && o.properties.isEmpty && o.callable.isNone
   | none => false
 
 /-! ## Each native is the one its reference names -/

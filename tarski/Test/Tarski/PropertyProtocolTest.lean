@@ -40,11 +40,11 @@ A configurable own key goes; a key that is not there is `true` anyway;
 a non-configurable one refuses. -/
 
 #guard outcome
-    [ «let» "o" (.objectLit [("x", .numLit 1.0)]),
+    [ «let» "o" (.objectLit [.init "x" (.numLit 1.0)]),
       .exprStmt (.delete (.member (.ident "o") "x")) ]
   == "true"
 #guard outcome
-    [ «let» "o" (.objectLit [("x", .numLit 1.0)]),
+    [ «let» "o" (.objectLit [.init "x" (.numLit 1.0)]),
       .exprStmt (.delete (.member (.ident "o") "x")),
       .exprStmt (inOp (.strLit "x") (.ident "o")) ]
   == "false"
@@ -52,14 +52,14 @@ a non-configurable one refuses. -/
 #guard outcome
     [ «let» "o" (.objectLit []),
       .exprStmt (.call (.member (.ident "Object") "defineProperty")
-        [.ident "o", .strLit "x", .objectLit [("value", .numLit 1.0)]]),
+        [.ident "o", .strLit "x", .objectLit [.init "value" (.numLit 1.0)]]),
       .exprStmt (.delete (.member (.ident "o") "x")) ]
   == "uncaught: TypeError: Cannot delete property 'x' of #<Object>"
 
 -- The computed spelling is the same operation on ToPropertyKey of the
 -- key expression.
 #guard outcome
-    [ «let» "o" (.objectLit [("x", .numLit 1.0)]),
+    [ «let» "o" (.objectLit [.init "x" (.numLit 1.0)]),
       .exprStmt (.delete (.index (.ident "o") (.strLit "x"))),
       .exprStmt (inOp (.strLit "x") (.ident "o")) ]
   == "false"
@@ -109,8 +109,8 @@ a non-configurable one refuses. -/
 HasProperty, so the whole prototype chain answers; a non-object right
 operand is a `TypeError` after ToPropertyKey has run on the left. -/
 
-#guard outcome (expr (inOp (.strLit "a") (.objectLit [("a", .numLit 1.0)]))) == "true"
-#guard outcome (expr (inOp (.strLit "b") (.objectLit [("a", .numLit 1.0)]))) == "false"
+#guard outcome (expr (inOp (.strLit "a") (.objectLit [.init "a" (.numLit 1.0)]))) == "true"
+#guard outcome (expr (inOp (.strLit "b") (.objectLit [.init "a" (.numLit 1.0)]))) == "false"
 #guard outcome (expr (inOp (.strLit "toString") (.objectLit []))) == "true"
 #guard outcome (expr (inOp (.strLit "toString") (.call (.member (.ident "Object") "create")
     [.nullLit])))
@@ -125,7 +125,7 @@ operand is a `TypeError` after ToPropertyKey has run on the left. -/
 #guard outcome
     [ «let» "o" (.objectLit []),
       .exprStmt (.call (.member (.ident "Object") "defineProperty")
-        [.ident "o", .strLit "x", .objectLit [("get", .funcExpr none [] [])]]),
+        [.ident "o", .strLit "x", .objectLit [.init "get" (.funcExpr none [] [])]]),
       .exprStmt (inOp (.strLit "x") (.ident "o")) ]
   == "true"
 
@@ -140,6 +140,6 @@ operand is a `TypeError` after ToPropertyKey has run on the left. -/
 #guard BinaryOp.coerces .«in» == false
 #guard outcome
     [ «let» "k" (.objectLit
-        [("toString", .funcExpr none [] [.returnStmt (some (.strLit "a"))])]),
-      .exprStmt (inOp (.ident "k") (.objectLit [("a", .numLit 1.0)])) ]
+        [.init "toString" (.funcExpr none [] [.returnStmt (some (.strLit "a"))])]),
+      .exprStmt (inOp (.ident "k") (.objectLit [.init "a" (.numLit 1.0)])) ]
   == "true"

@@ -41,7 +41,7 @@ private def invoke (f : Expr) (method : String) (args : List Expr) : Expr :=
 private def anon : Expr := .funcExpr none [] []
 
 /-- `{ k: <v> }`, the receiver the issue's example binds. -/
-private def receiver (v : Float) : Expr := .objectLit [("k", .numLit v)]
+private def receiver (v : Float) : Expr := .objectLit [.init "k" (.numLit v)]
 
 /-! ## The issue's example
 
@@ -62,8 +62,8 @@ private def issueExample : Program :=
   [ «let» "o" (.objectLit []),
     .exprStmt (.call (.member (.ident "Object") "defineProperty")
       [ .ident "o", .strLit "x",
-        .objectLit [("value", .numLit 1.0), ("writable", .boolLit false),
-                    ("enumerable", .boolLit false), ("configurable", .boolLit false)] ]),
+        .objectLit [.init "value" (.numLit 1.0), .init "writable" (.boolLit false),
+                    .init "enumerable" (.boolLit false), .init "configurable" (.boolLit false)] ]),
     .varDecl .«let» [{ name := "threw", init := some (.boolLit false) }],
     .tryStmt [.exprStmt (.assign (.member (.ident "o") "x") (.numLit 2.0))]
       (some { param := some "e",
@@ -155,17 +155,17 @@ zero, and its `name` is `"bound "` and the target's. -/
 /-- `function f() {} Object.defineProperty(f, "length", <desc>); f.bind(null, 1).length` —
 step 6 reads the target's own `length` with Get, so an accessor runs, and
 an infinite length stays infinite rather than clamping to zero. -/
-private def boundLengthOf (desc : List (String × Expr)) : Program :=
+private def boundLengthOf (desc : List PropDef) : Program :=
   [ .funcDecl "f" [] [],
     .exprStmt (.call (.member (.ident "Object") "defineProperty")
       [.ident "f", .strLit "length", .objectLit desc]),
     .exprStmt (.member (invoke (.ident "f") "bind" [.nullLit, .numLit 1.0]) "length") ]
 
-#guard outcome (boundLengthOf [("value", .ident "Infinity")]) == "Infinity"
-#guard outcome (boundLengthOf [("value", .unary .neg (.ident "Infinity"))]) == "0"
-#guard outcome (boundLengthOf [("value", .numLit 3.5)]) == "2"
-#guard outcome (boundLengthOf [("value", .strLit "3")]) == "0"
-#guard outcome (boundLengthOf [("get", .arrow [] (.expr (.numLit 5.0)))]) == "4"
+#guard outcome (boundLengthOf [.init "value" (.ident "Infinity")]) == "Infinity"
+#guard outcome (boundLengthOf [.init "value" (.unary .neg (.ident "Infinity"))]) == "0"
+#guard outcome (boundLengthOf [.init "value" (.numLit 3.5)]) == "2"
+#guard outcome (boundLengthOf [.init "value" (.strLit "3")]) == "0"
+#guard outcome (boundLengthOf [.init "get" (.arrow [] (.expr (.numLit 5.0)))]) == "4"
 #guard outcome (expr (.member (invoke (.funcExpr (some "f") [] []) "bind" []) "name"))
   == "bound f"
 #guard outcome (expr (.member (invoke (invoke (.funcExpr (some "f") [] []) "bind" []) "bind" [])
@@ -247,7 +247,7 @@ refuses and a definition succeeds — which is exactly what
 #guard outcome
     [ .funcDecl "f" [] [],
       .exprStmt (.call (.member (.ident "Object") "defineProperty")
-        [.ident "f", .strLit "name", .objectLit [("value", .strLit "x")]]),
+        [.ident "f", .strLit "name", .objectLit [.init "value" (.strLit "x")]]),
       .exprStmt (.member (.ident "f") "name") ]
   == "x"
 #guard outcome (expr (.call (.member (.funcExpr (some "f") [] []) "propertyIsEnumerable")
@@ -264,7 +264,7 @@ everything else is named the empty string. -/
 #guard outcome [«let» "h" (.arrow [] (.expr (.numLit 1.0))),
                 .exprStmt (.member (.ident "h") "name")]
   == "h"
-#guard outcome (expr (.member (.member (.objectLit [("m", anon)]) "m") "name")) == "m"
+#guard outcome (expr (.member (.member (.objectLit [.init "m" (anon)]) "m") "name")) == "m"
 #guard outcome
     [ .classDecl "A"
         { name := some "A", superClass := none,

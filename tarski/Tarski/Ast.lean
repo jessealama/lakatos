@@ -20,6 +20,14 @@ are here, and so are parameter defaults and `arguments`, and so are
 property protocol #389 defines rather than with the loops; `new.target`
 is #486's, `for`-`of` and binding patterns #394's.
 
+**Templates are here**, tagged and untagged, the tagged form carrying a
+site number the decoder assigns so that the template object can be cached
+per Parse Node. So is every object-literal member but spread: a
+shorthand, a computed key, a numeric key, a method, a getter, a setter,
+and `__proto__:`, all of them `PropDef`s over a `PropKey`. A computed
+*class* key is still refused by name — the class AST's key is a `String`,
+which is #384's shape, and widening it is not this file's business.
+
 **Classes are here**: declarations and expressions, a constructor,
 public and private instance fields, methods, getters and setters,
 `static` members, `extends`, and `super`. What a class may spell and this
@@ -157,6 +165,19 @@ inductive MethodKind where
   | setter
 deriving Repr, DecidableEq, Inhabited
 
+/-- One ESTree `TemplateElement` of a *tagged* template: the TV and the
+TRV of 12.9.6. `cooked` is `none` when the raw text holds an escape the
+cooked grammar refuses — which a tagged template admits, because its tag
+may want the raw text, and an untagged one does not, because there the
+escape is a parse error. `raw` has its line terminators normalized, as
+TRV requires: a `<CR><LF>` and a lone `<CR>` are both `<LF>`. -/
+structure TemplateString where
+  /-- ESTree `TemplateElement.value.cooked`. -/
+  cooked : Option String
+  /-- ESTree `TemplateElement.value.raw`. -/
+  raw : String
+deriving Repr, DecidableEq, Inhabited
+
 /-- Whether an operator coerces its operands before comparing them. The
 two strict-equality tests do not: they answer on the values themselves,
 so an object operand is not run through ToPrimitive. Neither does
@@ -221,10 +242,27 @@ inductive Expr where
   and `SpreadElement` — so the literal survives and only the element is
   refused; evaluated holes and spread are #394's. -/
   | arrayLit (elements : List Expr)
-  /-- ESTree `ObjectExpression` whose members are all `kind: "init"`
-  `Property` nodes with identifier or string keys, in source order.
-  Shorthand, methods, accessors, computed keys, and spread are #395's. -/
-  | objectLit (props : List (String × Expr))
+  /-- ESTree `ObjectExpression`, its members in source order. Every
+  member form is here but spread, which is #394's and arrives as an
+  `Unsupported` member in place. A duplicate key is a redefinition and
+  the last one wins. -/
+  | objectLit (props : List PropDef)
+  /-- ESTree `TemplateLiteral` outside a tag. `strings` are the quasis'
+  cooked values and there is one more of them than there are `exprs`, so
+  a substitution-free template is one string and no expressions. A
+  substitution is ToString of its value, and an invalid escape is a parse
+  error rather than a `none` cooked value, which is why the strings are
+  not `TemplateString`s. -/
+  | template (strings : List String) (exprs : List Expr)
+  /-- ESTree `TaggedTemplateExpression`. `tag` is the callee and is
+  resolved the way a call's is, so a member tag passes its object as
+  `this`. `site` is the decoder's number for this template's Parse Node,
+  in document order, and is what GetTemplateObject's `[[TemplateMap]]`
+  caches by: one site called twice hands the tag the identical object,
+  and two sites with the same text do not. `new tag\`x\`` is a `new`
+  whose callee is this node. -/
+  | taggedTemplate (tag : Expr) (site : Nat) (strings : List TemplateString)
+      (exprs : List Expr)
   /-- ESTree `FunctionExpression`. A name binds only inside the
   function's own scope, which is what lets an anonymous-looking
   expression recurse. -/
@@ -254,6 +292,33 @@ inductive Expr where
   of use, and anything else is evaluated for its effects and answers
   `true`. A `super` member operand is a decoder refusal. -/
   | delete (operand : Expr)
+
+/-- ESTree `Property.key`. A `name` is what an `Identifier` key, a string
+`Literal` key, and a shorthand's own name all decode to; a `computed` key
+is `[e]`, and so is a *numeric* `Literal` key — `{ 1.5: x }` gets its key
+from ToPropertyKey at evaluation rather than from a second spelling of
+`Number::toString` at decode time. -/
+inductive PropKey where
+  /-- A written key, already a string. -/
+  | name (s : String)
+  /-- A computed key: ToPropertyKey of the expression's value. -/
+  | computed (e : Expr)
+
+/-- One member of an object literal, in source order. -/
+inductive PropDef where
+  /-- ESTree `Property` with `kind: "init"` and `method: false`. A
+  shorthand is one of these too: its `value` is its own `Identifier`. -/
+  | init (key : PropKey) (value : Expr)
+  /-- ESTree `Property` with `method: true`, or with `kind` `"get"` or
+  `"set"`. MethodDefinitionEvaluation with the literal itself as
+  `[[HomeObject]]`, so `super.x` inside one reads through the literal's
+  prototype. -/
+  | method (kind : MethodKind) (key : PropKey) (params : List Param) (body : List Stmt)
+  /-- A non-computed, non-shorthand `__proto__` key: B.3.1's `__proto__`
+  Property Names in Object Initializers. The value is evaluated, and when
+  it is an object or `null` it becomes `[[Prototype]]`; otherwise nothing
+  happens and no property is made. -/
+  | proto (value : Expr)
 
 /-- An arrow function's body: `expression: true` in ESTree means the
 concise form, whose value is the expression's. -/
@@ -452,13 +517,14 @@ structure Declarator where
 
 end
 
--- `Expr` and friends nest each other under `List` and
--- `List (String × Expr)`, which the `deriving` clause of a `mutual`
--- block does not handle; the standalone command does. `DecidableEq` is
+-- `Expr` and friends nest each other under `List`, which the `deriving`
+-- clause of a `mutual` block does not handle; the standalone command
+-- does. `DecidableEq` is
 -- not among them — no handler accepts the nesting, and nothing needs a
 -- decision procedure on syntax: the tests compare programs by `repr` and
 -- results by `Value`, which stays decidable.
-deriving instance Repr, Inhabited for Expr, ArrowBody, Target, Stmt, ForInit, ForInLeft,
+deriving instance Repr, Inhabited for Expr, PropKey, PropDef, ArrowBody, Target, Stmt, ForInit,
+  ForInLeft,
   SwitchCase, CatchClause, Param, Declarator, ClassField, ClassElement, ClassDef
 
 /-- A plain name is a parameter with no default, so a test and a
@@ -466,6 +532,11 @@ literal program may still spell `params := ["x"]`. The coercion is
 `CoeHead`-free and elaborates inside a list literal, which is what keeps
 every program written before defaults existed unchanged. -/
 instance : Coe String Param := ⟨fun name => { name, default := none }⟩
+
+/-- A written key is a plain string, so a test and a literal program may
+spell `.init "a" (.numLit 1.0)`. The coercion elaborates inside a list
+literal, which is what `Coe String Param` does for `params := ["x"]`. -/
+instance : Coe String PropKey := ⟨.name⟩
 
 /-- The parameters' names, in order — BoundNames of a formal parameter
 list, restricted to the single-name bindings this AST has. -/
