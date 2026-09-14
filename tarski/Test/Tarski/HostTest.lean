@@ -105,12 +105,11 @@ ToString and joins the parts with one space.
     [consoleLogStmt [.objectLit [("toString", .funcExpr none [] [.returnStmt (some (.strLit "t"))])]]]
   == ["t"]
 
-/-! And a plain object throws for the same reason `print({})` does, until
-`Object.prototype` grows a `toString` (#389).
+/-! And a plain object prints the way `print({})` does, through
+`Object.prototype.toString`.
 
 `console.log({});` -/
-#guard outcome [consoleLogStmt [.objectLit []]]
-  == "uncaught: TypeError: Cannot convert object to primitive value"
+#guard printed [consoleLogStmt [.objectLit []]] == ["[object Object]"]
 
 /-! The call answers `undefined`, as `print` does.
 

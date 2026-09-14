@@ -348,7 +348,7 @@ and `log` writes to the same `%PrintLog%` `print` does. -/
   | some o =>
     o.proto == some objectProtoRef
       && o.callable.isNone
-      && o.properties == [("log", .obj consoleLogRef)]
+      && o.properties == [("log", Property.method (.obj consoleLogRef))]
   | none => false
 
 #guard match Heap.initial.readObj consoleLogRef with
