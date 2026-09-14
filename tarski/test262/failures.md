@@ -8,9 +8,9 @@ node ../dist/tarski/frontend/src/test262/cli.js --slice-file test262/slice.txt
 ```
 
 Every failing test in `tarski/test262/slice.txt` is classified here — the
-harness, the 27 language directories the thales emitter maps (#383), and
-the three built-ins directories #382 added, whose rows #437 pinned
-all-unsupported for this slice to ratchet — and
+harness, the 27 language directories the thales emitter maps (#383), the
+three built-ins directories #382 added, and the two global parsers #388
+added — and
 `tarski/frontend/tests/test262-failures.test.ts` holds this file and
 `tarski/test262/expected.json` together: each directory named here is a key
 of that file, every directory with a positive `fail` count appears, and the
@@ -29,11 +29,14 @@ The four classes:
   constructor, generators, typed arrays, `Date`, and the rest.
 - **bug** — a real defect, filed as its own issue. `owner` is that issue.
 
-`owner` is the issue the row waits on. Nothing here waits on #383 or on
-#382: no failure in the slice is caused by the statements and operators
-this issue added — the `for`, `switch`, `var`, and update tests under
-`tarski/Test/Tarski/` check those directly — and none is a `Math`,
-`Number`, or `Boolean` member answering the wrong number.
+`owner` is the issue the row waits on. Nothing here waits on #383, on
+#382, or on #388: no failure in the slice is caused by the statements and
+operators #383 added, none is a `Math`, `Number`, or `Boolean` member
+answering the wrong number, and **not one row is a conversion between a
+Number and a String answering the wrong thing** — `Number/prototype/toString`
+is 84 pass and 2 fail, `toFixed` 10 and 2, `toExponential` 9 and 3,
+`toPrecision` 10 and 4, `parseFloat` 49 and 2, `parseInt` 48 and 4, and
+every one of those failures is a row below.
 
 One divergence found while classifying is not the proximate cause of any
 row and so has none: `applyCoercing` runs ToPrimitive on both operands
@@ -87,10 +90,10 @@ against #392.
 | `test/built-ins/Math/sumPrecise`                   | 5     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent                                         | #434  |
 | `test/built-ins/Math/tan`                          | 6     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent                                         | #434  |
 | `test/built-ins/Math/tanh`                         | 2     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent                                         | #434  |
-| `test/built-ins/Number`                            | 41    | bug          | ToNumber of a string is a placeholder that answers NaN                                                             | #388  |
 | `test/built-ins/Number`                            | 7     | builtin      | a function has no `hasOwnProperty`: there is no `Function.prototype`                                               | #389  |
 | `test/built-ins/Number`                            | 3     | builtin      | `Object.getPrototypeOf` and `isPrototypeOf` are absent                                                             | #389  |
 | `test/built-ins/Number`                            | 2     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
+| `test/built-ins/Number`                            | 2     | bug          | a numeric literal that overflows to `Infinity` reaches Lean as JSON `null`                                         | #460  |
 | `test/built-ins/Number`                            | 1     | builtin      | `new String` needs the String wrapper object                                                                       | #391  |
 | `test/built-ins/Number`                            | 1     | builtin      | `Object.prototype.toString` and `valueOf` are not on the prototype yet                                             | #389  |
 | `test/built-ins/Number`                            | 1     | builtin      | `isConstructor.js` needs `Reflect.construct`                                                                       | #389  |
@@ -101,22 +104,22 @@ against #392.
 | `test/built-ins/Number/isInteger`                  | 1     | builtin      | `Symbol` is not in the realm                                                                                       | #392  |
 | `test/built-ins/Number/isNaN`                      | 1     | builtin      | `Symbol` is not in the realm                                                                                       | #392  |
 | `test/built-ins/Number/isSafeInteger`              | 1     | builtin      | `Symbol` is not in the realm                                                                                       | #392  |
-| `test/built-ins/Number/parseFloat`                 | 1     | builtin      | `toFixed`, `toPrecision`, `toExponential`, `toLocaleString`, `parseInt`, and `parseFloat` are absent members       | #388  |
-| `test/built-ins/Number/parseInt`                   | 1     | builtin      | `toFixed`, `toPrecision`, `toExponential`, `toLocaleString`, `parseInt`, and `parseFloat` are absent members       | #388  |
-| `test/built-ins/Number/prototype`                  | 4     | builtin      | `toFixed`, `toPrecision`, `toExponential`, `toLocaleString`, `parseInt`, and `parseFloat` are absent members       | #388  |
 | `test/built-ins/Number/prototype`                  | 2     | builtin      | `Object.getPrototypeOf` and `isPrototypeOf` are absent                                                             | #389  |
 | `test/built-ins/Number/prototype`                  | 1     | builtin      | `Object.prototype.toString` and `valueOf` are not on the prototype yet                                             | #389  |
-| `test/built-ins/Number/prototype/toExponential`    | 10    | builtin      | `toFixed`, `toPrecision`, `toExponential`, `toLocaleString`, `parseInt`, and `parseFloat` are absent members       | #388  |
-| `test/built-ins/Number/prototype/toExponential`    | 1     | builtin      | `Symbol` is not in the realm                                                                                       | #392  |
-| `test/built-ins/Number/prototype/toFixed`          | 9     | builtin      | `toFixed`, `toPrecision`, `toExponential`, `toLocaleString`, `parseInt`, and `parseFloat` are absent members       | #388  |
-| `test/built-ins/Number/prototype/toFixed`          | 1     | builtin      | Number-to-string is the placeholder formatter                                                                      | #388  |
+| `test/built-ins/Number/prototype/toExponential`    | 2     | builtin      | `Symbol` is not in the realm                                                                                       | #392  |
+| `test/built-ins/Number/prototype/toExponential`    | 1     | builtin      | `Object.prototype.toString` and `valueOf` are not on the prototype yet                                             | #389  |
+| `test/built-ins/Number/prototype/toFixed`          | 1     | builtin      | a function has no `length`                                                                                         | #389  |
 | `test/built-ins/Number/prototype/toFixed`          | 1     | builtin      | `Symbol` is not in the realm                                                                                       | #392  |
-| `test/built-ins/Number/prototype/toLocaleString`   | 1     | builtin      | `toFixed`, `toPrecision`, `toExponential`, `toLocaleString`, `parseInt`, and `parseFloat` are absent members       | #388  |
-| `test/built-ins/Number/prototype/toPrecision`      | 12    | builtin      | `toFixed`, `toPrecision`, `toExponential`, `toLocaleString`, `parseInt`, and `parseFloat` are absent members       | #388  |
-| `test/built-ins/Number/prototype/toPrecision`      | 1     | builtin      | `Symbol` is not in the realm                                                                                       | #392  |
+| `test/built-ins/Number/prototype/toPrecision`      | 2     | builtin      | `Symbol` is not in the realm                                                                                       | #392  |
+| `test/built-ins/Number/prototype/toPrecision`      | 2     | builtin      | `Object.prototype.toString` and `valueOf` are not on the prototype yet                                             | #389  |
 | `test/built-ins/Number/prototype/toString`         | 1     | builtin      | `String.fromCharCode` and `String.prototype.indexOf` are absent                                                    | #391  |
 | `test/built-ins/Number/prototype/toString`         | 1     | out-of-scope | typed arrays, `Date`, and the other library objects are excluded by the epic                                       | #376  |
 | `test/built-ins/Number/prototype/valueOf`          | 1     | out-of-scope | typed arrays, `Date`, and the other library objects are excluded by the epic                                       | #376  |
+| `test/built-ins/parseFloat`                        | 1     | builtin      | `new String` needs the String wrapper object                                                                       | #391  |
+| `test/built-ins/parseFloat`                        | 1     | builtin      | `Object.prototype.toString` and `valueOf` are not on the prototype yet                                             | #389  |
+| `test/built-ins/parseInt`                          | 2     | builtin      | `new String` needs the String wrapper object                                                                       | #391  |
+| `test/built-ins/parseInt`                          | 1     | builtin      | `Object.prototype.toString` and `valueOf` are not on the prototype yet                                             | #389  |
+| `test/built-ins/parseInt`                          | 1     | builtin      | a function has no `hasOwnProperty`: there is no `Function.prototype`                                               | #389  |
 | `test/harness`                                     | 5     | out-of-scope | typed arrays, `Date`, and the other library objects are excluded by the epic                                       | #376  |
 | `test/harness`                                     | 4     | builtin      | the harness's `compareArray.format` calls `Array.prototype.map`                                                    | #390  |
 | `test/harness`                                     | 3     | builtin      | there is no global object, so `globalThis` and a top-level `this` are unbound                                      | #389  |
@@ -138,26 +141,22 @@ against #392.
 | `test/language/expressions/conditional`            | 1     | builtin      | `Symbol` is not in the realm                                                                                       | #392  |
 | `test/language/expressions/conditional`            | 1     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
 | `test/language/expressions/division`               | 9     | builtin      | the global `isNaN` and `isFinite` are not in the realm                                                             | #441  |
-| `test/language/expressions/division`               | 4     | bug          | ToNumber of a string is a placeholder that answers NaN                                                             | #388  |
+| `test/language/expressions/division`               | 4     | builtin      | `new String` needs the String wrapper object                                                                       | #391  |
 | `test/language/expressions/division`               | 2     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
 | `test/language/expressions/division`               | 1     | builtin      | the ToNumeric step it pins needs `Symbol`; the order divergence behind it is #436                                  | #392  |
-| `test/language/expressions/greater-than`           | 4     | builtin      | `new String` needs the String wrapper object                                                                       | #391  |
-| `test/language/expressions/greater-than`           | 1     | bug          | ToNumber of a string is a placeholder that answers NaN                                                             | #388  |
+| `test/language/expressions/greater-than`           | 5     | builtin      | `new String` needs the String wrapper object                                                                       | #391  |
 | `test/language/expressions/greater-than`           | 1     | bug          | a Lean `String` is code points, so the relational order is not UTF-16 code-unit order                              | #391  |
 | `test/language/expressions/greater-than`           | 1     | builtin      | `Object.prototype.toString` and `valueOf` are not on the prototype yet                                             | #389  |
 | `test/language/expressions/greater-than`           | 1     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
-| `test/language/expressions/greater-than-or-equal`  | 3     | bug          | ToNumber of a string is a placeholder that answers NaN                                                             | #388  |
-| `test/language/expressions/greater-than-or-equal`  | 2     | builtin      | `new String` needs the String wrapper object                                                                       | #391  |
+| `test/language/expressions/greater-than-or-equal`  | 5     | builtin      | `new String` needs the String wrapper object                                                                       | #391  |
 | `test/language/expressions/greater-than-or-equal`  | 1     | bug          | a Lean `String` is code points, so the relational order is not UTF-16 code-unit order                              | #391  |
 | `test/language/expressions/greater-than-or-equal`  | 1     | builtin      | `Object.prototype.toString` and `valueOf` are not on the prototype yet                                             | #389  |
 | `test/language/expressions/greater-than-or-equal`  | 1     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
-| `test/language/expressions/less-than`              | 4     | builtin      | `new String` needs the String wrapper object                                                                       | #391  |
-| `test/language/expressions/less-than`              | 1     | bug          | ToNumber of a string is a placeholder that answers NaN                                                             | #388  |
+| `test/language/expressions/less-than`              | 5     | builtin      | `new String` needs the String wrapper object                                                                       | #391  |
 | `test/language/expressions/less-than`              | 1     | bug          | a Lean `String` is code points, so the relational order is not UTF-16 code-unit order                              | #391  |
 | `test/language/expressions/less-than`              | 1     | builtin      | `Object.prototype.toString` and `valueOf` are not on the prototype yet                                             | #389  |
 | `test/language/expressions/less-than`              | 1     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
-| `test/language/expressions/less-than-or-equal`     | 3     | bug          | ToNumber of a string is a placeholder that answers NaN                                                             | #388  |
-| `test/language/expressions/less-than-or-equal`     | 2     | builtin      | `new String` needs the String wrapper object                                                                       | #391  |
+| `test/language/expressions/less-than-or-equal`     | 5     | builtin      | `new String` needs the String wrapper object                                                                       | #391  |
 | `test/language/expressions/less-than-or-equal`     | 1     | bug          | a Lean `String` is code points, so the relational order is not UTF-16 code-unit order                              | #391  |
 | `test/language/expressions/less-than-or-equal`     | 1     | builtin      | `Object.prototype.toString` and `valueOf` are not on the prototype yet                                             | #389  |
 | `test/language/expressions/less-than-or-equal`     | 1     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
@@ -172,11 +171,11 @@ against #392.
 | `test/language/expressions/logical-or`             | 1     | builtin      | `Symbol` is not in the realm                                                                                       | #392  |
 | `test/language/expressions/logical-or`             | 1     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
 | `test/language/expressions/modulus`                | 12    | builtin      | the global `isNaN` and `isFinite` are not in the realm                                                             | #441  |
-| `test/language/expressions/modulus`                | 3     | bug          | ToNumber of a string is a placeholder that answers NaN                                                             | #388  |
+| `test/language/expressions/modulus`                | 3     | builtin      | `new String` needs the String wrapper object                                                                       | #391  |
 | `test/language/expressions/modulus`                | 1     | builtin      | the ToNumeric step it pins needs `Symbol`; the order divergence behind it is #436                                  | #392  |
 | `test/language/expressions/modulus`                | 1     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
 | `test/language/expressions/multiplication`         | 8     | builtin      | the global `isNaN` and `isFinite` are not in the realm                                                             | #441  |
-| `test/language/expressions/multiplication`         | 4     | bug          | ToNumber of a string is a placeholder that answers NaN                                                             | #388  |
+| `test/language/expressions/multiplication`         | 4     | builtin      | `new String` needs the String wrapper object                                                                       | #391  |
 | `test/language/expressions/multiplication`         | 1     | builtin      | the ToNumeric step it pins needs `Symbol`; the order divergence behind it is #436                                  | #392  |
 | `test/language/expressions/multiplication`         | 1     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
 | `test/language/expressions/strict-does-not-equals` | 3     | builtin      | `new String` needs the String wrapper object                                                                       | #391  |
@@ -186,14 +185,12 @@ against #392.
 | `test/language/expressions/strict-equals`          | 2     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
 | `test/language/expressions/strict-equals`          | 1     | builtin      | `Object(v)` on a primitive needs a wrapper object                                                                  | #391  |
 | `test/language/expressions/subtraction`            | 7     | builtin      | the global `isNaN` and `isFinite` are not in the realm                                                             | #441  |
-| `test/language/expressions/subtraction`            | 4     | bug          | ToNumber of a string is a placeholder that answers NaN                                                             | #388  |
+| `test/language/expressions/subtraction`            | 4     | builtin      | `new String` needs the String wrapper object                                                                       | #391  |
 | `test/language/expressions/subtraction`            | 1     | builtin      | the ToNumeric step it pins needs `Symbol`; the order divergence behind it is #436                                  | #392  |
 | `test/language/expressions/subtraction`            | 1     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
-| `test/language/expressions/unary-minus`            | 2     | bug          | ToNumber of a string is a placeholder that answers NaN                                                             | #388  |
-| `test/language/expressions/unary-minus`            | 2     | builtin      | the global `isNaN` and `isFinite` are not in the realm                                                             | #441  |
+| `test/language/expressions/unary-minus`            | 3     | builtin      | the global `isNaN` and `isFinite` are not in the realm                                                             | #441  |
 | `test/language/expressions/unary-minus`            | 1     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
-| `test/language/expressions/unary-plus`             | 5     | builtin      | the global `isNaN` and `isFinite` are not in the realm                                                             | #441  |
-| `test/language/expressions/unary-plus`             | 2     | bug          | ToNumber of a string is a placeholder that answers NaN                                                             | #388  |
+| `test/language/expressions/unary-plus`             | 6     | builtin      | the global `isNaN` and `isFinite` are not in the realm                                                             | #441  |
 | `test/language/expressions/unary-plus`             | 1     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
 | `test/language/statements/const`                   | 1     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
 | `test/language/statements/for`                     | 7     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |

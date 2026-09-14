@@ -84,9 +84,9 @@ export default defineConfig({
         // — different denominator, different numbers.
         autoUpdate: true,
         statements: 99.63,
-        branches: 98.8,
+        branches: 98.81,
         functions: 100,
-        lines: 99.71,
+        lines: 99.72,
       },
     },
   },

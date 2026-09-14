@@ -275,7 +275,8 @@ operands' types. `+` is concatenation when either side is a string and
 addition otherwise. Each of the four relations is code-point string
 order when *both* sides are strings and numeric otherwise, which is
 IsLessThan's own split: `"10" < "9"` is true and `"a" < 1` is false,
-the latter because ToNumber of a string is still the placeholder (#388).
+the latter because ToNumber of `"a"` is NaN and every relation on a NaN
+is false.
 Lean's `String` order is `List Char` order on the code points, so it is
 UTF-16 code-unit order for every string this slice can build — a lone
 surrogate cannot live in a Lean `String`, and #391 owns the difference.

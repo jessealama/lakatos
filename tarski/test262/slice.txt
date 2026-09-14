@@ -46,3 +46,8 @@ test/language/statements/for
 test/built-ins/Number
 test/built-ins/Math
 test/built-ins/Boolean
+
+# The two global parsers, which are the same library definitions the
+# `Number` members are (#388).
+test/built-ins/parseFloat
+test/built-ins/parseInt
