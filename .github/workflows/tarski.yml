@@ -6,10 +6,10 @@ on:
     paths:
       - "tarski/**"
       - ".github/workflows/tarski.yml"
+  # No path filter: this job is a required check on main, and a required
+  # check that never reports reads as pending forever, not as skipped. The
+  # push trigger above stays filtered — nothing gates on it.
   pull_request:
-    paths:
-      - "tarski/**"
-      - ".github/workflows/tarski.yml"
 
 env:
   LC_ALL: C.UTF-8
