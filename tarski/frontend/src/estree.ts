@@ -757,9 +757,8 @@ function expression(node: ts.Expression, sf: ts.SourceFile): Expression {
       object: memberObject(node.expression, sf),
       property: ts.isIdentifier(node.name)
         ? { type: "Identifier", name: node.name.text }
-        : ts.isPrivateIdentifier(node.name)
-          ? { type: "PrivateIdentifier", name: node.name.text.slice(1) }
-          : unsupported(node.name),
+        : /* v8 ignore next -- a dot access's name is one of the two */
+          { type: "PrivateIdentifier", name: node.name.text.slice(1) },
       computed: false,
     };
   }

@@ -437,6 +437,9 @@ describe("parseScript", () => {
     ["a `private` modifier", "private x;", "PrivateKeyword"],
     ["a `readonly` modifier", "readonly x;", "ReadonlyKeyword"],
     ["a parameter property", "constructor(public x) {}", "PublicKeyword"],
+    ["a computed field key", "[k] = 1;", "ComputedPropertyName"],
+    ["a definite-assignment marker", "x!;", "ExclamationToken"],
+    ["a `declare` modifier", "declare x;", "DeclareKeyword"],
   ];
 
   for (const [what, member, kind] of CLASS_MEMBERS) {
@@ -446,6 +449,49 @@ describe("parseScript", () => {
         "m.js",
       );
       expect(JSON.stringify(program)).toContain(`"kind":"${kind}"`);
+      validate(program);
+    });
+  }
+
+  // A string or a numeric key is a member the schema admits and the Lean
+  // decoder refuses the numeric one of, so the bridge has to emit both.
+  it("emits a string and a numeric member key", () => {
+    const program = parseScript(
+      '"use strict";\nclass A {\n  "s"() {}\n  1() {}\n  "f" = 1;\n  2 = 2;\n}\n',
+      "k.js",
+    );
+    expect(program.body[1]).toMatchObject({
+      body: {
+        body: [
+          { type: "MethodDefinition", key: { type: "Literal", value: "s" } },
+          { type: "MethodDefinition", key: { type: "Literal", value: 1 } },
+          { type: "PropertyDefinition", key: { type: "Literal", value: "f" } },
+          { type: "PropertyDefinition", key: { type: "Literal", value: 2 } },
+        ],
+      },
+    });
+    validate(program);
+  });
+
+  // The TypeScript-only parts of a method signature, each refused where
+  // it stands rather than taking the method with it.
+  const METHOD_SIGNATURES: [string, string, string][] = [
+    ["a return type", "m(): number {}", "NumberKeyword"],
+    ["an optional marker", "m?() {}", "QuestionToken"],
+    ["a type parameter list", "m<T>() {}", "TypeParameter"],
+    ["no body at all", "m();", "MethodDeclaration"],
+    ["an overload signature", "constructor();", "Constructor"],
+  ];
+
+  for (const [what, member, kind] of METHOD_SIGNATURES) {
+    it(`replaces a method with ${what} in place`, () => {
+      const program = parseScript(
+        `"use strict";\nclass A {\n  ${member}\n}\n`,
+        "ms.js",
+      );
+      expect(program.body[1]).toMatchObject({
+        body: { body: [{ type: "Unsupported", kind }] },
+      });
       validate(program);
     });
   }
@@ -484,6 +530,19 @@ describe("parseScript", () => {
       validate(program);
     });
   }
+
+  // A class *expression* leaves the slice as a whole for the same
+  // reasons a declaration does.
+  it("refuses a class expression with a type parameter list", () => {
+    const program = parseScript(
+      '"use strict";\nconst C = class<T> {};\n',
+      "ce.js",
+    );
+    expect(program.body[1]).toMatchObject({
+      declarations: [{ init: { type: "Unsupported", kind: "TypeParameter" } }],
+    });
+    validate(program);
+  });
 
   it("drops a stray semicolon between members", () => {
     const program = parseScript(

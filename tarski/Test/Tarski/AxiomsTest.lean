@@ -391,7 +391,11 @@ private def onlyStandard (n : Name) : CoreM Bool := do
 
 /-- info: true -/
 #guard_msgs in
-#eval onlyStandard ``Tarski.superProperty
+#eval onlyStandard ``Tarski.superBase
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.superRead
 
 /-- info: true -/
 #guard_msgs in

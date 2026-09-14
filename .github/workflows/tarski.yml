@@ -144,6 +144,23 @@ jobs:
           out=$(.lake/build/bin/tarski run Test/Tarski/fixtures/for-switch-var.json)
           test "$out" = "true" || { echo "expected true, got $out"; exit 1; }
 
+      # #384's example: a private field, a constructor that throws a
+      # `RangeError`, a getter, a method that constructs another instance,
+      # and `instanceof`.
+      - name: Run the class-box script
+        run: |
+          out=$(.lake/build/bin/tarski run Test/Tarski/fixtures/class-box.json)
+          test "$out" = "true" || { echo "expected true, got $out"; exit 1; }
+
+      # The four class fixtures `lakatos prove` proves `Theorem`s over,
+      # stripped of their types and of two constructor defaults (#393's),
+      # with each `@ensures` instantiated at one witness. This is the
+      # fragment the prover's own tests assume the evaluator agrees with.
+      - name: Run the emitter fixtures
+        run: |
+          out=$(.lake/build/bin/tarski run Test/Tarski/fixtures/emitter-classes.json)
+          test "$out" = "true" || { echo "expected true, got $out"; exit 1; }
+
       # And what an uncaught throw looks like from outside: the report on
       # stderr, nothing on stdout, exit 1.
       - name: Report an uncaught throw
@@ -201,7 +218,9 @@ jobs:
       # committed table is the ratchet, and a count that moved in either
       # direction fails until it is written down.
       - name: test262 PR-gated slice
-        timeout-minutes: 15
+        # The two class directories #384 joined are about five thousand
+        # tests on their own, which roughly doubled the step's wall clock.
+        timeout-minutes: 20
         run: |
           node ../dist/tarski/frontend/src/test262/cli.js \
             --slice-file test262/slice.txt --check test262/expected.json

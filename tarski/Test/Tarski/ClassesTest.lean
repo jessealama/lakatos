@@ -616,6 +616,18 @@ private def classWithM : Stmt :=
       .exprStmt (.unary .typeof (.new (.ident "A") [])) ]
   == "object"
 
+-- `class D extends Object { constructor() { super[super()]; } } new D();`
+-- — MakeSuperPropertyReference reads the `this` binding *before* it
+-- evaluates the key, so this is the dead zone and not a read through
+-- whatever the inner `super()` would have bound.
+#guard outcome
+    [ .classDecl "D"
+        { name := some "D", superClass := some (.ident "Object"),
+          elements := [.ctor [] [.exprStmt (.superIndex (.superCall []))]] },
+      .exprStmt (.new (.ident "D") []) ]
+  == ("uncaught: ReferenceError: Must call super constructor in derived class " ++
+      "before accessing 'this' or returning from derived constructor")
+
 -- `function f() { return super.x; } f();` — `super` with no home object.
 #guard outcome
     [ .funcDecl "f" [] [.returnStmt (some (.superMember "x"))],

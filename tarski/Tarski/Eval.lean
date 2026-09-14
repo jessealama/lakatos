@@ -792,10 +792,13 @@ def evalExpr (env : Env) : Expr → EvalM Value
   | .privateMember object name => do
     let o ← evalExpr env object
     readPrivate env o name
-  | .superMember name => superProperty env name
+  | .superMember name => do
+    let (parent, receiver) ← superBase env
+    superRead parent receiver name
   | .superIndex key => do
+    let (parent, receiver) ← superBase env
     let k ← evalExpr env key
-    superProperty env (← toPropertyKey k)
+    superRead parent receiver (← toPropertyKey k)
   | .superCall args => evalSuperCall env args
   | .classExpr cls => evalClass env cls
   | .call callee args =>
@@ -819,13 +822,13 @@ def evalExpr (env : Env) : Expr → EvalM Value
     -- `super.m()` is a method call on the *current* receiver: the
     -- function comes off the parent, the `this` it is handed does not.
     | .superMember name => do
-      let f ← superProperty env name
-      let receiver ← evalExpr env .this
+      let (parent, receiver) ← superBase env
+      let f ← superRead parent receiver name
       callFunction f receiver (← evalExprs env args)
     | .superIndex key => do
+      let (parent, receiver) ← superBase env
       let k ← evalExpr env key
-      let f ← superProperty env (← toPropertyKey k)
-      let receiver ← evalExpr env .this
+      let f ← superRead parent receiver (← toPropertyKey k)
       callFunction f receiver (← evalExprs env args)
     | _ => do
       let f ← evalExpr env callee
@@ -1886,25 +1889,35 @@ def evalClass (env : Env) (d : ClassDef) : EvalM Value := do
   pure (.obj F)
   partial_fixpoint
 
-/-- MakeSuperPropertyReference and the read through it: the home
-object's *prototype*, with the current `this` as the receiver, so an
-inherited getter still sees the instance. `super` where no home object
-is bound is a `SyntaxError` — an early error in the specification, which
-tsc leaves to its checker and this epic reports at the point of use. -/
-def superProperty (env : Env) (key : String) : EvalM Value := do
+/-- MakeSuperPropertyReference's first two steps (13.3.7.2): the object
+the read will go through — the home object's *prototype* — and the
+current `this`, which is the receiver a getter found there will see.
+
+**Both are taken before the property expression runs.** The
+specification reads the `this` binding at step 2 and evaluates the key
+at step 3, so `super[super()]` inside a derived constructor is the dead
+zone's `ReferenceError` and not a read through whatever that `super()`
+would have bound. `super` where no home object is bound is a
+`SyntaxError` — an early error in the specification, which tsc leaves to
+its checker and this epic reports at the point of use. -/
+def superBase (env : Env) : EvalM (Option Ref × Value) := do
   match Env.lookup env homeName with
   | none => throwJsError .syntaxError "'super' keyword unexpected here"
   | some hr => do
     let home ← readCell homeName hr
     let receiver ← evalExpr env .this
     match home with
-    | .obj h =>
-      match (← readObj h).proto with
-      | some p => getFrom p key receiver
-      -- A home object with no prototype reads through null, which is
-      -- `getProp`'s own `TypeError` and not a message of its own.
-      | none => getProp (.prim .null) key
-    | .prim _ => getProp (.prim .null) key
+    | .obj h => pure ((← readObj h).proto, receiver)
+    | .prim _ => pure (none, receiver)
+  partial_fixpoint
+
+/-- The read itself, once `superBase` has the two halves of the
+reference. A home object with no prototype reads through null, which is
+`getProp`'s own `TypeError` rather than a message of its own. -/
+def superRead (parent : Option Ref) (receiver : Value) (key : String) : EvalM Value :=
+  match parent with
+  | some p => getFrom p key receiver
+  | none => getProp (.prim .null) key
   partial_fixpoint
 
 /-- Evaluate a statement against the running completion value, and
