@@ -1,11 +1,13 @@
 # Render one claude -p stream-json event as a terminal line, or nothing.
 # Input is raw lines (jq -R): non-JSON lines from stderr noise are dropped.
 # The full stream goes to the log file untouched; this is the live view.
+# Every output line is prefixed with $prefix ("[role] [bead]"), the final
+# result's summary lines included.
 
 def short($n): tostring | gsub("\\s+"; " ") | .[0:$n];
 def stamp: now | strflocaltime("%H:%M");
 
-fromjson? // empty |
+(fromjson? // empty |
 if .type == "assistant" then
   (.message.content // [])[]? |
   if .type == "tool_use" then
@@ -23,4 +25,5 @@ elif .type == "user" then
   "\(stamp) ✗ tool error: " + (.content | short(220))
 elif .type == "result" then
   "\(stamp) ■ \(.subtype): \(.num_turns) turns, \((.duration_ms // 0) / 60000 | floor) min, $\((.total_cost_usd // 0) * 100 | round / 100)\n" + (.result // "")
-else empty end
+else empty end)
+| split("\n") | map($prefix + " " + .) | join("\n")

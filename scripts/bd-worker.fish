@@ -114,7 +114,7 @@ while true
     set -l mol (bd -C $root show $claimed --json | jq -r '(.[0] // .) | .parent')
     set -l prompt_file $root/scripts/prompts/$label.md
     if not test -f $prompt_file
-        echo "[$role] no prompt for label '$label' on $claimed; unclaiming" >&2
+        echo "[$role] [$claimed] no prompt for label '$label'; unclaiming" >&2
         bd -C $root update $claimed --status open --assignee "" -q
         exit 1
     end
@@ -122,7 +122,7 @@ while true
     set -l prompt (sed -e "s|{{BEAD}}|$claimed|g" -e "s|{{ROOT}}|$root|g" -e "s|{{EPIC}}|$epic|g" $prompt_file | string collect)
     set -l log $root/.lakatos/workers/$claimed-(date +%Y%m%dT%H%M%S).jsonl
 
-    echo "[$role] $claimed ($label) -> $model, log $log"
+    echo "[$role] [$claimed] ($label) -> $model, log $log"
     if set -q _flag_dry_run
         echo "--- would run: claude -p --model $model --dangerously-skip-permissions --output-format stream-json --verbose"
         echo "--- with prompt:"
@@ -132,11 +132,12 @@ while true
     end
 
     # The full event stream goes to the .jsonl log as it happens; the
-    # terminal gets one line per tool call, message, and the final result.
+    # terminal gets one line per tool call, message, and the final result,
+# each prefixed with the role and the bead.
     # stderr (MCP and hook noise) goes to a sibling .stderr file.
     set -l claude_cmd (set -q BD_WORKER_CLAUDE; and echo $BD_WORKER_CLAUDE; or echo claude)
     $claude_cmd -p --model $model --dangerously-skip-permissions --output-format stream-json --verbose $prompt 2>>$log.stderr \
-        | tee $log | jq --unbuffered -R -r -f $root/scripts/bd-worker-render.jq
+        | tee $log | jq --unbuffered -R -r --arg prefix "[$role] [$claimed]" -f $root/scripts/bd-worker-render.jq
     set -l status_after (bd -C $root show $claimed --json | jq -r '(.[0] // .) | .status')
 
     if test "$status_after" = in_progress
@@ -151,11 +152,11 @@ while true
                         --description "The implement worker for $claimed stopped on a red gate; its last comment names the gate and the failure. Make the gates green on the branch and commit; do not open a PR." --json | jq -r '.id')
                     bd -C $root dep add $claimed --blocked-by $repair -q
                     bd -C $root update $claimed --status open --assignee "" -q
-                    echo "[$role] $claimed failed; filed repair bead $repair, continuing"
+                    echo "[$role] [$claimed] failed; filed repair bead $repair, continuing"
                 else
                     set -l gate (bd -C $root gate create --type human --blocks $claimed --reason "$claimed failed its gate again after a repair; needs the maintainer" --json | jq -r '.id // empty')
                     bd -C $root update $claimed --status open --assignee "" --add-label needs-human -q
-                    echo "[$role] $claimed failed after a repair; human gate $gate added, stopping" >&2
+                    echo "[$role] [$claimed] failed after a repair; human gate $gate added, stopping" >&2
                     exit 1
                 end
             case repair
@@ -164,15 +165,15 @@ while true
                 bd -C $root close $claimed --reason "Repair failed; escalated to the maintainer" -q
                 set -l gate (bd -C $root gate create --type human --blocks $implement --reason "Repair $claimed could not make the gate green: $why" --json | jq -r '.id // empty')
                 bd -C $root update $implement --add-label needs-human -q
-                echo "[$role] repair $claimed failed; human gate $gate on $implement, stopping" >&2
+                echo "[$role] [$claimed] repair failed; human gate $gate on $implement, stopping" >&2
                 exit 1
             case '*'
-                echo "[$role] $claimed still in progress after the worker exited; set back to open, stopping" >&2
+                echo "[$role] [$claimed] still in progress after the worker exited; set back to open, stopping" >&2
                 bd -C $root update $claimed --status open --assignee "" -q
                 exit 1
         end
     else
-        echo "[$role] $claimed is now $status_after"
+        echo "[$role] [$claimed] is now $status_after"
     end
 
     if set -q _flag_once
