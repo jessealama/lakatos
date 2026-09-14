@@ -43,13 +43,13 @@ private def counter : Program :=
   [ .funcDecl "counter" []
       [ .varDecl .«let» [{ name := "n", init := some (.numLit 0.0) }],
         .returnStmt (some (.objectLit
-          [("next", .funcExpr none []
+          [.init "next" (.funcExpr none []
             [ .exprStmt (.assign (.ident "n") (.binary .add (.ident "n") (.numLit 1.0))),
               .returnStmt (some (.ident "n")) ])])) ],
     .varDecl .«const» [{ name := "c", init := some (.call (.ident "counter") []) }],
     .exprStmt (.call (.member (.ident "c") "next") []),
     .exprStmt (.call (.member (.ident "c") "next") []),
-    .varDecl .«const» [{ name := "o", init := some (.objectLit [("a", .numLit 1.0)]) }],
+    .varDecl .«const» [{ name := "o", init := some (.objectLit [.init "a" (.numLit 1.0)]) }],
     .exprStmt (.assign (.member (.ident "o") "b") (.call (.member (.ident "c") "next") [])),
     .exprStmt (.logical .and
       (.logical .and
@@ -109,8 +109,8 @@ private def named : Expr :=
 -- `const o = { v: 7, m: function () { return this.v; } }; o.m();`
 #guard outcome
     [ .varDecl .«const» [{ name := "o", init := some (.objectLit
-        [ ("v", .numLit 7.0),
-          ("m", .funcExpr none [] [.returnStmt (some (.member .this "v"))]) ]) }],
+        [ .init "v" (.numLit 7.0),
+          .init "m" (.funcExpr none [] [.returnStmt (some (.member .this "v"))])]) }],
       .exprStmt (.call (.member (.ident "o") "m") []) ]
   == "7"
 
@@ -123,7 +123,7 @@ private def lexicalThis : Expr :=
     [ .varDecl .«const» [{ name := "g", init := some arrowThis }],
       .returnStmt (some (.call (.ident "g") [])) ]
 
-private def holder : Expr := .objectLit [("v", .numLit 7.0), ("m", lexicalThis)]
+private def holder : Expr := .objectLit [.init "v" (.numLit 7.0), .init "m" lexicalThis]
 
 #guard outcome
     [ .varDecl .«const» [{ name := "o", init := some holder }],

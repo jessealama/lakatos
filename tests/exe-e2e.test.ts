@@ -21,7 +21,7 @@ describe.runIf(e2e)("lakatos exe end to end", () => {
       "console.log(inv(0));\n",
     "clean.ts": 'console.log("a", 1);\n',
     "last.ts": "const k: number = 2;\nk + 1;\n",
-    "template.ts": "const s: string = `x${1}`;\nconsole.log(s);\n",
+    "regex.ts": "const r: RegExp = /x/;\nconsole.log(r.source);\n",
   });
 
   it(
@@ -52,9 +52,9 @@ describe.runIf(e2e)("lakatos exe end to end", () => {
   });
 
   it("names the syntax the evaluator does not know and exits 2", async () => {
-    const r = await runMainRaw(["exe", "template.ts"]);
+    const r = await runMainRaw(["exe", "regex.ts"]);
     expect(r.code).toBe(2);
-    expect(r.stderr).toContain("unsupported syntax: TemplateExpression");
+    expect(r.stderr).toContain("unsupported syntax: RegularExpressionLiteral");
   });
 });
 

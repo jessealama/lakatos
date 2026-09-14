@@ -62,22 +62,20 @@ function corpus(): string[] {
  * Measured, not predicted: a row that moves is either a slice that landed
  * or a regression, and either way it belongs in a diff.
  *
- * Twenty-one of the corpus's two hundred and seventy-six. The six
+ * Seventeen of the corpus's two hundred and seventy-six. The six
  * `ImportDeclaration` rows are the multi-file fixtures, which `exe`
  * refuses by design — it resolves no module graph; the one `Parameter`
  * row is a rest parameter (#394). The rest is syntax outside the
- * evaluated fragment: template literals, BigInt, a regular expression,
- * `&`, `??`, a computed key, a private accessor, an `async` function, and
- * an `export default class` with no name, which is a class declaration
- * with no `id` once the module syntax is off it.
+ * evaluated fragment: BigInt, a regular expression, `&`, `??`, a
+ * computed *class* key, a private accessor, an `async` function, and an
+ * `export default class` with no name, which is a class declaration
+ * with no `id` once the module syntax is off it. The four fixtures
+ * refused for a template literal left this map when #395 landed.
  */
 const UNSUPPORTED: Record<string, string> = {
   "engines/pabst/tests/fixtures/e2e/bounded.ts": "BigIntLiteral",
-  "engines/pabst/tests/fixtures/e2e/enumerated-fail.ts": "TemplateExpression",
   "engines/pabst/tests/fixtures/e2e/readme-example.ts": "BigIntLiteral",
   "engines/pabst/tests/fixtures/e2e/regex-guard.ts": "RegularExpressionLiteral",
-  "engines/thales/tests/conformance/countersatisfiable/branch-throw.ts":
-    "TemplateExpression",
   "engines/thales/tests/conformance/inappropriate/await-remote.ts":
     "FunctionDeclaration async",
   "engines/thales/tests/conformance/inappropriate/bare-import/main.ts":
@@ -86,13 +84,10 @@ const UNSUPPORTED: Record<string, string> = {
     "ImportDeclaration",
   "engines/thales/tests/conformance/inappropriate/unmodeled-operator.ts":
     "BinaryExpression &",
-  "engines/thales/tests/conformance/theorem/branch-guarded-throw.ts":
-    "TemplateExpression",
   "engines/thales/tests/conformance/theorem/imported-constants/main.ts":
     "ImportDeclaration",
   "engines/thales/tests/conformance/theorem/imported-scale/main.ts":
     "ImportDeclaration",
-  "engines/thales/tests/fixtures/statements.ts": "TemplateExpression",
   "engines/thales/tests/fixtures/tracer.ts": "FunctionDeclaration async",
   "spec/fixtures/attach/reject/anonymous-class.ts": "ClassDeclaration",
   "spec/fixtures/attach/reject/computed-name.ts": "ComputedPropertyName",

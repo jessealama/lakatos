@@ -62,7 +62,7 @@ completion value is `undefined`, which is what `print` answers. -/
 
 /-! ToString of an object runs its `toString`. -/
 #guard printed
-    [printStmt (.objectLit [("toString", .funcExpr none [] [.returnStmt (some (.strLit "t"))])])]
+    [printStmt (.objectLit [.init "toString" (.funcExpr none [] [.returnStmt (some (.strLit "t"))])])]
   == ["t"]
 
 /-! A plain object's `toString` is `Object.prototype`'s. -/
@@ -102,7 +102,7 @@ ToString and joins the parts with one space.
 
 `console.log({ toString() { return "t"; } });` -/
 #guard printed
-    [consoleLogStmt [.objectLit [("toString", .funcExpr none [] [.returnStmt (some (.strLit "t"))])]]]
+    [consoleLogStmt [.objectLit [.method .method "toString" [] [.returnStmt (some (.strLit "t"))]]]]
   == ["t"]
 
 /-! And a plain object prints the way `print({})` does, through

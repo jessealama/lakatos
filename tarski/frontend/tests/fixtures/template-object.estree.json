@@ -1,0 +1,441 @@
+{
+  "type": "Program",
+  "sourceType": "script",
+  "body": [
+    {
+      "type": "ExpressionStatement",
+      "expression": {
+        "type": "Literal",
+        "value": "use strict",
+        "raw": "\"use strict\""
+      },
+      "directive": "use strict"
+    },
+    {
+      "type": "VariableDeclaration",
+      "kind": "const",
+      "declarations": [
+        {
+          "type": "VariableDeclarator",
+          "id": {
+            "type": "Identifier",
+            "name": "k"
+          },
+          "init": {
+            "type": "Literal",
+            "value": "dyn",
+            "raw": "\"dyn\""
+          }
+        },
+        {
+          "type": "VariableDeclarator",
+          "id": {
+            "type": "Identifier",
+            "name": "v"
+          },
+          "init": {
+            "type": "Literal",
+            "value": 2,
+            "raw": "2"
+          }
+        }
+      ]
+    },
+    {
+      "type": "VariableDeclaration",
+      "kind": "const",
+      "declarations": [
+        {
+          "type": "VariableDeclarator",
+          "id": {
+            "type": "Identifier",
+            "name": "o"
+          },
+          "init": {
+            "type": "ObjectExpression",
+            "properties": [
+              {
+                "type": "Property",
+                "key": {
+                  "type": "Identifier",
+                  "name": "v"
+                },
+                "value": {
+                  "type": "Identifier",
+                  "name": "v"
+                },
+                "kind": "init",
+                "computed": false,
+                "shorthand": true,
+                "method": false
+              },
+              {
+                "type": "Property",
+                "key": {
+                  "type": "BinaryExpression",
+                  "operator": "+",
+                  "left": {
+                    "type": "Identifier",
+                    "name": "k"
+                  },
+                  "right": {
+                    "type": "Literal",
+                    "value": "1",
+                    "raw": "\"1\""
+                  }
+                },
+                "value": {
+                  "type": "Literal",
+                  "value": 1,
+                  "raw": "1"
+                },
+                "kind": "init",
+                "computed": true,
+                "shorthand": false,
+                "method": false
+              },
+              {
+                "type": "Property",
+                "key": {
+                  "type": "Identifier",
+                  "name": "m"
+                },
+                "value": {
+                  "type": "FunctionExpression",
+                  "id": null,
+                  "params": [],
+                  "body": {
+                    "type": "BlockStatement",
+                    "body": [
+                      {
+                        "type": "ReturnStatement",
+                        "argument": {
+                          "type": "MemberExpression",
+                          "object": {
+                            "type": "ThisExpression"
+                          },
+                          "property": {
+                            "type": "Identifier",
+                            "name": "v"
+                          },
+                          "computed": false
+                        }
+                      }
+                    ]
+                  },
+                  "async": false,
+                  "generator": false
+                },
+                "kind": "init",
+                "computed": false,
+                "shorthand": false,
+                "method": true
+              },
+              {
+                "type": "Property",
+                "key": {
+                  "type": "Identifier",
+                  "name": "g"
+                },
+                "value": {
+                  "type": "FunctionExpression",
+                  "id": null,
+                  "params": [],
+                  "body": {
+                    "type": "BlockStatement",
+                    "body": [
+                      {
+                        "type": "ReturnStatement",
+                        "argument": {
+                          "type": "Literal",
+                          "value": 3,
+                          "raw": "3"
+                        }
+                      }
+                    ]
+                  },
+                  "async": false,
+                  "generator": false
+                },
+                "kind": "get",
+                "computed": false,
+                "shorthand": false,
+                "method": false
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "type": "VariableDeclaration",
+      "kind": "const",
+      "declarations": [
+        {
+          "type": "VariableDeclarator",
+          "id": {
+            "type": "Identifier",
+            "name": "tag"
+          },
+          "init": {
+            "type": "FunctionExpression",
+            "id": null,
+            "params": [
+              {
+                "type": "Identifier",
+                "name": "strs"
+              }
+            ],
+            "body": {
+              "type": "BlockStatement",
+              "body": [
+                {
+                  "type": "ReturnStatement",
+                  "argument": {
+                    "type": "BinaryExpression",
+                    "operator": "+",
+                    "left": {
+                      "type": "CallExpression",
+                      "callee": {
+                        "type": "MemberExpression",
+                        "object": {
+                          "type": "MemberExpression",
+                          "object": {
+                            "type": "Identifier",
+                            "name": "strs"
+                          },
+                          "property": {
+                            "type": "Identifier",
+                            "name": "raw"
+                          },
+                          "computed": false
+                        },
+                        "property": {
+                          "type": "Identifier",
+                          "name": "join"
+                        },
+                        "computed": false
+                      },
+                      "arguments": [
+                        {
+                          "type": "Literal",
+                          "value": "|",
+                          "raw": "\"|\""
+                        }
+                      ]
+                    },
+                    "right": {
+                      "type": "BinaryExpression",
+                      "operator": "-",
+                      "left": {
+                        "type": "MemberExpression",
+                        "object": {
+                          "type": "Identifier",
+                          "name": "arguments"
+                        },
+                        "property": {
+                          "type": "Identifier",
+                          "name": "length"
+                        },
+                        "computed": false
+                      },
+                      "right": {
+                        "type": "Literal",
+                        "value": 1,
+                        "raw": "1"
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "async": false,
+            "generator": false
+          }
+        }
+      ]
+    },
+    {
+      "type": "ExpressionStatement",
+      "expression": {
+        "type": "LogicalExpression",
+        "operator": "&&",
+        "left": {
+          "type": "LogicalExpression",
+          "operator": "&&",
+          "left": {
+            "type": "LogicalExpression",
+            "operator": "&&",
+            "left": {
+              "type": "BinaryExpression",
+              "operator": "===",
+              "left": {
+                "type": "TemplateLiteral",
+                "quasis": [
+                  {
+                    "type": "TemplateElement",
+                    "value": {
+                      "cooked": "",
+                      "raw": ""
+                    },
+                    "tail": false
+                  },
+                  {
+                    "type": "TemplateElement",
+                    "value": {
+                      "cooked": "-",
+                      "raw": "-"
+                    },
+                    "tail": false
+                  },
+                  {
+                    "type": "TemplateElement",
+                    "value": {
+                      "cooked": "",
+                      "raw": ""
+                    },
+                    "tail": true
+                  }
+                ],
+                "expressions": [
+                  {
+                    "type": "MemberExpression",
+                    "object": {
+                      "type": "Identifier",
+                      "name": "o"
+                    },
+                    "property": {
+                      "type": "Identifier",
+                      "name": "v"
+                    },
+                    "computed": false
+                  },
+                  {
+                    "type": "MemberExpression",
+                    "object": {
+                      "type": "Identifier",
+                      "name": "o"
+                    },
+                    "property": {
+                      "type": "Identifier",
+                      "name": "dyn1"
+                    },
+                    "computed": false
+                  }
+                ]
+              },
+              "right": {
+                "type": "Literal",
+                "value": "2-1",
+                "raw": "\"2-1\""
+              }
+            },
+            "right": {
+              "type": "BinaryExpression",
+              "operator": "===",
+              "left": {
+                "type": "CallExpression",
+                "callee": {
+                  "type": "MemberExpression",
+                  "object": {
+                    "type": "Identifier",
+                    "name": "o"
+                  },
+                  "property": {
+                    "type": "Identifier",
+                    "name": "m"
+                  },
+                  "computed": false
+                },
+                "arguments": []
+              },
+              "right": {
+                "type": "Literal",
+                "value": 2,
+                "raw": "2"
+              }
+            }
+          },
+          "right": {
+            "type": "BinaryExpression",
+            "operator": "===",
+            "left": {
+              "type": "MemberExpression",
+              "object": {
+                "type": "Identifier",
+                "name": "o"
+              },
+              "property": {
+                "type": "Identifier",
+                "name": "g"
+              },
+              "computed": false
+            },
+            "right": {
+              "type": "Literal",
+              "value": 3,
+              "raw": "3"
+            }
+          }
+        },
+        "right": {
+          "type": "BinaryExpression",
+          "operator": "===",
+          "left": {
+            "type": "TaggedTemplateExpression",
+            "tag": {
+              "type": "Identifier",
+              "name": "tag"
+            },
+            "quasi": {
+              "type": "TemplateLiteral",
+              "quasis": [
+                {
+                  "type": "TemplateElement",
+                  "value": {
+                    "cooked": "a",
+                    "raw": "a"
+                  },
+                  "tail": false
+                },
+                {
+                  "type": "TemplateElement",
+                  "value": {
+                    "cooked": "b",
+                    "raw": "b"
+                  },
+                  "tail": false
+                },
+                {
+                  "type": "TemplateElement",
+                  "value": {
+                    "cooked": "c",
+                    "raw": "c"
+                  },
+                  "tail": true
+                }
+              ],
+              "expressions": [
+                {
+                  "type": "Literal",
+                  "value": 1,
+                  "raw": "1"
+                },
+                {
+                  "type": "Literal",
+                  "value": 2,
+                  "raw": "2"
+                }
+              ]
+            }
+          },
+          "right": {
+            "type": "Literal",
+            "value": "a|b|c2",
+            "raw": "\"a|b|c2\""
+          }
+        }
+      }
+    }
+  ]
+}

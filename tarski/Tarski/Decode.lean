@@ -12,6 +12,16 @@ program yet", the second says "whatever produced this JSON is broken".
 `Lean.Data.Json` is imported here and nowhere else in the evaluator, so
 `Tarski.Eval`'s import footprint stays `Js` plus its own AST.
 
+The monad carries one `Nat` of state, the next tagged-template site
+number: a template object is cached per Parse Node, and this pass is the
+one that sees the document in order. `decodeProgram` runs the state from
+zero and answers an `Except`, so a caller never sees it.
+
+Object literals arrive whole. A numeric key decodes as a *computed* key
+over its `numLit`, so `{ 1.5: x }` takes its spelling from ToPropertyKey
+at evaluation; spread is the one member form still refused, and an
+`async` or generator member is `Property async` or `Property generator`.
+
 Classes arrive whole. What a class may spell and the AST may not is
 refused here by name: a private method or accessor (a non-writable
 element, not a property), a numeric or computed key, an `async` or
@@ -44,21 +54,24 @@ def DecodeError.message : DecodeError → String
   | .unsupported kind => s!"unsupported: {kind}"
   | .malformed msg => s!"malformed: {msg}"
 
-/-- The decoder's monad. -/
-abbrev DecodeM := Except DecodeError
+/-- The decoder's monad. The state is the next tagged-template *site*
+number: GetTemplateObject caches a template object per Parse Node, and
+the decoder is the pass that walks the document in order, so it is what
+numbers them. Nothing else reads or writes it. -/
+abbrev DecodeM := StateT Nat (Except DecodeError)
 
 private def bad {α : Type} (msg : String) : DecodeM α :=
-  .error (.malformed msg)
+  throw (.malformed msg)
 
 /-- A node's field, or `malformed` naming it. -/
 private def field (j : Json) (name : String) : DecodeM Json :=
   match j.getObjVal? name with
-  | .ok v => .ok v
+  | .ok v => pure v
   | .error _ => bad s!"missing field \"{name}\""
 
 private def strField (j : Json) (name : String) : DecodeM String := do
   match (← field j name).getStr? with
-  | .ok s => .ok s
+  | .ok s => pure s
   | .error _ => bad s!"field \"{name}\" is not a string"
 
 /-- A node's `type`, which every node in the schema has. -/
@@ -72,12 +85,12 @@ private def optField (j : Json) (name : String) : DecodeM (Option Json) := do
 
 private def boolField (j : Json) (name : String) : DecodeM Bool := do
   match (← field j name).getBool? with
-  | .ok b => .ok b
+  | .ok b => pure b
   | .error _ => bad s!"field \"{name}\" is not a boolean"
 
 private def arrayField (j : Json) (name : String) : DecodeM (List Json) := do
   match (← field j name).getArr? with
-  | .ok a => .ok a.toList
+  | .ok a => pure a.toList
   | .error _ => bad s!"field \"{name}\" is not an array"
 
 /-- A named field that must be a `BlockStatement`, read as its statement
@@ -99,51 +112,51 @@ private def bodyField (j : Json) : DecodeM (List Json) := do
 /-- Refuse the two function flags whose semantics are outside this epic,
 naming the form so the message says which node it was. -/
 private def checkFunctionFlags (j : Json) (label : String) : DecodeM Unit := do
-  if ← boolField j "async" then .error (.unsupported s!"{label} async")
-  if ← boolField j "generator" then .error (.unsupported s!"{label} generator")
+  if ← boolField j "async" then throw (.unsupported s!"{label} async")
+  if ← boolField j "generator" then throw (.unsupported s!"{label} generator")
 
 /-- A `VariableDeclaration`'s keyword. `var` joined the slice with the
 `for` loop that needed it; every other spelling — there is none in ESTree
 — names itself. -/
 private def declKind (s : String) : DecodeM DeclKind :=
   match s with
-  | "let" => .ok .«let»
-  | "const" => .ok .«const»
-  | "var" => .ok .«var»
-  | _ => .error (.unsupported s!"VariableDeclaration {s}")
+  | "let" => pure .«let»
+  | "const" => pure .«const»
+  | "var" => pure .«var»
+  | _ => throw (.unsupported s!"VariableDeclaration {s}")
 
 private def unaryOp (s : String) : DecodeM UnaryOp :=
   match s with
-  | "-" => .ok .neg
-  | "+" => .ok .plus
-  | "!" => .ok .not
-  | "typeof" => .ok .typeof
-  | "void" => .ok .void
-  | _ => .error (.unsupported s!"UnaryExpression {s}")
+  | "-" => pure .neg
+  | "+" => pure .plus
+  | "!" => pure .not
+  | "typeof" => pure .typeof
+  | "void" => pure .void
+  | _ => throw (.unsupported s!"UnaryExpression {s}")
 
 private def logicalOp (s : String) : DecodeM LogicalOp :=
   match s with
-  | "&&" => .ok .and
-  | "||" => .ok .or
-  | _ => .error (.unsupported s!"LogicalExpression {s}")
+  | "&&" => pure .and
+  | "||" => pure .or
+  | _ => throw (.unsupported s!"LogicalExpression {s}")
 
 private def binaryOp (s : String) : DecodeM BinaryOp :=
   match s with
-  | "+" => .ok .add
-  | "-" => .ok .sub
-  | "*" => .ok .mul
-  | "/" => .ok .div
-  | "%" => .ok .rem
-  | "**" => .ok .exponent
-  | "<" => .ok .lt
-  | "<=" => .ok .le
-  | ">" => .ok .gt
-  | ">=" => .ok .ge
-  | "===" => .ok .strictEq
-  | "!==" => .ok .strictNe
-  | "instanceof" => .ok .instanceof
-  | "in" => .ok .«in»
-  | _ => .error (.unsupported s!"BinaryExpression {s}")
+  | "+" => pure .add
+  | "-" => pure .sub
+  | "*" => pure .mul
+  | "/" => pure .div
+  | "%" => pure .rem
+  | "**" => pure .exponent
+  | "<" => pure .lt
+  | "<=" => pure .le
+  | ">" => pure .gt
+  | ">=" => pure .ge
+  | "===" => pure .strictEq
+  | "!==" => pure .strictNe
+  | "instanceof" => pure .instanceof
+  | "in" => pure .«in»
+  | _ => throw (.unsupported s!"BinaryExpression {s}")
 
 /-- The five compound assignment operators the evaluator takes, as the
 `BinaryOp` each applies. Every other spelling ESTree admits is refused
@@ -152,19 +165,19 @@ the shifts and the bitwise forms need ToInt32, and `&&=`, `||=`, `??=`
 short-circuit rather than apply an operator at all. -/
 private def compoundOp (s : String) : DecodeM BinaryOp :=
   match s with
-  | "+=" => .ok .add
-  | "-=" => .ok .sub
-  | "*=" => .ok .mul
-  | "/=" => .ok .div
-  | "%=" => .ok .rem
-  | _ => .error (.unsupported s!"AssignmentExpression {s}")
+  | "+=" => pure .add
+  | "-=" => pure .sub
+  | "*=" => pure .mul
+  | "/=" => pure .div
+  | "%=" => pure .rem
+  | _ => throw (.unsupported s!"AssignmentExpression {s}")
 
 /-- An `UpdateExpression`'s operator. -/
 private def updateOp (s : String) : DecodeM UpdateOp :=
   match s with
-  | "++" => .ok .inc
-  | "--" => .ok .dec
-  | _ => .error (.unsupported s!"UpdateExpression {s}")
+  | "++" => pure .inc
+  | "--" => pure .dec
+  | _ => throw (.unsupported s!"UpdateExpression {s}")
 
 /-- A `Literal`, by the JSON type of its `value`. -/
 private def decodeLiteral (j : Json) : DecodeM Expr := do
@@ -201,8 +214,8 @@ private def toTarget : Expr → DecodeM Target
   -- `super.x = v` is real syntax with semantics of its own — the write
   -- goes to the *receiver*, not through the home object — so it is
   -- refused by name rather than decoded as a member write.
-  | .superMember _ | .superIndex _ => .error (.unsupported "AssignmentExpression super target")
-  | _ => .error (.unsupported "AssignmentExpression target")
+  | .superMember _ | .superIndex _ => throw (.unsupported "AssignmentExpression super target")
+  | _ => throw (.unsupported "AssignmentExpression target")
 
 /-- The `$262` hooks the epic puts out of scope. Each is refused here, by
 name, so a test that reaches for one is *unsupported* — the verdict the
@@ -228,7 +241,7 @@ partial def decodeExpr (j : Json) : DecodeM Expr := do
     -- carry.
     if (← strField j "operator") == "delete" then
       match ← decodeExpr (← field j "argument") with
-      | .superMember _ | .superIndex _ => .error (.unsupported "UnaryExpression delete super")
+      | .superMember _ | .superIndex _ => throw (.unsupported "UnaryExpression delete super")
       | operand => pure (.delete operand)
     else
       pure (.unary (← unaryOp (← strField j "operator")) (← decodeExpr (← field j "argument")))
@@ -250,22 +263,36 @@ partial def decodeExpr (j : Json) : DecodeM Expr := do
     | "Super" => pure (.superCall (← decodeExprs (← arrayField j "arguments")))
     | _ =>
       match ← decodeExpr callee with
-      | .ident "Function" => .error (.unsupported "Function constructor")
+      | .ident "Function" => throw (.unsupported "Function constructor")
       | f => pure (.call f (← decodeExprs (← arrayField j "arguments")))
   -- `Super` is not an expression: it reaches here only as a call
   -- argument or some other position the schema does not allow it in.
   | "Super" => bad "Super outside a call or member access"
   | "NewExpression" =>
     match ← decodeExpr (← field j "callee") with
-    | .ident "Function" => .error (.unsupported "Function constructor")
+    | .ident "Function" => throw (.unsupported "Function constructor")
     | f => pure (.new f (← decodeExprs (← arrayField j "arguments")))
+  | "TemplateLiteral" => decodeTemplate j
+  -- The site number is taken after the tag is decoded and before the
+  -- substitutions are, so a template nested in the tag numbers before
+  -- this one and one nested in a substitution after it; every Parse
+  -- Node gets a number of its own either way.
+  | "TaggedTemplateExpression" =>
+    let tag ← decodeExpr (← field j "tag")
+    let quasi ← field j "quasi"
+    match ← nodeType quasi with
+    | "TemplateLiteral" => pure ()
+    | other => bad s!"TaggedTemplateExpression quasi is a {other}"
+    let site ← getModify (· + 1)
+    let (strings, exprs) ← decodeTemplateParts quasi
+    pure (.taggedTemplate tag site strings exprs)
   | "ArrayExpression" =>
     -- A hole and a spread arrived as `Unsupported` elements in place, so
     -- `decodeExpr` refuses the element and names the kind it stood for;
     -- nothing here is special-cased.
     pure (.arrayLit (← decodeExprs (← arrayField j "elements")))
   | "ObjectExpression" =>
-    pure (.objectLit (← decodeProps (← arrayField j "properties")))
+    pure (.objectLit (← decodePropDefs (← arrayField j "properties")))
   | "FunctionExpression" =>
     checkFunctionFlags j "FunctionExpression"
     let name ← match ← optField j "id" with
@@ -292,8 +319,8 @@ partial def decodeExpr (j : Json) : DecodeM Expr := do
   | "UpdateExpression" =>
     pure (.update (← updateOp (← strField j "operator")) (← boolField j "prefix")
       (← toTarget (← decodeExpr (← field j "argument"))))
-  | "Unsupported" => .error (.unsupported (← strField j "kind"))
-  | other => .error (.unsupported other)
+  | "Unsupported" => throw (.unsupported (← strField j "kind"))
+  | other => throw (.unsupported other)
 
 /-- A `MemberExpression`, whose `computed` flag says which spelling it
 was. A dot access needs an identifier property; a property that is the
@@ -319,12 +346,12 @@ partial def decodeMember (j : Json) : DecodeM Expr := do
         let object ← decodeExpr objectNode
         match object with
         | .ident "$262" =>
-          if hostHooks.contains name then .error (.unsupported s!"$262.{name}")
+          if hostHooks.contains name then throw (.unsupported s!"$262.{name}")
           else pure (.member object name)
         | _ => pure (.member object name)
     | "PrivateIdentifier" =>
       pure (.privateMember (← decodeExpr objectNode) (← strField property "name"))
-    | "Unsupported" => .error (.unsupported (← strField property "kind"))
+    | "Unsupported" => throw (.unsupported (← strField property "kind"))
     | other => bad s!"MemberExpression property is a {other}"
 
 partial def decodeExprs : List Json → DecodeM (List Expr)
@@ -359,29 +386,117 @@ partial def decodeParams : List Json → DecodeM (List Param)
         let d ← decodeExpr (← field p "right")
         pure ({ name, default := some d } :: (← decodeParams rest))
       | other => bad s!"AssignmentPattern left is a {other}"
-    | "Unsupported" => .error (.unsupported (← strField p "kind"))
+    | "Unsupported" => throw (.unsupported (← strField p "kind"))
     | other => bad s!"parameter is a {other}"
 
-/-- An object literal's members. A numeric key is admitted by the schema
-and refused here: `{ 1: x }` would need ToPropertyKey at parse time, and
-the slice's keys are written keys. -/
-partial def decodeProps : List Json → DecodeM (List (String × Expr))
+/-- An object literal member's key. A computed key is the expression in
+the brackets; so is a *numeric* `Literal` key, which is what lets
+`{ 1.5: x }` take its spelling from ToPropertyKey at evaluation rather
+than from a second copy of `Number::toString` here. -/
+partial def decodePropKey (p : Json) : DecodeM PropKey := do
+  let key ← field p "key"
+  if ← boolField p "computed" then
+    pure (.computed (← decodeExpr key))
+  else
+    match ← nodeType key with
+    | "Identifier" => pure (.name (← strField key "name"))
+    | "Literal" =>
+      match ← field key "value" with
+      | .str s => pure (.name s)
+      | .num n => pure (.computed (.numLit n.toFloat))
+      | _ => bad "Property key literal is neither a string nor a number"
+    | "Unsupported" => throw (.unsupported (← strField key "kind"))
+    | other => bad s!"Property key is a {other}"
+
+/-- A member whose value must be a `FunctionExpression`: a method, a
+getter, or a setter. `async` and generator members are refused as
+`Property async` and `Property generator`, the names `checkFunctionFlags`
+gives every other function form. -/
+partial def decodePropMethod (p : Json) (kind : MethodKind) (label : String) :
+    DecodeM PropDef := do
+  let key ← decodePropKey p
+  let value ← field p "value"
+  match ← nodeType value with
+  | "FunctionExpression" => pure ()
+  | other => bad s!"Property {label} value is a {other}"
+  checkFunctionFlags value "Property"
+  pure (.method kind key (← decodeParams (← arrayField value "params"))
+    (← decodeStmts (← bodyField value)))
+
+/-- An object literal's members. Spread is the one form still refused,
+and it arrives as the bridge's placeholder in place. A shorthand needs no
+arm of its own: ESTree gives it a `value` that is its own `Identifier`,
+so `{ undefined }` binds `.undefLit` exactly as `undefined` alone does. -/
+partial def decodePropDefs : List Json → DecodeM (List PropDef)
   | [] => pure []
   | p :: rest => do
     match ← nodeType p with
     | "Property" =>
-      let key ← field p "key"
-      let name ← match ← nodeType key with
-        | "Identifier" => strField key "name"
-        | "Literal" =>
-          match ← field key "value" with
-          | .str s => pure s
-          | .num _ => .error (.unsupported "Property numeric key")
-          | _ => bad "Property key literal is neither a string nor a number"
-        | other => bad s!"Property key is a {other}"
-      pure ((name, ← decodeExpr (← field p "value")) :: (← decodeProps rest))
-    | "Unsupported" => .error (.unsupported (← strField p "kind"))
-    | other => .error (.unsupported other)
+      let member ← match ← strField p "kind" with
+        | "get" => decodePropMethod p .getter "get"
+        | "set" => decodePropMethod p .setter "set"
+        | "init" =>
+          if ← boolField p "method" then decodePropMethod p .method "method"
+          else do
+            let key ← decodePropKey p
+            let value ← field p "value"
+            -- B.3.1: only a written, non-shorthand `__proto__` sets the
+            -- prototype. `{ ["__proto__"]: v }` and `{ __proto__ }` are
+            -- ordinary members, which is what the specification's
+            -- `IsComputedPropertyKey` test and the shorthand's own
+            -- production say.
+            match key with
+            | .name "__proto__" =>
+              if ← boolField p "shorthand" then pure (.init key (← decodeExpr value))
+              else pure (.proto (← decodeExpr value))
+            | _ => pure (.init key (← decodeExpr value))
+        | other => throw (.unsupported s!"Property {other}")
+      pure (member :: (← decodePropDefs rest))
+    | "Unsupported" => throw (.unsupported (← strField p "kind"))
+    | other => throw (.unsupported other)
+
+/-- A `TemplateLiteral`'s quasis, in order. `value.cooked` is a string or
+JSON `null`; `tail` says nothing the list order does not, so it is not
+read. -/
+partial def decodeTemplateStrings : List Json → DecodeM (List TemplateString)
+  | [] => pure []
+  | q :: rest => do
+    match ← nodeType q with
+    | "TemplateElement" =>
+      let value ← field q "value"
+      let cooked ← match ← field value "cooked" with
+        | .null => pure none
+        | .str s => pure (some s)
+        | _ => bad "TemplateElement cooked is neither a string nor null"
+      pure ({ cooked, raw := ← strField value "raw" } :: (← decodeTemplateStrings rest))
+    | other => bad s!"TemplateLiteral quasi is a {other}"
+
+/-- A `TemplateLiteral`'s two lists, checked against each other: there is
+always one more quasi than there are substitutions. -/
+partial def decodeTemplateParts (j : Json) :
+    DecodeM (List TemplateString × List Expr) := do
+  let strings ← decodeTemplateStrings (← arrayField j "quasis")
+  let exprs ← decodeExprs (← arrayField j "expressions")
+  if strings.length != exprs.length + 1 then
+    bad s!"TemplateLiteral has {strings.length} quasis for {exprs.length} expressions"
+  else pure (strings, exprs)
+
+/-- A `TemplateLiteral` outside a tag. Its cooked strings are always
+present: an invalid escape in an untagged template is a parse error, and
+the bridge refuses a document that does not parse. -/
+partial def decodeTemplate (j : Json) : DecodeM Expr := do
+  let (strings, exprs) ← decodeTemplateParts j
+  let cooked ← cookedStrings strings
+  pure (.template cooked exprs)
+
+/-- The cooked values of a template's quasis, refusing an absent one:
+only a tagged template may carry one. -/
+partial def cookedStrings : List TemplateString → DecodeM (List String)
+  | [] => pure []
+  | s :: rest =>
+    match s.cooked with
+    | none => bad "TemplateElement cooked is null outside a tag"
+    | some c => do pure (c :: (← cookedStrings rest))
 
 /-- A class element's key, and which side of the class it names. A
 private method or accessor and a numeric key are refused: the first has
@@ -393,13 +508,13 @@ partial def memberKey (j : Json) (label : String) : DecodeM String := do
   let key ← field j "key"
   match ← nodeType key with
   | "Identifier" => strField key "name"
-  | "PrivateIdentifier" => .error (.unsupported s!"{label} private")
+  | "PrivateIdentifier" => throw (.unsupported s!"{label} private")
   | "Literal" =>
     match ← field key "value" with
     | .str s => pure s
-    | .num _ => .error (.unsupported s!"{label} numeric key")
+    | .num _ => throw (.unsupported s!"{label} numeric key")
     | _ => bad s!"{label} key literal is neither a string nor a number"
-  | "Unsupported" => .error (.unsupported (← strField key "kind"))
+  | "Unsupported" => throw (.unsupported (← strField key "kind"))
   | other => bad s!"{label} key is a {other}"
 
 /-- A `PropertyDefinition`'s key, which may be private. -/
@@ -437,14 +552,14 @@ partial def decodeElements : List Json → DecodeM (List ClassElement)
           pure (.method .getter isStatic (← memberKey m "MethodDefinition") params body)
         | "set" =>
           pure (.method .setter isStatic (← memberKey m "MethodDefinition") params body)
-        | other => .error (.unsupported s!"MethodDefinition {other}")
+        | other => throw (.unsupported s!"MethodDefinition {other}")
       pure (element :: (← decodeElements rest))
     | "PropertyDefinition" =>
       let key ← fieldKey m
       let value ← optExpr m "value"
       pure (.field (← boolField m "static") key value :: (← decodeElements rest))
-    | "Unsupported" => .error (.unsupported (← strField m "kind"))
-    | other => .error (.unsupported other)
+    | "Unsupported" => throw (.unsupported (← strField m "kind"))
+    | other => throw (.unsupported other)
 
 /-- A `ClassDeclaration` or `ClassExpression`'s shared shape. -/
 partial def decodeClass (j : Json) : DecodeM ClassDef := do
@@ -466,7 +581,7 @@ partial def decodeDeclarator (j : Json) : DecodeM Declarator := do
     match ← optField j "init" with
     | some e => pure { name, init := some (← decodeExpr e) }
     | none => pure { name, init := none }
-  | other => .error (.unsupported other)
+  | other => throw (.unsupported other)
 
 partial def decodeStmt (j : Json) : DecodeM Stmt := do
   match ← nodeType j with
@@ -520,8 +635,8 @@ partial def decodeStmt (j : Json) : DecodeM Stmt := do
         | [d] =>
           match d.init with
           | none => pure (ForInLeft.decl kind d.name)
-          | some _ => .error (.unsupported "ForInStatement initializer")
-        | _ => .error (.unsupported "ForInStatement initializer")
+          | some _ => throw (.unsupported "ForInStatement initializer")
+        | _ => throw (.unsupported "ForInStatement initializer")
       | _ => pure (ForInLeft.target (← toTarget (← decodeExpr head)))
     pure (.forInStmt left (← decodeExpr (← field j "right"))
       (← decodeStmt (← field j "body")))
@@ -537,7 +652,7 @@ partial def decodeStmt (j : Json) : DecodeM Stmt := do
       | some h => pure (some (← decodeCatch h))
       | none => pure none
     let finalizer ← match ← optField j "finalizer" with
-      | some f => pure (some (← decodeStmts (← blockField j "finalizer")))
+      | some _ => pure (some (← decodeStmts (← blockField j "finalizer")))
       | none => pure none
     -- `try { }` alone is a syntax error, so the bridge never sends one;
     -- a document that does is a broken producer, not a program outside
@@ -553,8 +668,8 @@ partial def decodeStmt (j : Json) : DecodeM Stmt := do
     | other => bad s!"LabeledStatement label is a {other}"
   | "BreakStatement" => pure (.breakStmt (← jumpLabel j))
   | "ContinueStatement" => pure (.continueStmt (← jumpLabel j))
-  | "Unsupported" => .error (.unsupported (← strField j "kind"))
-  | other => .error (.unsupported other)
+  | "Unsupported" => throw (.unsupported (← strField j "kind"))
+  | other => throw (.unsupported other)
 
 /-- A `CatchClause`. An out-of-slice parameter is refused in place — the
 clause, and so the `try` around it, survives — which is the precedent a
@@ -565,7 +680,7 @@ partial def decodeCatch (j : Json) : DecodeM CatchClause := do
     | some p =>
       match ← nodeType p with
       | "Identifier" => pure (some (← strField p "name"))
-      | "Unsupported" => .error (.unsupported (← strField p "kind"))
+      | "Unsupported" => throw (.unsupported (← strField p "kind"))
       | other => bad s!"CatchClause param is a {other}"
   pure { param, body := ← decodeStmts (← blockField j "body") }
 
@@ -613,10 +728,10 @@ private def isDirective (j : Json) : Bool :=
 statement is required to be the `"use strict"` directive, which is
 consumed. A sloppy script is not an unsupported *node* — every node in it
 may be in the slice — so it is refused as malformed. -/
-def decodeProgram (j : Json) : DecodeM Program := do
+private def decodeProgramM (j : Json) : DecodeM Program := do
   match ← nodeType j with
   | "Program" => pure ()
-  | other => .error (.unsupported other)
+  | other => throw (.unsupported other)
   if (← strField j "sourceType") != "script" then
     bad "sourceType is not \"script\""
   else
@@ -630,7 +745,13 @@ def decodeProgram (j : Json) : DecodeM Program := do
         else if (← strField first "directive") != "use strict" then
           bad "first directive is not \"use strict\""
         else if rest.any isDirective then
-          .error (.unsupported "Directive")
+          throw (.unsupported "Directive")
         else decodeStmts rest
+
+/-- Decode a whole document, starting the template-site counter at zero.
+The signature is `Except`, not `DecodeM`: the state is the decoder's own
+bookkeeping and no caller has anything to say about it. -/
+def decodeProgram (j : Json) : Except DecodeError Program :=
+  (decodeProgramM j).run' 0
 
 end Tarski

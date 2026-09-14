@@ -35,8 +35,8 @@ it, exactly as it stops `getFromUp` and the other two prototype walks.
 
 **`Heap.initial` stays in the set.** Folding the realm behind per-
 reference read lemmas was measured while planning #479 and did not lift
-the kernel ceiling #471 records; it made elaboration slower instead. An
-eighty-nine-object literal heap is something `simp` pushes `readObj`
+the kernel ceiling #471 records; it made elaboration slower instead. A
+ninety-two-object literal heap is something `simp` pushes `readObj`
 through.
 
 **What stays outside.** The list walks a native performs —
@@ -58,7 +58,8 @@ recurses on syntax or not at all. -/
 -- Evaluation proper, and the instantiation a block is preceded by.
 -- `evalNamed` is NamedEvaluation, a dispatch onto `evalExpr`.
 attribute [tarski_eval]
-  evalExpr evalExprs evalStmt evalStmts evalProps evalDeclarators evalBlock evalNamed
+  evalExpr evalCallee evalExprs evalStmt evalStmts evalPropDefs evalPropKey
+  evalTemplate getTemplateObject evalDeclarators evalBlock evalNamed
   evalForInLoop evalForIn bindForIn
   instantiateBlock hoistNames hoistDeclarators initFunctions
 
@@ -84,7 +85,8 @@ attribute [tarski_eval]
   instantiateFunction allocParams initParams hoistVarsFrom
   Param.names hasDefaults expectedArgumentCount
   makeArguments argumentsName mentionsArguments
-  mentionsArgumentsExpr mentionsArgumentsExprs mentionsArgumentsProps
+  mentionsArgumentsExpr mentionsArgumentsExprs
+  mentionsArgumentsPropDefs mentionsArgumentsPropKey
   mentionsArgumentsTarget mentionsArgumentsArrow mentionsArgumentsParams
   mentionsArgumentsClass mentionsArgumentsStmts mentionsArgumentsStmt
   mentionsArgumentsForInit mentionsArgumentsDecls mentionsArgumentsCases
@@ -163,7 +165,7 @@ attribute [tarski_eval]
   objectGetOwnPropertyDescriptorRef objectGetOwnPropertyDescriptorsRef
   objectGetOwnPropertyNamesRef objectGetPrototypeOfRef objectHasOwnRef
   objectIsExtensibleRef objectIsFrozenRef objectIsSealedRef objectPreventExtensionsRef
-  objectSealRef objectSetPrototypeOfRef objectValuesRef
+  objectSealRef objectSetPrototypeOfRef objectValuesRef templateMapRef
   objectCellRef arrayCellRef stringCellRef printCellRef hostCellRef
   numberCellRef booleanCellRef mathCellRef nanCellRef infinityCellRef
   parseFloatCellRef parseIntCellRef consoleCellRef functionCellRef

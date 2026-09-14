@@ -42,8 +42,8 @@ private def empty : Expr := .objectLit []
 
 /-- `{ value: <v>, writable: <w>, enumerable: <e>, configurable: <c> }`. -/
 private def dataDesc (v : Expr) (w e c : Bool) : Expr :=
-  .objectLit [("value", v), ("writable", .boolLit w),
-              ("enumerable", .boolLit e), ("configurable", .boolLit c)]
+  .objectLit [.init "value" (v), .init "writable" (.boolLit w),
+              .init "enumerable" (.boolLit e), .init "configurable" (.boolLit c)]
 
 /-- `function () { return <e>; }`, an anonymous getter. -/
 private def getterOf (e : Expr) : Expr := .funcExpr none [] [.returnStmt (some e)]
@@ -75,7 +75,7 @@ private def defineX (rest : List Stmt) : Program :=
 #guard outcome
     [ «let» "o" empty,
       .exprStmt (obj "defineProperty"
-        [.ident "o", .strLit "x", .objectLit [("get", getterOf (.numLit 1.0))]]),
+        [.ident "o", .strLit "x", .objectLit [.init "get" (getterOf (.numLit 1.0))]]),
       .exprStmt (joined (obj "keys"
         [obj "getOwnPropertyDescriptor" [.ident "o", .strLit "x"]])) ]
   == "get,set,enumerable,configurable"
@@ -95,14 +95,14 @@ private def defineX (rest : List Stmt) : Program :=
 #guard outcome (expr (obj "defineProperty" [empty, .strLit "x", .numLit 1.0]))
   == "uncaught: TypeError: Property description must be an object: 1"
 #guard outcome (expr (obj "defineProperty"
-    [empty, .strLit "x", .objectLit [("value", .numLit 1.0), ("get", getterOf (.numLit 1.0))]]))
+    [empty, .strLit "x", .objectLit [.init "value" (.numLit 1.0), .init "get" (getterOf (.numLit 1.0))]]))
   == ("uncaught: TypeError: Invalid property descriptor. Cannot both specify accessors " ++
       "and a value or writable attribute")
 #guard outcome (expr (obj "defineProperty"
-    [empty, .strLit "x", .objectLit [("get", .numLit 1.0)]]))
+    [empty, .strLit "x", .objectLit [.init "get" (.numLit 1.0)]]))
   == "uncaught: TypeError: Getter must be a function: 1"
 #guard outcome (expr (obj "defineProperty"
-    [empty, .strLit "x", .objectLit [("set", .numLit 1.0)]]))
+    [empty, .strLit "x", .objectLit [.init "set" (.numLit 1.0)]]))
   == "uncaught: TypeError: Setter must be a function: 1"
 
 -- An accessor defined by descriptor is read through and written
@@ -110,13 +110,13 @@ private def defineX (rest : List Stmt) : Program :=
 #guard outcome
     [ «let» "o" empty,
       .exprStmt (obj "defineProperty"
-        [.ident "o", .strLit "x", .objectLit [("get", getterOf (.numLit 7.0))]]),
+        [.ident "o", .strLit "x", .objectLit [.init "get" (getterOf (.numLit 7.0))]]),
       .exprStmt (.member (.ident "o") "x") ]
   == "7"
 #guard outcome
     [ «let» "o" empty,
       .exprStmt (obj "defineProperty"
-        [.ident "o", .strLit "x", .objectLit [("get", getterOf (.numLit 7.0))]]),
+        [.ident "o", .strLit "x", .objectLit [.init "get" (getterOf (.numLit 7.0))]]),
       .exprStmt (.assign (.member (.ident "o") "x") (.numLit 1.0)) ]
   == "uncaught: TypeError: Cannot set property x of #<Object> which has only a getter"
 
@@ -131,14 +131,14 @@ private def three : Expr := .arrayLit [.numLit 1.0, .numLit 2.0, .numLit 3.0]
 #guard outcome
     [ «let» "xs" three,
       .exprStmt (obj "defineProperty"
-        [.ident "xs", .strLit "length", .objectLit [("value", .numLit 1.0)]]),
+        [.ident "xs", .strLit "length", .objectLit [.init "value" (.numLit 1.0)]]),
       .exprStmt (joined (.ident "xs")) ]
   == "1"
 
 #guard outcome
     [ «let» "xs" (.arrayLit [.numLit 1.0]),
       .exprStmt (obj "defineProperty"
-        [.ident "xs", .strLit "length", .objectLit [("writable", .boolLit false)]]),
+        [.ident "xs", .strLit "length", .objectLit [.init "writable" (.boolLit false)]]),
       .exprStmt (.call (.member (.ident "xs") "push") [.numLit 2.0]) ]
   == "uncaught: TypeError: Cannot assign to read only property 'length' of object '#<Object>'"
 
@@ -148,18 +148,18 @@ private def three : Expr := .arrayLit [.numLit 1.0, .numLit 2.0, .numLit 3.0]
 #guard outcome
     [ «let» "xs" (.arrayLit [.numLit 1.0]),
       .exprStmt (obj "defineProperty"
-        [.ident "xs", .strLit "length", .objectLit [("writable", .boolLit false)]]),
+        [.ident "xs", .strLit "length", .objectLit [.init "writable" (.boolLit false)]]),
       .exprStmt (obj "defineProperty"
         [.ident "xs", .strLit "length",
-         .objectLit [("value", .numLit 1.0), ("writable", .boolLit true)]]) ]
+         .objectLit [.init "value" (.numLit 1.0), .init "writable" (.boolLit true)]]) ]
   == "uncaught: TypeError: Cannot redefine property: length"
 #guard outcome
     [ «let» "xs" (.arrayLit [.numLit 1.0]),
       .exprStmt (obj "defineProperty"
-        [.ident "xs", .strLit "length", .objectLit [("writable", .boolLit false)]]),
+        [.ident "xs", .strLit "length", .objectLit [.init "writable" (.boolLit false)]]),
       .exprStmt (obj "defineProperty"
         [.ident "xs", .strLit "length",
-         .objectLit [("value", .numLit 1.0), ("writable", .boolLit false)]]),
+         .objectLit [.init "value" (.numLit 1.0), .init "writable" (.boolLit false)]]),
       .exprStmt (.member (.ident "xs") "length") ]
   == "1"
 
@@ -194,8 +194,8 @@ whose read throws leaves nothing defined. -/
     [ «let» "o" empty,
       .exprStmt (obj "defineProperties"
         [.ident "o", .objectLit
-          [ ("a", .objectLit [("value", .numLit 1.0), ("enumerable", .boolLit true)]),
-            ("b", .objectLit [("value", .numLit 2.0), ("enumerable", .boolLit true)]) ]]),
+          [ .init "a" (.objectLit [.init "value" (.numLit 1.0), .init "enumerable" (.boolLit true)]),
+            .init "b" (.objectLit [.init "value" (.numLit 2.0), .init "enumerable" (.boolLit true)]) ]]),
       .exprStmt (joined (obj "keys" [.ident "o"])) ]
   == "a,b"
 
@@ -204,8 +204,8 @@ whose read throws leaves nothing defined. -/
       .tryStmt
         [.exprStmt (obj "defineProperties"
           [.ident "o", .objectLit
-            [ ("a", .objectLit [("value", .numLit 1.0), ("enumerable", .boolLit true)]),
-              ("b", .numLit 1.0) ]])]
+            [ .init "a" (.objectLit [.init "value" (.numLit 1.0), .init "enumerable" (.boolLit true)]),
+              .init "b" (.numLit 1.0) ]])]
         (some { param := none, body := [] }) none,
       .exprStmt (joined (obj "keys" [.ident "o"])) ]
   == ""
@@ -224,7 +224,7 @@ literal is #395's. -/
       .exprStmt (.assign (.member (.ident "o") "a") (.numLit 1.0)),
       .exprStmt (.assign (.index (.ident "o") (.numLit 1.0)) (.numLit 1.0)),
       .exprStmt (obj "defineProperty"
-        [.ident "o", .strLit "c", .objectLit [("get", .funcExpr none [] [])]]),
+        [.ident "o", .strLit "c", .objectLit [.init "get" (.funcExpr none [] [])]]),
       .exprStmt (joined (obj "getOwnPropertyNames" [.ident "o"])) ]
   == "1,2,b,a,c"
 
@@ -251,7 +251,7 @@ nothing else, which is what hides a function's `prototype`, an error's
 #guard outcome (expr (joined (obj "keys" [.funcExpr (some "f") [] []]))) == ""
 #guard outcome (expr (joined (obj "keys" [.new (.ident "Error") [.strLit "m"]]))) == ""
 #guard outcome (expr (joined (obj "values" [.objectLit
-    [("a", .numLit 1.0), ("b", .numLit 2.0)]])))
+    [.init "a" (.numLit 1.0), .init "b" (.numLit 2.0)]])))
   == "1,2"
 
 -- EnumerableOwnProperties re-reads each own property before taking its
@@ -260,9 +260,9 @@ nothing else, which is what hides a function's `prototype`, an error's
     [ «let» "o" empty,
       .exprStmt (obj "defineProperty"
         [.ident "o", .strLit "a", .objectLit
-          [ ("get", .funcExpr none []
+          [ .init "get" (.funcExpr none []
               [.exprStmt (.delete (.member (.ident "o") "b")), .returnStmt (some (.numLit 1.0))]),
-            ("enumerable", .boolLit true) ]]),
+            .init "enumerable" (.boolLit true) ]]),
       .exprStmt (.assign (.member (.ident "o") "b") (.numLit 2.0)),
       .exprStmt (joined (obj "values" [.ident "o"])) ]
   == "1"
@@ -273,10 +273,10 @@ nothing else, which is what hides a function's `prototype`, an error's
 both run and a non-writable target key refuses. A nullish source is
 skipped. -/
 
-#guard outcome (expr (.member (obj "assign" [empty, .objectLit [("a", .numLit 1.0)], .nullLit])
+#guard outcome (expr (.member (obj "assign" [empty, .objectLit [.init "a" (.numLit 1.0)], .nullLit])
     "a"))
   == "1"
-#guard outcome (defineX [.exprStmt (obj "assign" [.ident "o", .objectLit [("x", .numLit 2.0)]])])
+#guard outcome (defineX [.exprStmt (obj "assign" [.ident "o", .objectLit [.init "x" (.numLit 2.0)]])])
   == "uncaught: TypeError: Cannot assign to read only property 'x' of object '#<Object>'"
 
 /-! ## `Object.create`, `getPrototypeOf`, and `setPrototypeOf` -/
@@ -284,7 +284,7 @@ skipped. -/
 #guard outcome (expr (.member (obj "create" [.nullLit]) "toString")) == "undefined"
 #guard outcome
     (expr (.member (obj "create"
-      [.nullLit, .objectLit [("a", .objectLit [("value", .numLit 1.0)])]]) "a"))
+      [.nullLit, .objectLit [.init "a" (.objectLit [.init "value" (.numLit 1.0)])]]) "a"))
   == "1"
 #guard outcome (expr (obj "create" [.numLit 1.0]))
   == "uncaught: TypeError: Object prototype may only be an Object or null: 1"
@@ -320,7 +320,7 @@ skipped. -/
 #guard outcome
     [ «let» "o" empty,
       .exprStmt (obj "setPrototypeOf"
-        [.ident "o", .objectLit [("a", .numLit 5.0)]]),
+        [.ident "o", .objectLit [.init "a" (.numLit 5.0)]]),
       .exprStmt (.member (.ident "o") "a") ]
   == "5"
 
@@ -334,8 +334,8 @@ to be otherwise about. -/
 #guard outcome (expr (obj "isFrozen" [.numLit 1.0])) == "true"
 #guard outcome (expr (obj "isExtensible" [.numLit 1.0])) == "false"
 #guard outcome (expr (obj "isExtensible" [empty])) == "true"
-#guard outcome (expr (obj "isSealed" [obj "seal" [.objectLit [("a", .numLit 1.0)]]])) == "true"
-#guard outcome (expr (obj "isFrozen" [obj "seal" [.objectLit [("a", .numLit 1.0)]]])) == "false"
+#guard outcome (expr (obj "isSealed" [obj "seal" [.objectLit [.init "a" (.numLit 1.0)]]])) == "true"
+#guard outcome (expr (obj "isFrozen" [obj "seal" [.objectLit [.init "a" (.numLit 1.0)]]])) == "false"
 #guard outcome (expr (obj "isFrozen" [obj "freeze" [.arrayLit [.numLit 1.0]]])) == "true"
 
 #guard outcome
@@ -346,12 +346,12 @@ to be otherwise about. -/
 -- A sealed object still takes writes to the keys it has, and refuses
 -- both a new key and a `delete`.
 #guard outcome
-    [ «let» "o" (obj "seal" [.objectLit [("a", .numLit 1.0)]]),
+    [ «let» "o" (obj "seal" [.objectLit [.init "a" (.numLit 1.0)]]),
       .exprStmt (.assign (.member (.ident "o") "a") (.numLit 2.0)),
       .exprStmt (.member (.ident "o") "a") ]
   == "2"
 #guard outcome
-    [ «let» "o" (obj "seal" [.objectLit [("a", .numLit 1.0)]]),
+    [ «let» "o" (obj "seal" [.objectLit [.init "a" (.numLit 1.0)]]),
       .exprStmt (.delete (.member (.ident "o") "a")) ]
   == "uncaught: TypeError: Cannot delete property 'a' of #<Object>"
 #guard outcome
@@ -361,10 +361,10 @@ to be otherwise about. -/
 
 /-! ## `Object.hasOwn` and `getOwnPropertyDescriptors` -/
 
-#guard outcome (expr (obj "hasOwn" [.objectLit [("a", .numLit 1.0)], .strLit "a"])) == "true"
+#guard outcome (expr (obj "hasOwn" [.objectLit [.init "a" (.numLit 1.0)], .strLit "a"])) == "true"
 #guard outcome (expr (obj "hasOwn" [empty, .strLit "toString"])) == "false"
 #guard outcome (expr (joined (obj "keys"
-    [obj "getOwnPropertyDescriptors" [.objectLit [("a", .numLit 1.0)]]])))
+    [obj "getOwnPropertyDescriptors" [.objectLit [.init "a" (.numLit 1.0)]]])))
   == "a"
 
 /-! ## `Object.prototype`'s own methods -/
@@ -411,7 +411,7 @@ private def protoCall (name : String) (args : List Expr) : Expr :=
 -- `toLocaleString` is Invoke(this, "toString"), so a `toString` of one's
 -- own is what runs.
 #guard outcome (expr (.call (.member (.objectLit
-    [("toString", .funcExpr none [] [.returnStmt (some (.strLit "t"))])]) "toLocaleString") []))
+    [.init "toString" (.funcExpr none [] [.returnStmt (some (.strLit "t"))])]) "toLocaleString") []))
   == "t"
 
 /-! ## The write rules on the prototype chain

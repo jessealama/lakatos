@@ -72,9 +72,9 @@ prototype enumerate nothing and an array's `length` never appears. -/
 #guard outcome (collect (.objectLit [])) == ""
 #guard outcome
     (collect (.ident "o")
-      [ «let» "o" (.objectLit [("a", .numLit 1.0)]),
+      [ «let» "o" (.objectLit [.init "a" (.numLit 1.0)]),
         .exprStmt (.call (.member (.ident "Object") "defineProperty")
-          [.ident "o", .strLit "b", .objectLit [("value", .numLit 2.0)]]) ])
+          [.ident "o", .strLit "b", .objectLit [.init "value" (.numLit 2.0)]]) ])
   == "a"
 
 /-! ## The prototype chain
@@ -84,14 +84,14 @@ visited again however many levels carry it. -/
 
 #guard outcome
     (collect (.ident "o")
-      [ «let» "p" (.objectLit [("p1", .numLit 1.0)]),
+      [ «let» "p" (.objectLit [.init "p1" (.numLit 1.0)]),
         «let» "o" (.call (.member (.ident "Object") "create") [.ident "p"]),
         .exprStmt (.assign (.member (.ident "o") "o1") (.numLit 1.0)) ])
   == "o1,p1"
 
 #guard outcome
     (collect (.ident "o")
-      [ «let» "p" (.objectLit [("a", .numLit 1.0), ("b", .numLit 2.0)]),
+      [ «let» "p" (.objectLit [.init "a" (.numLit 1.0), .init "b" (.numLit 2.0)]),
         «let» "o" (.call (.member (.ident "Object") "create") [.ident "p"]),
         .exprStmt (.assign (.member (.ident "o") "a") (.numLit 3.0)) ])
   == "a,b"
@@ -101,10 +101,10 @@ visited again however many levels carry it. -/
 -- shadows.
 #guard outcome
     (collect (.ident "o")
-      [ «let» "p" (.objectLit [("a", .numLit 1.0)]),
+      [ «let» "p" (.objectLit [.init "a" (.numLit 1.0)]),
         «let» "o" (.call (.member (.ident "Object") "create") [.ident "p"]),
         .exprStmt (.call (.member (.ident "Object") "defineProperty")
-          [.ident "o", .strLit "a", .objectLit [("value", .numLit 2.0)]]) ])
+          [.ident "o", .strLit "a", .objectLit [.init "value" (.numLit 2.0)]]) ])
   == ""
 
 /-! ## The body may change the object
@@ -114,7 +114,7 @@ not visited, the list having been taken when the object was reached. -/
 
 #guard outcome
     [ seen,
-      «let» "o" (.objectLit [("a", .numLit 1.0), ("b", .numLit 2.0)]),
+      «let» "o" (.objectLit [.init "a" (.numLit 1.0), .init "b" (.numLit 2.0)]),
       .forInStmt (.decl .«const» "k") (.ident "o")
         (.block [push (.ident "k"), .exprStmt (.delete (.member (.ident "o") "b"))]),
       joinSeen ]
@@ -122,7 +122,7 @@ not visited, the list having been taken when the object was reached. -/
 
 #guard outcome
     [ seen,
-      «let» "o" (.objectLit [("a", .numLit 1.0)]),
+      «let» "o" (.objectLit [.init "a" (.numLit 1.0)]),
       .forInStmt (.decl .«const» "k") (.ident "o")
         (.block [push (.ident "k"),
                  .exprStmt (.assign (.member (.ident "o") "z") (.numLit 1.0))]),
@@ -137,7 +137,7 @@ the loop; an assignment target is written once per key. -/
 
 #guard outcome
     [ «let» "fs" (.arrayLit []),
-      «let» "o" (.objectLit [("a", .numLit 1.0), ("b", .numLit 2.0)]),
+      «let» "o" (.objectLit [.init "a" (.numLit 1.0), .init "b" (.numLit 2.0)]),
       .forInStmt (.decl .«const» "k") (.ident "o")
         (.exprStmt (.call (.member (.ident "fs") "push")
           [.arrow [] (.expr (.ident "k"))])),
@@ -151,21 +151,21 @@ the loop; an assignment target is written once per key. -/
       .exprStmt (.unary .typeof (.ident "k")) ]
   == "undefined"
 #guard outcome
-    [ «let» "o" (.objectLit [("a", .numLit 1.0), ("b", .numLit 2.0)]),
+    [ «let» "o" (.objectLit [.init "a" (.numLit 1.0), .init "b" (.numLit 2.0)]),
       .forInStmt (.decl .«var» "k") (.ident "o") .empty,
       .exprStmt (.ident "k") ]
   == "b"
 
 #guard outcome
     [ .varDecl .«let» [{ name := "k", init := none }],
-      «let» "o" (.objectLit [("a", .numLit 1.0)]),
+      «let» "o" (.objectLit [.init "a" (.numLit 1.0)]),
       .forInStmt (.target (.ident "k")) (.ident "o") .empty,
       .exprStmt (.ident "k") ]
   == "a"
 
 #guard outcome
     [ «let» "t" (.objectLit []),
-      «let» "o" (.objectLit [("a", .numLit 1.0)]),
+      «let» "o" (.objectLit [.init "a" (.numLit 1.0)]),
       .forInStmt (.target (.member (.ident "t") "p")) (.ident "o") .empty,
       .exprStmt (.member (.ident "t") "p") ]
   == "a"
@@ -195,7 +195,7 @@ body, and the completion value UpdateEmpty threads. -/
 
 #guard outcome
     [ seen,
-      «let» "o" (.objectLit [("a", .numLit 1.0), ("b", .numLit 2.0)]),
+      «let» "o" (.objectLit [.init "a" (.numLit 1.0), .init "b" (.numLit 2.0)]),
       .forInStmt (.decl .«const» "k") (.ident "o")
         (.block [push (.ident "k"), .breakStmt none]),
       joinSeen ]
@@ -203,7 +203,7 @@ body, and the completion value UpdateEmpty threads. -/
 
 #guard outcome
     [ seen,
-      «let» "o" (.objectLit [("a", .numLit 1.0), ("b", .numLit 2.0)]),
+      «let» "o" (.objectLit [.init "a" (.numLit 1.0), .init "b" (.numLit 2.0)]),
       .forInStmt (.decl .«const» "k") (.ident "o")
         (.block [.ifStmt (.binary .strictEq (.ident "k") (.strLit "a"))
                    (.continueStmt none) none,
@@ -213,7 +213,7 @@ body, and the completion value UpdateEmpty threads. -/
 
 #guard outcome
     [ seen,
-      «let» "o" (.objectLit [("a", .numLit 1.0), ("b", .numLit 2.0)]),
+      «let» "o" (.objectLit [.init "a" (.numLit 1.0), .init "b" (.numLit 2.0)]),
       .labeled "outer"
         (.forInStmt (.decl .«const» "k") (.ident "o")
           (.block [ .whileStmt (.boolLit true) (.continueStmt (some "outer")),
@@ -222,6 +222,6 @@ body, and the completion value UpdateEmpty threads. -/
   == ""
 
 #guard outcome
-    [.forInStmt (.decl .«const» "k") (.objectLit [("a", .numLit 1.0)])
+    [.forInStmt (.decl .«const» "k") (.objectLit [.init "a" (.numLit 1.0)])
       (.exprStmt (.numLit 5.0))]
   == "5"

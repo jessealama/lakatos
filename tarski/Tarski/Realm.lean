@@ -45,6 +45,7 @@ the literal against the constants so the two cannot drift apart.
 | 64–67     | `Function.prototype.call`, `apply`, `bind`, `toString`    |
 | 68–72     | `Object.prototype.toString`, `valueOf`, `toLocaleString`, `isPrototypeOf`, `propertyIsEnumerable` |
 | 73–90     | `Object.assign`, `create`, `defineProperties`, `defineProperty`, `entries`, `freeze`, `getOwnPropertyDescriptor`, `getOwnPropertyDescriptors`, `getOwnPropertyNames`, `getPrototypeOf`, `hasOwn`, `isExtensible`, `isFrozen`, `isSealed`, `preventExtensions`, `seal`, `setPrototypeOf`, `values` |
+| 91        | `%TemplateMap%`, the realm's `[[TemplateMap]]`            |
 
 Ninety-one objects, then, and twenty-one cells. The twenty-one global
 bindings are cells 0–20: the seven `Error` constructors, then `Object`,
@@ -408,6 +409,15 @@ def consoleRef : Ref := 60
 
 /-- `console.log`. -/
 def consoleLogRef : Ref := 61
+
+/-- `%TemplateMap%`, the realm's `[[TemplateMap]]` (9.3): the per-realm
+registry GetTemplateObject caches template objects in, as an object whose
+own keys are the decoder's site numbers and whose values are the template
+objects. It has no global binding — nothing in source can name it, as
+nothing can name `%ThrowTypeError%` — and it is an object rather than a
+field of `Heap` because the heap's shape is a value-domain decision this
+slice does not reopen. -/
+def templateMapRef : Ref := 91
 
 /-- The cell the kind's global binding lives in: 0–6, in the same
 order. -/
@@ -882,6 +892,9 @@ def Heap.initial : Heap where
        -- 89: Object.setPrototypeOf
        Obj.builtin .objectSetPrototypeOf "setPrototypeOf" 2,
        -- 90: Object.values
-       Obj.builtin .objectValues "values" 1 ]
+       Obj.builtin .objectValues "values" 1,
+       -- 91: %TemplateMap%, which starts empty and is only ever written
+       -- to by GetTemplateObject.
+       { } ]
 
 end Tarski

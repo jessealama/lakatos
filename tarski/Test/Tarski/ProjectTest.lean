@@ -115,7 +115,7 @@ private def strProgram : Program := [.exprStmt (.strLit "hi")]
 private def readFieldA (h : Heap) (v : Value) : Option Value := readOwnField h v "a"
 
 /-- `({ a: 1 });` -/
-private def objectA : Program := [.exprStmt (.objectLit [("a", .numLit 1.0)])]
+private def objectA : Program := [.exprStmt (.objectLit [.init "a" (.numLit 1.0)])]
 
 /-- info: some (Tarski.Outcome.value (Tarski.Value.prim (Js.JsVal.num 1.000000))) -/
 #guard_msgs in

@@ -65,7 +65,7 @@ rather than its property list. -/
 
 -- `const o = { a: 1 }; o.hasOwnProperty("a");`
 private def declareO : Stmt :=
-  .varDecl .«const» [{ name := "o", init := some (.objectLit [("a", .numLit 1.0)]) }]
+  .varDecl .«const» [{ name := "o", init := some (.objectLit [.init "a" (.numLit 1.0)]) }]
 
 /-- `const o = { a: 1 }; o.hasOwnProperty(<key>);` -/
 private def oHasOwn (key : Expr) : Program :=
@@ -121,12 +121,12 @@ private def keysOf (e : Expr) : Expr := .call (.member (.ident "Object") "keys")
 
 -- `Object.keys({ b: 1, a: 2 }).join();` — insertion order, not sorted.
 #guard outcome
-    (expr (.call (.member (keysOf (.objectLit [("b", .numLit 1.0), ("a", .numLit 2.0)])) "join") []))
+    (expr (.call (.member (keysOf (.objectLit [.init "b" (.numLit 1.0), .init "a" (.numLit 2.0)])) "join") []))
   == "b,a"
 
 -- `const o = { b: 1 }; o[2] = 1; o.a = 1; o[1] = 1; Object.keys(o).join();`
 #guard outcome
-    [ .varDecl .«const» [{ name := "o", init := some (.objectLit [("b", .numLit 1.0)]) }],
+    [ .varDecl .«const» [{ name := "o", init := some (.objectLit [.init "b" (.numLit 1.0)]) }],
       .exprStmt (.assign (.index (.ident "o") (.numLit 2.0)) (.numLit 1.0)),
       .exprStmt (.assign (.member (.ident "o") "a") (.numLit 1.0)),
       .exprStmt (.assign (.index (.ident "o") (.numLit 1.0)) (.numLit 1.0)),

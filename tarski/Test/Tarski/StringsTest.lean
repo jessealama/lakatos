@@ -161,7 +161,7 @@ private def stringOf (args : List Expr) : Program :=
 -- the member is a function expression.
 #guard outcome
     [ .varDecl .«const» [{ name := "o", init := some (.objectLit
-        [("toString", .funcExpr none [] [.returnStmt (some (.strLit "t"))])]) }],
+        [.init "toString" (.funcExpr none [] [.returnStmt (some (.strLit "t"))])]) }],
       .exprStmt (.call (.ident "String") [.ident "o"]) ]
   == "t"
 

@@ -334,6 +334,8 @@
         { "$ref": "#/definitions/ArrowFunctionExpression" },
         { "$ref": "#/definitions/AssignmentExpression" },
         { "$ref": "#/definitions/ClassExpression" },
+        { "$ref": "#/definitions/TemplateLiteral" },
+        { "$ref": "#/definitions/TaggedTemplateExpression" },
         { "$ref": "#/definitions/Unsupported" }
       ]
     },
@@ -617,22 +619,16 @@
     },
 
     "Property": {
-      "description": "A plain `key: value` member. Shorthand, methods, accessors, computed keys, and spread are outside the slice and arrive as `Unsupported` members instead, so this node is always `kind: \"init\"` and never computed. A numeric key is admitted here and refused by the Lean decoder.",
+      "description": "One member of an object literal. `key` is an `Identifier` or a string or numeric `Literal` unless `computed`, in which case it is any expression; `value` is a `FunctionExpression` when `kind` is `\"get\"` or `\"set\"` or when `method` is true, which the Lean decoder checks. A shorthand's `value` is its own `Identifier`. Spread is the one member form still outside the slice, and arrives as an `Unsupported` member instead.",
       "type": "object",
       "properties": {
         "type": { "const": "Property" },
-        "key": {
-          "anyOf": [
-            { "$ref": "#/definitions/Identifier" },
-            { "$ref": "#/definitions/StringLiteral" },
-            { "$ref": "#/definitions/NumericLiteral" }
-          ]
-        },
+        "key": { "$ref": "#/definitions/Expression" },
         "value": { "$ref": "#/definitions/Expression" },
-        "kind": { "const": "init" },
-        "computed": { "const": false },
-        "shorthand": { "const": false },
-        "method": { "const": false }
+        "kind": { "enum": ["init", "get", "set"] },
+        "computed": { "type": "boolean" },
+        "shorthand": { "type": "boolean" },
+        "method": { "type": "boolean" }
       },
       "required": [
         "type",
@@ -643,6 +639,53 @@
         "shorthand",
         "method"
       ],
+      "additionalProperties": false
+    },
+    "TemplateElement": {
+      "description": "One piece of a template's text: the TV and the TRV of 12.9.6. `cooked` is null only under a tag \u2014 an escape the cooked grammar refuses is a parse error in an untagged template \u2014 and `raw` has its line terminators normalized to `\\n`, as TRV requires.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "TemplateElement" },
+        "value": {
+          "type": "object",
+          "properties": {
+            "cooked": { "type": ["string", "null"] },
+            "raw": { "type": "string" }
+          },
+          "required": ["cooked", "raw"],
+          "additionalProperties": false
+        },
+        "tail": { "type": "boolean" }
+      },
+      "required": ["type", "value", "tail"],
+      "additionalProperties": false
+    },
+    "TemplateLiteral": {
+      "description": "A template literal, tagged or not. There is one more quasi than there are expressions, so a template with no substitutions is one quasi and no expressions.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "TemplateLiteral" },
+        "quasis": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/TemplateElement" }
+        },
+        "expressions": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Expression" }
+        }
+      },
+      "required": ["type", "quasis", "expressions"],
+      "additionalProperties": false
+    },
+    "TaggedTemplateExpression": {
+      "description": "A tagged template. `tag` is resolved the way a call's callee is, so a member tag passes its object as `this`.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "TaggedTemplateExpression" },
+        "tag": { "$ref": "#/definitions/Expression" },
+        "quasi": { "$ref": "#/definitions/TemplateLiteral" }
+      },
+      "required": ["type", "tag", "quasi"],
       "additionalProperties": false
     },
 

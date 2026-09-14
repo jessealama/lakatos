@@ -36,7 +36,31 @@ private def onlyStandard (n : Name) : CoreM Bool := do
 
 /-- info: true -/
 #guard_msgs in
-#eval onlyStandard ``Tarski.evalProps
+#eval onlyStandard ``Tarski.evalPropDefs
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.evalPropKey
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.evalCallee
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.evalTemplate
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.getTemplateObject
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.mentionsArgumentsPropDefs
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.mentionsArgumentsPropKey
 
 /-- info: true -/
 #guard_msgs in

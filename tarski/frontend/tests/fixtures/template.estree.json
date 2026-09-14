@@ -32,8 +32,31 @@
     {
       "type": "ExpressionStatement",
       "expression": {
-        "type": "Unsupported",
-        "kind": "TemplateExpression"
+        "type": "TemplateLiteral",
+        "quasis": [
+          {
+            "type": "TemplateElement",
+            "value": {
+              "cooked": "n is ",
+              "raw": "n is "
+            },
+            "tail": false
+          },
+          {
+            "type": "TemplateElement",
+            "value": {
+              "cooked": "",
+              "raw": ""
+            },
+            "tail": true
+          }
+        ],
+        "expressions": [
+          {
+            "type": "Identifier",
+            "name": "n"
+          }
+        ]
       }
     }
   ]
