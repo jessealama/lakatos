@@ -172,8 +172,8 @@ private def nums (xs : List Float) : Expr := .arrayLit (xs.map (.numLit ·))
 /-- `compareArray(<a>, <b>)`. -/
 private def compare (a b : Expr) : Expr := .call (.ident "compareArray") [a, b]
 
-/-- `NaN`, which no literal spells and no binding holds until #382. -/
-private def nan : Expr := .binary .div (.numLit 0.0) (.numLit 0.0)
+/-- `NaN`, the global binding. No literal spells it. -/
+private def nan : Expr := .ident "NaN"
 
 /-! ```js
 compareArray([1, 2, 3], [1, 2, 3]) &&

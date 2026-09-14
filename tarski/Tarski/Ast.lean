@@ -55,6 +55,13 @@ inductive BinaryOp where
   | div
   /-- `%`. -/
   | rem
+  /-- `**`. ESTree spells it as a `BinaryExpression` like the rest; its
+  right-associativity is the parser's business and is already resolved by
+  the time the tree arrives. The meaning is `Number::exponentiate`, which
+  is the library's `tsPow` — the same definition `Math.pow` has. Named
+  `exponent` because `.exp` and `.pow` are spellings the arithmetic
+  boundary check bans. -/
+  | exponent
   /-- `<`. Code-point string order when both operands are strings,
   numeric otherwise. -/
   | lt

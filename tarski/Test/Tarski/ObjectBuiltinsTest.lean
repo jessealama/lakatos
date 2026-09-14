@@ -32,8 +32,8 @@ private def expr (e : Expr) : Program := [.exprStmt e]
 /-- `-0`. -/
 private def negZero : Expr := .unary .neg (.numLit 0.0)
 
-/-- `NaN`, which no literal spells and no binding holds until #382. -/
-private def nan : Expr := .binary .div (.numLit 0.0) (.numLit 0.0)
+/-- `NaN`, the global binding. No literal spells it. -/
+private def nan : Expr := .ident "NaN"
 
 /-! ## `Object.is` -/
 
@@ -161,8 +161,8 @@ private def keysOf (e : Expr) : Expr := .call (.member (.ident "Object") "keys")
 /-! ## `Object` as a function and as a constructor
 
 Both spellings allocate the same thing, so `new` hands the native no
-receiver at all. A primitive other than `undefined` and `null` refuses
-until the wrappers land (#382, #391). -/
+receiver at all. A Number or a Boolean argument is wrapped as of #382; a
+string still refuses, its wrapper being #391's. -/
 
 #guard outcome (expr (.unary .typeof (.call (.ident "Object") []))) == "object"
 #guard outcome (expr (.unary .typeof (.call (.ident "Object") [.nullLit]))) == "object"
@@ -185,7 +185,17 @@ until the wrappers land (#382, #391). -/
       (.ident "Object")))
   == "true"
 
-#guard outcome (expr (.call (.ident "Object") [.numLit 1.0]))
+-- `typeof Object(1);` and `Object(1).valueOf() === 1;` — ToObject of a
+-- Number is the wrapper, and its `[[NumberData]]` reads back out.
+#guard outcome (expr (.unary .typeof (.call (.ident "Object") [.numLit 1.0]))) == "object"
+#guard outcome
+    (expr (.binary .strictEq
+      (.call (.member (.call (.ident "Object") [.numLit 1.0]) "valueOf") [])
+      (.numLit 1.0)))
+  == "true"
+
+-- `Object("s");` — the String wrapper is #391's, so this still refuses.
+#guard outcome (expr (.call (.ident "Object") [.strLit "s"]))
   == "uncaught: TypeError: Cannot convert a primitive to an object"
 
 -- `({}) instanceof Object;`

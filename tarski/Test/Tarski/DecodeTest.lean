@@ -67,6 +67,10 @@ private def wholeSliceJson : String := script <|
        "consequent":{"type":"Identifier","name":"n"},
        "alternate":{"type":"UnaryExpression","operator":"-","prefix":true,
                     "argument":{"type":"Literal","value":1,"raw":"1"}}}},
+     {"type":"ExpressionStatement","expression":{
+       "type":"BinaryExpression","operator":"**",
+       "left":{"type":"Literal","value":2,"raw":"2"},
+       "right":{"type":"Literal","value":3,"raw":"3"}}},
      {"type":"ExpressionStatement","expression":{"type":"Identifier","name":"undefined"}}"#
 
 /-- The same program as an AST term. `undefined` is an ESTree
@@ -83,6 +87,10 @@ private def wholeSlice : Program :=
       (some (.exprStmt .nullLit)),
     .exprStmt (.cond (.binary .strictEq (.ident "n") (.numLit 3.0))
       (.ident "n") (.unary .neg (.numLit 1.0))),
+    -- `**` is an ESTree `BinaryExpression` like the rest; the parser has
+    -- already resolved its right-associativity, so the decoder has
+    -- nothing to say about it.
+    .exprStmt (.binary .exponent (.numLit 2.0) (.numLit 3.0)),
     .exprStmt .undefLit ]
 
 #guard decode wholeSliceJson == toString (repr wholeSlice)

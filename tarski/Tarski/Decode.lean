@@ -121,6 +121,7 @@ private def binaryOp (s : String) : DecodeM BinaryOp :=
   | "*" => .ok .mul
   | "/" => .ok .div
   | "%" => .ok .rem
+  | "**" => .ok .exponent
   | "<" => .ok .lt
   | "<=" => .ok .le
   | ">" => .ok .gt

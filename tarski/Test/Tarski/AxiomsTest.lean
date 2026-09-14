@@ -234,6 +234,60 @@ private def onlyStandard (n : Name) : CoreM Bool := do
 #guard_msgs in
 #eval onlyStandard ``Tarski.throwJsError
 
+-- #382's dispatch: the coercions the built-ins go through, the shared
+-- body of the unary `Math` members, the two `thisXValue` projections,
+-- the radix check, and what `new` does to a wrapper native.
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.toNumberValue
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.toNumberValues
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.mathUnary
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.thisNumberValue
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.thisBooleanValue
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.numberArg
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.constructNative
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.radix?
+
+-- And the library definitions the `Math` members and `**` delegate to:
+-- `tsPow` is built from `Float.Model`, never from an `extern`, which is
+-- what makes the kernel able to reduce it.
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Js.Number.FloatOps.tsPow
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Js.Number.FloatOps.powNat
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Js.Number.FloatOps.powNatAux
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Js.Number.FloatOps.natOfIntegral
+
 -- The unfolding equations the proofs rewrite with are theorems of the
 -- same standing: if they were not, every postcondition proved through a
 -- `while` or a prototype walk would rest on whatever they did assume.
