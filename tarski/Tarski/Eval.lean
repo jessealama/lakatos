@@ -590,13 +590,15 @@ def setProp (base : Value) (key : String) (v : Value) : EvalM Unit :=
   | .obj r => do
     let o ← readObj r
     match o.kind with
-    | .ordinary => writeObj r (o.setOwn key v)
     | .array len =>
       if key == "length" then setArrayLength r o v
       else
         match arrayIndex? key with
         | some i => writeObj r { o.setOwn key v with kind := .array (max len (i + 1)) }
         | none => writeObj r (o.setOwn key v)
+    -- A wrapper object takes an ordinary write like any other object: its
+    -- `[[NumberData]]` is a field, not a property, so nothing can reach it.
+    | _ => writeObj r (o.setOwn key v)
   | .prim _ =>
     throwJsError .typeError
       s!"Cannot set properties of {formatValue base} (setting '{key}')"
@@ -808,22 +810,28 @@ def callNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Valu
     | .prim _ => throwJsError .typeError "Array.prototype.push called on non-array"
     | .obj r => do
       match (← readObj r).kind with
-      | .ordinary => throwJsError .typeError "Array.prototype.push called on non-array"
       | .array len => do
         pushElements thisArg len args
         pure (Value.ofNat (len + args.length))
+      | _ => throwJsError .typeError "Array.prototype.push called on non-array"
   | .arrayJoin =>
     match thisArg with
     | .prim _ => throwJsError .typeError "Array.prototype.join called on non-array"
     | .obj r => do
       match (← readObj r).kind with
-      | .ordinary => throwJsError .typeError "Array.prototype.join called on non-array"
       | .array len => do
         let sep ← match args with
           | [] => pure ","
           | .prim .undef :: _ => pure ","
           | v :: _ => toStringValue v
         pure (.prim (.str (← joinElements thisArg 0 len sep)))
+      | _ => throwJsError .typeError "Array.prototype.join called on non-array"
+  | .numberCtor | .numberIsFinite | .numberIsInteger | .numberIsNaN
+  | .numberIsSafeInteger | .numberToString | .numberValueOf
+  | .booleanCtor | .booleanToString | .booleanValueOf
+  | .mathAbs | .mathCeil | .mathFloor | .mathFround | .mathRound | .mathSign
+  | .mathSqrt | .mathTrunc | .mathMax | .mathMin | .mathPow =>
+    throwJsError .typeError "not implemented"
   | .print => do
     -- The host's output binding. There is no IO in `EvalM`, so the line
     -- is appended to `%PrintLog%` and the binary writes the log out once
@@ -1135,11 +1143,11 @@ def Heap.printedLines (h : Heap) : List String :=
   | none => []
   | some o =>
     match o.kind with
-    | .ordinary => []
     | .array len =>
       (List.range len).filterMap fun i =>
         match o.getOwn (toString i) with
         | some (.prim (.str s)) => some s
         | _ => none
+    | _ => []
 
 end Tarski

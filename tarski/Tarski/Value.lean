@@ -93,8 +93,15 @@ def ErrorKind.all : List ErrorKind :=
 `Closure`. A built-in is not self-hosted for two reasons — a native
 constructor must be able to construct when called without `new`, which
 no AST spells, and `[[ErrorData]]`-style internal behaviour has no source
-form at all. Later slices add constructors here (`Object.keys`,
-`Math.max`, …) and an arm to `callNative` for each. -/
+form at all. Later slices add constructors here and an arm to
+`callNative` for each.
+
+**Every name here is prefixed by the intrinsic it belongs to** —
+`mathAbs`, not `abs`; `numberIsNaN`, not `isNaN` — and not only for
+readability: `scripts/check-boundary.sh` matches method-syntax `Float`
+operations by name, so a constructor called `.abs`, `.floor`, `.sqrt`,
+`.round`, `.ceil`, `.pow`, `.exp`, `.isNaN`, or `.isFinite` would trip
+the arithmetic boundary wherever it was projected. -/
 inductive NativeFn where
   /-- One of the `Error` constructors. -/
   | errorCtor (kind : ErrorKind)
@@ -123,6 +130,48 @@ inductive NativeFn where
   so ToString of the first argument is appended to the intrinsic array
   `%PrintLog%` and the binary writes the log out after the run. -/
   | print
+  /-- `Number`, as a converter and as a wrapper constructor. -/
+  | numberCtor
+  /-- `Number.isFinite`. -/
+  | numberIsFinite
+  /-- `Number.isInteger`. -/
+  | numberIsInteger
+  /-- `Number.isNaN`. -/
+  | numberIsNaN
+  /-- `Number.isSafeInteger`. -/
+  | numberIsSafeInteger
+  /-- `Number.prototype.toString`. -/
+  | numberToString
+  /-- `Number.prototype.valueOf`. -/
+  | numberValueOf
+  /-- `Boolean`, as a converter and as a wrapper constructor. -/
+  | booleanCtor
+  /-- `Boolean.prototype.toString`. -/
+  | booleanToString
+  /-- `Boolean.prototype.valueOf`. -/
+  | booleanValueOf
+  /-- `Math.abs`. -/
+  | mathAbs
+  /-- `Math.ceil`. -/
+  | mathCeil
+  /-- `Math.floor`. -/
+  | mathFloor
+  /-- `Math.fround`. -/
+  | mathFround
+  /-- `Math.round`. -/
+  | mathRound
+  /-- `Math.sign`. -/
+  | mathSign
+  /-- `Math.sqrt`. -/
+  | mathSqrt
+  /-- `Math.trunc`. -/
+  | mathTrunc
+  /-- `Math.max`, variadic over the library's binary `tsMax`. -/
+  | mathMax
+  /-- `Math.min`, variadic over the library's binary `tsMin`. -/
+  | mathMin
+  /-- `Math.pow`, the library's `tsPow` — the same definition `**` is. -/
+  | mathPow
 deriving Repr, DecidableEq, Inhabited
 
 /-- `[[Call]]`: user code or a built-in. -/
@@ -136,11 +185,19 @@ internal behaviour of its own; `array` is the Array exotic object, and
 its `length` lives here rather than among the properties for three
 reasons: it is then never enumerated by `Object.keys`, never shadowed by
 an ordinary write, and truncation is one field write rather than a scan
-plus a property update. Later slices add constructors — a boxed string or
-number (#391, #382) and `arguments` (#393). -/
+plus a property update. `number` and `boolean` are the Number and Boolean
+wrapper objects, carrying `[[NumberData]]` and `[[BooleanData]]` the same
+way — a field, not a property, so `Object.keys(new Number(1))` is empty
+and no write can forge one. A kind with a `Float` in it still derives
+`DecidableEq`, because propositional equality on `Float` is SameValue
+(`Js/Val.lean` says so), which is the right test for a `[[NumberData]]`.
+Later slices add constructors — a boxed string (#391) and `arguments`
+(#393). -/
 inductive ObjKind where
   | ordinary
   | array (length : Nat)
+  | number (value : Float)
+  | boolean (value : Bool)
 deriving Repr, DecidableEq, Inhabited
 
 /-- An ordinary object: a prototype link, own data properties in
@@ -292,7 +349,7 @@ def arrayIndex? (key : String) : Option Nat :=
 def Obj.isArray (o : Obj) : Bool :=
   match o.kind with
   | .array _ => true
-  | .ordinary => false
+  | _ => false
 
 /-- `[[GetOwnProperty]]` reduced to a yes or no, which is all
 `Object.prototype.hasOwnProperty` asks. An array's `length` is an own
@@ -301,7 +358,7 @@ answered here by hand. -/
 def Obj.hasOwn (o : Obj) (key : String) : Bool :=
   match o.kind with
   | .array _ => key == "length" || (o.getOwn key).isSome
-  | .ordinary => (o.getOwn key).isSome
+  | _ => (o.getOwn key).isSome
 
 /-- ArraySetLength's shortening half: drop every element at an index at
 or past the new length, keep the rest in order, and record the length.

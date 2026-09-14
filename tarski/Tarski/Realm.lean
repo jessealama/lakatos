@@ -1,3 +1,4 @@
+import Js.Number.Constants
 import Tarski.Value
 
 /-! The realm: the intrinsics a script starts with, at fixed heap
@@ -24,9 +25,39 @@ the literal against the constants so the two cannot drift apart.
 | 26        | `%PrintLog%`, the array `print` appends to                |
 | 27        | `print`                                                  |
 | 28        | `$262`                                                   |
+| 29        | `Number.prototype`, itself a Number object of value `+0` |
+| 30        | `Number`                                                 |
+| 31–32     | `Number.prototype.toString`, `Number.prototype.valueOf`  |
+| 33–36     | `Number.isFinite`, `isInteger`, `isNaN`, `isSafeInteger` |
+| 37        | `Boolean.prototype`, itself a Boolean object of value `false` |
+| 38        | `Boolean`                                                |
+| 39–40     | `Boolean.prototype.toString`, `Boolean.prototype.valueOf` |
+| 41        | `Math`                                                   |
+| 42–49     | `Math.abs`, `ceil`, `floor`, `fround`, `round`, `sign`, `sqrt`, `trunc` |
+| 50–52     | `Math.max`, `Math.min`, `Math.pow`                       |
 
-The twelve global bindings are cells 0–11: the seven `Error`
-constructors, then `Object`, `Array`, `String`, `print`, and `$262`.
+The seventeen global bindings are cells 0–16: the seven `Error`
+constructors, then `Object`, `Array`, `String`, `print`, `$262`,
+`Number`, `Boolean`, `Math`, `NaN`, and `Infinity`.
+
+`Number`, `Boolean`, and `Math` are writable cells like every other
+global function binding. `NaN` and `Infinity` are **not**: they are the
+specification's non-writable value properties of the global object, so
+their cells hold `Js.Number.NaN` and `Js.Number.POSITIVE_INFINITY` with
+`mutable := false`, which is what makes `NaN = 1` the same strict-mode
+`TypeError` an assignment to a `const` is. A local declaration may still
+shadow either name, as it may shadow `Object`.
+
+Every numeric constant on `Number` and on `Math` is the library's own
+definition under its source spelling — `Js.Number.EPSILON`,
+`Js.Math.PI` — so the realm names the same doubles a `Theorem` does
+rather than a second copy of them. `Number.prototype` and
+`Boolean.prototype` are themselves wrapper objects, of `+0` and `false`,
+as the specification has them: it costs one field each and test262
+observes it (`Number.prototype.valueOf()` is `0`). `Math` has no
+`[[Call]]` and no `[[Construct]]`, so `Math()` is `not a function`;
+`@@toStringTag` on it is #392's. The `String` wrapper object is #391's,
+so `String` still has no `prototype` property here.
 
 `print` and `$262` are the two host-defined bindings test262 requires of
 an implementation. `print` has no IO to do: it appends ToString of its
@@ -127,6 +158,80 @@ def printRef : Ref := 27
 decoder, so nothing here implements one. -/
 def hostRef : Ref := 28
 
+/-- `Number.prototype`, itself a Number object whose `[[NumberData]]` is
+`+0`. -/
+def numberProtoRef : Ref := 29
+
+/-- `Number`. -/
+def numberCtorRef : Ref := 30
+
+/-- `Number.prototype.toString`. -/
+def numberToStringRef : Ref := 31
+
+/-- `Number.prototype.valueOf`. -/
+def numberValueOfRef : Ref := 32
+
+/-- `Number.isFinite`. -/
+def numberIsFiniteRef : Ref := 33
+
+/-- `Number.isInteger`. -/
+def numberIsIntegerRef : Ref := 34
+
+/-- `Number.isNaN`. -/
+def numberIsNaNRef : Ref := 35
+
+/-- `Number.isSafeInteger`. -/
+def numberIsSafeIntegerRef : Ref := 36
+
+/-- `Boolean.prototype`, itself a Boolean object whose `[[BooleanData]]`
+is `false`. -/
+def booleanProtoRef : Ref := 37
+
+/-- `Boolean`. -/
+def booleanCtorRef : Ref := 38
+
+/-- `Boolean.prototype.toString`. -/
+def booleanToStringRef : Ref := 39
+
+/-- `Boolean.prototype.valueOf`. -/
+def booleanValueOfRef : Ref := 40
+
+/-- `Math`. Not a function: it has no `[[Call]]`. -/
+def mathRef : Ref := 41
+
+/-- `Math.abs`. -/
+def mathAbsRef : Ref := 42
+
+/-- `Math.ceil`. -/
+def mathCeilRef : Ref := 43
+
+/-- `Math.floor`. -/
+def mathFloorRef : Ref := 44
+
+/-- `Math.fround`. -/
+def mathFroundRef : Ref := 45
+
+/-- `Math.round`. -/
+def mathRoundRef : Ref := 46
+
+/-- `Math.sign`. -/
+def mathSignRef : Ref := 47
+
+/-- `Math.sqrt`. -/
+def mathSqrtRef : Ref := 48
+
+/-- `Math.trunc`. -/
+def mathTruncRef : Ref := 49
+
+/-- `Math.max`. -/
+def mathMaxRef : Ref := 50
+
+/-- `Math.min`. -/
+def mathMinRef : Ref := 51
+
+/-- `Math.pow`. -/
+def mathPowRef : Ref := 52
+
 /-- The cell the kind's global binding lives in: 0–6, in the same
 order. -/
 def ErrorKind.cellRef : ErrorKind → CellRef
@@ -153,6 +258,24 @@ def printCellRef : CellRef := 10
 /-- The cell `$262` is bound in. -/
 def hostCellRef : CellRef := 11
 
+/-- The cell `Number` is bound in. -/
+def numberCellRef : CellRef := 12
+
+/-- The cell `Boolean` is bound in. -/
+def booleanCellRef : CellRef := 13
+
+/-- The cell `Math` is bound in. -/
+def mathCellRef : CellRef := 14
+
+/-- The cell `NaN` is bound in. Immutable: the global `NaN` is a
+non-writable value property, so assigning to it is a strict-mode
+`TypeError`. -/
+def nanCellRef : CellRef := 15
+
+/-- The cell `Infinity` is bound in, immutable for the reason `NaN`'s
+is. -/
+def infinityCellRef : CellRef := 16
+
 /-- The scope a script's own declarations are instantiated on top of:
 `ErrorKind.all.map (fun k => (k.name, k.cellRef))`, written out so that
 `simp` sees a literal list. There is no global *object* yet (#389), so a
@@ -169,7 +292,12 @@ def globalEnv : Env :=
     ("Array", 8),
     ("String", 9),
     ("print", 10),
-    ("$262", 11) ]
+    ("$262", 11),
+    ("Number", 12),
+    ("Boolean", 13),
+    ("Math", 14),
+    ("NaN", 15),
+    ("Infinity", 16) ]
 
 /-- The heap a script starts from: the realm, laid out at the references
 above. -/
@@ -189,7 +317,15 @@ def Heap.initial : Heap where
        { mutable := true, value := some (.obj 21) },  -- Array
        { mutable := true, value := some (.obj 25) },  -- String
        { mutable := true, value := some (.obj 27) },  -- print
-       { mutable := true, value := some (.obj 28) } ] -- $262
+       { mutable := true, value := some (.obj 28) },  -- $262
+       { mutable := true, value := some (.obj 30) },  -- Number
+       { mutable := true, value := some (.obj 38) },  -- Boolean
+       { mutable := true, value := some (.obj 41) },  -- Math
+       -- `NaN` and `Infinity` are value properties of the global object,
+       -- and non-writable ones: immutable cells, so `NaN = 1` throws.
+       { mutable := false, value := some (.prim (.num Number.NaN)) },
+       { mutable := false,
+         value := some (.prim (.num Number.POSITIVE_INFINITY)) } ]
   objects :=
     #[ -- 0: Error.prototype. `toString` is on it because the binary's
        -- uncaught-error report runs that algorithm anyway.
@@ -317,6 +453,108 @@ def Heap.initial : Heap where
        -- 28: $262. Empty on purpose — its hooks are decoder refusals,
        -- and what is left is an object for `typeof` to see and a missing
        -- `IsHTMLDDA` to read as `undefined`.
-       { proto := some 15 } ]
+       { proto := some 15 },
+       -- 29: Number.prototype, itself a Number object of value `+0`, as
+       -- the spec has it: `Number.prototype.valueOf()` is `0`. The
+       -- `toFixed` family and `toLocaleString` are #388's.
+       { proto := some 15,
+         kind := .number 0.0,
+         properties :=
+           [ ("constructor", .obj 30),
+             ("toString", .obj 31),
+             ("valueOf", .obj 32) ] },
+       -- 30: Number. Every constant is the library's own definition
+       -- under its source spelling. `parseFloat` and `parseInt` are
+       -- #388's.
+       { properties :=
+           [ ("prototype", .obj 29),
+             ("isFinite", .obj 33),
+             ("isInteger", .obj 34),
+             ("isNaN", .obj 35),
+             ("isSafeInteger", .obj 36),
+             ("EPSILON", .prim (.num Number.EPSILON)),
+             ("MAX_SAFE_INTEGER", .prim (.num Number.MAX_SAFE_INTEGER)),
+             ("MIN_SAFE_INTEGER", .prim (.num Number.MIN_SAFE_INTEGER)),
+             ("MAX_VALUE", .prim (.num Number.MAX_VALUE)),
+             ("MIN_VALUE", .prim (.num Number.MIN_VALUE)),
+             ("POSITIVE_INFINITY", .prim (.num Number.POSITIVE_INFINITY)),
+             ("NEGATIVE_INFINITY", .prim (.num Number.NEGATIVE_INFINITY)),
+             ("NaN", .prim (.num Number.NaN)) ],
+         callable := some (.native .numberCtor) },
+       -- 31: Number.prototype.toString
+       { callable := some (.native .numberToString) },
+       -- 32: Number.prototype.valueOf
+       { callable := some (.native .numberValueOf) },
+       -- 33: Number.isFinite
+       { callable := some (.native .numberIsFinite) },
+       -- 34: Number.isInteger
+       { callable := some (.native .numberIsInteger) },
+       -- 35: Number.isNaN
+       { callable := some (.native .numberIsNaN) },
+       -- 36: Number.isSafeInteger
+       { callable := some (.native .numberIsSafeInteger) },
+       -- 37: Boolean.prototype, itself a Boolean object of value
+       -- `false`.
+       { proto := some 15,
+         kind := .boolean false,
+         properties :=
+           [ ("constructor", .obj 38),
+             ("toString", .obj 39),
+             ("valueOf", .obj 40) ] },
+       -- 38: Boolean
+       { properties := [("prototype", .obj 37)],
+         callable := some (.native .booleanCtor) },
+       -- 39: Boolean.prototype.toString
+       { callable := some (.native .booleanToString) },
+       -- 40: Boolean.prototype.valueOf
+       { callable := some (.native .booleanValueOf) },
+       -- 41: Math. No `callable`: `Math()` is `not a function` and
+       -- `new Math()` is `not a constructor`. The members are exactly
+       -- the ones the library expresses — the transcendental family,
+       -- `random`, `clz32`, and `imul` are absent rather than faked
+       -- (#434 for the first, ToUint32/ToInt32 for the last two).
+       { proto := some 15,
+         properties :=
+           [ ("E", .prim (.num Math.E)),
+             ("LN10", .prim (.num Math.LN10)),
+             ("LN2", .prim (.num Math.LN2)),
+             ("LOG10E", .prim (.num Math.LOG10E)),
+             ("LOG2E", .prim (.num Math.LOG2E)),
+             ("PI", .prim (.num Math.PI)),
+             ("SQRT1_2", .prim (.num Math.SQRT1_2)),
+             ("SQRT2", .prim (.num Math.SQRT2)),
+             ("abs", .obj 42),
+             ("ceil", .obj 43),
+             ("floor", .obj 44),
+             ("fround", .obj 45),
+             ("round", .obj 46),
+             ("sign", .obj 47),
+             ("sqrt", .obj 48),
+             ("trunc", .obj 49),
+             ("max", .obj 50),
+             ("min", .obj 51),
+             ("pow", .obj 52) ] },
+       -- 42: Math.abs
+       { callable := some (.native .mathAbs) },
+       -- 43: Math.ceil
+       { callable := some (.native .mathCeil) },
+       -- 44: Math.floor
+       { callable := some (.native .mathFloor) },
+       -- 45: Math.fround
+       { callable := some (.native .mathFround) },
+       -- 46: Math.round
+       { callable := some (.native .mathRound) },
+       -- 47: Math.sign
+       { callable := some (.native .mathSign) },
+       -- 48: Math.sqrt
+       { callable := some (.native .mathSqrt) },
+       -- 49: Math.trunc
+       { callable := some (.native .mathTrunc) },
+       -- 50: Math.max
+       { callable := some (.native .mathMax) },
+       -- 51: Math.min
+       { callable := some (.native .mathMin) },
+       -- 52: Math.pow
+       { callable := some (.native .mathPow) } ]
 
 end Tarski
