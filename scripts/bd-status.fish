@@ -58,7 +58,7 @@ for m in (bd -C $root list --parent $epic --json | jq -r '.[].id')
                 set -a working "working: $id ($info) claimed by $who, $mins min so far"
             case open blocked
                 if contains -- $id $ready_ids
-                    set -a ready "ready: $id ($info) is unclaimed; is that loop running?"
+                    set -a ready "ready: $id ($info) is waiting for a free "(echo $info | string split ' ')[1]" loop"
                 else
                     set -l by (bd -C $root show $id --json | jq -r '(.[0] // .) | .dependencies[] | select(.dependency_type == "blocks" or .issue_type == "gate") | select(.status != "closed") | "\(.id) [\(.status)]"' | string join ', ')
                     set -a blocked "blocked: $id ($info) waits on $by"

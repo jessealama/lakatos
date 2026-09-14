@@ -2,8 +2,14 @@
 # One worker loop over the beads of an epic: claim the next ready bead whose
 # label matches the role, run `claude -p` on the matching prompt, repeat.
 #
-#   scripts/bd-worker.fish plan-review [--once] [--dry-run] [--poll SECONDS] [--model MODEL] [--epic ID]
-#   scripts/bd-worker.fish implement   [--once] [--dry-run] [--poll SECONDS] [--model MODEL] [--epic ID]
+#   scripts/bd-worker.fish plan      [--once] [--dry-run] [--poll SECONDS] [--model MODEL] [--epic ID]
+#   scripts/bd-worker.fish review    [--once] [--dry-run] [--poll SECONDS] [--model MODEL] [--epic ID]
+#   scripts/bd-worker.fish implement [--once] [--dry-run] [--poll SECONDS] [--model MODEL] [--epic ID]
+#
+# Run one review loop and one implement loop; run as many plan loops as the
+# fan-out needs. Review is on the critical path (an implement closes and
+# nothing moves until its review does), plans are prefetch, and implements
+# are serialized so workers never share Lean files.
 #
 # The prompt for a bead is scripts/prompts/<label>.md with {{BEAD}} and
 # {{ROOT}} substituted. Each run streams its full event log to
@@ -37,14 +43,17 @@ set -l poll (set -q _flag_poll; and echo $_flag_poll; or echo 120)
 set -l default_model ''
 set -l labels ''
 switch "$role"
-    case plan-review
+    case plan
         set default_model claude-fable-5-1
-        set labels plan,review
+        set labels plan
+    case review
+        set default_model claude-fable-5-1
+        set labels review
     case implement
         set default_model claude-opus-5
         set labels implement,repair
     case '*'
-        echo "usage: bd-worker.fish plan-review|implement [--once] [--dry-run] [--poll SECONDS] [--model MODEL] [--epic ID]" >&2
+        echo "usage: bd-worker.fish plan|review|implement [--once] [--dry-run] [--poll SECONDS] [--model MODEL] [--epic ID]" >&2
         exit 2
 end
 set -l model (set -q _flag_model; and echo $_flag_model; or echo $default_model)
