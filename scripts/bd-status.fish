@@ -14,7 +14,7 @@ or exit 2
 set -l root (path resolve (status dirname)/..)
 set -l epic (set -q _flag_epic; and echo $_flag_epic; or echo lakatos-vvi)
 set -l gh_epic (set -q _flag_gh_epic; and echo $_flag_gh_epic; or echo 376)
-set -l repo jessealama/lakatos
+set -l repo lakatos-ts/lakatos
 
 function describe --argument-names id
     bd show $id --json | jq -r '(.[0] // .) | "\(.labels // [] | join(",")) \(.external_ref // "-")"'
