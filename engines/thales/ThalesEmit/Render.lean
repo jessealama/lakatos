@@ -49,9 +49,12 @@ def modulePathIdent (path : String) : RenderM Name := do
 re-parsed plain text, so a binder or parameter spelled like one would
 capture the reference. -/
 def reservedNames : List String :=
+  -- `Tarski` is the evaluator's package root: a correspondence obligation
+  -- references it by that name, and a binder spelled the same would
+  -- capture every `Tarski.` the obligation writes.
   ["pure", "ballIco", "floatInf", "floatNaN", "Float", "Number", "Math", "Int",
    "JsM", "JsNumber", "Bool", "TsModel", "JsError", "mut", "self",
-   "JsVal", "TypeofResult", "Option", "some", "none"]
+   "JsVal", "TypeofResult", "Option", "some", "none", "Tarski"]
 
 /-- A binder or parameter: the source name, primed out of the reserved
 vocabulary — a spelling no TS identifier has. -/

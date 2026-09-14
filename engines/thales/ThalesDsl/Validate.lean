@@ -30,9 +30,10 @@ not, comes through this one channel so the CLI has one source to join.
 (`tarski_eval`), the model's normalization set (`js_norm`), and the
 artifact's own defs unfolded — `TsModel.f.ast` and `TsModel.f` are
 file-local, so "no module index and a definition" picks exactly them.
-Then a second plain `simp`, which clears the `decide` residue a
-boolean-returning declaration leaves. Then, bounded by fuel rather than
-by a budget, a case split on the `Bool` an emitted comparison denotes:
+Then, bounded by fuel rather than by a budget, a case split on the `Bool`
+an emitted comparison denotes, and the same pass again on each arm; and
+on an arm with nothing left to split, one plain `simp` for the
+arithmetic identity a fully reduced branch ends in:
 `Float.lt`, `Float.le`, `Float.beq`, `JsVal.strictEq` all reach the goal
 as `c = true`, on the evaluator's side under an `if` and on the model's
 under a `decide`, and splitting the one splits the other.
@@ -99,21 +100,35 @@ def validateSimpContext (g : MVarId) : MetaM (Simp.Context × Simp.SimprocsArray
 
 /-- One `simp` pass. `none` is a closed goal; a pass that makes no
 progress — which `simpGoal` reports by failing — leaves the goal
-untouched for the next step rather than ending the attempt. -/
+untouched for the next step rather than ending the attempt.
+
+A spent resource limit is not such a failure and is rethrown. Swallowing
+it would leave the pass reporting the goal unchanged, and the split below
+would then keep splitting a goal nothing is reducing: the budget is what
+contains this command, and a `catch` that eats it uncontains it. -/
 def simpPass (g : MVarId) (ctx : Simp.Context) (procs : Simp.SimprocsArray) :
     MetaM (Option MVarId) := do
   let r ←
     try Meta.simpGoal g ctx (simprocs := procs)
-    catch _ => pure (some (#[], g), {})
+    catch ex =>
+      if ex.isRuntime then throw ex
+      pure (some (#[], g), {})
   match r.1 with
   | none => return none
   | some (_, g) => return some g
 
-/-- Whether a `Bool`-valued expression is one the split can learn
-anything from: not a literal, and not under a binder the goal has not
-introduced. -/
+/-- Whether a `Bool`-valued expression is one the split can learn anything
+from: not a literal, not still under a binder, and not a `decide`.
+
+The `decide` is the one that would be picked otherwise. A `Bool` reaching
+an `if` is coerced to a `Prop` and decided again, so the goal holds
+`decide (Float.lt x 1 = true) = true` with the comparison one level
+inside it. Splitting the outer one learns something about the decision
+procedure and leaves the comparison standing in the other arm; splitting
+the inner one settles both. -/
 private def splittableBool (c : Expr) : Bool :=
   !c.hasLooseBVars && !c.isConstOf ``Bool.true && !c.isConstOf ``Bool.false
+    && !c.isAppOf ``Decidable.decide
 
 /-- The first `c = true` in the goal whose `c` is worth splitting on. That
 is the shape every emitted comparison takes: `Float.lt`, `Float.le`,
@@ -148,24 +163,34 @@ the default one for the `decide` residue a boolean-returning declaration
 leaves — and then a case split on the first `Bool` atom left standing,
 recursively.
 
-`fuel` bounds the *shape* of the search, not its cost: the budget is the
-heartbeat window the command runs under, and a declaration with more
-guards than this many is not one more heartbeats would settle. The goal
-reported is the one the recursion first stopped on, which is the branch a
-reader has to look at. -/
-partial def closeValidate (fuel : Nat) (g : MVarId) : MetaM (Option MVarId) := do
+`fuel` is the number of case splits the *whole tree* may take, threaded
+through the branches rather than halved into them: a depth bound would
+allow two to the depth many leaves, and a goal that keeps producing fresh
+atoms — a body whose arms are themselves guarded — would take every one
+of them. What is left of it comes back with the answer. The goal reported
+is the one the recursion first stopped on, which is the branch a reader
+has to look at. -/
+partial def closeValidate (fuel : Nat) (g : MVarId) : MetaM (Nat × Option MVarId) := do
   let (ctx, procs) ← validateSimpContext g
-  let some g ← simpPass g ctx procs | return none
-  let some g ← simpPass g (← Meta.Simp.mkContext (config := {})
+  let some g ← simpPass g ctx procs | return (fuel, none)
+  if fuel != 0 then
+    if let some c := boolAtom? (← instantiateMVars (← g.getType)) then
+      let (pos, neg) ← boolByCases g c
+      let (fuel, stuck?) ← closeValidate (fuel - 1) pos
+      match stuck? with
+      | some stuck => return (fuel, some stuck)
+      | none => return ← closeValidate fuel neg
+  -- Nothing left to split on. One plain pass is the last resort — it
+  -- closes the arithmetic identity a fully reduced branch ends in, which
+  -- the evaluator's set is not about. It runs here and not before the
+  -- split because on an unsplit run it rewrites the evaluator's `if` into
+  -- an implication per arm, and an arm's hypothesis is then not a
+  -- hypothesis the split can discharge.
+  let r ← simpPass g (← Meta.Simp.mkContext (config := {})
       (simpTheorems := #[← getSimpTheorems])
       (congrTheorems := ← Meta.getSimpCongrTheorems))
-      #[← Meta.Simp.getSimprocs] | return none
-  if fuel == 0 then return some g
-  let some c := boolAtom? (← instantiateMVars (← g.getType)) | return some g
-  let (pos, neg) ← boolByCases g c
-  match ← closeValidate (fuel - 1) pos with
-  | some stuck => return some stuck
-  | none => closeValidate (fuel - 1) neg
+    #[← Meta.Simp.getSimprocs]
+  return (fuel, r)
 
 /-- The obligation, attempted. The binders are introduced first, under the
 names the obligation gave them — the quantification is over the declared
@@ -176,7 +201,7 @@ rather than handed to `addDecl`. -/
 def validateGoal (p : Expr) : Term.TermElabM ValidateOutcome := do
   let mvar ← Meta.mkFreshExprMVar p
   let (_, g) ← mvar.mvarId!.introNP (Meta.getIntrosSize (← instantiateMVars p))
-  match ← closeValidate 32 g with
+  match (← closeValidate 64 g).2 with
   | some stuck => return .stuck stuck
   | none =>
     let proof ← instantiateMVars mvar
