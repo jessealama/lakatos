@@ -39,6 +39,8 @@ const FIXTURES = [
   "number-math",
   "for-switch-var",
   "number-conversions",
+  "class-box",
+  "emitter-classes",
 ];
 
 describe("parseScript", () => {
@@ -74,7 +76,7 @@ describe("parseScript", () => {
   });
 
   it("replaces a construct outside the slice with its tsc kind, in place", () => {
-    const program = parseScript('"use strict";\nclass A {}\n', "u.js");
+    const program = parseScript('"use strict";\ndebugger;\n', "u.js");
     expect(program).toEqual({
       type: "Program",
       sourceType: "script",
@@ -88,7 +90,7 @@ describe("parseScript", () => {
           },
           directive: "use strict",
         },
-        { type: "Unsupported", kind: "ClassDeclaration" },
+        { type: "Unsupported", kind: "DebuggerStatement" },
       ],
     });
   });
@@ -259,6 +261,257 @@ describe("parseScript", () => {
     });
   }
 
+  // A class arrives whole: the members carry their kind, their key type,
+  // and which side of the class they are on, and the Lean decoder is what
+  // refuses the ones outside the slice.
+  it("emits a ClassDeclaration with its members", () => {
+    const program = parseScript(
+      '"use strict";\nclass A {\n  x = 1;\n  #v = 2;\n  static s = 3;\n' +
+        "  constructor(v) {}\n  get g() { return 1; }\n  set g(w) {}\n" +
+        "  m() {}\n  static sm() {}\n}\n",
+      "c.js",
+    );
+    expect(program.body[1]).toMatchObject({
+      type: "ClassDeclaration",
+      id: { type: "Identifier", name: "A" },
+      superClass: null,
+      body: {
+        type: "ClassBody",
+        body: [
+          {
+            type: "PropertyDefinition",
+            key: { type: "Identifier", name: "x" },
+            static: false,
+          },
+          {
+            type: "PropertyDefinition",
+            key: { type: "PrivateIdentifier", name: "v" },
+            static: false,
+          },
+          {
+            type: "PropertyDefinition",
+            key: { type: "Identifier", name: "s" },
+            static: true,
+          },
+          { type: "MethodDefinition", kind: "constructor", static: false },
+          { type: "MethodDefinition", kind: "get", static: false },
+          { type: "MethodDefinition", kind: "set", static: false },
+          { type: "MethodDefinition", kind: "method", static: false },
+          { type: "MethodDefinition", kind: "method", static: true },
+        ],
+      },
+    });
+    validate(program);
+  });
+
+  it("gives a field without an initializer a null value", () => {
+    const program = parseScript('"use strict";\nclass A {\n  x;\n}\n', "f.js");
+    expect(program.body[1]).toMatchObject({
+      body: { body: [{ type: "PropertyDefinition", value: null }] },
+    });
+    validate(program);
+  });
+
+  it("names a class expression, or does not", () => {
+    const named = parseScript('"use strict";\nconst C = class N {};\n', "n.js");
+    expect(named.body[1]).toMatchObject({
+      declarations: [
+        {
+          init: {
+            type: "ClassExpression",
+            id: { type: "Identifier", name: "N" },
+          },
+        },
+      ],
+    });
+    validate(named);
+    const anon = parseScript('"use strict";\nconst C = class {};\n', "a.js");
+    expect(anon.body[1]).toMatchObject({
+      declarations: [{ init: { type: "ClassExpression", id: null } }],
+    });
+    validate(anon);
+  });
+
+  it("carries a heritage clause, including `extends null`", () => {
+    const extended = parseScript(
+      '"use strict";\nclass A extends B {}\n',
+      "e.js",
+    );
+    expect(extended.body[1]).toMatchObject({
+      superClass: { type: "Identifier", name: "B" },
+    });
+    validate(extended);
+    const nulled = parseScript(
+      '"use strict";\nclass A extends null {}\n',
+      "en.js",
+    );
+    expect(nulled.body[1]).toMatchObject({
+      superClass: { type: "Literal", value: null },
+    });
+    validate(nulled);
+  });
+
+  // `super` is not an expression: it stands in the two positions the
+  // schema admits it in and nowhere else.
+  it("gives `super` its own node in a call and in a member access", () => {
+    const program = parseScript(
+      '"use strict";\nclass A extends B {\n  constructor() { super(1); }\n' +
+        "  m() { return super.m(); }\n}\n",
+      "s.js",
+    );
+    const body = (program.body[1] as { body: { body: unknown[] } }).body.body;
+    expect(body[0]).toMatchObject({
+      value: {
+        body: {
+          body: [
+            {
+              expression: {
+                type: "CallExpression",
+                callee: { type: "Super" },
+              },
+            },
+          ],
+        },
+      },
+    });
+    expect(body[1]).toMatchObject({
+      value: {
+        body: {
+          body: [
+            {
+              argument: {
+                callee: {
+                  type: "MemberExpression",
+                  object: { type: "Super" },
+                },
+              },
+            },
+          ],
+        },
+      },
+    });
+    validate(program);
+  });
+
+  it("writes to a private name through a PrivateIdentifier property", () => {
+    const program = parseScript(
+      '"use strict";\nclass A {\n  #v;\n  constructor() { this.#v = 1; }\n}\n',
+      "w.js",
+    );
+    expect(program.body[1]).toMatchObject({
+      body: {
+        body: [
+          {},
+          {
+            value: {
+              body: {
+                body: [
+                  {
+                    expression: {
+                      type: "AssignmentExpression",
+                      left: {
+                        type: "MemberExpression",
+                        property: { type: "PrivateIdentifier", name: "v" },
+                      },
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      },
+    });
+    validate(program);
+  });
+
+  // A class member outside the slice stands where it appeared, so the
+  // class itself still reaches the Lean decoder — which is also how a
+  // private method arrives, for the decoder to refuse by name.
+  const CLASS_MEMBERS: [string, string, string][] = [
+    ["a static block", "static { }", "ClassStaticBlockDeclaration"],
+    ["a computed key", "[k]() {}", "ComputedPropertyName"],
+    ["an `accessor` field", "accessor x = 1;", "AccessorKeyword"],
+    ["a type annotation", "x: number = 1;", "NumberKeyword"],
+    ["an optional marker", "x?;", "QuestionToken"],
+    ["a `private` modifier", "private x;", "PrivateKeyword"],
+    ["a `readonly` modifier", "readonly x;", "ReadonlyKeyword"],
+    ["a parameter property", "constructor(public x) {}", "PublicKeyword"],
+  ];
+
+  for (const [what, member, kind] of CLASS_MEMBERS) {
+    it(`replaces ${what} in place`, () => {
+      const program = parseScript(
+        `"use strict";\nclass A {\n  ${member}\n}\n`,
+        "m.js",
+      );
+      expect(JSON.stringify(program)).toContain(`"kind":"${kind}"`);
+      validate(program);
+    });
+  }
+
+  it("keeps a private method, for the Lean decoder to refuse by name", () => {
+    const program = parseScript(
+      '"use strict";\nclass A {\n  #m() {}\n}\n',
+      "pm.js",
+    );
+    expect(program.body[1]).toMatchObject({
+      body: {
+        body: [
+          {
+            type: "MethodDefinition",
+            kind: "method",
+            key: { type: "PrivateIdentifier", name: "m" },
+          },
+        ],
+      },
+    });
+    validate(program);
+  });
+
+  // These three say something about the class itself, not about one
+  // member, so the whole class leaves the slice.
+  const WHOLE_CLASS: [string, string, string][] = [
+    ["an implements clause", "class A implements B {}", "HeritageClause"],
+    ["a type parameter list", "class A<T> {}", "TypeParameter"],
+    ["a decorator", "@dec class A {}", "Decorator"],
+  ];
+
+  for (const [what, source, kind] of WHOLE_CLASS) {
+    it(`refuses a class with ${what} as a whole`, () => {
+      const program = parseScript(`"use strict";\n${source}\n`, "wc.js");
+      expect(program.body[1]).toEqual({ type: "Unsupported", kind });
+      validate(program);
+    });
+  }
+
+  it("drops a stray semicolon between members", () => {
+    const program = parseScript(
+      '"use strict";\nclass A {\n  ;\n  m() {}\n}\n',
+      "sc.js",
+    );
+    expect(program.body[1]).toMatchObject({
+      body: { body: [{ type: "MethodDefinition" }] },
+    });
+    validate(program);
+  });
+
+  // Neither has a node in the slice, so each leaves it whole.
+  it("refuses `#x in o` and `new.target`", () => {
+    const brand = parseScript(
+      '"use strict";\nclass A {\n  #x;\n  static has(o) { return #x in o; }\n}\n',
+      "b.js",
+    );
+    expect(JSON.stringify(brand)).toContain('"kind":"PrivateIdentifier"');
+    validate(brand);
+    const meta = parseScript(
+      '"use strict";\nfunction f() { return new.target; }\n',
+      "nt.js",
+    );
+    expect(JSON.stringify(meta)).toContain('"kind":"MetaProperty"');
+    validate(meta);
+  });
+
   it("gives a throw its argument", () => {
     const program = parseScript('"use strict";\nthrow e;\n', "th.js");
     expect(program.body[1]).toEqual({
@@ -407,15 +660,16 @@ describe("parseScript", () => {
     validate(program);
   });
 
-  // A private name is a property the slice does not read, and it is the
-  // property that leaves the slice, not the access.
-  it("replaces a private-name property in place", () => {
+  // A private name is not a property key: it is a name the class's own
+  // scope resolves, which is why it has a node of its own rather than
+  // being an Identifier.
+  it("emits a private-name property", () => {
     const program = parseScript('"use strict";\no.#x;\n', "pr.js");
     expect(program.body[1]).toMatchObject({
       expression: {
         type: "MemberExpression",
         computed: false,
-        property: { type: "Unsupported", kind: "PrivateIdentifier" },
+        property: { type: "PrivateIdentifier", name: "x" },
       },
     });
     validate(program);
@@ -978,6 +1232,74 @@ describe("the schema as the seam", () => {
           {
             type: "ExpressionStatement",
             expression: { type: "ArrayExpression" },
+          },
+        ],
+      },
+    ],
+    [
+      "a MethodDefinition with a computed key",
+      {
+        type: "Program",
+        sourceType: "script",
+        body: [
+          {
+            type: "ClassDeclaration",
+            id: { type: "Identifier", name: "A" },
+            superClass: null,
+            body: {
+              type: "ClassBody",
+              body: [
+                {
+                  type: "MethodDefinition",
+                  key: { type: "Identifier", name: "m" },
+                  value: {
+                    type: "FunctionExpression",
+                    id: null,
+                    params: [],
+                    body: { type: "BlockStatement", body: [] },
+                    async: false,
+                    generator: false,
+                  },
+                  kind: "method",
+                  computed: true,
+                  static: false,
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+    [
+      "a Super as a call argument",
+      {
+        type: "Program",
+        sourceType: "script",
+        body: [
+          {
+            type: "ExpressionStatement",
+            expression: {
+              type: "CallExpression",
+              callee: { type: "Identifier", name: "f" },
+              arguments: [{ type: "Super" }],
+            },
+          },
+        ],
+      },
+    ],
+    [
+      "a PrivateIdentifier as a CallExpression callee",
+      {
+        type: "Program",
+        sourceType: "script",
+        body: [
+          {
+            type: "ExpressionStatement",
+            expression: {
+              type: "CallExpression",
+              callee: { type: "PrivateIdentifier", name: "x" },
+              arguments: [],
+            },
           },
         ],
       },

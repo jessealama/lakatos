@@ -87,16 +87,30 @@ export interface ThisExpression {
   type: "ThisExpression";
 }
 
+/** `super`, which is not an expression: it may only be the object of a
+ * member access or the callee of a call, and the schema puts it in those
+ * two positions and nowhere else. */
+export interface Super {
+  type: "Super";
+}
+
+/** A `#name`, which is not an expression either: it may only be a
+ * member access's property. `name` is ESTree's — without the `#`. */
+export interface PrivateIdentifier {
+  type: "PrivateIdentifier";
+  name: string;
+}
+
 export interface MemberExpression {
   type: "MemberExpression";
-  object: Expression;
-  property: Expression;
+  object: Expression | Super;
+  property: Expression | PrivateIdentifier;
   computed: boolean;
 }
 
 export interface CallExpression {
   type: "CallExpression";
-  callee: Expression;
+  callee: Expression | Super;
   arguments: Expression[];
 }
 
@@ -159,6 +173,42 @@ export interface AssignmentExpression {
   right: Expression;
 }
 
+export interface MethodDefinition {
+  type: "MethodDefinition";
+  key: Identifier | Literal | PrivateIdentifier;
+  value: FunctionExpression;
+  kind: "constructor" | "method" | "get" | "set";
+  computed: false;
+  static: boolean;
+}
+
+export interface PropertyDefinition {
+  type: "PropertyDefinition";
+  key: Identifier | Literal | PrivateIdentifier;
+  value: Expression | null;
+  computed: false;
+  static: boolean;
+}
+
+export interface ClassBody {
+  type: "ClassBody";
+  body: (MethodDefinition | PropertyDefinition | Unsupported)[];
+}
+
+export interface ClassDeclaration {
+  type: "ClassDeclaration";
+  id: Identifier;
+  superClass: Expression | null;
+  body: ClassBody;
+}
+
+export interface ClassExpression {
+  type: "ClassExpression";
+  id: Identifier | null;
+  superClass: Expression | null;
+  body: ClassBody;
+}
+
 export type Expression =
   | Literal
   | Identifier
@@ -176,6 +226,7 @@ export type Expression =
   | FunctionExpression
   | ArrowFunctionExpression
   | AssignmentExpression
+  | ClassExpression
   | Unsupported;
 
 export interface Directive {
@@ -308,6 +359,7 @@ export type Statement =
   | LabeledStatement
   | BreakStatement
   | ContinueStatement
+  | ClassDeclaration
   | Unsupported;
 
 export interface Program {
@@ -427,8 +479,9 @@ function declarationName(node: ts.FunctionDeclaration): string {
 
 /** The parts every function form shares. A parameter with a default or a
  * rest marker is refused as the `Parameter` it is; a binding pattern is
- * refused as the pattern, which is the more useful name. Either way only
- * the parameter leaves the slice, not the function. */
+ * refused as the pattern and a parameter property as its modifier, which
+ * are the more useful names. Either way only the parameter leaves the
+ * slice, not the function. */
 function functionParts(
   node: ts.FunctionDeclaration | ts.FunctionExpression | ts.ArrowFunction,
 ): {
@@ -438,6 +491,11 @@ function functionParts(
 } {
   const params = node.parameters.map((p): Identifier | Unsupported => {
     if (p.initializer || p.dotDotDotToken) return unsupported(p);
+    // A parameter property — `constructor(public x) {}` — declares and
+    // assigns a field, which is not something the parameter's name says,
+    // so the modifier itself is what leaves the slice.
+    const modifier = (ts.getModifiers(p) ?? [])[0];
+    if (modifier) return unsupported(modifier);
     if (!ts.isIdentifier(p.name)) return unsupported(p.name);
     return { type: "Identifier", name: p.name.text };
   });
@@ -446,6 +504,197 @@ function functionParts(
   );
   const asterisk = ts.isArrowFunction(node) ? undefined : node.asteriskToken;
   return { params, async: isAsync, generator: Boolean(asterisk) };
+}
+
+/** A class member's key. A computed key is refused as the member it
+ * keys, because the key is the only part of it outside the slice and a
+ * member with no name is not a member. */
+function memberKey(
+  name: ts.PropertyName,
+  sf: ts.SourceFile,
+): Identifier | Literal | PrivateIdentifier | undefined {
+  if (ts.isIdentifier(name)) return { type: "Identifier", name: name.text };
+  if (ts.isPrivateIdentifier(name)) {
+    // tsc keeps the `#`; ESTree does not.
+    return { type: "PrivateIdentifier", name: name.text.slice(1) };
+  }
+  if (ts.isStringLiteral(name)) {
+    return { type: "Literal", value: name.text, raw: rawText(name, sf) };
+  }
+  if (ts.isNumericLiteral(name)) {
+    return {
+      type: "Literal",
+      value: Number(name.text),
+      raw: rawText(name, sf),
+    };
+  }
+  return undefined;
+}
+
+/** The modifiers a class member may carry and still be JavaScript.
+ * `static` and `async` are the two; every other one tsc accepts in a
+ * `.js` file — `private`, `readonly`, `abstract`, `declare`, `accessor`
+ * — is TypeScript, and refuses the member where it stands. */
+function offendingModifier(node: ts.Node): ts.Node | undefined {
+  const modifiers = ts.canHaveModifiers(node)
+    ? (ts.getModifiers(node) ?? [])
+    : [];
+  const decorators = ts.canHaveDecorators(node)
+    ? (ts.getDecorators(node) ?? [])
+    : [];
+  if (decorators.length > 0) return decorators[0];
+  return modifiers.find(
+    (m) =>
+      m.kind !== ts.SyntaxKind.StaticKeyword &&
+      m.kind !== ts.SyntaxKind.AsyncKeyword,
+  );
+}
+
+function isStatic(node: ts.Node): boolean {
+  return Boolean(
+    ts.getCombinedModifierFlags(node as ts.Declaration) &
+    ts.ModifierFlags.Static,
+  );
+}
+
+/** One member of a class body. A static block, a bodiless method, and
+ * every TypeScript-only form — a type annotation, a `?` or `!` marker, a
+ * modifier other than `static` or `async`, a decorator — is refused in
+ * place, so the class around it still reaches the Lean decoder and the
+ * refusal names the tsc kind it stood for. */
+function classMember(
+  m: ts.ClassElement,
+  sf: ts.SourceFile,
+): MethodDefinition | PropertyDefinition | Unsupported {
+  const offending = offendingModifier(m);
+  if (offending) return unsupported(offending);
+  if (ts.isConstructorDeclaration(m)) {
+    if (!m.body) return unsupported(m);
+    const parts = functionParts(m as unknown as ts.FunctionExpression);
+    return {
+      type: "MethodDefinition",
+      key: { type: "Identifier", name: "constructor" },
+      value: {
+        type: "FunctionExpression",
+        id: null,
+        params: parts.params,
+        body: blockStatement(m.body, sf),
+        async: parts.async,
+        generator: parts.generator,
+      },
+      kind: "constructor",
+      computed: false,
+      static: false,
+    };
+  }
+  if (
+    ts.isMethodDeclaration(m) ||
+    ts.isGetAccessorDeclaration(m) ||
+    ts.isSetAccessorDeclaration(m)
+  ) {
+    if ((m as ts.MethodDeclaration).type) {
+      return unsupported((m as ts.MethodDeclaration).type!);
+    }
+    if ((m as ts.MethodDeclaration).questionToken) {
+      return unsupported((m as ts.MethodDeclaration).questionToken!);
+    }
+    const typeParameter = (m as ts.MethodDeclaration).typeParameters?.[0];
+    if (typeParameter) return unsupported(typeParameter);
+    if (!m.body) return unsupported(m);
+    const key = memberKey(m.name, sf);
+    if (!key) return unsupported(m.name);
+    const parts = functionParts(m as unknown as ts.FunctionExpression);
+    return {
+      type: "MethodDefinition",
+      key,
+      value: {
+        type: "FunctionExpression",
+        id: null,
+        params: parts.params,
+        body: blockStatement(m.body, sf),
+        async: parts.async,
+        generator: parts.generator,
+      },
+      kind: ts.isGetAccessorDeclaration(m)
+        ? "get"
+        : ts.isSetAccessorDeclaration(m)
+          ? "set"
+          : "method",
+      computed: false,
+      static: isStatic(m),
+    };
+  }
+  if (ts.isPropertyDeclaration(m)) {
+    if (m.type) return unsupported(m.type);
+    if (m.questionToken) return unsupported(m.questionToken);
+    if (m.exclamationToken) return unsupported(m.exclamationToken);
+    const key = memberKey(m.name, sf);
+    if (!key) return unsupported(m.name);
+    return {
+      type: "PropertyDefinition",
+      key,
+      value: m.initializer ? expression(m.initializer, sf) : null,
+      computed: false,
+      static: isStatic(m),
+    };
+  }
+  return unsupported(m);
+}
+
+/** What a class declaration and a class expression share, before either
+ * says which of the two it is. `type` is here only so that a refusal and
+ * a class can be told apart. */
+interface ClassParts {
+  type: "ClassParts";
+  id: Identifier | null;
+  superClass: Expression | null;
+  body: ClassBody;
+}
+
+/** A class declaration or expression. An `implements` clause, a type
+ * parameter list, and a decorator are refusals of the whole class rather
+ * than of one member: each says something about the class itself that
+ * the slice cannot represent. A `;` between members carries no meaning
+ * and is dropped. */
+function classNode(
+  node: ts.ClassDeclaration | ts.ClassExpression,
+  sf: ts.SourceFile,
+): ClassParts | Unsupported {
+  const offending = offendingModifier(node);
+  if (offending) return unsupported(offending);
+  const typeParameter = node.typeParameters?.[0];
+  if (typeParameter) return unsupported(typeParameter);
+  let superClass: Expression | null = null;
+  for (const clause of node.heritageClauses ?? []) {
+    if (clause.token !== ts.SyntaxKind.ExtendsKeyword) {
+      return unsupported(clause);
+    }
+    const base = clause.types[0];
+    /* v8 ignore next -- an `extends` clause without a type does not parse */
+    if (!base) return unsupported(clause);
+    superClass = expression(base.expression, sf);
+  }
+  return {
+    type: "ClassParts",
+    id: node.name ? { type: "Identifier", name: node.name.text } : null,
+    superClass,
+    body: {
+      type: "ClassBody",
+      body: node.members
+        .filter((m) => !ts.isSemicolonClassElement(m))
+        .map((m) => classMember(m, sf)),
+    },
+  };
+}
+
+/** A member access's object, which may be `super`. */
+function memberObject(
+  node: ts.Expression,
+  sf: ts.SourceFile,
+): Expression | Super {
+  return node.kind === ts.SyntaxKind.SuperKeyword
+    ? { type: "Super" }
+    : expression(node, sf);
 }
 
 function expression(node: ts.Expression, sf: ts.SourceFile): Expression {
@@ -505,10 +754,12 @@ function expression(node: ts.Expression, sf: ts.SourceFile): Expression {
     if (node.questionDotToken) return unsupported(node);
     return {
       type: "MemberExpression",
-      object: expression(node.expression, sf),
+      object: memberObject(node.expression, sf),
       property: ts.isIdentifier(node.name)
         ? { type: "Identifier", name: node.name.text }
-        : unsupported(node.name),
+        : ts.isPrivateIdentifier(node.name)
+          ? { type: "PrivateIdentifier", name: node.name.text.slice(1) }
+          : unsupported(node.name),
       computed: false,
     };
   }
@@ -516,7 +767,7 @@ function expression(node: ts.Expression, sf: ts.SourceFile): Expression {
     if (node.questionDotToken) return unsupported(node);
     return {
       type: "MemberExpression",
-      object: expression(node.expression, sf),
+      object: memberObject(node.expression, sf),
       property: expression(node.argumentExpression, sf),
       computed: true,
     };
@@ -525,9 +776,18 @@ function expression(node: ts.Expression, sf: ts.SourceFile): Expression {
     if (node.questionDotToken) return unsupported(node);
     return {
       type: "CallExpression",
-      callee: expression(node.expression, sf),
+      callee:
+        node.expression.kind === ts.SyntaxKind.SuperKeyword
+          ? { type: "Super" }
+          : expression(node.expression, sf),
       arguments: callArguments(node.arguments, sf),
     };
+  }
+  if (ts.isClassExpression(node)) {
+    const parts = classNode(node, sf);
+    if (parts.type === "Unsupported") return parts;
+    const { id, superClass, body } = parts;
+    return { type: "ClassExpression", id, superClass, body };
   }
   if (ts.isNewExpression(node)) {
     return {
@@ -754,6 +1014,16 @@ function statement(node: ts.Statement, sf: ts.SourceFile): Statement {
       kind: declarationKind(list),
       declarations,
     };
+  }
+  if (ts.isClassDeclaration(node)) {
+    const parts = classNode(node, sf);
+    if (parts.type === "Unsupported") return parts;
+    const { id, superClass, body } = parts;
+    // A class declaration always has a name in a script: the anonymous
+    // form is `export default class {}`, a module form.
+    /* v8 ignore next */
+    if (!id) return unsupported(node);
+    return { type: "ClassDeclaration", id, superClass, body };
   }
   if (ts.isFunctionDeclaration(node)) {
     const parts = functionParts(node);

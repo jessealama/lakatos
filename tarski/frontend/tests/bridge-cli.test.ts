@@ -105,6 +105,8 @@ describe("the bridge as a command", () => {
     "number-math",
     "for-switch-var",
     "number-conversions",
+    "class-box",
+    "emitter-classes",
   ]) {
     it(`agrees with the copy the Lean tests are run against for ${name}`, () => {
       const lean = path.join(
