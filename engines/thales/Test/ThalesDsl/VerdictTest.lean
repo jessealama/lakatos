@@ -27,3 +27,24 @@ def sample (cex : Option (Array (String × WitnessValue))) : Verdict :=
 -- A boolean witness is a JSON boolean.
 #guard (sample (some #[("n", .int 1), ("b", .bool false)])).toJson.compress
   = "{\"counterexample\":{\"b\":false,\"n\":1},\"identity\":[\"f.ts\",\"fn\",\"prop\"],\"reason\":\"false on its bounded domain\",\"szs\":\"CounterSatisfiable\"}"
+
+/-! ## The model channel
+
+The second sentinel's wire shape. `reason` is present exactly when the
+status is `unvalidated`; the sentinel-framed lines themselves are pinned
+end to end by `scripts/check-verdict-channel.js` over
+`tests/fixtures/validate.lean`. -/
+
+-- A validated model carries no reason at all.
+#guard (ModelLine.validated "f.ts" "fn").toJson.compress
+  = "{\"file\":\"f.ts\",\"function\":\"fn\",\"status\":\"validated\"}"
+
+-- An unvalidated one always carries one (mkObj emits keys sorted).
+#guard (ModelLine.unvalidated "f.ts" "fn" "the run of 'fn' did not reduce to its model").toJson.compress
+  = "{\"file\":\"f.ts\",\"function\":\"fn\",\"reason\":\"the run of 'fn' did not reduce to its model\",\"status\":\"unvalidated\"}"
+
+-- An empty reason is a contract violation on the CLI side, and a contract
+-- violation fails the whole artifact; the constructor substitutes rather
+-- than shipping one.
+#guard (ModelLine.unvalidated "f.ts" "fn" "").toJson.compress
+  = "{\"file\":\"f.ts\",\"function\":\"fn\",\"reason\":\"no reason given\",\"status\":\"unvalidated\"}"

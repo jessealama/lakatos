@@ -63,6 +63,7 @@ describe("cli prove, plain pipeline", () => {
   it("healthy run: classified and proved annotations merge, exit 0", async () => {
     runEmissionMock.mockReturnValue({
       kind: "completed",
+      models: [],
       verdicts: [verdict("mixed.ts", "small", "pos", "Theorem")],
       failures: [],
       diagnostics: [],
@@ -113,6 +114,7 @@ describe("cli prove, plain pipeline", () => {
     // degraded class still classifies: there is nothing to quantify over.
     runEmissionMock.mockReturnValue({
       kind: "completed",
+      models: [],
       verdicts: [
         {
           identity: ["consts.ts", "applyDouble", "pos"],
@@ -164,6 +166,7 @@ describe("cli prove, plain pipeline", () => {
       const other = jobs.find((j) => j.leanFile.endsWith("other.ts.lean"))!;
       return {
         kind: "completed",
+        models: [],
         verdicts: [verdict("annotated.ts", "annotated", "pos", "Theorem")],
         failures: [
           {
@@ -209,6 +212,7 @@ describe("cli prove, plain pipeline", () => {
   it("an unhealthy join: all NotTried, exit 2", async () => {
     runEmissionMock.mockReturnValue({
       kind: "completed",
+      models: [],
       verdicts: [
         verdict("annotated.ts", "annotated", "pos", "Theorem"),
         verdict("annotated.ts", "phantom", "pos", "Theorem"),
@@ -294,6 +298,7 @@ describe("cli prove, plain pipeline", () => {
   it("verdict fields map through: an Inappropriate reason survives", async () => {
     runEmissionMock.mockReturnValue({
       kind: "completed",
+      models: [],
       verdicts: [
         {
           identity: ["annotated.ts", "annotated", "pos"],
@@ -317,6 +322,7 @@ describe("cli prove, plain pipeline", () => {
   it("a refuted property ships falsified and exits 1, like refute", async () => {
     runEmissionMock.mockReturnValue({
       kind: "completed",
+      models: [],
       verdicts: [
         {
           ...verdict("annotated.ts", "annotated", "pos", "CounterSatisfiable"),
@@ -424,6 +430,7 @@ describe("cli prove, plain pipeline", () => {
     // untrustworthy: it indicates an emitter or engine bug.
     runEmissionMock.mockReturnValue({
       kind: "completed",
+      models: [],
       verdicts: [],
       failures: [],
       diagnostics: [],
@@ -439,6 +446,7 @@ describe("cli prove, plain pipeline", () => {
   it("Lean diagnostics pass through to stderr on a healthy run", async () => {
     runEmissionMock.mockReturnValue({
       kind: "completed",
+      models: [],
       verdicts: [verdict("annotated.ts", "annotated", "pos", "Theorem")],
       failures: [],
       diagnostics: ["note: some linter chatter"],

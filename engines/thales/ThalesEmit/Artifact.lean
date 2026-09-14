@@ -1,5 +1,6 @@
 import ThalesEmit.Render
 import ThalesEmit.Ast
+import ThalesEmit.Validate
 import ThalesEmit.Format
 import ThalesEmit.RoundTrip
 
@@ -104,6 +105,10 @@ def renderEmission (e : Emission) : CoreM String := do
       else
         blocks := blocks.push
           (commentLines f.source ++ "\n" ++ prettyLines (← ppCommand cmd))
+      -- The correspondence command reads the def and the AST above it, so
+      -- it is the block after both; a dependency's declaration gets none.
+      if let some v ← validateBlock e f.name (fnPlan e f) then
+        blocks := blocks.push v
     | .const c =>
       let cmd ← rendered (constCommand c)
       let ast ← astBlock (← rendered' (modelIdent c.module c.name)) c.ast
@@ -113,6 +118,8 @@ def renderEmission (e : Emission) : CoreM String := do
       else
         blocks := blocks.push
           (commentLines c.source ++ "\n" ++ prettyLines (← ppCommand cmd))
+      if let some v ← validateBlock e c.name (constPlan c) then
+        blocks := blocks.push v
     | .cls c =>
       -- The source echo introduces the structure; the constructor and
       -- each getter follow as their own blocks.
@@ -148,6 +155,15 @@ where
     match RenderM.run x with
     | .error msg => throwError msg
     | .ok cmd => pure cmd
+  /-- One declaration's `#thales_validate` block, or nothing when the
+  plan says the declaration carries no command at all. Classes get none
+  here: a member's obligation is #482's. -/
+  validateBlock (e : Emission) (name : String) (plan : RenderM ValidatePlan) :
+      CoreM (Option String) := do
+    match RenderM.run (do validateCommand e.file name (← plan)) with
+    | .error msg => throwError msg
+    | .ok none => pure none
+    | .ok (some cmd) => pure (some (prettyLines (← ppCommand cmd)))
   rendered' (x : RenderM Ident) : CoreM Ident := do
     match RenderM.run x with
     | .error msg => throwError msg

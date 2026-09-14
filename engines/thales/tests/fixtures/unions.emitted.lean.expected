@@ -23,6 +23,9 @@ def TsModel.toNum (v : JsVal) : JsM JsNumber := do
     return (← JsVal.toNumber v)
   return 0
 
+#thales_validate "engines/thales/tests/fixtures/unions.ts" "toNum" unvalidated
+  "parameter 'v' of 'toNum' is not a number or boolean"
+
 -- export function nullFlag(v: number | null): number {
 --   if (Object.is(v, null)) {
 --     return 1;
@@ -41,6 +44,9 @@ def TsModel.nullFlag (v : JsVal) : JsM JsNumber := do
     return 1
   return 0
 
+#thales_validate "engines/thales/tests/fixtures/unions.ts" "nullFlag" unvalidated
+  "parameter 'v' of 'nullFlag' is not a number or boolean"
+
 -- export function relay(v: number | string): number {
 --   return toNum(v);
 -- }
@@ -54,6 +60,9 @@ def TsModel.relay.ast : Tarski.Program :=
 @[js_norm, grind]
 def TsModel.relay (v : JsVal) : JsM JsNumber := do
   return (← TsModel.toNum v)
+
+#thales_validate "engines/thales/tests/fixtures/unions.ts" "relay" unvalidated
+  "parameter 'v' of 'relay' is not a number or boolean"
 
 -- export function viaLocal(v: number | string): number {
 --   const w: number | string = v;
@@ -75,6 +84,9 @@ def TsModel.viaLocal (v : JsVal) : JsM JsNumber := do
   if JsVal.typeof w == TypeofResult.number then
     return (← JsVal.toNumber w)
   return 0
+
+#thales_validate "engines/thales/tests/fixtures/unions.ts" "viaLocal" unvalidated
+  "parameter 'v' of 'viaLocal' is not a number or boolean"
 
 -- export function settle(x: number): number {
 --   let pending: number | undefined = undefined;
@@ -99,6 +111,13 @@ def TsModel.settle (x : JsNumber) : JsM JsNumber := do
   if JsVal.typeof pending == TypeofResult.number then
     return (← JsVal.toNumber pending)
   return 1
+
+#thales_validate "engines/thales/tests/fixtures/unions.ts" "settle" :=
+  ∀ (x : JsNumber),
+    Tarski.project Tarski.readNumber
+        (Tarski.runScript
+          (TsModel.settle.ast ++ [.exprStmt (.call (.ident "settle") [.numLit x])])) =
+      some (Tarski.Outcome.ofModel (TsModel.settle x))
 
 -- @ensures{numId} forall (x: number) { Object.is(toNum(x), x) }
 #thales_prove "engines/thales/tests/fixtures/unions.ts" "toNum" "numId" :=

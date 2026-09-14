@@ -192,3 +192,36 @@ def rendersOk (emissionPath : String) : CoreM Unit := do
     throwError "the refused construct was not recorded:\n{rendered}"
   unless (rendered.splitOn "TsModel.f.ast :").length == 1 do
     throwError "a refused closure still rendered an ast def:\n{rendered}"
+
+-- A tainted function gets the bare `#thales_validate`, never the `:=`
+-- form: there is no run to compare a model against, and the reason is the
+-- construct its own residual refused.
+#eval show CoreM Unit from do
+  let e : Emission := {
+    file := "t.ts"
+    declarations := #[
+      .residual { owner := "f", site := 1, construct := "'**' is not supported",
+                  params := nums #["x"], ty := .number },
+      .fn { name := "f", params := nums #["x"], source := "function f(x) { return x ** 2; }",
+            tainted := true,
+            body := #[.ret (.residual "f" none 1 #[.id "x"])] }]
+    obligations := #[] }
+  let rendered ← renderEmission e
+  unless (rendered.splitOn
+      "#thales_validate \"t.ts\" \"f\" unvalidated \"'**' is not supported\"").length == 2 do
+    throwError "the tainted function did not get the bare form:\n{rendered}"
+  unless (rendered.splitOn "#thales_validate \"t.ts\" \"f\" :=").length == 1 do
+    throwError "a tainted function was given an obligation:\n{rendered}"
+
+-- A dependency's declaration gets no command at all: its own artifact
+-- validates it, and the entry's obligation runs the whole closure anyway.
+#eval show CoreM Unit from do
+  let e : Emission := {
+    file := "main.mts"
+    declarations := #[
+      .fn { name := "double", module := some "helper.mts", params := nums #["x"],
+            source := "double", body := #[.ret (.binop "*" (.id "x") (.num "2"))] }]
+    obligations := #[] }
+  let rendered ← renderEmission e
+  unless (rendered.splitOn "#thales_validate").length == 1 do
+    throwError "a dependency's declaration got a correspondence command:\n{rendered}"

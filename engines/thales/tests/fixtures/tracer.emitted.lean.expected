@@ -15,6 +15,13 @@ def TsModel.add.ast : Tarski.Program :=
 def TsModel.add (a b : JsNumber) : JsM JsNumber := do
   return a + b
 
+#thales_validate "engines/thales/tests/fixtures/tracer.ts" "add" :=
+  ∀ (a b : JsNumber),
+    Tarski.project Tarski.readNumber
+        (Tarski.runScript
+          (TsModel.add.ast ++ [.exprStmt (.call (.ident "add") [.numLit a, .numLit b])])) =
+      some (Tarski.Outcome.ofModel (TsModel.add a b))
+
 -- @ensures{commutes} forall (a: int ∈ [0, 10)) (b: int ∈ [0, 10)) { add(a, b) ≡ add(b, a) }
 #thales_prove "engines/thales/tests/fixtures/tracer.ts" "add" "commutes" :=
   ballIco 0 10 fun a =>

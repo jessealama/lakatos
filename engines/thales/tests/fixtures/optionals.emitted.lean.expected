@@ -23,6 +23,9 @@ def TsModel.pick (y : JsVal) : JsM JsNumber := do
     return 0
   return (← JsVal.toNumber y)
 
+#thales_validate "engines/thales/tests/fixtures/optionals.ts" "pick" unvalidated
+  "parameter 'y' of 'pick' is not a number or boolean"
+
 -- export function step(x: number, by?: number): number {
 --   if (by === undefined) {
 --     return x + 1;
@@ -40,6 +43,9 @@ def TsModel.step (x : JsNumber) («by» : JsVal) : JsM JsNumber := do
   if JsVal.strictEq «by» JsVal.undef then
     return x + 1
   return x + (← JsVal.toNumber «by»)
+
+#thales_validate "engines/thales/tests/fixtures/optionals.ts" "step" unvalidated
+  "parameter 'by' of 'step' is not a number or boolean"
 
 -- export class Counter {
 --   readonly n: number;
