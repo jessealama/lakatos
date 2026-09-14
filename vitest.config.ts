@@ -74,6 +74,9 @@ export default defineConfig({
         // and the two renderers, each reached by a test, and each writer
         // now asked for on its own as well as in the pair the scheduled
         // script asks for.
+        // Ratcheted 2026-09-14: the bridge grew the `for`, `switch`, and
+        // empty statements and the update operators, and the runner grew
+        // `--slice-file`, every arm of all of them reached by a test.
         //
         // Measure this from a path with no dot-directory in it. The include
         // globs above do not match through one, and a run from, say, a
