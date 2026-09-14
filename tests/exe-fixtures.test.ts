@@ -62,7 +62,7 @@ function corpus(): string[] {
  * Measured, not predicted: a row that moves is either a slice that landed
  * or a regression, and either way it belongs in a diff.
  *
- * Forty-two of about two hundred and eighty. The twenty-two `Parameter`
+ * Forty-two of the corpus's two hundred and seventy-six. The twenty-two `Parameter`
  * rows are parameter defaults (#393) and leave when it merges; the six
  * `ImportDeclaration` rows are the multi-file fixtures, which `exe`
  * refuses by design — it resolves no module graph. The rest is syntax
@@ -144,7 +144,7 @@ const DISAGREES: Record<string, string> = {};
 
 /** One `tarski exec`, under a timeout: a fixture that diverges must not
  * take the suite with it. `exe` itself imposes none — a program hangs as
- * it would under `node` — but a batch of 280 is a different contract. */
+ * it would under `node` — but a batch of 276 is a different contract. */
 const EXEC_TIMEOUT_MS = 30_000;
 
 /** The whole corpus, run once: two spawns a fixture is enough. */
