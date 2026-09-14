@@ -99,3 +99,6 @@ test/built-ins/NativeErrors
 test/built-ins/AggregateError
 test/built-ins/SuppressedError
 test/built-ins/ThrowTypeError
+
+# The String built-ins and the wrapper (#391).
+test/built-ins/String

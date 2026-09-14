@@ -59,6 +59,18 @@ def strsTerm (ss : List String) : RenderM Term :=
 Node, as a numeral. -/
 def natTerm (n : Nat) : Term := ⟨Syntax.mkNumLit (toString n)⟩
 
+/-- A string literal's value. A `Tarski.Expr.strLit` carries a
+`Js.JsString` — a sequence of UTF-16 code units — so a string that names a
+Lean `String` prints as that literal and elaborates back through
+`Coe String JsString`, and one with an unpaired surrogate, which no Lean
+`String` can hold, prints as its code units. -/
+def jsStringTerm (s : Js.JsString) : RenderM Term :=
+  match Js.JsString.asString? s with
+  | some str => pure (strTerm str)
+  | none =>
+    let xs := s.units.toArray.map (fun u => natTerm u.toNat)
+    `(Js.JsString.mk [$xs,*])
+
 /-- One `TemplateString` of a tagged template: its cooked value, `none`
 for a raw text the cooked grammar refuses, beside the raw text. -/
 def templateStringTerm (s : Tarski.TemplateString) : RenderM Term := do
@@ -125,7 +137,7 @@ mutual
 
 partial def exprTerm : Tarski.Expr → RenderM Term
   | .numLit value => do ctorApp "numLit" #[← floatTerm value]
-  | .strLit value => ctorApp "strLit" #[strTerm value]
+  | .strLit value => do ctorApp "strLit" #[← jsStringTerm value]
   | .boolLit value => do ctorApp "boolLit" #[← boolTerm value]
   | .undefLit => ctorApp "undefLit" #[]
   | .nullLit => ctorApp "nullLit" #[]

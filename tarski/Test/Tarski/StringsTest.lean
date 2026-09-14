@@ -4,12 +4,13 @@ import Tarski.Format
 /-! String primitives: concatenation, order, `length`, indexing, and
 `String(value)`.
 
-Strings here are Lean `String`s, which are sequences of code points: a
-lone surrogate cannot live in one, so `length`, indexing, and the
-relational order are code-point semantics that happen to agree with
-UTF-16 on every string this slice can build. `String.prototype`, the
-wrapper object, and the UTF-16 difference are #391's, which is why
-`new String("x")` refuses here and every case below is ASCII.
+A string is a sequence of **UTF-16 code units** (`Js.JsString`), so
+`length`, indexing, and the four relations are code-unit semantics and a
+lone surrogate is a value like any other: a surrogate pair comes apart
+into two one-unit strings and joins back under `+`. This file is the
+primitive and its operators; `Test/Tarski/StringBuiltinsTest.lean` is
+`String.prototype`'s surface and `Test/Tarski/StringWrapperTest.lean` is
+the exotic object.
 
 ToNumber of a string is the library's StringToNumber, so a mixed-type
 relation like `"a" < 1` is a real comparison that answers `false` because
@@ -54,8 +55,8 @@ side is ToString'd — through the provisional formatter for a number. -/
 
 /-! ## Order
 
-Two strings compare by code point, which is not numeric order: `"10"`
-precedes `"9"`. One string and one number go numeric, through
+Two strings compare by **code unit** — IsLessThan step 3 — which is not
+numeric order: `"10"` precedes `"9"`. One string and one number go numeric, through
 StringToNumber. -/
 
 -- `"a" < "b";`
@@ -103,9 +104,10 @@ StringToNumber. -/
 
 /-! ## `length` and indexing
 
-A string's own properties are its `length` and its index keys. A key
-that is not a canonical array index is an ordinary key, and every
-ordinary key is `undefined` until `String.prototype` exists (#391). -/
+A string's own properties are its `length` and its index keys, in code
+units. A key that is not one of those is read through
+`String.prototype` — without allocating a wrapper, the receiver staying
+the primitive, exactly as a Number's is. -/
 
 -- `"abc".length;`
 #guard outcome (expr (.member (.strLit "abc") "length")) == "3"
@@ -134,9 +136,9 @@ ordinary key is `undefined` until `String.prototype` exists (#391). -/
 
 /-! ## `String(value)`
 
-ToString and nothing more: the wrapper object is #391's, so `String` has
-no `prototype` and `new String("x")` is not a construction. The number arm
-is the library's `Number::toString`. -/
+ToString and nothing more when it is *called*; `new String(v)` is the
+wrapper object, which `Test/Tarski/StringWrapperTest.lean` covers. The
+number arm is the library's `Number::toString`. -/
 
 /-- `String(<arg>);` -/
 private def stringOf (args : List Expr) : Program :=
@@ -169,9 +171,42 @@ private def stringOf (args : List Expr) : Program :=
 -- reaches first.
 #guard outcome (stringOf [.objectLit []]) == "[object Object]"
 
--- `new String("x");` — pinned as pre-#391.
-#guard outcome (expr (.new (.ident "String") [.strLit "x"]))
-  == "uncaught: TypeError: not a constructor"
+-- `new String("x");` — the wrapper object, so `typeof` is `object`.
+#guard outcome (expr (.unary .typeof (.new (.ident "String") [.strLit "x"]))) == "object"
 
 -- `typeof String;`
 #guard outcome (expr (.unary .typeof (.ident "String"))) == "function"
+
+/-! ## UTF-16
+
+A surrogate pair is two code units, each a string of its own, and
+concatenating them gives the pair back. This is what a Lean `String`
+could not hold. -/
+
+private def astral : String := String.singleton (Char.ofNat 0x10000)
+
+-- `"😀".length;`
+#guard outcome (expr (.member (.strLit "😀") "length")) == "2"
+
+-- `"😀"[0] + "😀"[1] === "😀";`
+#guard outcome
+    (expr (.binary .strictEq
+      (.binary .add (.index (.strLit "😀") (.numLit 0.0)) (.index (.strLit "😀") (.numLit 1.0)))
+      (.strLit "😀")))
+  == "true"
+
+-- `"\uD83D" + "\uDE00" === "😀";` — the two halves as literals.
+#guard outcome
+    (expr (.binary .strictEq
+      (.binary .add (.strLit ⟨[0xD83D]⟩) (.strLit ⟨[0xDE00]⟩)) (.strLit "😀")))
+  == "true"
+
+-- The order is code units, not code points: an astral character is a
+-- high surrogate first, so it precedes U+FFFF. Lean's `String` order
+-- says the opposite, and that was the defect #391 owns.
+#guard outcome (expr (.binary .lt (.strLit astral) (.strLit "\uFFFF"))) == "true"
+
+-- A lone surrogate prints as U+FFFD, which is what a UTF-8 stdout can
+-- write; the value itself is the code unit.
+#guard outcome (expr (.member (.strLit ⟨[0xD800]⟩) "length")) == "1"
+#guard outcome (expr (.strLit ⟨[0xD800]⟩)) == "\uFFFD"

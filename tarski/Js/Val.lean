@@ -1,6 +1,7 @@
 import Js.NormAttr
 import Js.Runtime
 import Js.Number.FloatOps
+import Js.String.Basic
 
 /-! The tagged value domain for positions typed beyond `number`: a union
 slot holds one `JsVal`, injected by constructor at statically-typed
@@ -11,10 +12,15 @@ namespace Js
 
 /-- A JS value the model can hold beyond bare binary64. Payload types are
 computable, so `decide` can evaluate anything built from them; `object`,
-`function`, and `symbol` values have no representation here. -/
+`function`, and `symbol` values have no representation here.
+
+A string is a sequence of UTF-16 code units, `JsString`, so a lone
+surrogate is a value like any other and `length`, indexing, and the
+relational order are the code units'. `Coe String JsString` keeps
+`.str "abc"` spellable. -/
 inductive JsVal where
   | num (x : Float)
-  | str (s : String)
+  | str (s : JsString)
   | bigint (i : Int)
   | bool (b : Bool)
   | undef

@@ -7,7 +7,12 @@ an `Error` object.
 
 The number arm is ECMA's `Number::toString`, which lives in the library
 (`Js/Number/ToString.lean`) so that a run and a `Theorem` mean the same
-thing by it. Nothing here formats a number itself. -/
+thing by it. Nothing here formats a number itself.
+
+The string arm is **lossy**: a string is UTF-16 code units, and an
+unpaired surrogate has no UTF-8 spelling, so it prints as U+FFFD — which
+is what Node writes to a UTF-8 stdout too, so the `exe` fixtures still
+agree. -/
 
 namespace Tarski
 
@@ -23,7 +28,7 @@ def formatValue : Value → String
   | .prim (.bool b) => if b then "true" else "false"
   | .prim .undef => "undefined"
   | .prim .null => "null"
-  | .prim (.str s) => s
+  | .prim (.str s) => s.toStringLossy
   | .prim (.bigint i) => toString i ++ "n"
   | .obj _ => "[object Object]"
   | .sym s => s.descriptiveString

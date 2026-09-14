@@ -850,3 +850,53 @@ private def onlyStandard (n : Name) : CoreM Bool := do
 /-- info: true -/
 #guard_msgs in
 #eval onlyStandard ``Tarski.quoteJsonString
+
+/-! ## The `String` surface
+
+`callStringNative` is the thirty-four-arm dispatch `callNative` defers
+to, for `callReflectNative`'s reason; its helpers and the String exotic
+object's own operations are here beside it. -/
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.callStringNative
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.requireStringThis
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.thisStringValue
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.toUint32Value
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.toUint16Value
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.rawSegments
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.spliceMatches
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.padWith
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.Obj.stringWrapper
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.Obj.stringIndexProperty
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.Property.accepts

@@ -1103,3 +1103,62 @@ private def controlSlice : Program :=
 
 #guard decode (script r#"{"type":"BreakStatement"}"#)
   == "malformed: missing field \"label\""
+
+/-! ## A string literal is decoded from its `raw` source text
+
+`Lean.Json` cannot carry a lone surrogate — it reads `"\ud800"` as
+U+FFFD, silently — so a `Literal`'s `value` is not what the source names
+whenever the source names one. The schema requires `raw` on every
+`Literal`, so the decoder reads the StringLiteral escape grammar itself
+and cross-checks the well-formed case against `value`, which pins the
+escape reader against tsc on every literal in every document.
+
+A legacy octal escape is a strict-mode *early* error, which the epic does
+not check, so it is refused by name rather than guessed at. -/
+
+private def strLiteral (value raw : String) : String :=
+  script ("{\"type\":\"ExpressionStatement\",\"expression\":{\"type\":\"Literal\"," ++
+    "\"value\":" ++ value ++ ",\"raw\":" ++ raw ++ "}}")
+
+-- A lone surrogate reaches the evaluator as the code unit the source
+-- names, not as the U+FFFD the JSON reader made of `value`.
+#guard decode (strLiteral "\"\\ud800\"" "\"\\\"\\\\uD800\\\"\"")
+  == "[Tarski.Stmt.exprStmt (Tarski.Expr.strLit (JsString.mk [55296]))]"
+
+-- The surrogate pair joins into one astral code point, and `\u{…}`
+-- encodes one directly.
+#guard decode (strLiteral "\"\\ud83d\\ude00\"" "\"\\\"\\\\uD83D\\\\uDE00\\\"\"")
+  == toString (repr ([.exprStmt (.strLit "😀")] : Program))
+#guard decode (strLiteral "\"\\ud83d\\ude00\"" "\"\\\"\\\\u{1F600}\\\"\"")
+  == toString (repr ([.exprStmt (.strLit "😀")] : Program))
+
+-- The rest of the escape grammar: `\xHH`, the single-character escapes,
+-- `\0`, a NonEscapeCharacter, and a LineContinuation, which contributes
+-- nothing at all.
+#guard decode (strLiteral "\"A\"" "\"\\\"\\\\x41\\\"\"")
+  == toString (repr ([.exprStmt (.strLit "A")] : Program))
+#guard decode (strLiteral "\"\\n\"" "\"\\\"\\\\n\\\"\"")
+  == toString (repr ([.exprStmt (.strLit "\n")] : Program))
+#guard decode (strLiteral "\"\\u0000\"" "\"\\\"\\\\0\\\"\"")
+  == toString (repr ([.exprStmt (.strLit (String.singleton (Char.ofNat 0)))] : Program))
+#guard decode (strLiteral "\"a\"" "\"\\\"\\\\a\\\"\"")
+  == toString (repr ([.exprStmt (.strLit "a")] : Program))
+#guard decode (strLiteral "\"\"" "\"\\\"\\\\\\n\\\"\"")
+  == toString (repr ([.exprStmt (.strLit "")] : Program))
+-- A single-quoted strLiteral is read the same way.
+#guard decode (strLiteral "\"a\"" "\"'a'\"")
+  == toString (repr ([.exprStmt (.strLit "a")] : Program))
+
+-- A legacy octal escape is refused by name.
+#guard decode (strLiteral "\"a\"" "\"\\\"\\\\1\\\"\"") == "unsupported: Literal octal escape"
+#guard decode (strLiteral "\"a\"" "\"\\\"\\\\8\\\"\"") == "unsupported: Literal octal escape"
+#guard decode (strLiteral "\"a\"" "\"\\\"\\\\00\\\"\"") == "unsupported: Literal octal escape"
+
+-- The cross-check bites: `raw` and `value` disagreeing is a producer
+-- that is broken, not a program the evaluator cannot run.
+#guard decode (strLiteral "\"b\"" "\"\\\"a\\\"\"") == "malformed: Literal raw disagrees with value"
+#guard decode (strLiteral "\"a\"" "\"a\"") == "malformed: Literal raw is not a quoted string"
+#guard decode (strLiteral "\"a\"" "\"\\\"\\\\uZZZZ\\\"\"")
+  == "malformed: Literal \\u escape is not four hex digits"
+#guard decode (strLiteral "\"a\"" "\"\\\"\\\\u{110000}\\\"\"")
+  == "malformed: Literal \\u{…} escape is past the last code point"

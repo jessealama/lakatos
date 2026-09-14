@@ -10,5 +10,7 @@ import Js.Number.StringToNumber
 import Js.Number.FloatFacts
 import Js.Number.FloatOpsFacts
 import Js.Number.FroundFacts
+import Js.String.Basic
 import Js.Val
+import Js.String.Ops
 import Js.Norm

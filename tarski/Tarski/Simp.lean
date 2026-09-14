@@ -44,7 +44,9 @@ through.
 object of a `for`-`in` to its prototype — recurse the way a loop does,
 and so do the three steps a bound function's target is reached by,
 `callBound`, `constructBound`, and `instanceOfBound`; each is `rw`'s and
-none is here. -/
+none is here. `rawSegments`, `String.raw`'s walk, is one of them.
+`callStringNative`, the `String` surface, is out for `callReflectNative`'s
+reason rather than for a loop's. -/
 
 namespace Tarski
 
@@ -122,11 +124,12 @@ attribute [tarski_eval]
   Obj.getPrivate Obj.setPrivate Obj.addPrivate
   Obj.define Obj.defineAccessorHalf Obj.remove Obj.isArray Obj.arrayLength? Obj.hasOwn
   Obj.ownKeys Obj.stringKeys Obj.symbolKeys Obj.enumerableKeys Obj.truncate truncateDrop
-  Obj.setIntegrity Obj.testIntegrity Obj.applyDescriptor
+  Obj.setIntegrity Obj.testIntegrity Obj.applyDescriptor Obj.applyOrdinaryDescriptor
   Obj.array indexProps
   propGet propSet propDrop privateGet privateSet
   Property.value? Property.writable? Property.accessor? Property.isAccessor
-  Property.toDescriptor Descriptor.isAccessor Descriptor.isData Descriptor.isGeneric
+  Property.toDescriptor Property.accepts
+  Descriptor.isAccessor Descriptor.isData Descriptor.isGeneric
   Descriptor.isEmpty accessorHalf descriptorKeeps
 
 -- Operators and coercions. Every primitive operation is the library's;
@@ -163,6 +166,25 @@ iteration — near where they were. -/
     toStringValue (.prim p) = pure (toStringPrim p) := by
   rw [toStringValue]; simp [toPrimitive]
 
+-- Strings. **No `JsString` definition is an unfolding here**, and
+-- `JsString.ofString` least of all: a string literal stays folded, and
+-- `ofString_append` is what lets a concatenation fold with it, so `simp`
+-- never opens a string into its code units and a reduction's string
+-- terms stay the size they were when a string was a Lean `String`.
+-- Unfolding `ofString` is what a proof about a *string operation* would
+-- need, and it can ask for it by name.
+attribute [tarski_eval] Js.JsString.ofString_append
+
+-- The String exotic object, and the `String` surface's dispatch.
+-- `callStringNative` is **not** here, for `callReflectNative`'s reason:
+-- thirty-four arms is past the depth at which Lean generates a match's
+-- equation lemmas. Neither is `rawSegments`, which recurses on a length
+-- the heap named, as `joinElements` does.
+attribute [tarski_eval]
+  Obj.stringWrapper Obj.stringIndexProperty Obj.isString Obj.stringData?
+  argAt requireStringThis thisStringValue toUint32Value toUint16Value toUint16Values
+  relativeArg clampArg
+
 -- Cells, objects, and the heap underneath both.
 attribute [tarski_eval]
   allocCell getCell readCell writeCell initCell putIdent
@@ -198,6 +220,7 @@ attribute [tarski_eval]
   objectGetOwnPropertyNamesRef objectGetPrototypeOfRef objectHasOwnRef
   objectIsExtensibleRef objectIsFrozenRef objectIsSealedRef objectPreventExtensionsRef
   objectSealRef objectSetPrototypeOfRef objectValuesRef templateMapRef
+  stringProtoRef StringFn.ref StringFn.all
   objectCellRef arrayCellRef stringCellRef printCellRef hostCellRef
   numberCellRef booleanCellRef mathCellRef nanCellRef infinityCellRef
   parseFloatCellRef parseIntCellRef consoleCellRef functionCellRef

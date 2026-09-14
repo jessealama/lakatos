@@ -44,6 +44,12 @@ literal already share. -/
 #guard rendersSyntax (exprTerm (.numLit (1e300 * 1e300))) `(.numLit floatInf)
 #guard rendersSyntax (exprTerm (.numLit (-(1e300 * 1e300)))) `(.numLit (-floatInf))
 #guard rendersSyntax (exprTerm (.strLit "a\"b\nc")) `(.strLit "a\"b\nc")
+-- A string literal carries UTF-16 code units. One that names a Lean
+-- `String` prints as that literal and elaborates back through the
+-- coercion; one with an unpaired surrogate, which no Lean `String` can
+-- hold, prints as its units.
+#guard rendersSyntax (exprTerm (.strLit "😀")) `(.strLit "😀")
+#guard rendersSyntax (exprTerm (.strLit ⟨[0xD800]⟩)) `(.strLit (Js.JsString.mk [55296]))
 #guard rendersSyntax (exprTerm (.boolLit true)) `(.boolLit true)
 #guard rendersSyntax (exprTerm (.boolLit false)) `(.boolLit false)
 #guard rendersSyntax (exprTerm .undefLit) `(.undefLit)

@@ -16,7 +16,7 @@ open Tarski
 /-! ## The shape -/
 
 #guard Heap.initial.cells.size == 37
-#guard Heap.initial.objects.size == 109
+#guard Heap.initial.objects.size == 144
 
 /-! ## Each kind's prototype
 
@@ -293,15 +293,106 @@ explicit about and `Array.isArray(Array.prototype)` observes. -/
 
 /-! ## `String`
 
-No `prototype` property: the wrapper object and `String.prototype` are
-#391's, so `new String("x")` refuses. -/
+`String` carries its `prototype` and its three statics, and
+`String.prototype` is itself a String exotic object of the empty string,
+as 22.1.3 has it — so `Object.prototype.toString.call(String.prototype)`
+is `[object String]` and `String.prototype.length` is `0`.
+
+The table below is the whole surface, and it is read three ways: each
+member's object is at `StringFn.ref`, carries that member's `NativeFn`,
+and has 17.1's `name` and `length`; and `String.prototype`'s property
+list is the thirty-one prototype members **in `StringFn.all`'s order**,
+after `length` and `constructor`. -/
 
 #guard match Heap.initial.readObj stringCtorRef with
   | some o =>
-    o.getOwn "prototype" == none
+    o.getOwn "prototype" == some (.obj stringProtoRef)
+      && o.getOwn "fromCharCode" == some (.obj (StringFn.ref .fromCharCode))
+      && o.getOwn "fromCodePoint" == some (.obj (StringFn.ref .fromCodePoint))
+      && o.getOwn "raw" == some (.obj (StringFn.ref .raw))
       && (match o.callable with
           | some (.native .stringCtor) => true
           | _ => false)
+  | none => false
+
+#guard match Heap.initial.readObj stringProtoRef with
+  | some o =>
+    o.proto == some objectProtoRef
+      && o.kind == .string (Js.JsString.ofString "")
+      && o.getOwnProperty "length" == some (Property.constant (Value.ofNat 0))
+      && o.getOwn "constructor" == some (.obj stringCtorRef)
+  | none => false
+
+/-- Every `String` member: its constructor, its `name`, and 17.1's
+`length`. -/
+private def stringMembers : List (StringFn × String × Nat) :=
+  [
+    (.fromCharCode, "fromCharCode", 1),
+    (.fromCodePoint, "fromCodePoint", 1),
+    (.raw, "raw", 1),
+    (.at, "at", 1),
+    (.charAt, "charAt", 1),
+    (.charCodeAt, "charCodeAt", 1),
+    (.codePointAt, "codePointAt", 1),
+    (.concat, "concat", 1),
+    (.endsWith, "endsWith", 1),
+    (.includes, "includes", 1),
+    (.indexOf, "indexOf", 1),
+    (.isWellFormed, "isWellFormed", 0),
+    (.lastIndexOf, "lastIndexOf", 1),
+    (.localeCompare, "localeCompare", 1),
+    (.normalize, "normalize", 0),
+    (.padEnd, "padEnd", 1),
+    (.padStart, "padStart", 1),
+    (.«repeat», "repeat", 1),
+    (.replace, "replace", 2),
+    (.replaceAll, "replaceAll", 2),
+    (.slice, "slice", 2),
+    (.split, "split", 2),
+    (.startsWith, "startsWith", 1),
+    (.substring, "substring", 2),
+    (.toLocaleLowerCase, "toLocaleLowerCase", 0),
+    (.toLocaleUpperCase, "toLocaleUpperCase", 0),
+    (.toLowerCase, "toLowerCase", 0),
+    (.«toString», "toString", 0),
+    (.«toUpperCase», "toUpperCase", 0),
+    (.toWellFormed, "toWellFormed", 0),
+    (.trim, "trim", 0),
+    (.trimEnd, "trimEnd", 0),
+    (.trimStart, "trimStart", 0),
+    (.valueOf, "valueOf", 0) ]
+
+-- The table is `StringFn.all`, in order: nothing is missing and nothing
+-- is there twice.
+#guard stringMembers.map (·.1) == StringFn.all
+
+-- Each member's object is at its reference, with its native and 17.1's
+-- shape.
+#guard stringMembers.all fun m =>
+  match Heap.initial.readObj (StringFn.ref m.1) with
+  | some o =>
+    (match o.callable with
+     | some (.native (.string g)) => g == m.1
+     | _ => false)
+      && o.proto == some functionProtoRef
+      && o.getOwn "name" == some (.prim (.str m.2.1))
+      && o.getOwn "length" == some (Value.ofNat m.2.2)
+  | none => false
+
+-- `String.prototype`'s property list is `length`, `constructor`, and
+-- then the thirty-one methods in `StringFn.all`'s order.
+#guard match Heap.initial.readObj stringProtoRef with
+  | some o =>
+    o.properties.map (·.1)
+      == ("length" :: "constructor" :: (stringMembers.drop 3).map (·.2.1)).map Key.str
+  | none => false
+
+-- The regex-taking members, the iterator, and Annex B are *not* here:
+-- each is out of scope and a call of one is `not a function`.
+#guard match Heap.initial.readObj stringProtoRef with
+  | some o =>
+    ["match", "matchAll", "search", "substr", "trimLeft", "trimRight", "anchor"].all
+      (fun k => o.getOwn k == none)
   | none => false
 
 /-! ## The `Object`, `Array`, and `String` global bindings -/

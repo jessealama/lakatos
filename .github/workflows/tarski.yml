@@ -250,6 +250,14 @@ jobs:
           out=$(.lake/build/bin/tarski run Test/Tarski/fixtures/symbol-json-error.json)
           test "$out" = "true" || { echo "expected true, got $out"; exit 1; }
 
+      # #391's example: the `String` surface, UTF-16 code units — a
+      # surrogate pair coming apart and joining back, and the code-unit
+      # order — and the String wrapper object's own keys.
+      - name: Run the string-builtins script
+        run: |
+          out=$(.lake/build/bin/tarski run Test/Tarski/fixtures/string-builtins.json)
+          test "$out" = "true" || { echo "expected true, got $out"; exit 1; }
+
       # The suite itself, at the commit in tarski/test262/pin.json. The
       # clone is a build artifact: cached by the pin's hash, fetched at
       # depth 1 by SHA, never a submodule.
@@ -270,7 +278,9 @@ jobs:
       - name: test262 PR-gated slice
         # The two class directories #384 joined are about five thousand
         # tests on their own, which roughly doubled the step's wall clock,
-        # and #393's fifteen add about 2,600 more. Three minutes locally.
+        # #393's fifteen add about 2,600 more, and #391's
+        # `test/built-ins/String` adds 1,223. Five and a half minutes
+        # locally.
         timeout-minutes: 20
         run: |
           node ../dist/tarski/frontend/src/test262/cli.js \
