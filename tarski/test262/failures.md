@@ -145,11 +145,27 @@ against #392.
 | `test/language/statements/variable`                | 1     | builtin      | a top-level `this` is `undefined` for want of a global object                                         | #389  |
 | `test/language/statements/while`                   | 7     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                        | #376  |
 
-## The unsupported histogram
+## The unsupported column
 
-From the same run, for the record: what the decoder refused, by kind and by
-count. It is not tested — only the table above is — but it is what names
-the next slice to land.
+A test in the `unsupported` column is not a failure: the decoder refused
+the document by name before the evaluator saw it, which is the verdict the
+runner should file for a program outside the fragment. The kinds, and who
+owns them:
+
+| kind                                                                                                                                                     | owner                                                                         |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `VariableDeclarationList`, `VariableStatement`, `OmittedExpression`, `SpreadElement`, `SpreadAssignment`                                                 | #394 — binding and assignment patterns, holes, and spread                     |
+| `DeleteExpression`, `BinaryExpression ,`, `BinaryExpression in`, the shifts and the bitwise forms, `AssignmentExpression >>>=`                           | #376 — operators the epic does not model                                      |
+| `BigIntLiteral`                                                                                                                                          | #376 — BigInt is out of scope                                                 |
+| `FunctionExpression generator`, `FunctionDeclaration generator`, `FunctionExpression async`, `ArrowFunctionExpression async`, `RegularExpressionLiteral` | #376 — generators, async, and regular expressions are out of scope            |
+| `GetAccessor`, `SetAccessor`, `MethodDeclaration`, `ComputedPropertyName`, `Property numeric key`, `TemplateExpression`, `ShorthandPropertyAssignment`   | #395 — template literals, computed keys, shorthand, and method definitions    |
+| `ClassDeclaration`                                                                                                                                       | #384 — classes                                                                |
+| `DoStatement`, `ForInStatement`, `ForOfStatement`                                                                                                        | #393, #394 — the loop forms this issue did not take                           |
+| `AssignmentExpression target`, `LogicalExpression ??`, `BinaryExpression ==`, `BinaryExpression !=`                                                      | #376 — loose equality, nullish coalescing, and targets with no reference form |
+| `$262.createRealm`, `$262.detachArrayBuffer`                                                                                                             | #376 — the host hooks are refused by name                                     |
+
+The counts, from the same run. They are not tested — only the table above
+is — but they are what names the next slice to land.
 
 ```
   VariableDeclarationList  214

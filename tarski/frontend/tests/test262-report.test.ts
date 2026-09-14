@@ -46,7 +46,10 @@ describe("tabulate", () => {
         class: "fail",
         detail: "Uncaught Test262Error: boom",
       }),
-      ran("test/a", "three.js", { class: "unsupported", kind: "ForStatement" }),
+      ran("test/a", "three.js", {
+        class: "unsupported",
+        kind: "DeleteExpression",
+      }),
       ran("test/a", "four.js", { class: "timeout" }),
       ran("test/a", "five.js", {
         class: "harness-error",
@@ -194,14 +197,17 @@ describe("renderDetails", () => {
         directory: "test/a",
         plan: { kind: "skip", reason: "parse-negative" },
       },
-      ran("test/a", "five.js", { class: "unsupported", kind: "ForStatement" }),
+      ran("test/a", "five.js", {
+        class: "unsupported",
+        kind: "DeleteExpression",
+      }),
       ran("test/a", "six.js", {
         class: "unsupported",
-        kind: "SwitchStatement",
+        kind: "ForInStatement",
       }),
       ran("test/a", "seven.js", {
         class: "unsupported",
-        kind: "SwitchStatement",
+        kind: "ForInStatement",
       }),
       ran("test/a", "eight.js", {
         class: "fail",
@@ -222,8 +228,8 @@ describe("renderDetails", () => {
         "skipped:",
         "  parse-negative  1",
         "unsupported:",
-        "  SwitchStatement  2",
-        "  ForStatement  1",
+        "  ForInStatement  2",
+        "  DeleteExpression  1",
         "failures:",
         "  test/a/eight.js  Uncaught Test262Error: boom",
         "harness errors:",
@@ -235,22 +241,28 @@ describe("renderDetails", () => {
   });
 
   it("breaks a tie in the histogram by name, whichever came first", () => {
-    const golden = "unsupported:\n  ForStatement  1\n  SwitchStatement  1";
+    const golden = "unsupported:\n  DeleteExpression  1\n  ForInStatement  1";
     expect(
       renderDetails([
         ran("test/a", "one.js", {
           class: "unsupported",
-          kind: "SwitchStatement",
+          kind: "ForInStatement",
         }),
-        ran("test/a", "two.js", { class: "unsupported", kind: "ForStatement" }),
+        ran("test/a", "two.js", {
+          class: "unsupported",
+          kind: "DeleteExpression",
+        }),
       ]),
     ).toBe(golden);
     expect(
       renderDetails([
-        ran("test/a", "one.js", { class: "unsupported", kind: "ForStatement" }),
+        ran("test/a", "one.js", {
+          class: "unsupported",
+          kind: "DeleteExpression",
+        }),
         ran("test/a", "two.js", {
           class: "unsupported",
-          kind: "SwitchStatement",
+          kind: "ForInStatement",
         }),
       ]),
     ).toBe(golden);
