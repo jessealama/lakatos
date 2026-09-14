@@ -43,9 +43,11 @@ function marker(node) {
   return undefined;
 }
 
+// `exec` is `lakatos exe`'s spelling of `run`: the same contract without
+// the completion-value line, which no marker in this tree produces.
 const [command, file] = process.argv.slice(2);
-if (command !== "run" || file === undefined) {
-  process.stderr.write("usage: fake-tarski run <file.json>\n");
+if ((command !== "run" && command !== "exec") || file === undefined) {
+  process.stderr.write("usage: fake-tarski run|exec <file.json>\n");
   process.exit(2);
 }
 

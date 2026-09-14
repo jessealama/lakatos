@@ -15,8 +15,8 @@ open Tarski
 
 /-! ## The shape -/
 
-#guard Heap.initial.cells.size == 19
-#guard Heap.initial.objects.size == 60
+#guard Heap.initial.cells.size == 20
+#guard Heap.initial.objects.size == 62
 
 /-! ## Each kind's prototype
 
@@ -68,7 +68,7 @@ constructor object. -/
         | some c => c.value == some (.obj k.ctorRef)
         | none => false)
 
-#guard globalEnv.length == 19
+#guard globalEnv.length == 20
 
 /-! ## `Error.prototype.toString` -/
 
@@ -197,6 +197,25 @@ and an absent `IsHTMLDDA` to read as `undefined`. -/
 
 #guard (Heap.initial.read printCellRef).bind (·.value) == some (.obj printRef)
 #guard (Heap.initial.read hostCellRef).bind (·.value) == some (.obj hostRef)
+
+/-! `console` is not one of test262's: it is `lakatos exe`'s, the binding
+an ordinary program writes through. It carries `log` and nothing else,
+and `log` writes to the same `%PrintLog%` `print` does. -/
+
+#guard match Heap.initial.readObj consoleRef with
+  | some o =>
+    o.proto == some objectProtoRef
+      && o.callable.isNone
+      && o.properties == [("log", .obj consoleLogRef)]
+  | none => false
+
+#guard match Heap.initial.readObj consoleLogRef with
+  | some { callable := some (.native .consoleLog), .. } => true
+  | _ => false
+
+#guard Env.lookup globalEnv "console" == some consoleCellRef
+#guard (Heap.initial.read consoleCellRef).bind (·.value) == some (.obj consoleRef)
+#guard (Heap.initial.read consoleCellRef).map (·.mutable) == some true
 
 /-! ## `Number.prototype` and `Number`
 

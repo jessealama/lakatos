@@ -42,6 +42,7 @@ const FIXTURES = [
   "class-box",
   "emitter-classes",
   "hoisting-arguments",
+  "exe-example",
 ];
 
 describe("parseScript", () => {

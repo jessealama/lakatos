@@ -2,15 +2,23 @@ import Tarski.Decode
 import Tarski.Eval
 import Tarski.Format
 
-/-! The `tarski` binary: `tarski run <file.json>`.
+/-! The `tarski` binary: `tarski run <file.json>` and
+`tarski exec <file.json>`.
 
 One ESTree document in — the JSON `schemas/tarski-estree.schema.json`
 fixes, as the parser bridge produces it — one line out: the script's
 completion value, or nothing when no statement produced one.
 
+`exec` is what `lakatos exe` calls, and its one difference from `run` is
+that it prints **no** completion value: a program run for its effects
+answers nothing a user asked for, and `node file.js` prints none either.
+Everything else — the print log, the uncaught report, the exit codes — is
+`run`'s exactly.
+
 Exit codes:
 
-* `0` — the script ran. Its completion value, if any, is on stdout.
+* `0` — the script ran. Under `run`, its completion value, if any, is
+  on stdout; under `exec` there is no such line.
 * `1` — the script ended with an uncaught abrupt completion. `Uncaught `
   and the thrown value are on stderr: `<name>: <message>` for an Error
   object, the value's printed form otherwise.
@@ -36,15 +44,16 @@ open Lean Tarski
 def printLog (h : Heap) : IO Unit :=
   h.printedLines.forM IO.println
 
-/-- Run one decoded program and report it. -/
-def report (program : Program) : IO UInt32 :=
+/-- Run one decoded program and report it. `printCompletion` is the one
+difference between `run` (`true`) and `exec` (`false`). -/
+def report (printCompletion : Bool) (program : Program) : IO UInt32 :=
   match runScript program with
   | some (.ok none, h) => do
     printLog h
     pure 0
   | some (.ok (some v), h) => do
     printLog h
-    IO.println (formatValue v)
+    if printCompletion then IO.println (formatValue v)
     pure 0
   | some (.error (.throw v), h) => do
     -- The heap the throw came out with is where the thrown object is, so
@@ -66,7 +75,8 @@ def report (program : Program) : IO UInt32 :=
     IO.eprintln "tarski: evaluation produced no result"
     pure 2
 
-def run (path : String) : IO UInt32 := do
+/-- The body both subcommands share: read, parse, decode, report. -/
+def execute (printCompletion : Bool) (path : String) : IO UInt32 := do
   let text ←
     try
       IO.FS.readFile path
@@ -85,11 +95,18 @@ def run (path : String) : IO UInt32 := do
     | .error e@(.malformed _) =>
       IO.eprintln s!"tarski: {path}: {e.message}"
       return 2
-    | .ok program => report program
+    | .ok program => report printCompletion program
+
+/-- `tarski run`: the completion value is a line of output. -/
+def run (path : String) : IO UInt32 := execute true path
+
+/-- `tarski exec`: it is not. -/
+def exec (path : String) : IO UInt32 := execute false path
 
 def main (args : List String) : IO UInt32 := do
   match args with
   | ["run", path] => run path
+  | ["exec", path] => exec path
   | _ =>
-    IO.eprintln "usage: tarski run <file.json>"
+    IO.eprintln "usage: tarski run|exec <file.json>"
     return 2

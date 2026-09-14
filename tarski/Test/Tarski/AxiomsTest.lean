@@ -352,6 +352,10 @@ private def onlyStandard (n : Name) : CoreM Bool := do
 
 /-- info: true -/
 #guard_msgs in
+#eval onlyStandard ``Tarski.toStringValues
+
+/-- info: true -/
+#guard_msgs in
 #eval onlyStandard ``Tarski.mathUnary
 
 /-- info: true -/

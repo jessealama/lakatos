@@ -52,8 +52,14 @@ describe("cli main", () => {
     expect(help).toContain("prove");
     expect(help).toContain("refute");
     expect(help).toContain("check");
+    expect(help).toContain("exe");
     expect(help).toContain("--seed");
     expect(help).toContain("--help");
+    // exe's two honesty limits are stated where the verb is, not only in
+    // the README: the evaluator and the prover's model share only the
+    // primitives, and refute runs somewhere else entirely.
+    expect(help).toContain("only the primitives are shared");
+    expect(help).toContain("refute runs on Node");
   });
 
   it("prints the same help on -h", async () => {

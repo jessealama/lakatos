@@ -209,6 +209,22 @@ jobs:
           out=$(.lake/build/bin/tarski run Test/Tarski/fixtures/number-conversions.json)
           test "$out" = "true" || { echo "expected true, got $out"; exit 1; }
 
+      # #386's example, and what `exec` does differently from `run`: the
+      # program's `console.log` reaches stdout, the uncaught throw is
+      # reported on stderr with exit 1, and there is no completion-value
+      # line after either.
+      - name: Run the exe example
+        run: |
+          set +e
+          out=$(.lake/build/bin/tarski exec Test/Tarski/fixtures/exe-example.json 2>/tmp/exe-err)
+          status=$?
+          set -e
+          test "$status" = "1" || { echo "expected exit 1, got $status"; exit 1; }
+          test "$out" = "0.25" || { echo "expected 0.25, got $out"; exit 1; }
+          err=$(cat /tmp/exe-err)
+          test "$err" = "Uncaught RangeError: zero" || {
+            echo "expected the RangeError report, got: $err"; exit 1; }
+
       # The suite itself, at the commit in tarski/test262/pin.json. The
       # clone is a build artifact: cached by the pin's hash, fetched at
       # depth 1 by SHA, never a submodule.
@@ -235,13 +251,20 @@ jobs:
           node ../dist/tarski/frontend/src/test262/cli.js \
             --slice-file test262/slice.txt --check test262/expected.json
 
-      # What ties the fake binary the unit tests run to the real one.
-      - name: Runner end to end
-        timeout-minutes: 5
+      # The suites that need the real binary: what ties the fake binary the
+      # unit tests run to the real one, `lakatos exe`'s own transcript, and
+      # the comparison of every `@ensures` fixture in the repo against
+      # Node. Serialized, because two forks would race `lake build`.
+      - name: Runner and exe end to end
+        timeout-minutes: 10
         working-directory: .
         env:
           LAKATOS_TARSKI_E2E: "1"
-        run: npx vitest run tarski/frontend/tests/test262-e2e.test.ts
+        run: |
+          npx vitest run --no-file-parallelism \
+            tarski/frontend/tests/test262-e2e.test.ts \
+            tests/exe-e2e.test.ts \
+            tests/exe-fixtures.test.ts
 
   # The second tier: the whole of `language`, `built-ins`, and `intl402`,
   # weekly and on demand, writing `tarski/test262/results.{md,json}`. A

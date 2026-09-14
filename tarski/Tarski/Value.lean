@@ -170,6 +170,14 @@ inductive NativeFn where
   so ToString of the first argument is appended to the intrinsic array
   `%PrintLog%` and the binary writes the log out after the run. -/
   | print
+  /-- `console.log`, the second host output binding and the one
+  `lakatos exe` forwards to stdout. `print`'s twin: ToString of **every**
+  argument, joined by one space, appended as one line to `%PrintLog%`, so
+  a run's output is a single sequence in program order however it was
+  written. Two differences from Node, both named in the README as limits
+  of `exe`: Node inspects an object where this takes its ToString, and
+  Node prints `-0` where ToString gives `0`. -/
+  | consoleLog
   /-- `Number`, as a converter and as a wrapper constructor. -/
   | numberCtor
   /-- `Number.isFinite`. -/
