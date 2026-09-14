@@ -15,14 +15,12 @@ the index parse close by `decide` and not by `simp`, so each one the
 program reaches is a `@[local simp]` lemma here, as `WhileUnfoldTest`
 carries `bump0`.
 
-`getFrom` and `findAccessor` are unfolded with `rw`, one step per
-prototype link, for the reason `ObjectSimpTest` records; through
-`.eq_def` rather than the equation theorems, because the arms of their
-outer matches overlap. A write pays for the walk too now: `push` goes
-through `setProp`, which looks for a setter on the whole chain before
-writing, so the one element it stores costs three `findAccessor` steps —
-the instance, `Array.prototype`, and `Object.prototype` — where before
-the accessor split it cost none. `Obj.ownKeys` and `Obj.truncate` are in
+`getFromUp` and `findAccessorUp` — the prototype *steps* — are unfolded
+with `rw`, one per link climbed, for the reason `ObjectSimpTest` records.
+A write pays for the climb too now: `push` goes through `setProp`, which
+looks for a setter on the whole chain before writing, so the one element
+it stores costs two steps where before the accessor split it cost none.
+`Obj.ownKeys` and `Obj.truncate` are in
 the set but never reached: this program calls neither `Object.keys` nor a
 `length` write, so a stall on `List.mergeSort` would mean the set had
 grown a case the program does not have. -/
@@ -42,7 +40,7 @@ attribute [local simp] evalExpr evalExprs evalStmt evalStmts evalDeclarators
   callFunction callNative catchReturn makeFunction bindParams pushElements
   newObject newArray newArrayOfLength Obj.array indexProps
   Value.ofNat Obj.truncate Obj.ownKeys Obj.isArray Obj.hasOwn
-  NativeFn.constructs getProp setProp
+  NativeFn.constructs getProp setProp getFrom findAccessor
   applyBinary toPrimitive BinaryOp.coerces applyCoercing toNumberPrim toBooleanPrim isStrPrim
   allocCell getCell readCell writeCell initCell putIdent
   allocObj readObj writeObj modifyObj
@@ -64,12 +62,9 @@ attribute [local simp] evalExpr evalExprs evalStmt evalStmts evalDeclarators
 
 example : runProgram program = some (.ok (some (.prim (.num 2.0)))) := by
   simp [program]
-  rw [getFrom.eq_def]; simp        -- `xs.push`: not an own property of the instance
-  rw [getFrom.eq_def]; simp        -- and found on `Array.prototype`
-  rw [findAccessor.eq_def]; simp   -- the write: no setter on the instance
-  rw [findAccessor.eq_def]; simp   -- none on `Array.prototype`
-  rw [findAccessor.eq_def]; simp   -- none on `Object.prototype` either
-  rw [getFrom.eq_def]; simp        -- `xs.length`, answered out of the kind
+  rw [getFromUp]; simp        -- `xs.push`: one link up, on `Array.prototype`
+  rw [findAccessorUp]; simp   -- the write: no setter on `Array.prototype`
+  rw [findAccessorUp]; simp   -- nor on `Object.prototype`
 
 /-- info: some (Except.ok (some (Tarski.Value.prim (Js.JsVal.num 2.000000)))) -/
 #guard_msgs in

@@ -412,14 +412,16 @@ end
 deriving instance Repr, Inhabited for Expr, ArrowBody, Target, Stmt, ForInit, SwitchCase,
   CatchClause, Declarator, ClassField, ClassElement, ClassDef
 
-/-- The class's constructor, if it wrote one. The first `ctor` element
-wins; a second is an early error this epic does not check. -/
+/-- The first `ctor` element of a class body. A second is an early
+error, which this epic does not check, so the first one wins. -/
+def firstConstructor : List ClassElement → Option (List String × List Stmt)
+  | [] => none
+  | .ctor params body :: _ => some (params, body)
+  | _ :: rest => firstConstructor rest
+
+/-- The class's constructor, if it wrote one. -/
 def ClassDef.constructor? (d : ClassDef) : Option (List String × List Stmt) :=
-  let rec go : List ClassElement → Option (List String × List Stmt)
-    | [] => none
-    | .ctor params body :: _ => some (params, body)
-    | _ :: rest => go rest
-  go d.elements
+  firstConstructor d.elements
 
 /-- The fields on one side of the class, in source order. -/
 def classFields (wanted : Bool) : List ClassElement → List ClassField
@@ -438,6 +440,13 @@ constructor object once the class is built. -/
 def ClassDef.staticFields (d : ClassDef) : List ClassField :=
   classFields true d.elements
 
+/-- Every `#name` a class body's fields are keyed by, in source order
+and with repeats still in. -/
+def privateFieldNames : List ClassElement → List String
+  | [] => []
+  | .field _ (.«private» n) _ :: rest => n :: privateFieldNames rest
+  | _ :: rest => privateFieldNames rest
+
 /-- Drop repeats, keeping the first occurrence. `seen` is what has
 already been kept, which is what makes this structural on the list. -/
 def dedupNames (seen : List String) : List String → List String
@@ -450,11 +459,7 @@ order. One cell per name is allocated when the class is evaluated, and
 that cell *is* the Private Name — two evaluations of one class text
 therefore declare different names, as the specification requires. -/
 def ClassDef.privateNames (d : ClassDef) : List String :=
-  let rec go : List ClassElement → List String
-    | [] => []
-    | .field _ (.«private» n) _ :: rest => n :: go rest
-    | _ :: rest => go rest
-  dedupNames [] (go d.elements)
+  dedupNames [] (privateFieldNames d.elements)
 
 /-- ESTree `Program` with `sourceType: "script"`, its `"use strict"`
 directive already consumed by the decoder. -/

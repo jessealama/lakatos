@@ -14,14 +14,16 @@ non-terminating program is `none`, not an axiom.
 The non-recursive helpers live outside the `mutual` block on purpose:
 their equations are ordinary and `simp` may use them freely. Five of the
 recursive ones are never added to a simp set and are unfolded one step at
-a time with `rw`: `evalWhile`, `evalFor`, `getFrom`, `findAccessor`, and
-`joinElements`. The rule is not "recursive" but "recursive on something
+a time with `rw`: `evalWhile`, `evalFor`, `getFromUp`, `findAccessorUp`,
+and `joinElements`. The rule is not "recursive" but "recursive on something
 other than syntax" — `evalExpr` and its neighbours recurse on a concrete
 AST, which runs out, while a loop recurses until a heap value says stop,
 a prototype walk until a heap link does, and a join until an array's
 length does, and `simp` unfolds all three under a binder it has not
-resolved, forever. `getProp` is not on the list: it is the dispatch onto
-`getFrom`, which is the walk. What decides membership in the block is
+resolved, forever. `getProp` and `getFrom` are not on the list: the
+first is the dispatch onto the second, and the second answers an own
+property without recursing — the two prototype *steps* are what recurse,
+and they are the two definitions above. What decides membership in the block is
 whether a definition can reach user code: `getProp`, `toPrimitive`, and
 `setProp` can (a getter or a setter is user code, ToPrimitive calls
 `valueOf`, and ArraySetLength coerces its value with ToNumber, which is
@@ -682,6 +684,29 @@ def bindPrivateNames (env : Env) : List String → EvalM Env
     let r ← allocCell { mutable := false, value := some undefValue }
     bindPrivateNames (("#" ++ n, r) :: env) rest
 
+/-- MethodDefinitionEvaluation over a class body: every method, getter,
+and setter on its home object — the prototype for an instance element,
+the constructor for a `static` one. A getter and a setter of one name
+merge into one accessor property, which is `Obj.defineAccessor`'s
+business. Constructors and fields are not here: the first is the
+closure `evalClass` built, the second runs per instance.
+
+Outside the fixpoint block, like `instantiateBlock` and `initFunctions`
+and for the same reason: a method's body is closed over here, never run,
+so nothing this does can reach user code. -/
+def defineMethods (env : Env) (F proto : Ref) : List ClassElement → EvalM Unit
+  | [] => pure ()
+  | .method kind isStatic name params body :: rest => do
+    let target := if isStatic then F else proto
+    let f ← makeFunction { params, body, env, kind := .method, homeObject := some target }
+    modifyObj target (fun o =>
+      match kind with
+      | .method => o.defineData name f
+      | .getter => o.defineAccessor name (some f) none
+      | .setter => o.defineAccessor name none (some f))
+    defineMethods env F proto rest
+  | _ :: rest => defineMethods env F proto rest
+
 mutual
 
 /-- Evaluate an expression. -/
@@ -1034,10 +1059,9 @@ less accessor reads `undefined`. A Number or a Boolean base starts the
 walk at its wrapper prototype with the primitive as the receiver, which
 is why `thisNumberValue` accepts one.
 
-Recursive on the heap rather than on syntax, so its equation is `rw`'s
-and never a simp set's — the rule `evalWhile` and `joinElements` are
-under, and the one `getProp` used to be under before the dispatch was
-split off. -/
+The walk is `getFromUp`'s, not this one's: what recurses on the heap
+rather than on syntax may never join a simp set, so the step is a
+definition of its own and `getFrom` is free to be in one. -/
 def getFrom (r : Ref) (key : String) (receiver : Value) : EvalM Value := do
   let o ← readObj r
   match o.kind, key == "length" with
@@ -1053,8 +1077,18 @@ def getFrom (r : Ref) (key : String) (receiver : Value) : EvalM Value := do
       | some v => pure v
       | none =>
         match o.proto with
-        | some p => getFrom p key receiver
+        | some p => getFromUp p key receiver
         | none => pure undefValue
+  partial_fixpoint
+
+/-- OrdinaryGet's last step, taken on the parent an object named. It is
+the *only* recursive part of the read, which is why it is split out:
+`getFrom` answers an own property without calling itself, so it may join
+a simp set, and a read then costs one `rw [getFromUp]` per prototype link
+it has to climb and nothing at all when it finds what it wants where it
+started. -/
+def getFromUp (parent : Ref) (key : String) (receiver : Value) : EvalM Value :=
+  getFrom parent key receiver
   partial_fixpoint
 
 /-- OrdinarySet's search (10.1.9.2) for the accessor a write goes
@@ -1064,7 +1098,7 @@ above it, and `none` at the top. Writability is not here, having no
 descriptors to read (#389); what is here is the one thing a write cannot
 do without, which is finding an inherited setter.
 
-`rw`'s, like `getFrom`, and for the same reason. -/
+The step up is `findAccessorUp`'s, for the reason `getFrom` gives. -/
 def findAccessor (r : Ref) (key : String) : EvalM (Option Accessor) := do
   let o ← readObj r
   match o.getOwnAccessor key with
@@ -1073,8 +1107,14 @@ def findAccessor (r : Ref) (key : String) : EvalM (Option Accessor) := do
     if (o.getOwn key).isSome || (o.isArray && key == "length") then pure none
     else
       match o.proto with
-      | some p => findAccessor p key
+      | some p => findAccessorUp p key
       | none => pure none
+  partial_fixpoint
+
+/-- `findAccessor`'s prototype step, split out for the reason
+`getFromUp` is. -/
+def findAccessorUp (parent : Ref) (key : String) : EvalM (Option Accessor) :=
+  findAccessor parent key
   partial_fixpoint
 
 /-- Set a property. Strict mode throughout, so a primitive base is a
@@ -1773,6 +1813,8 @@ def initFieldList (env : Env) (target : Value) : List ClassField → EvalM Unit
     | .obj t, .«private» name => do
       let k ← privateName env name
       addPrivate t name k v
+    -- The target is always the object being built, so this arm is
+    -- unreachable; `Value` is not a subtype.
     | .prim _, _ => pure ()
     initFieldList env target rest
   partial_fixpoint
@@ -1842,27 +1884,6 @@ def evalClass (env : Env) (d : ClassDef) : EvalM Value := do
     | none => pure ()
   initFields inner (some F) (.obj F) d.staticFields
   pure (.obj F)
-  partial_fixpoint
-
-/-- MethodDefinitionEvaluation over a class body: every method, getter,
-and setter on its home object — the prototype for an instance element,
-the constructor for a `static` one. A getter and a setter of one name
-merge into one accessor property, which is `Obj.defineAccessor`'s
-business. Constructors and fields are not here: the first is the
-closure `evalClass` built, the second runs per instance. -/
-def defineMethods (env : Env) (F proto : Ref) : List ClassElement → EvalM Unit
-  | [] => pure ()
-  | e :: rest => do
-    match e with
-    | .method kind isStatic name params body => do
-      let target := if isStatic then F else proto
-      let f ← makeFunction { params, body, env, kind := .method, homeObject := some target }
-      match kind with
-      | .method => modifyObj target (fun o => o.defineData name f)
-      | .getter => modifyObj target (fun o => o.defineAccessor name (some f) none)
-      | .setter => modifyObj target (fun o => o.defineAccessor name none (some f))
-    | _ => pure ()
-    defineMethods env F proto rest
   partial_fixpoint
 
 /-- MakeSuperPropertyReference and the read through it: the home

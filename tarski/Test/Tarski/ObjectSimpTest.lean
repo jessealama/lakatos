@@ -9,14 +9,15 @@ are theorems, so `simp` runs the program symbolically — allocating into
 the heap's object table, setting a property, resolving the read — until
 nothing is left.
 
-`getFrom` is the second definition, after `evalWhile`, whose equation
-never joins a simp set, and for the same reason: its recursion is on the
-*heap* rather than on syntax, so `simp` unfolds it under the binder that
-`readObj` has not yet resolved and never stops. Both are unfolded one
-step at a time with `rw`, and the `rw` count is the step count — here one
-prototype link, which finds the property it is looking for. `getProp`
-itself is in the set: since the accessor split it is the dispatch onto
-`getFrom` and recurses on nothing.
+A prototype *step* is the second definition, after `evalWhile`, whose
+equation never joins a simp set, and for the same reason: it recurses on
+the *heap* rather than on syntax, so `simp` unfolds it under the binder
+that `readObj` has not yet resolved and never stops. `getFromUp` is that
+step and is unfolded with `rw`, once per link a read has to climb — and
+this read climbs none, because `a` is an own property of the object the
+literal built. `getProp` and `getFrom` are in the set: the first
+dispatches, the second answers an own property, and neither calls
+itself.
 
 The literal's object lands at reference 59, just past the realm's
 fifty-nine intrinsics: a script starts from `Heap.initial`, not from an
@@ -36,7 +37,7 @@ private def program : Program :=
 attribute [local simp] evalExpr evalStmt evalStmts evalDeclarators evalProps
   instantiateBlock hoistNames hoistDeclarators initFunctions
   varNames varNamesStmt varNamesCases hoistVars
-  getProp setProp
+  getProp setProp getFrom findAccessor
   allocCell getCell readCell writeCell initCell putIdent
   allocObj newObject readObj writeObj modifyObj
   Env.lookup Heap.alloc Heap.read Heap.write
@@ -47,7 +48,6 @@ attribute [local simp] evalExpr evalStmt evalStmts evalDeclarators evalProps
 
 example : runProgram program = some (.ok (some (.prim (.num 1.0)))) := by
   simp [program]
-  rw [getFrom.eq_def]; simp  -- the read: one link, an own property
 
 /-- info: some (Except.ok (some (Tarski.Value.prim (Js.JsVal.num 1.000000)))) -/
 #guard_msgs in
