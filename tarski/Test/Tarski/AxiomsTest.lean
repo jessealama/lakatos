@@ -797,3 +797,56 @@ private def onlyStandard (n : Name) : CoreM Bool := do
 /-- info: true -/
 #guard_msgs in
 #eval onlyStandard ``Tarski.readPrivateField
+
+-- The `Symbol` surface and `JSON`. `callSymbolNative` and
+-- `callJsonNative` are members of the fixpoint block like every other
+-- native group; staying out of `tarski_eval` is about a match's equation
+-- lemmas, not about what they rest on.
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.callSymbolNative
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.callJsonNative
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.ordinaryHasInstance
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.installErrorCause
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.jsonToValue
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.internalizeJsonProperty
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.serializeJsonProperty
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.serializeJsonObject
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.serializeJsonArray
+
+-- The JSON grammar is an ordinary total function: `scanJsonString` is
+-- well-founded on the text's length, and the value parser runs on fuel
+-- the text's length bounds.
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.parseJson
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.quoteJsonString

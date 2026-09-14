@@ -88,7 +88,7 @@ private def readA (h : Heap) : Value → Option AModel
       | some n => some { x := n }
       | none => none
     | none => none
-  | .prim _ => none
+  | _ => none
 
 /-- `class A { constructor(v) { this.x = v; } }` -/
 private def closureA : Program :=

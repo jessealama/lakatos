@@ -31,3 +31,10 @@ open Tarski
 #guard formatValue (.prim .null) == "null"
 #guard formatValue (.prim (.str "x")) == "x"
 #guard formatValue (.obj 0) == "[object Object]"
+
+-- A symbol prints as SymbolDescriptiveString, which is what `tarski run`
+-- writes for a completion value and what `describeThrown` falls back to
+-- for `throw Symbol()`.
+#guard formatValue (.sym { id := 0, description := some "k" }) == "Symbol(k)"
+#guard formatValue (.sym { id := 0, description := some "" }) == "Symbol()"
+#guard formatValue (.sym { id := 0 }) == "Symbol()"

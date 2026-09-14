@@ -111,6 +111,7 @@ describe("the bridge as a command", () => {
     "exe-example",
     "object-function",
     "template-object",
+    "symbol-json-error",
   ]) {
     it(`agrees with the copy the Lean tests are run against for ${name}`, () => {
       const lean = path.join(

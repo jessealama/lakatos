@@ -164,6 +164,15 @@ def allocCell (c : Cell) : EvalM CellRef := do
   set h'
   return r
 
+/-- SymbolCreate (20.4.1.1): a fresh symbol. Its identity is a cell
+allocated for it and nothing else — the cell is immutable, holds
+nothing, and is never read — so two `Symbol()` calls are two symbols
+however they are described, and the heap keeps no counter of its own.
+Both `Symbol(d)` and a `Symbol.for` miss go through here. -/
+def allocSymbol (description : Option String) : EvalM Symbol := do
+  let id ← allocCell { mutable := false, value := none }
+  pure { id, description }
+
 /-- The cell a reference names. The error arm is unreachable for a
 reference that came out of an `Env`: the evaluator only puts references
 into scope chains after allocating their cells. -/

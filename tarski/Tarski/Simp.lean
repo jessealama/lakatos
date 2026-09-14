@@ -72,11 +72,16 @@ attribute [tarski_eval]
 -- defers to, is not here: its twenty-nine arms are past the depth at
 -- which Lean generates a match's equation lemmas, so registering it
 -- overflows `maxRecDepth` before any proof runs (#471's ceiling, seen
--- from the other side).
+-- from the other side). `callSymbolNative` and `callJsonNative`, the two
+-- groups `callNative` defers the `Symbol` surface and `JSON` to, stay
+-- out for that same reason, and with them the heap walks they own —
+-- `jsonToValue`, `internalizeJsonProperty`, and the `serializeJson*`
+-- family: no proof today reads a symbol or a JSON text.
 attribute [tarski_eval]
   callFunction callNative constructNative catchReturn attempt liftCompletion
   makeFunction isConstructor NativeFn.constructs nameOf functionSourceText builtinTag
   toStringValue toStringValues toNumberValue toNumberValues toLengthValue mathUnary pushElements
+  ordinaryHasInstance installErrorCause
 
 -- FunctionDeclarationInstantiation: parameters, their defaults, the
 -- `var`s a body hoists past them, and the `arguments` object a body that
@@ -116,7 +121,7 @@ attribute [tarski_eval]
   Obj.getOwn Obj.setOwn Obj.getOwnAccessor Obj.getOwnProperty Obj.ownProperty
   Obj.getPrivate Obj.setPrivate Obj.addPrivate
   Obj.define Obj.defineAccessorHalf Obj.remove Obj.isArray Obj.arrayLength? Obj.hasOwn
-  Obj.ownKeys Obj.enumerableKeys Obj.truncate truncateDrop
+  Obj.ownKeys Obj.stringKeys Obj.symbolKeys Obj.enumerableKeys Obj.truncate truncateDrop
   Obj.setIntegrity Obj.testIntegrity Obj.applyDescriptor
   Obj.array indexProps
   propGet propSet propDrop privateGet privateSet
@@ -128,8 +133,35 @@ attribute [tarski_eval]
 -- the evaluator only dispatches onto it.
 attribute [tarski_eval]
   applyBinary applyUnary applyStrict applyCoercing BinaryOp.coerces
-  toPrimitive toNumberPrim toBooleanPrim toStringPrim isStrPrim
+  toPrimitive toNumberPrim toBooleanPrim toStringPrim isStrPrim PrimHint.name
+  symbolOperandRefusal
   strictEqValue sameValueValue Js.JsVal.strictEq Value.ofNat
+
+-- Keys and symbols.
+attribute [tarski_eval]
+  Key.beq Key.str? Key.sym? Key.arrayIndex? Key.functionName
+  Symbol.descriptiveString allocSymbol thisSymbolValue registryKeyFor
+
+
+/-! ## The coercions, on a primitive
+
+ToPrimitive answers a `Value` now, so a coercion of a primitive is a
+`match` on a constructor `simp` has to push through at every arithmetic
+step. These three close that case in one rewrite instead, which is what
+keeps the `*UnfoldTest` files — each of which coerces once per
+iteration — near where they were. -/
+
+@[tarski_eval] theorem applyCoercing_prim (op : BinaryOp) (a b : Js.JsVal) :
+    applyCoercing op (.prim a) (.prim b) = pure (applyBinary op a b) := by
+  cases op <;> (rw [applyCoercing]; simp [toPrimitive]) <;> simp
+
+@[tarski_eval] theorem toNumberValue_prim (p : Js.JsVal) :
+    toNumberValue (.prim p) = pure (toNumberPrim p) := by
+  rw [toNumberValue]; simp [toPrimitive]
+
+@[tarski_eval] theorem toStringValue_prim (p : Js.JsVal) :
+    toStringValue (.prim p) = pure (toStringPrim p) := by
+  rw [toStringValue]; simp [toPrimitive]
 
 -- Cells, objects, and the heap underneath both.
 attribute [tarski_eval]
@@ -169,6 +201,14 @@ attribute [tarski_eval]
   objectCellRef arrayCellRef stringCellRef printCellRef hostCellRef
   numberCellRef booleanCellRef mathCellRef nanCellRef infinityCellRef
   parseFloatCellRef parseIntCellRef consoleCellRef functionCellRef
+  symbolProtoRef symbolCtorRef symbolForRef symbolKeyForRef symbolProtoToStringRef
+  symbolProtoValueOfRef symbolDescriptionRef symbolToPrimitiveRef symbolRegistryRef
+  jsonRef jsonParseRef jsonStringifyRef
+  aggregateErrorProtoRef aggregateErrorCtorRef functionHasInstanceRef
+  objectGetOwnPropertySymbolsRef errorIsErrorRef
+  symbolCellRef jsonCellRef aggregateErrorCellRef wellKnownSymbolCellBase
+  WellKnownSymbol.name WellKnownSymbol.description WellKnownSymbol.id
+  WellKnownSymbol.symbol WellKnownSymbol.key WellKnownSymbol.all
 
 -- Running a script, and the transformer plumbing core does not tag as
 -- `simp` (`Tarski/Monad.lean` says why).

@@ -1,4 +1,4 @@
-import Tarski.Eval
+import Tarski.Simp
 
 /-! A labelled `break` out of nested loops, proved one iteration at a
 time.
@@ -28,12 +28,16 @@ private def program : Program :=
 -- caught completion add. `attempt` is in it and `evalWhile` is not: the
 -- first is an ordinary definition whose unfolding terminates, the second
 -- is the loop.
+-- `applyCoercing_prim` and `toNumberValue_prim` (`Tarski/Simp.lean`) are
+-- the two ground lemmas that close a coercion of a primitive in one
+-- rewrite: ToPrimitive answers a `Value` now, so without them every
+-- iteration's arithmetic pushes `simp` through a constructor match.
 attribute [local simp] evalExpr evalStmt evalStmts evalDeclarators evalNamed
   instantiateBlock hoistNames hoistDeclarators initFunctions
   varNames varNamesStmt varNamesCases hoistVars
   allocCell getCell readCell writeCell initCell putIdent
   Env.lookup Heap.alloc Heap.read Heap.write
-  applyBinary applyUnary applyStrict BinaryOp.coerces applyCoercing toPrimitive
+  applyBinary applyUnary applyStrict BinaryOp.coerces applyCoercing toPrimitive toNumberValue applyCoercing_prim toNumberValue_prim
   toNumberPrim toBooleanPrim isStrPrim toStringPrim strictEqValue
   evalBlock evalLabeled evalLoop attempt liftCompletion loopContinues
   DeclKind.isMutable Heap.initial globalEnv runScript runProgram evalProgram

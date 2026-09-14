@@ -88,3 +88,14 @@ test/built-ins/Function
 test/language/expressions/template-literal
 test/language/expressions/tagged-template
 test/language/expressions/object
+
+# Symbols, JSON, and the Error refinements (#392). The issue's `*Error`
+# glob, expanded literally, plus `NativeErrors`, where `TypeError` and
+# the rest of the seven actually live.
+test/built-ins/Symbol
+test/built-ins/JSON
+test/built-ins/Error
+test/built-ins/NativeErrors
+test/built-ins/AggregateError
+test/built-ins/SuppressedError
+test/built-ins/ThrowTypeError

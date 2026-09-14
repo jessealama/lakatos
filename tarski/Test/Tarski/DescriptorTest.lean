@@ -182,17 +182,17 @@ private def mixed : Obj :=
         ("a", Property.ordinary (.prim (.num 1.0))),
         ("1", Property.ordinary (.prim (.num 1.0))) ] }
 
-#guard mixed.ownKeys == ["1", "2", "b", "a"]
+#guard mixed.ownKeys == ["1", "2", "b", "a"].map Key.str
 
 -- An accessor defined last comes last, not before the data keys.
 #guard (mixed.defineAccessorHalf "c" (some g₁) none false true).ownKeys
-  == ["1", "2", "b", "a", "c"]
+  == ["1", "2", "b", "a", "c"].map Key.str
 
 -- An array's `length` is an own property that does not live in the
 -- property list, so `ownKeys` puts it in by hand, after the indices.
-#guard (Obj.array none [.prim (.num 7.0)]).ownKeys == ["0", "length"]
+#guard (Obj.array none [.prim (.num 7.0)]).ownKeys == ["0", "length"].map Key.str
 #guard ((Obj.array none [.prim (.num 7.0)]).define "x"
-    (Property.ordinary (.prim .undef))).ownKeys == ["0", "length", "x"]
+    (Property.ordinary (.prim .undef))).ownKeys == ["0", "length", "x"].map Key.str
 
 -- `Object.keys` and `for`-`in` see only the enumerable ones, and an
 -- array's `length` is never among them.
@@ -209,7 +209,7 @@ private def threeElements : Obj :=
   Obj.array none [.prim (.num 0.0), .prim (.num 1.0), .prim (.num 2.0)]
 
 #guard (threeElements.truncate 1).2 == 1
-#guard (threeElements.truncate 1).1.ownKeys == ["0", "length"]
+#guard (threeElements.truncate 1).1.ownKeys == ["0", "length"].map Key.str
 #guard (threeElements.truncate 0).2 == 0
 
 -- With element 1 non-configurable, a truncation to 0 stops there and
@@ -219,7 +219,7 @@ private def stubborn : Obj :=
                              enumerable := true, configurable := false }
 
 #guard (stubborn.truncate 0).2 == 2
-#guard (stubborn.truncate 0).1.ownKeys == ["0", "1", "length"]
+#guard (stubborn.truncate 0).1.ownKeys == ["0", "1", "length"].map Key.str
 
 -- The `length`'s own writability is not truncation's business: the
 -- caller decided whether the write was allowed at all.
@@ -239,3 +239,24 @@ private def stubborn : Obj :=
 #guard (threeElements.setIntegrity true).arrayLength? == some (3, false)
 #guard (threeElements.setIntegrity true).testIntegrity true
 #guard !(threeElements.setIntegrity false).testIntegrity true
+
+/-! ## A symbol key goes through the same table
+
+`Obj.applyDescriptor` is a function of a `Key`, and the key's only part
+in it is the lookup: a symbol-keyed property is defined, refused, and
+redefined by exactly the rules above. -/
+
+private def symKey : Key := .sym { id := 0, description := some "k" }
+
+private def withSym : Option Obj :=
+  ({ : Obj }).applyDescriptor symKey { value := some (.prim (.num 1.0)) }
+
+#guard withSym.isSome
+#guard withSym.bind (·.getOwn symKey) == some (Value.prim (.num 1.0))
+-- Defined with no `writable`, so a redefinition to another value is
+-- refused, exactly as a string-keyed one would be.
+#guard (withSym.bind (·.applyDescriptor symKey { value := some (.prim (.num 2.0)) })).isNone
+-- And a string key of the same spelling is a different property.
+#guard withSym.bind (·.getOwn "k") == none
+#guard withSym.map (·.ownKeys) == some [symKey]
+#guard withSym.map (·.stringKeys) == some []

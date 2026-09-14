@@ -46,11 +46,43 @@ the literal against the constants so the two cannot drift apart.
 | 68–72     | `Object.prototype.toString`, `valueOf`, `toLocaleString`, `isPrototypeOf`, `propertyIsEnumerable` |
 | 73–90     | `Object.assign`, `create`, `defineProperties`, `defineProperty`, `entries`, `freeze`, `getOwnPropertyDescriptor`, `getOwnPropertyDescriptors`, `getOwnPropertyNames`, `getPrototypeOf`, `hasOwn`, `isExtensible`, `isFrozen`, `isSealed`, `preventExtensions`, `seal`, `setPrototypeOf`, `values` |
 | 91        | `%TemplateMap%`, the realm's `[[TemplateMap]]`            |
+| 92        | `Symbol.prototype`                                       |
+| 93        | `Symbol`                                                 |
+| 94–95     | `Symbol.for`, `Symbol.keyFor`                            |
+| 96–99     | `Symbol.prototype.toString`, `valueOf`, `get description`, `[@@toPrimitive]` |
+| 100       | `%SymbolRegistry%`, the registry `Symbol.for` writes      |
+| 101       | `JSON`                                                   |
+| 102–103   | `JSON.parse`, `JSON.stringify`                           |
+| 104–105   | `AggregateError.prototype`, `AggregateError`             |
+| 106       | `Function.prototype[@@hasInstance]`                       |
+| 107       | `Object.getOwnPropertySymbols`                            |
+| 108       | `Error.isError`                                          |
 
-Ninety-one objects, then, and twenty-one cells. The twenty-one global
-bindings are cells 0–20: the seven `Error` constructors, then `Object`,
-`Array`, `String`, `print`, `$262`, `Number`, `Boolean`, `Math`, `NaN`,
-`Infinity`, `parseFloat`, `parseInt`, `console`, and `Function`.
+A hundred and nine objects, then, and thirty-seven cells. The
+twenty-four global bindings are cells 0–23: the seven `Error`
+constructors, then `Object`, `Array`, `String`, `print`, `$262`,
+`Number`, `Boolean`, `Math`, `NaN`, `Infinity`, `parseFloat`,
+`parseInt`, `console`, `Function`, `Symbol`, `JSON`, and
+`AggregateError`. Cells 24–36 are bound to no name at all: they are the
+thirteen **well-known symbols' identities**, allocated so that
+`Symbol.iterator` is one fixed symbol per realm and so that a symbol's
+identity is a cell here exactly as a `Symbol()` call's is. They are
+immutable and empty and are never read.
+
+`Symbol` is the third primitive (`Tarski/Value.lean`), and the thirteen
+well-known symbols are *values* here: `@@toPrimitive`, `@@toStringTag`,
+and `@@hasInstance` have their semantics in the evaluator, and the other
+ten wait for the protocols that read them (#394's iterators, #390's
+`Array.prototype`). `%SymbolRegistry%` is an intrinsic with no binding,
+like `%PrintLog%`: `Symbol.for`'s string keys to its symbols, which is
+what makes `Symbol.for("q") === Symbol.for("q")`.
+
+`JSON` is an ordinary object with no `[[Call]]`, so `JSON()` is `not a
+function`; its grammar and its serializer are `Tarski/Json.lean` and
+`Tarski/Eval.lean`'s `callJsonNative`. `AggregateError` is a native of
+its own rather than an eighth `ErrorKind`: `ErrorKind` is the set the
+evaluator itself throws, and its order fixes references 0–13 and cells
+0–6.
 
 `parseFloat` and `parseInt` are **one function object each**, bound
 globally and read as `Number.parseFloat` and `Number.parseInt`, so
@@ -71,8 +103,8 @@ rather than a second copy of them. `Number.prototype` and
 `Boolean.prototype` are themselves wrapper objects, of `+0` and `false`,
 as the specification has them: it costs one field each and test262
 observes it (`Number.prototype.valueOf()` is `0`). `Math` has no
-`[[Call]]` and no `[[Construct]]`, so `Math()` is `not a function`;
-`@@toStringTag` on it is #392's. The `String` wrapper object is #391's,
+`[[Call]]` and no `[[Construct]]`, so `Math()` is `not a function`, and
+its `@@toStringTag` is `"Math"`. The `String` wrapper object is #391's,
 so `String` still has no `prototype` property here.
 
 `print` and `$262` are the two host-defined bindings test262 requires of
@@ -99,8 +131,9 @@ program order however the two were mixed, and it holds no other member:
 `Object.prototype` carries its whole surface but the two accessors:
 `toString`, `valueOf`, `toLocaleString`, `isPrototypeOf`,
 `propertyIsEnumerable`, and `hasOwnProperty`, so `{} + 1` is
-`"[object Object]1"`. `__proto__` is #487's and `@@toStringTag` is
-#392's. Object literals, function `prototype` objects,
+`"[object Object]1"`. `__proto__` is #487's; `Object.prototype` has no
+`@@toStringTag` of its own — the tag is `Object.prototype.toString`'s
+own read of one. Object literals, function `prototype` objects,
 `Error.prototype`, and `Array.prototype` all link to it, and
 `Object.prototype` itself is null-prototyped.
 
@@ -386,13 +419,143 @@ def objectSetPrototypeOfRef : Ref := 89
 /-- `Object.values`. -/
 def objectValuesRef : Ref := 90
 
+/-- `Symbol.prototype`. -/
+def symbolProtoRef : Ref := 92
+
+/-- `Symbol`. -/
+def symbolCtorRef : Ref := 93
+
+/-- `Symbol.for`. -/
+def symbolForRef : Ref := 94
+
+/-- `Symbol.keyFor`. -/
+def symbolKeyForRef : Ref := 95
+
+/-- `Symbol.prototype.toString`. -/
+def symbolProtoToStringRef : Ref := 96
+
+/-- `Symbol.prototype.valueOf`. -/
+def symbolProtoValueOfRef : Ref := 97
+
+/-- `get Symbol.prototype.description`. -/
+def symbolDescriptionRef : Ref := 98
+
+/-- `Symbol.prototype[@@toPrimitive]`. -/
+def symbolToPrimitiveRef : Ref := 99
+
+/-- `%SymbolRegistry%`, the GlobalSymbolRegistry (20.4.2.2's table) as an
+object: `Symbol.for`'s string keys to the symbols it has handed out. It
+is null-prototyped and bound to no name, so nothing a script does can
+reach it or shadow one of its keys. -/
+def symbolRegistryRef : Ref := 100
+
+/-- `JSON`. -/
+def jsonRef : Ref := 101
+
+/-- `JSON.parse`. -/
+def jsonParseRef : Ref := 102
+
+/-- `JSON.stringify`. -/
+def jsonStringifyRef : Ref := 103
+
+/-- `AggregateError.prototype`. -/
+def aggregateErrorProtoRef : Ref := 104
+
+/-- `AggregateError`. -/
+def aggregateErrorCtorRef : Ref := 105
+
+/-- `Function.prototype[@@hasInstance]`. -/
+def functionHasInstanceRef : Ref := 106
+
+/-- `Object.getOwnPropertySymbols`. -/
+def objectGetOwnPropertySymbolsRef : Ref := 107
+
+/-- `Error.isError`. -/
+def errorIsErrorRef : Ref := 108
+
+/-- The cell the first well-known symbol's identity lives in; the
+thirteen run from here to 36, in 6.1.5.1's table order. -/
+def wellKnownSymbolCellBase : CellRef := 24
+
+/-- The thirteen well-known symbols (6.1.5.1), in the table's order.
+They are *values* in this slice: `@@toPrimitive`, `@@toStringTag`, and
+`@@hasInstance` have their semantics in the evaluator, and the rest wait
+for the protocols that read them. `Symbol.dispose` and
+`Symbol.asyncDispose` are absent with the rest of explicit resource
+management. -/
+inductive WellKnownSymbol where
+  | asyncIterator
+  | hasInstance
+  | isConcatSpreadable
+  | iterator
+  | «match»
+  | matchAll
+  | replace
+  | search
+  | species
+  | split
+  | toPrimitive
+  | toStringTag
+  | unscopables
+deriving Repr, DecidableEq, Inhabited
+
+/-- The symbol's spelling as a property of `Symbol`. -/
+def WellKnownSymbol.name : WellKnownSymbol → String
+  | .asyncIterator => "asyncIterator"
+  | .hasInstance => "hasInstance"
+  | .isConcatSpreadable => "isConcatSpreadable"
+  | .iterator => "iterator"
+  | .«match» => "match"
+  | .matchAll => "matchAll"
+  | .replace => "replace"
+  | .search => "search"
+  | .species => "species"
+  | .split => "split"
+  | .toPrimitive => "toPrimitive"
+  | .toStringTag => "toStringTag"
+  | .unscopables => "unscopables"
+
+/-- Its `[[Description]]`, which is its name with `Symbol.` in front. -/
+def WellKnownSymbol.description (w : WellKnownSymbol) : String :=
+  "Symbol." ++ w.name
+
+/-- Its identity: a fixed cell, one per symbol, so that a well-known
+symbol is a literal `simp` can compute with. -/
+def WellKnownSymbol.id : WellKnownSymbol → SymbolId
+  | .asyncIterator => 24
+  | .hasInstance => 25
+  | .isConcatSpreadable => 26
+  | .iterator => 27
+  | .«match» => 28
+  | .matchAll => 29
+  | .replace => 30
+  | .search => 31
+  | .species => 32
+  | .split => 33
+  | .toPrimitive => 34
+  | .toStringTag => 35
+  | .unscopables => 36
+
+/-- The symbol itself. -/
+def WellKnownSymbol.symbol (w : WellKnownSymbol) : Symbol :=
+  { id := w.id, description := some w.description }
+
+/-- The symbol as a property key. -/
+def WellKnownSymbol.key (w : WellKnownSymbol) : Key :=
+  .sym w.symbol
+
+/-- Every well-known symbol, in the table's order. -/
+def WellKnownSymbol.all : List WellKnownSymbol :=
+  [ .asyncIterator, .hasInstance, .isConcatSpreadable, .iterator, .«match», .matchAll,
+    .replace, .search, .species, .split, .toPrimitive, .toStringTag, .unscopables ]
+
 /-- A built-in function object with extra own properties after its
 `length` and `name`: 17.1's shape, which is what makes
 `Object.getOwnPropertyNames(Object)` start `["length", "name",
 "prototype"]`. `@[reducible]`, so `Heap.initial` is still a literal to
 `simp`. -/
 @[reducible] def Obj.builtinWith (f : NativeFn) (name : String) (length : Nat)
-    (props : List (String × Property)) : Obj :=
+    (props : List (Key × Property)) : Obj :=
   { proto := some functionProtoRef,
     callable := some (.native f),
     properties :=
@@ -477,6 +640,15 @@ def consoleCellRef : CellRef := 19
 /-- The cell `Function` is bound in. -/
 def functionCellRef : CellRef := 20
 
+/-- The cell `Symbol` is bound in. -/
+def symbolCellRef : CellRef := 21
+
+/-- The cell `JSON` is bound in. -/
+def jsonCellRef : CellRef := 22
+
+/-- The cell `AggregateError` is bound in. -/
+def aggregateErrorCellRef : CellRef := 23
+
 /-- The scope a script's own declarations are instantiated on top of:
 `ErrorKind.all.map (fun k => (k.name, k.cellRef))`, written out so that
 `simp` sees a literal list. There is no global *object* (#487), so a
@@ -502,7 +674,10 @@ def globalEnv : Env :=
     ("parseFloat", 17),
     ("parseInt", 18),
     ("console", 19),
-    ("Function", 20) ]
+    ("Function", 20),
+    ("Symbol", 21),
+    ("JSON", 22),
+    ("AggregateError", 23) ]
 
 /-- The heap a script starts from: the realm, laid out at the references
 above. -/
@@ -534,7 +709,26 @@ def Heap.initial : Heap where
        { mutable := true, value := some (.obj 53) },  -- parseFloat
        { mutable := true, value := some (.obj 54) },  -- parseInt
        { mutable := true, value := some (.obj 60) },  -- console
-       { mutable := true, value := some (.obj 63) } ] -- Function
+       { mutable := true, value := some (.obj 63) },  -- Function
+       { mutable := true, value := some (.obj 93) },  -- Symbol
+       { mutable := true, value := some (.obj 101) }, -- JSON
+       { mutable := true, value := some (.obj 105) }, -- AggregateError
+       -- 24–36: the thirteen well-known symbols' identities, in
+       -- 6.1.5.1's order. A symbol's identity *is* a cell, so these are
+       -- allocated like any other; nothing ever reads or writes one.
+       { mutable := false, value := none },           -- Symbol.asyncIterator
+       { mutable := false, value := none },           -- Symbol.hasInstance
+       { mutable := false, value := none },           -- Symbol.isConcatSpreadable
+       { mutable := false, value := none },           -- Symbol.iterator
+       { mutable := false, value := none },           -- Symbol.match
+       { mutable := false, value := none },           -- Symbol.matchAll
+       { mutable := false, value := none },           -- Symbol.replace
+       { mutable := false, value := none },           -- Symbol.search
+       { mutable := false, value := none },           -- Symbol.species
+       { mutable := false, value := none },           -- Symbol.split
+       { mutable := false, value := none },           -- Symbol.toPrimitive
+       { mutable := false, value := none },           -- Symbol.toStringTag
+       { mutable := false, value := none } ]          -- Symbol.unscopables
   objects :=
     #[ -- 0: Error.prototype. `toString` is on it because the binary's
        -- uncaught-error report runs that algorithm anyway. It is an
@@ -587,7 +781,8 @@ def Heap.initial : Heap where
        -- itself, which is what `TypeError instanceof Error`-shaped
        -- lookups walk; `Error`'s own is `Function.prototype`.
        Obj.builtinWith (.errorCtor .error) "Error" 1
-         [("prototype", Property.constant (.obj 0))],
+         [ ("prototype", Property.constant (.obj 0)),
+           ("isError", Property.method (.obj 108)) ],
        -- 8: TypeError
        { Obj.builtinWith (.errorCtor .typeError) "TypeError" 1
            [("prototype", Property.constant (.obj 1))] with proto := some 7 },
@@ -609,8 +804,8 @@ def Heap.initial : Heap where
        -- 14: Error.prototype.toString
        Obj.builtin .errorToString "toString" 0,
        -- 15: Object.prototype. The root of every ordinary chain, and
-       -- itself null-prototyped. `__proto__` is #487's and
-       -- `@@toStringTag` #392's; the rest of 20.1.3 is here.
+       -- itself null-prototyped. `__proto__` is #487's; the rest of
+       -- 20.1.3 is here.
        { proto := none,
          properties :=
            [ ("constructor", Property.method (.obj 16)),
@@ -620,9 +815,8 @@ def Heap.initial : Heap where
              ("toLocaleString", Property.method (.obj 70)),
              ("toString", Property.method (.obj 68)),
              ("valueOf", Property.method (.obj 69)) ] },
-       -- 16: Object. `fromEntries` and `groupBy` want iterators (#394)
-       -- and `getOwnPropertySymbols` wants symbols (#392); everything
-       -- else 20.1.2 lists is here.
+       -- 16: Object. `fromEntries` and `groupBy` want iterators (#394);
+       -- everything else 20.1.2 lists is here.
        Obj.builtinWith .objectCtor "Object" 1
          [ ("prototype", Property.constant (.obj 15)),
            ("assign", Property.method (.obj 73)),
@@ -634,6 +828,7 @@ def Heap.initial : Heap where
            ("getOwnPropertyDescriptor", Property.method (.obj 79)),
            ("getOwnPropertyDescriptors", Property.method (.obj 80)),
            ("getOwnPropertyNames", Property.method (.obj 81)),
+           ("getOwnPropertySymbols", Property.method (.obj 107)),
            ("getPrototypeOf", Property.method (.obj 82)),
            ("hasOwn", Property.method (.obj 83)),
            ("is", Property.method (.obj 18)),
@@ -766,7 +961,9 @@ def Heap.initial : Heap where
              ("trunc", Property.method (.obj 49)),
              ("max", Property.method (.obj 50)),
              ("min", Property.method (.obj 51)),
-             ("pow", Property.method (.obj 52)) ] },
+             ("pow", Property.method (.obj 52)),
+             (WellKnownSymbol.toStringTag.key,
+               Property.attribute (.prim (.str "Math"))) ] },
        -- 42: Math.abs
        Obj.builtin .mathAbs "abs" 1,
        -- 43: Math.ceil
@@ -831,7 +1028,10 @@ def Heap.initial : Heap where
              ("apply", Property.method (.obj 65)),
              ("bind", Property.method (.obj 66)),
              ("call", Property.method (.obj 64)),
-             ("toString", Property.method (.obj 67)) ] },
+             ("toString", Property.method (.obj 67)),
+             -- 20.2.3.6: no attribute at all, so a script can neither
+             -- replace nor delete the intrinsic handler.
+             (WellKnownSymbol.hasInstance.key, Property.constant (.obj 106)) ] },
        -- 63: Function. The object is here because every `call`,
        -- `apply`, and `bind` spelling reaches `Function.prototype`
        -- through it and because `isConstructor(Function)` is true;
@@ -895,6 +1095,89 @@ def Heap.initial : Heap where
        Obj.builtin .objectValues "values" 1,
        -- 91: %TemplateMap%, which starts empty and is only ever written
        -- to by GetTemplateObject.
-       { } ]
+       { },
+       -- 92: Symbol.prototype. An ordinary object, not a Symbol one:
+       -- `[[SymbolData]]` is on the wrappers, so
+       -- `Object.prototype.toString.call(Symbol.prototype)` reads the
+       -- `@@toStringTag` here and answers `[object Symbol]` for that
+       -- reason rather than for a slot's.
+       { proto := some 15,
+         properties :=
+           [ ("constructor", Property.method (.obj 93)),
+             ("toString", Property.method (.obj 96)),
+             ("valueOf", Property.method (.obj 97)),
+             ("description",
+               { slot := .accessor { getter := some (.obj 98) },
+                 enumerable := false, configurable := true }),
+             (WellKnownSymbol.toPrimitive.key, Property.attribute (.obj 99)),
+             (WellKnownSymbol.toStringTag.key,
+               Property.attribute (.prim (.str "Symbol"))) ] },
+       -- 93: Symbol. Its thirteen well-known members have no attribute
+       -- at all (20.4.2), so `Symbol.iterator = 1` is the strict-mode
+       -- refusal an assignment to `Math.PI` is.
+       Obj.builtinWith .symbolCtor "Symbol" 0
+         [ ("prototype", Property.constant (.obj 92)),
+           ("for", Property.method (.obj 94)),
+           ("keyFor", Property.method (.obj 95)),
+           ("asyncIterator", Property.constant (.sym WellKnownSymbol.asyncIterator.symbol)),
+           ("hasInstance", Property.constant (.sym WellKnownSymbol.hasInstance.symbol)),
+           ("isConcatSpreadable",
+             Property.constant (.sym WellKnownSymbol.isConcatSpreadable.symbol)),
+           ("iterator", Property.constant (.sym WellKnownSymbol.iterator.symbol)),
+           ("match", Property.constant (.sym WellKnownSymbol.«match».symbol)),
+           ("matchAll", Property.constant (.sym WellKnownSymbol.matchAll.symbol)),
+           ("replace", Property.constant (.sym WellKnownSymbol.replace.symbol)),
+           ("search", Property.constant (.sym WellKnownSymbol.search.symbol)),
+           ("species", Property.constant (.sym WellKnownSymbol.species.symbol)),
+           ("split", Property.constant (.sym WellKnownSymbol.split.symbol)),
+           ("toPrimitive", Property.constant (.sym WellKnownSymbol.toPrimitive.symbol)),
+           ("toStringTag", Property.constant (.sym WellKnownSymbol.toStringTag.symbol)),
+           ("unscopables", Property.constant (.sym WellKnownSymbol.unscopables.symbol)) ],
+       -- 94: Symbol.for
+       Obj.builtin .symbolFor "for" 1,
+       -- 95: Symbol.keyFor
+       Obj.builtin .symbolKeyFor "keyFor" 1,
+       -- 96: Symbol.prototype.toString
+       Obj.builtin .symbolProtoToString "toString" 0,
+       -- 97: Symbol.prototype.valueOf
+       Obj.builtin .symbolProtoValueOf "valueOf" 0,
+       -- 98: get Symbol.prototype.description. A getter's `name` is
+       -- `"get "` and the property's spelling (10.2.9).
+       Obj.builtin .symbolDescription "get description" 0,
+       -- 99: Symbol.prototype[@@toPrimitive]. A symbol-keyed method's
+       -- `name` is its key's description in brackets (10.2.9).
+       Obj.builtin .symbolToPrimitive "[Symbol.toPrimitive]" 1,
+       -- 100: %SymbolRegistry%. Null-prototyped, so a key of `Symbol.for`
+       -- can never collide with an inherited one.
+       { proto := none },
+       -- 101: JSON. Ordinary, with no `[[Call]]`, so `JSON()` is `not a
+       -- function`; the tag is what makes
+       -- `Object.prototype.toString.call(JSON)` `[object JSON]`.
+       { proto := some 15,
+         properties :=
+           [ ("parse", Property.method (.obj 102)),
+             ("stringify", Property.method (.obj 103)),
+             (WellKnownSymbol.toStringTag.key,
+               Property.attribute (.prim (.str "JSON"))) ] },
+       -- 102: JSON.parse
+       Obj.builtin .jsonParse "parse" 2,
+       -- 103: JSON.stringify
+       Obj.builtin .jsonStringify "stringify" 3,
+       -- 104: AggregateError.prototype
+       { proto := some 0,
+         properties :=
+           [ ("constructor", Property.method (.obj 105)),
+             ("name", Property.method (.prim (.str "AggregateError"))),
+             ("message", Property.method (.prim (.str ""))) ] },
+       -- 105: AggregateError. Its `[[Prototype]]` is `Error` itself, as
+       -- every `NativeError`'s is.
+       { Obj.builtinWith .aggregateErrorCtor "AggregateError" 2
+           [("prototype", Property.constant (.obj 104))] with proto := some 7 },
+       -- 106: Function.prototype[@@hasInstance]
+       Obj.builtin .functionHasInstance "[Symbol.hasInstance]" 1,
+       -- 107: Object.getOwnPropertySymbols
+       Obj.builtin .objectGetOwnPropertySymbols "getOwnPropertySymbols" 1,
+       -- 108: Error.isError
+       Obj.builtin .errorIsError "isError" 1 ]
 
 end Tarski

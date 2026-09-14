@@ -15,8 +15,8 @@ open Tarski
 
 /-! ## The shape -/
 
-#guard Heap.initial.cells.size == 21
-#guard Heap.initial.objects.size == 92
+#guard Heap.initial.cells.size == 37
+#guard Heap.initial.objects.size == 109
 
 /-! ## Each kind's prototype
 
@@ -68,7 +68,7 @@ constructor object. -/
         | some c => c.value == some (.obj k.ctorRef)
         | none => false)
 
-#guard globalEnv.length == 21
+#guard globalEnv.length == 24
 
 /-! ## `Error.prototype.toString` -/
 
@@ -348,7 +348,7 @@ and `log` writes to the same `%PrintLog%` `print` does. -/
   | some o =>
     o.proto == some objectProtoRef
       && o.callable.isNone
-      && o.properties == [("log", Property.method (.obj consoleLogRef))]
+      && o.properties == [(Key.str "log", Property.method (.obj consoleLogRef))]
   | none => false
 
 #guard match Heap.initial.readObj consoleLogRef with
@@ -593,3 +593,153 @@ library's own constants — which is what makes `NaN = 1` a strict-mode
 #guard (Heap.initial.read nanCellRef).bind (·.value) == some (.prim (.num Js.Number.NaN))
 #guard (Heap.initial.read infinityCellRef).bind (·.value)
   == some (.prim (.num Js.Number.POSITIVE_INFINITY))
+
+/-! ## `Symbol`, `JSON`, and `AggregateError`
+
+The seventeen objects and sixteen cells this slice appended. The
+thirteen identity cells are the well-known symbols': a symbol's identity
+*is* a cell, so they are allocated like any other binding, and they are
+immutable, empty, and never read. -/
+
+#guard Env.lookup globalEnv "Symbol" == some symbolCellRef
+#guard Env.lookup globalEnv "JSON" == some jsonCellRef
+#guard Env.lookup globalEnv "AggregateError" == some aggregateErrorCellRef
+#guard (Heap.initial.read symbolCellRef).bind (·.value) == some (.obj symbolCtorRef)
+#guard (Heap.initial.read jsonCellRef).bind (·.value) == some (.obj jsonRef)
+#guard (Heap.initial.read aggregateErrorCellRef).bind (·.value)
+  == some (.obj aggregateErrorCtorRef)
+#guard (Heap.initial.read symbolCellRef).map (·.mutable) == some true
+#guard (Heap.initial.read jsonCellRef).map (·.mutable) == some true
+#guard (Heap.initial.read aggregateErrorCellRef).map (·.mutable) == some true
+
+-- The thirteen identity cells, in 6.1.5.1's order, starting where the
+-- three bindings above leave off.
+#guard WellKnownSymbol.all.map (·.id)
+  == (List.range 13).map (fun i => wellKnownSymbolCellBase + i)
+#guard WellKnownSymbol.all.all fun w =>
+  match Heap.initial.read w.id with
+  | some c => !c.mutable && c.value.isNone
+  | none => false
+
+/-- The built-in function at a reference, with its `length` and `name`
+read back out of the literal — 17.1's shape, which is what
+`Object.getOwnPropertyNames` on any of these starts with. -/
+private def builtinShape (r : Ref) (f : NativeFn) (name : String) (length : Nat) : Bool :=
+  match Heap.initial.readObj r with
+  | some o =>
+    o.proto == some functionProtoRef
+      && (match o.callable with | some (.native g) => g == f | _ => false)
+      && o.getOwnProperty "length" == some (Property.attribute (Value.ofNat length))
+      && o.getOwnProperty "name" == some (Property.attribute (.prim (.str name)))
+  | none => false
+
+#guard builtinShape symbolCtorRef .symbolCtor "Symbol" 0
+#guard builtinShape symbolForRef .symbolFor "for" 1
+#guard builtinShape symbolKeyForRef .symbolKeyFor "keyFor" 1
+#guard builtinShape symbolProtoToStringRef .symbolProtoToString "toString" 0
+#guard builtinShape symbolProtoValueOfRef .symbolProtoValueOf "valueOf" 0
+#guard builtinShape symbolDescriptionRef .symbolDescription "get description" 0
+#guard builtinShape symbolToPrimitiveRef .symbolToPrimitive "[Symbol.toPrimitive]" 1
+#guard builtinShape jsonParseRef .jsonParse "parse" 2
+#guard builtinShape jsonStringifyRef .jsonStringify "stringify" 3
+#guard builtinShape functionHasInstanceRef .functionHasInstance "[Symbol.hasInstance]" 1
+#guard builtinShape objectGetOwnPropertySymbolsRef .objectGetOwnPropertySymbols
+  "getOwnPropertySymbols" 1
+#guard builtinShape errorIsErrorRef .errorIsError "isError" 1
+
+/-! `Symbol.prototype`: the two methods, the `description` accessor whose
+setter half is absent, and the two symbol-keyed members. -/
+
+#guard match Heap.initial.readObj symbolProtoRef with
+  | some o =>
+    o.proto == some objectProtoRef
+      && o.callable.isNone
+      && o.getOwnProperty "constructor" == some (Property.method (.obj symbolCtorRef))
+      && o.getOwnProperty "toString" == some (Property.method (.obj symbolProtoToStringRef))
+      && o.getOwnProperty "valueOf" == some (Property.method (.obj symbolProtoValueOfRef))
+      && o.getOwnProperty "description"
+        == some { slot := .accessor { getter := some (.obj symbolDescriptionRef) },
+                  enumerable := false, configurable := true }
+      && o.getOwnProperty WellKnownSymbol.toPrimitive.key
+        == some (Property.attribute (.obj symbolToPrimitiveRef))
+      && o.getOwnProperty WellKnownSymbol.toStringTag.key
+        == some (Property.attribute (.prim (.str "Symbol")))
+  | none => false
+
+/-! `Symbol`'s thirteen constants have no attribute at all, so
+`Symbol.iterator = 1` is the refusal `Math.PI = 1` is. -/
+
+#guard match Heap.initial.readObj symbolCtorRef with
+  | some o =>
+    o.getOwnProperty "prototype" == some (Property.constant (.obj symbolProtoRef))
+      && o.getOwnProperty "for" == some (Property.method (.obj symbolForRef))
+      && o.getOwnProperty "keyFor" == some (Property.method (.obj symbolKeyForRef))
+      && WellKnownSymbol.all.all fun w =>
+           o.getOwnProperty (.str w.name) == some (Property.constant (.sym w.symbol))
+  | none => false
+
+/-! `%SymbolRegistry%` is empty, null-prototyped, and bound to no name. -/
+
+#guard match Heap.initial.readObj symbolRegistryRef with
+  | some o => o.proto.isNone && o.properties.isEmpty && o.callable.isNone
+  | none => false
+#guard globalEnv.all fun b =>
+  (Heap.initial.read b.2).bind (·.value) != some (.obj symbolRegistryRef)
+
+/-! `JSON` has no `[[Call]]`, and its tag is what makes
+`Object.prototype.toString.call(JSON)` `[object JSON]`. -/
+
+#guard match Heap.initial.readObj jsonRef with
+  | some o =>
+    o.proto == some objectProtoRef
+      && o.callable.isNone
+      && o.getOwnProperty "parse" == some (Property.method (.obj jsonParseRef))
+      && o.getOwnProperty "stringify" == some (Property.method (.obj jsonStringifyRef))
+      && o.getOwnProperty WellKnownSymbol.toStringTag.key
+        == some (Property.attribute (.prim (.str "JSON")))
+  | none => false
+
+/-! The other two `@@toStringTag`s this slice installs. -/
+
+#guard (Heap.initial.readObj mathRef).bind
+  (·.getOwnProperty WellKnownSymbol.toStringTag.key)
+  == some (Property.attribute (.prim (.str "Math")))
+
+/-! `%Function.prototype[@@hasInstance]%` has no attribute at all
+(20.2.3.6), so a script can neither replace nor delete it. -/
+
+#guard (Heap.initial.readObj functionProtoRef).bind
+  (·.getOwnProperty WellKnownSymbol.hasInstance.key)
+  == some (Property.constant (.obj functionHasInstanceRef))
+
+/-! `AggregateError`'s two links: its `prototype` chains to
+`Error.prototype`, and the constructor's own `[[Prototype]]` is `Error`,
+as every `NativeError`'s is. -/
+
+#guard match Heap.initial.readObj aggregateErrorProtoRef with
+  | some o =>
+    o.proto == some ErrorKind.error.protoRef
+      && o.callable.isNone
+      && o.getOwnProperty "constructor" == some (Property.method (.obj aggregateErrorCtorRef))
+      && o.getOwnProperty "name" == some (Property.method (.prim (.str "AggregateError")))
+      && o.getOwnProperty "message" == some (Property.method (.prim (.str "")))
+  | none => false
+
+#guard (Heap.initial.readObj aggregateErrorCtorRef).bind (·.proto)
+  == some ErrorKind.error.ctorRef
+#guard match Heap.initial.readObj aggregateErrorCtorRef with
+  | some o =>
+    (match o.callable with | some (.native .aggregateErrorCtor) => true | _ => false)
+      && o.getOwnProperty "length" == some (Property.attribute (Value.ofNat 2))
+      && o.getOwnProperty "name" == some (Property.attribute (.prim (.str "AggregateError")))
+  | none => false
+#guard (Heap.initial.readObj aggregateErrorCtorRef).bind (·.getOwnProperty "prototype")
+  == some (Property.constant (.obj aggregateErrorProtoRef))
+
+/-! The two statics this slice hangs off existing constructors. -/
+
+#guard (Heap.initial.readObj objectCtorRef).bind
+  (·.getOwnProperty "getOwnPropertySymbols")
+  == some (Property.method (.obj objectGetOwnPropertySymbolsRef))
+#guard (Heap.initial.readObj ErrorKind.error.ctorRef).bind (·.getOwnProperty "isError")
+  == some (Property.method (.obj errorIsErrorRef))

@@ -1,5 +1,6 @@
 import Js
 import Tarski.Ast
+import Tarski.Json
 import Tarski.Monad
 import Tarski.Format
 
@@ -234,6 +235,16 @@ def isStrPrim : JsVal → Bool
   | .str _ => true
   | _ => false
 
+/-- The refusal a symbol operand of a coercing operator raises. `+` with
+a string on the other side is ToString and every other route into the
+operators is ToNumeric, and V8 spells the two differently. -/
+def symbolOperandRefusal (op : BinaryOp) (other : Value) : String :=
+  match op, other with
+  | .add, .prim p =>
+    if isStrPrim p then "Cannot convert a Symbol value to a string"
+    else "Cannot convert a Symbol value to a number"
+  | _, _ => "Cannot convert a Symbol value to a number"
+
 /-- ToBoolean, which is total and never calls user code, so it takes a
 whole `Value`: every object is truthy. NaN is the one binary64 value
 unequal to itself, which is how the number arm rejects it — the library
@@ -247,29 +258,45 @@ def toBooleanPrim : Value → Bool
   | .prim (.str s) => !s.isEmpty
   | .prim (.bigint i) => i != 0
   | .obj _ => true
+  | .sym _ => true
 
 /-- `===` on values: the library's test on primitives, reference identity
 on objects, and `false` across the two. -/
 def strictEqValue : Value → Value → Bool
   | .prim a, .prim b => JsVal.strictEq a b
   | .obj r₁, .obj r₂ => r₁ == r₂
+  | .sym a, .sym b => a.id == b.id
   | .prim _, .obj _ => false
+  | .prim _, .sym _ => false
   | .obj _, .prim _ => false
+  | .obj _, .sym _ => false
+  | .sym _, .prim _ => false
+  | .sym _, .obj _ => false
 
-/-- Which hint ToPrimitive was called with. `number` is the default and
-what `+`, the relations, and the unary operators use; `string` is what
-`String(v)`, `join`, and ToPropertyKey use. The difference is only the
-order the two methods are tried in. -/
+/-- Which hint ToPrimitive was called with. `number` is what the
+relations and the unary operators use; `string` is what `String(v)`,
+`join`, and ToPropertyKey use; `default` is `+`'s, and OrdinaryToPrimitive
+treats it exactly as `number` (7.1.1 step 2.d). The three differ only in
+the order the two methods are tried in and in the string an
+`@@toPrimitive` handler is handed. -/
 inductive PrimHint where
   | number
   | string
+  | «default»
 deriving Repr, DecidableEq, Inhabited
 
 /-- The two method names OrdinaryToPrimitive tries, in the hint's
-order. -/
+order. `default` is `number`'s order, as 7.1.1 step 2.d has it. -/
 def hintOrder : PrimHint → String × String
   | .number => ("valueOf", "toString")
   | .string => ("toString", "valueOf")
+  | .«default» => ("valueOf", "toString")
+
+/-- The hint as an `@@toPrimitive` handler is handed it. -/
+def PrimHint.name : PrimHint → String
+  | .number => "number"
+  | .string => "string"
+  | .«default» => "default"
 
 /-- A string's `length`, in code points. `JsVal.str` is a Lean `String`,
 which cannot hold a lone surrogate, so this is UTF-16 code-unit length
@@ -301,6 +328,50 @@ def uint32Of? (x : Float) : Option Nat :=
 def indexKeys (n : Nat) : List Value :=
   (List.range n).map (fun i => .prim (.str (Nat.repr i)))
 
+/-- CreateDataProperty (7.3.5) on a reference: the definition
+`JSON.parse`'s reviver performs, whose `false` the specification does not
+report. -/
+def createDataProperty (r : Ref) (key : Key) (v : Value) : EvalM Unit := do
+  let o ← readObj r
+  match o.applyDescriptor key (Property.ordinary v).toDescriptor with
+  | some o' => writeObj r o'
+  | none => pure ()
+
+/-- `[[Delete]]` with its answer dropped, which is what 25.5.1.1 does to
+a member the reviver replaced with `undefined`: a non-configurable one
+simply stays. -/
+def removeIfConfigurable (r : Ref) (key : Key) : EvalM Unit := do
+  let o ← readObj r
+  match o.getOwnProperty key with
+  | some p => if p.configurable then writeObj r (o.remove key) else pure ()
+  | none => pure ()
+
+/-- `Symbol.keyFor`'s scan of `%SymbolRegistry%` (20.4.2.3): the key
+whose value is this symbol, or `undefined`. A linear scan, the registry
+being a dozen entries at most in any program this evaluator runs. -/
+def registryKeyFor : List (Key × Property) → Symbol → Value
+  | [], _ => .prim .undef
+  | (k, p) :: rest, sy =>
+    match k.str?, p.value? with
+    | some text, some (.sym s) =>
+      if s.id == sy.id then .prim (.str text) else registryKeyFor rest sy
+    | _, _ => registryKeyFor rest sy
+
+/-- A run of spaces, `JSON.stringify`'s gap from a numeric `space`. -/
+def spaces (n : Nat) : String := String.ofList (List.replicate n ' ')
+
+/-- `JSON.stringify`'s state, built once from its three arguments
+(25.5.2 steps 4–6) and carried down the walk: a callable replacer, an
+array replacer's PropertyList, and the indent one level costs. -/
+structure JsonState where
+  /-- The replacer, when it is callable. -/
+  replacer : Option Value := none
+  /-- An array replacer's keys; `none` is every enumerable own key. -/
+  propertyList : Option (List String) := none
+  /-- What one level of indentation adds; empty for the compact form. -/
+  gap : String := ""
+deriving Inhabited
+
 /-- Whether a built-in has a `[[Construct]]`. `String` does not: the
 wrapper object is #391's, so `new String("x")` refuses. `Math` is not a
 function at all, so it is not here either. -/
@@ -313,6 +384,11 @@ def NativeFn.constructs : NativeFn → Bool
   -- `Function` is a constructor in the specification, and test262's
   -- `isConstructor.js` asks; what it *does* is the decoder's refusal.
   | .functionCtor => true
+  -- 20.4.1: `Symbol` has a `[[Construct]]`, so `isConstructor(Symbol)`
+  -- is true and `class X extends Symbol` is well-formed; what it *does*
+  -- is `constructNative`'s `TypeError`.
+  | .symbolCtor => true
+  | .aggregateErrorCtor => true
   | _ => false
 
 /-- `Number.prototype.toString`'s radix: ToIntegerOrInfinity of the
@@ -336,6 +412,17 @@ def thisNumberValue (who : String) (v : Value) : EvalM Float := do
     | .number x => pure x
     | _ => throwJsError .typeError s!"Number.prototype.{who} requires that 'this' be a Number"
   | _ => throwJsError .typeError s!"Number.prototype.{who} requires that 'this' be a Number"
+
+/-- thisSymbolValue (20.4.3): the receiver's symbol, which is the symbol
+itself or the `[[SymbolData]]` of a wrapper around one. -/
+def thisSymbolValue (who : String) (v : Value) : EvalM Symbol := do
+  match v with
+  | .sym s => pure s
+  | .obj r =>
+    match (← readObj r).kind with
+    | .symbol s => pure s
+    | _ => throwJsError .typeError s!"Symbol.prototype.{who} requires that 'this' be a Symbol"
+  | _ => throwJsError .typeError s!"Symbol.prototype.{who} requires that 'this' be a Symbol"
 
 /-- thisBooleanValue, the mirror of `thisNumberValue`. -/
 def thisBooleanValue (who : String) (v : Value) : EvalM Bool := do
@@ -490,6 +577,7 @@ def argumentsName : String := "arguments"
 def isCallable (v : Value) : EvalM Bool := do
   match v with
   | .prim _ => pure false
+  | .sym _ => pure false
   | .obj r => pure (← readObj r).callable.isSome
 
 /-- IsConstructor: whether `new` may be applied to a value. An ordinary
@@ -499,6 +587,7 @@ asks this of its heritage. -/
 def isConstructor (v : Value) : EvalM Bool := do
   match v with
   | .prim _ => pure false
+  | .sym _ => pure false
   | .obj r =>
     match (← readObj r).callable with
     | none => pure false
@@ -517,6 +606,7 @@ which is why this is not `applyUnary`'s job. -/
 def typeofValue (v : Value) : EvalM String := do
   match v with
   | .prim p => pure (typeofName p.typeof)
+  | .sym _ => pure "symbol"
   | .obj r => pure (if (← readObj r).callable.isSome then "function" else "object")
 
 mutual
@@ -706,8 +796,8 @@ def makeArguments (args : List Value) : EvalM Value := do
     { proto := some objectProtoRef,
       kind := .arguments,
       properties :=
-        ("length", Property.method (Value.ofNat args.length)) :: indexProps 0 args ++
-          [("callee",
+        (Key.str "length", Property.method (Value.ofNat args.length)) :: indexProps 0 args ++
+          [(Key.str "callee",
             { slot := .accessor { getter := some (.obj throwTypeErrorRef),
                                   setter := some (.obj throwTypeErrorRef) },
               enumerable := false, configurable := false })] }
@@ -725,6 +815,9 @@ def builtinTag (o : Obj) : String :=
     | .error => "Error"
     | .boolean _ => "Boolean"
     | .number _ => "Number"
+    -- 20.1.3.6's table has no `Symbol` row: a Symbol wrapper's
+    -- `[object Symbol]` comes from `Symbol.prototype`'s
+    -- `@@toStringTag`, which the step after this one reads.
     | _ => "Object"
 
 /-- The NativeFunction form 20.2.3.5 allows for a function whose
@@ -742,6 +835,7 @@ anything, so this reads the property list rather than going through
 def nameOf (v : Value) : EvalM String := do
   match v with
   | .prim _ => pure ""
+  | .sym _ => pure ""
   | .obj r =>
     match (← readObj r).getOwn "name" with
     | some (.prim (.str s)) => pure s
@@ -761,6 +855,7 @@ def toObjectValue (v : Value) : EvalM Ref :=
   | .obj r => pure r
   | .prim (.num x) => allocObj { proto := some numberProtoRef, kind := .number x }
   | .prim (.bool b) => allocObj { proto := some booleanProtoRef, kind := .boolean b }
+  | .sym s => allocObj { proto := some symbolProtoRef, kind := .symbol s }
   | .prim _ => throwJsError .typeError "Cannot convert a primitive to an object"
 
 /-- `[[Delete]]` (10.1.10) behind the `delete` operator, with the
@@ -770,20 +865,21 @@ base but a string's own `length` or index, which are non-configurable
 own properties of the String exotic object. An array's `length` is one
 too. Deleting an array element leaves the length alone — the result is a
 hole. -/
-def deleteProp (base : Value) (key : String) : EvalM Bool :=
+def deleteProp (base : Value) (key : Key) : EvalM Bool :=
   match base with
   | .prim .undef =>
     throwJsError .typeError s!"Cannot read properties of undefined (reading '{key}')"
   | .prim .null =>
     throwJsError .typeError s!"Cannot read properties of null (reading '{key}')"
   | .prim (.str s) =>
-    if key == "length" || ((arrayIndex? key).any (fun i => i < stringLength s)) then
+    if key == Key.str "length" || (key.arrayIndex?.any (fun i => i < stringLength s)) then
       throwJsError .typeError s!"Cannot delete property '{key}' of #<Object>"
     else pure true
   | .prim _ => pure true
+  | .sym _ => pure true
   | .obj r => do
     let o ← readObj r
-    if o.isArray && key == "length" then
+    if o.isArray && key == Key.str "length" then
       throwJsError .typeError s!"Cannot delete property '{key}' of #<Object>"
     else
       match o.getOwnProperty key with
@@ -1077,7 +1173,7 @@ def readPrivate (env : Env) (base : Value) (name : String) : EvalM Value := do
     | none =>
       throwJsError .typeError
         s!"Cannot read private member #{name} from an object whose class did not declare it"
-  | .prim _ =>
+  | _ =>
     throwJsError .typeError
       s!"Cannot read private member #{name} from an object whose class did not declare it"
 
@@ -1093,7 +1189,7 @@ def writePrivate (env : Env) (base : Value) (name : String) (v : Value) : EvalM 
     | none =>
       throwJsError .typeError
         s!"Cannot write private member #{name} to an object whose class did not declare it"
-  | .prim _ =>
+  | _ =>
     throwJsError .typeError
       s!"Cannot write private member #{name} to an object whose class did not declare it"
 
@@ -1234,7 +1330,9 @@ def evalExpr (env : Env) : Expr → EvalM Value
       pure undefValue
     | _ => do
       let v ← evalExpr env operand
-      pure (applyUnary op (← toPrimitive .number v))
+      match ← toPrimitive .number v with
+      | .prim p => pure (applyUnary op p)
+      | other => throwJsError .typeError (symbolOperandRefusal .sub other)
   | .binary op left right => do
     let l ← evalExpr env left
     let r ← evalExpr env right
@@ -1247,7 +1345,7 @@ def evalExpr (env : Env) : Expr → EvalM Value
       let key ← toPropertyKey l
       match r with
       | .obj o => pure (.prim (.bool (← hasProperty o key)))
-      | .prim _ =>
+      | _ =>
         throwJsError .typeError
           s!"Cannot use 'in' operator to search for '{key}' in {formatValue r}"
     | _ =>
@@ -1405,26 +1503,26 @@ def evalExpr (env : Env) : Expr → EvalM Value
     -- ToNumber and the arithmetic is the library's binary64.
     match target with
     | .ident name => do
-      let old := toNumberPrim (← toPrimitive .number (← evalExpr env (.ident name)))
+      let old ← toNumberValue (← evalExpr env (.ident name))
       let stepped := op.step old
       putIdent env name (.prim (.num stepped))
       pure (.prim (.num (if isPrefix then stepped else old)))
     | .member object name => do
       let base ← evalExpr env object
-      let old := toNumberPrim (← toPrimitive .number (← getProp base name))
+      let old ← toNumberValue (← getProp base name)
       let stepped := op.step old
       setProp base name (.prim (.num stepped))
       pure (.prim (.num (if isPrefix then stepped else old)))
     | .index object key => do
       let base ← evalExpr env object
       let k ← toPropertyKey (← evalExpr env key)
-      let old := toNumberPrim (← toPrimitive .number (← getProp base k))
+      let old ← toNumberValue (← getProp base k)
       let stepped := op.step old
       setProp base k (.prim (.num stepped))
       pure (.prim (.num (if isPrefix then stepped else old)))
     | .privateMember object name => do
       let base ← evalExpr env object
-      let old := toNumberPrim (← toPrimitive .number (← readPrivate env base name))
+      let old ← toNumberValue (← readPrivate env base name)
       let stepped := op.step old
       writePrivate env base name (.prim (.num stepped))
       pure (.prim (.num (if isPrefix then stepped else old)))
@@ -1445,7 +1543,6 @@ def evalSuperCall (env : Env) (args : List Expr) : EvalM Value := do
   | none => throwJsError .syntaxError "'super' keyword unexpected here"
   | some fr => do
     match ← readCell activeFunctionName fr with
-    | .prim _ => throwJsError .syntaxError "'super' keyword unexpected here"
     | .obj r =>
       -- GetSuperConstructor is the active function's `[[Prototype]]`.
       -- `class A extends null {}` gives that `%Function.prototype%`
@@ -1470,6 +1567,7 @@ def evalSuperCall (env : Env) (args : List Expr) : EvalM Value := do
           | none => initCell tr result
         initializeInstance r result
         pure result
+    | _ => throwJsError .syntaxError "'super' keyword unexpected here"
   partial_fixpoint
 
 /-- ApplyStringOrNumericBinaryOperator: ToPrimitive on each operand with
@@ -1477,9 +1575,16 @@ the number hint, left first, and then the operator. `a op b` and
 `a op= b` are the same computation once each side has a value, which is
 what this names. -/
 def applyCoercing (op : BinaryOp) (l r : Value) : EvalM Value := do
-  let lp ← toPrimitive .number l
-  let rp ← toPrimitive .number r
-  pure (applyBinary op lp rp)
+  let hint := match op with | .add => PrimHint.«default» | _ => PrimHint.number
+  let lp ← toPrimitive hint l
+  let rp ← toPrimitive hint r
+  match lp, rp with
+  | .prim a, .prim b => pure (applyBinary op a b)
+  | .sym _, _ => throwJsError .typeError (symbolOperandRefusal op rp)
+  | _, .sym _ => throwJsError .typeError (symbolOperandRefusal op lp)
+  -- ToPrimitive never answers an object, so the last two arms cannot be
+  -- reached; the message is the one a failed ToPrimitive would give.
+  | _, _ => throwJsError .typeError "Cannot convert object to primitive value"
   partial_fixpoint
 
 /-- Evaluate an argument list, left to right. -/
@@ -1511,7 +1616,7 @@ def evalPropDefs (env : Env) : List PropDef → Ref → EvalM Unit
     -- name, so `{ m: function () {} }.m.name` is `"m"` and
     -- `{ [k]: () => {} }` takes the key's ToPropertyKey.
     let k ← evalPropKey env key
-    let v ← evalNamed env k value
+    let v ← evalNamed env k.functionName value
     modifyObj r (fun o => o.define k (Property.ordinary v))
     evalPropDefs env rest r
   | .method kind key params body :: rest, r => do
@@ -1521,9 +1626,9 @@ def evalPropDefs (env : Env) : List PropDef → Ref → EvalM Unit
     -- with the `get`/`set` prefix.
     let k ← evalPropKey env key
     let fname := match kind with
-      | .method => k
-      | .getter => "get " ++ k
-      | .setter => "set " ++ k
+      | .method => k.functionName
+      | .getter => "get " ++ k.functionName
+      | .setter => "set " ++ k.functionName
     let f ← makeFunction { params, body, env, kind := .method, homeObject := some r } fname
     modifyObj r (fun o =>
       match kind with
@@ -1543,9 +1648,10 @@ def evalPropDefs (env : Env) : List PropDef → Ref → EvalM Unit
 
 /-- An object literal member's key. A written key is already a string; a
 computed one is its expression's value run through ToPropertyKey, which
-is also how a numeric key gets its spelling. -/
-def evalPropKey (env : Env) : PropKey → EvalM String
-  | .name s => pure s
+is also how a numeric key gets its spelling and how `{ [s]: 1 }` gets a
+symbol one. -/
+def evalPropKey (env : Env) : PropKey → EvalM Key
+  | .name s => pure (.str s)
   | .computed e => do toPropertyKey (← evalExpr env e)
   partial_fixpoint
 
@@ -1636,31 +1742,33 @@ own `length` and its own index properties — the String exotic object's
 `String.prototype` exists (#391). An array answers its own `length` out
 of its kind, which is where the live length lives.
 
-A Number or a Boolean base reads through its wrapper prototype **without
-allocating a wrapper**: the wrapper would have no own properties, so the
-answer is the same, and the receiver a method call then gets is still the
-primitive, which is why `thisNumberValue` accepts both. A bigint base
-still answers `undefined`, that being #392's.
+A Number, a Boolean, or a Symbol base reads through its wrapper
+prototype **without allocating a wrapper**: the wrapper would have no own
+properties, so the answer is the same, and the receiver a method call
+then gets is still the primitive, which is why `thisNumberValue` and
+`thisSymbolValue` accept both. A bigint base still answers `undefined`,
+`BigInt.prototype` being outside this epic.
 
 This is inside the fixpoint block because a getter is user code called
 from here. It is no longer the walk itself, though: `getFrom` is, and
 this is the dispatch onto it, so this one may join a simp set while
 `getFrom` is unfolded a step at a time like every other heap
 recursion. -/
-def getProp (base : Value) (key : String) : EvalM Value :=
+def getProp (base : Value) (key : Key) : EvalM Value :=
   match base with
   | .prim .undef =>
     throwJsError .typeError s!"Cannot read properties of undefined (reading '{key}')"
   | .prim .null =>
     throwJsError .typeError s!"Cannot read properties of null (reading '{key}')"
   | .prim (.str s) =>
-    if key == "length" then pure (Value.ofNat (stringLength s))
+    if key == Key.str "length" then pure (Value.ofNat (stringLength s))
     else
-      match arrayIndex? key with
+      match key.arrayIndex? with
       | some i => pure (((stringIndex? s i).map (fun c => Value.prim (.str c))).getD undefValue)
       | none => pure undefValue
   | .prim (.num _) => getFrom numberProtoRef key base
   | .prim (.bool _) => getFrom booleanProtoRef key base
+  | .sym _ => getFrom symbolProtoRef key base
   | .prim _ => pure undefValue
   | .obj r => getFrom r key base
   partial_fixpoint
@@ -1676,9 +1784,9 @@ is why `thisNumberValue` accepts one.
 The walk is `getFromUp`'s, not this one's: what recurses on the heap
 rather than on syntax may never join a simp set, so the step is a
 definition of its own and `getFrom` is free to be in one. -/
-def getFrom (r : Ref) (key : String) (receiver : Value) : EvalM Value := do
+def getFrom (r : Ref) (key : Key) (receiver : Value) : EvalM Value := do
   let o ← readObj r
-  match o.kind, key == "length" with
+  match o.kind, key == Key.str "length" with
   | .array len _, true => pure (Value.ofNat len)
   | _, _ =>
     match o.getOwnProperty key with
@@ -1699,7 +1807,7 @@ the *only* recursive part of the read, which is why it is split out:
 a simp set, and a read then costs one `rw [getFromUp]` per prototype link
 it has to climb and nothing at all when it finds what it wants where it
 started. -/
-def getFromUp (parent : Ref) (key : String) (receiver : Value) : EvalM Value :=
+def getFromUp (parent : Ref) (key : Key) (receiver : Value) : EvalM Value :=
   getFrom parent key receiver
   partial_fixpoint
 
@@ -1711,7 +1819,7 @@ the live length and whose `[[Writable]]` is the kind's — because it is an
 own property that does not live in the property list.
 
 The step up is `findPropertyUp`'s, for the reason `getFrom` gives. -/
-def findProperty (r : Ref) (key : String) : EvalM (Option Property) := do
+def findProperty (r : Ref) (key : Key) : EvalM (Option Property) := do
   let o ← readObj r
   match o.ownProperty key with
   | some p => pure (some p)
@@ -1723,12 +1831,12 @@ def findProperty (r : Ref) (key : String) : EvalM (Option Property) := do
 
 /-- `findProperty`'s prototype step, split out for the reason
 `getFromUp` is. -/
-def findPropertyUp (parent : Ref) (key : String) : EvalM (Option Property) :=
+def findPropertyUp (parent : Ref) (key : Key) : EvalM (Option Property) :=
   findProperty parent key
   partial_fixpoint
 
 /-- HasProperty (7.3.11): whether the key is anywhere on the chain. -/
-def hasProperty (r : Ref) (key : String) : EvalM Bool := do
+def hasProperty (r : Ref) (key : Key) : EvalM Bool := do
   pure (← findProperty r key).isSome
 
 /-- Set a property, OrdinarySet and OrdinarySetWithOwnDescriptor
@@ -1744,7 +1852,7 @@ unless `length` is non-writable, in which case the write is refused as a
 read-only property is. Inside the fixpoint block because ArraySetLength's
 coercion can reach user code, and because a setter anywhere on the chain
 is user code too. -/
-def setProp (base : Value) (key : String) (v : Value) : EvalM Unit :=
+def setProp (base : Value) (key : Key) (v : Value) : EvalM Unit :=
   match base with
   | .obj r => do
     match ← findProperty r key with
@@ -1763,9 +1871,9 @@ def setProp (base : Value) (key : String) (v : Value) : EvalM Unit :=
       let o ← readObj r
       match o.kind with
       | .array len lengthWritable =>
-        if key == "length" then setArrayLength r o v
+        if key == Key.str "length" then setArrayLength r o v
         else
-          match arrayIndex? key with
+          match key.arrayIndex? with
           | some i =>
             if len ≤ i && !lengthWritable then
               throwJsError .typeError
@@ -1787,6 +1895,9 @@ def setProp (base : Value) (key : String) (v : Value) : EvalM Unit :=
   | .prim _ =>
     throwJsError .typeError
       s!"Cannot set properties of {formatValue base} (setting '{key}')"
+  | .sym _ =>
+    throwJsError .typeError
+      s!"Cannot set properties of {formatValue base} (setting '{key}')"
   partial_fixpoint
 
 /-- ArraySetLength (10.4.2.4) as a *write* to `xs.length`. The value is
@@ -1797,7 +1908,7 @@ elements are dropped from the top down, stopping at the first
 non-configurable one, whose index fixes the length that is actually
 written and whose refusal is then reported. -/
 def setArrayLength (r : Ref) (o : Obj) (v : Value) : EvalM Unit := do
-  match uint32Of? (toNumberPrim (← toPrimitive .number v)) with
+  match uint32Of? (← toNumberValue v) with
   | none => throwJsError .rangeError "Invalid array length"
   | some n =>
     match o.arrayLength? with
@@ -1837,53 +1948,75 @@ def joinElements (arr : Value) (i len : Nat) (sep : String) : EvalM String := do
   else pure ""
   partial_fixpoint
 
-/-- ToPrimitive. `valueOf` then `toString` under the number hint,
-`toString` then `valueOf` under the string one; the first callable
-method whose result is a primitive wins, and a `TypeError` if neither
-gives one. Until #389 puts the intrinsics on `Object.prototype`, a plain
-object has neither method, so `{} + 1` throws here where an engine
-answers `"[object Object]1"`; a user-defined `valueOf` or `toString`
-already works. -/
-def toPrimitive (hint : PrimHint) (v : Value) : EvalM JsVal :=
+/-- ToPrimitive (7.1.1). A primitive — a `JsVal` or a symbol — is
+itself; an object is asked for its `@@toPrimitive` handler first, and
+falls back to OrdinaryToPrimitive: `valueOf` then `toString` under the
+number and default hints, `toString` then `valueOf` under the string one.
+The first callable method whose result is a primitive wins, and a
+`TypeError` if neither gives one.
+
+The answer is a `Value` rather than a `JsVal` because a symbol is a
+primitive ToPrimitive returns unchanged — `toPropertyKey(Object(sym))`
+must yield the symbol — and the consumers that have no symbol to give
+(`toStringValue`, `toNumberValue`, the operators) each raise the refusal
+of their own. It is never `.obj`. -/
+def toPrimitive (hint : PrimHint) (v : Value) : EvalM Value :=
   match v with
-  | .prim p => pure p
+  | .prim _ => pure v
+  | .sym _ => pure v
   | .obj _ => do
-    match ← primitiveFrom v (hintOrder hint).1 with
-    | some p => pure p
-    | none =>
-      match ← primitiveFrom v (hintOrder hint).2 with
+    -- GetMethod(v, @@toPrimitive) (7.1.1 step 2.a–c): a callable handler
+    -- is called with the hint's name and must answer a primitive.
+    let handler ← getProp v WellKnownSymbol.toPrimitive.key
+    if ← isCallable handler then
+      match ← callFunction handler v [.prim (.str hint.name)] with
+      | .obj _ => throwJsError .typeError "Cannot convert object to primitive value"
+      | p => pure p
+    else
+      match ← primitiveFrom v (hintOrder hint).1 with
       | some p => pure p
-      | none => throwJsError .typeError "Cannot convert object to primitive value"
+      | none =>
+        match ← primitiveFrom v (hintOrder hint).2 with
+        | some p => pure p
+        | none => throwJsError .typeError "Cannot convert object to primitive value"
   partial_fixpoint
 
 /-- ToString on values: ToPrimitive with hint string, then ToString on
 the primitive. `String(v)`, `join`, and the `Error` constructor's
-`message` all spell it this way. -/
+`message` all spell it this way. A symbol has no ToString: 7.1.17 step 2
+is a `TypeError`, which is why `String(sym)` is the `String`
+constructor's own arm rather than this. -/
 def toStringValue (v : Value) : EvalM String := do
-  pure (toStringPrim (← toPrimitive .string v))
+  match ← toPrimitive .string v with
+  | .prim p => pure (toStringPrim p)
+  | .sym _ => throwJsError .typeError "Cannot convert a Symbol value to a string"
+  | .obj _ => throwJsError .typeError "Cannot convert object to primitive value"
   partial_fixpoint
 
 /-- One step of OrdinaryToPrimitive: call the named method on the object
 if it has a callable one, and answer its result when that is a
-primitive. -/
-def primitiveFrom (o : Value) (name : String) : EvalM (Option JsVal) := do
+primitive — a symbol among them. -/
+def primitiveFrom (o : Value) (name : Key) : EvalM (Option Value) := do
   let m ← getProp o name
   if ← isCallable m then
     match ← callFunction m o [] with
-    | .prim p => pure (some p)
     | .obj _ => pure none
+    | p => pure (some p)
   else
     pure none
   partial_fixpoint
 
-/-- ToPropertyKey. Every key in this slice is a string: symbols are
-#392's, so an object key is its ToPrimitive and then this again. -/
-def toPropertyKey (v : Value) : EvalM String :=
+/-- ToPropertyKey (7.1.19): a symbol is a key as it stands, and
+everything else is ToString of its ToPrimitive with the string hint. -/
+def toPropertyKey (v : Value) : EvalM Key :=
   match v with
-  | .prim p => pure (toStringPrim p)
+  | .sym s => pure (.sym s)
+  | .prim p => pure (.str (toStringPrim p))
   | .obj _ => do
-    let p ← toPrimitive .string v
-    pure (toStringPrim p)
+    match ← toPrimitive .string v with
+    | .sym s => pure (.sym s)
+    | .prim p => pure (.str (toStringPrim p))
+    | .obj _ => throwJsError .typeError "Cannot convert object to primitive value"
   partial_fixpoint
 
 /-- IteratorBindingInitialization for a list of single-name bindings
@@ -1951,6 +2084,7 @@ into a value; a body that falls off the end answers `undefined`. -/
 def callFunction (f : Value) (thisArg : Value) (args : List Value) : EvalM Value :=
   match f with
   | .prim _ => throwJsError .typeError "not a function"
+  | .sym _ => throwJsError .typeError "not a function"
   | .obj r => do
     let o ← readObj r
     match o.callable with
@@ -1967,6 +2101,12 @@ def callFunction (f : Value) (thisArg : Value) (args : List Value) : EvalM Value
       let fresh ← allocFromConstructor f k.protoRef
       modifyObj fresh (fun o => { o with kind := .error })
       callNative (.errorCtor k) (.obj fresh) args
+    | some (.native .aggregateErrorCtor) => do
+      -- `AggregateError(errors)` is `new AggregateError(errors)`, for the
+      -- reason the seven above are, and written out for the same one.
+      let fresh ← allocFromConstructor f aggregateErrorProtoRef
+      modifyObj fresh (fun o => { o with kind := .error })
+      callNative .aggregateErrorCtor (.obj fresh) args
     | some (.native n) => callNative n thisArg args
     | some (.bound b) => callBound b args
     | some (.closure c) => do
@@ -2011,9 +2151,13 @@ def callBound (b : BoundFunction) (args : List Value) : EvalM Value :=
 
 /-- ToNumber on values: ToPrimitive with the number hint, then ToNumber
 on the primitive. The twin of `toStringValue`, and what every coercing
-built-in argument goes through. -/
+built-in argument goes through. A symbol is 7.1.4 step 1's
+`TypeError`. -/
 def toNumberValue (v : Value) : EvalM Float := do
-  pure (toNumberPrim (← toPrimitive .number v))
+  match ← toPrimitive .number v with
+  | .prim p => pure (toNumberPrim p)
+  | .sym _ => throwJsError .typeError "Cannot convert a Symbol value to a number"
+  | .obj _ => throwJsError .typeError "Cannot convert object to primitive value"
   partial_fixpoint
 
 /-- ToIntegerOrInfinity on values, 7.1.5: ToNumber first — so a user
@@ -2074,6 +2218,8 @@ gives its instances `A.prototype` and `class N extends Number {}` gives
 them `N.prototype`; the intrinsic prototype is only the fallback. -/
 def constructNative (n : NativeFn) (newTarget : Value) (args : List Value) : EvalM Value :=
   match n with
+  -- 20.4.1: `Symbol` has a `[[Construct]]`, and all it does is refuse.
+  | .symbolCtor => throwJsError .typeError "Symbol is not a constructor"
   | .numberCtor => do
     let x ← numberArg args
     let proto ← allocFromConstructor newTarget numberProtoRef
@@ -2102,7 +2248,7 @@ def constructNative (n : NativeFn) (newTarget : Value) (args : List Value) : Eva
       | .obj p => do
         modifyObj a (fun o => { o with proto := some p })
         pure arr
-      | .prim _ => pure arr
+      | _ => pure arr
     | v => pure v
   | _ => callNative n undefValue args
   partial_fixpoint
@@ -2133,7 +2279,7 @@ def listFromArrayLike (arr : Value) (i len : Nat) : EvalM (List Value) := do
 /-- One field of a descriptor object: `HasProperty` then `Get`, which is
 the pair 6.2.6.5 performs for each of the six. `none` is the field being
 absent, which is not the same as its being `undefined`. -/
-def descriptorField (r : Ref) (key : String) : EvalM (Option Value) := do
+def descriptorField (r : Ref) (key : Key) : EvalM (Option Value) := do
   if ← hasProperty r key then pure (some (← getProp (.obj r) key)) else pure none
   partial_fixpoint
 
@@ -2143,8 +2289,6 @@ poisoned descriptor object's methods run in the order an engine runs
 them. Both kinds of field at once is the last refusal. -/
 def toDescriptor (v : Value) : EvalM Descriptor := do
   match v with
-  | .prim _ =>
-    throwJsError .typeError s!"Property description must be an object: {formatValue v}"
   | .obj r => do
     let enumerable ← descriptorField r "enumerable"
     let configurable ← descriptorField r "configurable"
@@ -2172,12 +2316,14 @@ def toDescriptor (v : Value) : EvalM Descriptor := do
         ("Invalid property descriptor. Cannot both specify accessors and a value or " ++
           "writable attribute")
     else pure d
+  | _ =>
+    throwJsError .typeError s!"Property description must be an object: {formatValue v}"
   partial_fixpoint
 
 /-- The refusal a rejected `[[DefineOwnProperty]]` reports: the
 not-extensible message when the key is new and the object is closed, and
 the redefinition message otherwise. -/
-def refuseDefine (o : Obj) (key : String) : EvalM Unit :=
+def refuseDefine (o : Obj) (key : Key) : EvalM Unit :=
   if (o.ownProperty key).isNone && !o.extensible then
     throwJsError .typeError s!"Cannot define property {key}, object is not extensible"
   else throwJsError .typeError s!"Cannot redefine property: {key}"
@@ -2203,7 +2349,7 @@ def defineArrayLength (r : Ref) (o : Obj) (len : Nat) (lengthWritable : Bool)
         | some w => writeObj r { o with kind := .array len (lengthWritable && w) }
         | none => pure ()
     | some v => do
-      let n ← match uint32Of? (toNumberPrim (← toPrimitive .number v)) with
+      let n ← match uint32Of? (← toNumberValue v) with
         | none => throwJsError .rangeError "Invalid array length"
         | some n => pure n
       -- A non-writable `length` refuses a different value and refuses
@@ -2228,13 +2374,13 @@ def defineArrayLength (r : Ref) (o : Obj) (len : Nat) (lengthWritable : Bool)
 Array exotic object's `[[DefineOwnProperty]]` (10.4.2.1) in front of it:
 `length` is ArraySetLength's, an index at or past a non-writable length
 is refused, and an index that lands past the end grows the length. -/
-def definePropertyOrThrow (r : Ref) (key : String) (d : Descriptor) : EvalM Unit := do
+def definePropertyOrThrow (r : Ref) (key : Key) (d : Descriptor) : EvalM Unit := do
   let o ← readObj r
   match o.arrayLength? with
   | some (len, lengthWritable) =>
-    if key == "length" then defineArrayLength r o len lengthWritable d
+    if key == Key.str "length" then defineArrayLength r o len lengthWritable d
     else
-      match arrayIndex? key with
+      match key.arrayIndex? with
       | some i =>
         if len ≤ i && !lengthWritable then
           throwJsError .typeError s!"Cannot redefine property: {key}"
@@ -2257,7 +2403,7 @@ def definePropertyOrThrow (r : Ref) (key : String) (d : Descriptor) : EvalM Unit
 /-- ObjectDefineProperties (20.1.2.3.1) step 5: **every** descriptor is
 read before any is applied, so a descriptor object whose later getter
 throws leaves nothing defined. -/
-def readDescriptors (props : Ref) : List String → EvalM (List (String × Descriptor))
+def readDescriptors (props : Ref) : List Key → EvalM (List (Key × Descriptor))
   | [] => pure []
   | k :: rest => do
     match (← readObj props).ownProperty k with
@@ -2271,7 +2417,7 @@ def readDescriptors (props : Ref) : List String → EvalM (List (String × Descr
 
 /-- ObjectDefineProperties step 6: the definitions, in the order they
 were read. -/
-def applyDescriptors (r : Ref) : List (String × Descriptor) → EvalM Unit
+def applyDescriptors (r : Ref) : List (Key × Descriptor) → EvalM Unit
   | [] => pure ()
   | (k, d) :: rest => do
     definePropertyOrThrow r k d
@@ -2287,7 +2433,7 @@ def defineProperties (target : Value) (propsVal : Value) : EvalM Value := do
     let ds ← readDescriptors props (← readObj props).ownKeys
     applyDescriptors r ds
     pure target
-  | .prim _ => throwJsError .typeError "Object.defineProperties called on non-object"
+  | _ => throwJsError .typeError "Object.defineProperties called on non-object"
   partial_fixpoint
 
 /-- EnumerableOwnProperties (7.3.23) for `Object.values` and
@@ -2310,7 +2456,7 @@ def enumerableOwn (r : Ref) (wantKey : Bool) : List String → EvalM (List Value
 /-- `Object.assign`'s inner loop: each enumerable own key of one source
 read with `Get` and written with `Set`, so a getter on the source and a
 setter on the target both run. -/
-def assignKeys (target : Value) (source : Ref) : List String → EvalM Unit
+def assignKeys (target : Value) (source : Ref) : List Key → EvalM Unit
   | [] => pure ()
   | k :: rest => do
     match (← readObj source).ownProperty k with
@@ -2338,7 +2484,7 @@ def assignSources (target : Value) : List Value → EvalM Unit
 
 /-- `Object.getOwnPropertyDescriptors`' loop: one descriptor object per
 own key, each an ordinary data property of the answer. -/
-def descriptorsInto (source target : Ref) : List String → EvalM Unit
+def descriptorsInto (source target : Ref) : List Key → EvalM Unit
   | [] => pure ()
   | k :: rest => do
     match (← readObj source).ownProperty k with
@@ -2397,7 +2543,9 @@ def callNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Valu
   | .errorCtor _ => do
     match args with
     | [] => pure thisArg
-    | .prim .undef :: _ => pure thisArg
+    | .prim .undef :: _ => do
+      installErrorCause thisArg (args[1]?.getD undefValue)
+      pure thisArg
     | m :: _ => do
       -- CreateNonEnumerableDataPropertyOrThrow (20.5.1.1 step 4): a
       -- *definition*, and a non-enumerable one, so `Object.keys(e)` is
@@ -2405,11 +2553,11 @@ def callNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Valu
       let msg ← toStringValue m
       match thisArg with
       | .obj r => modifyObj r (fun o => o.define "message" (Property.method (.prim (.str msg))))
-      | .prim _ => pure ()
+      | _ => pure ()
+      installErrorCause thisArg (args[1]?.getD undefValue)
       pure thisArg
   | .errorToString =>
     match thisArg with
-    | .prim _ => throwJsError .typeError "Error.prototype.toString called on non-object"
     | .obj _ => do
       let name ← match ← getProp thisArg "name" with
         | .prim .undef => pure "Error"
@@ -2420,9 +2568,13 @@ def callNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Valu
       if name.isEmpty then pure (.prim (.str msg))
       else if msg.isEmpty then pure (.prim (.str name))
       else pure (.prim (.str (name ++ ": " ++ msg)))
+    | _ => throwJsError .typeError "Error.prototype.toString called on non-object"
   | .stringCtor =>
+    -- 22.1.1.1 step 1.a: `String(sym)` is SymbolDescriptiveString, the
+    -- one route from a symbol to a string that is not a `TypeError`.
     match args with
     | [] => pure (.prim (.str ""))
+    | .sym sy :: _ => pure (.prim (.str sy.descriptiveString))
     | v :: _ => do pure (.prim (.str (← toStringValue v)))
   | .objectCtor =>
     match args with
@@ -2430,6 +2582,8 @@ def callNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Valu
     | .prim .undef :: _ => do pure (.obj (← newObject))
     | .prim .null :: _ => do pure (.obj (← newObject))
     | .obj r :: _ => pure (.obj r)
+    | .sym sy :: _ => do
+      pure (.obj (← allocObj { proto := some symbolProtoRef, kind := .symbol sy }))
     | .prim (.num x) :: _ => do
       pure (.obj (← allocObj { proto := some numberProtoRef, kind := .number x }))
     | .prim (.bool b) :: _ => do
@@ -2445,7 +2599,7 @@ def callNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Valu
     -- A string's index keys, until `String.prototype` and the wrapper
     -- object make this ToObject like every other arm (#391).
     | .prim (.str s) => newArray (indexKeys (stringLength s))
-    | .prim _ => newArray []
+    | _ => newArray []
   | .objectHasOwnProperty =>
     match thisArg with
     -- ToObject of a Number or a Boolean has no own properties, so the
@@ -2454,10 +2608,13 @@ def callNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Valu
     | .prim (.num _) | .prim (.bool _) => do
       let _ ← toPropertyKey (args[0]?.getD undefValue)
       pure (.prim (.bool false))
-    | .prim _ => throwJsError .typeError "Cannot convert a primitive to an object"
     | .obj r => do
       let key ← toPropertyKey (args[0]?.getD undefValue)
       pure (.prim (.bool ((← readObj r).hasOwn key)))
+    | .sym _ => do
+      let _ ← toPropertyKey (args[0]?.getD undefValue)
+      pure (.prim (.bool false))
+    | .prim _ => throwJsError .typeError "Cannot convert a primitive to an object"
   | .arrayCtor =>
     -- `Array(n)` with one Number argument is a length, not an element;
     -- every other argument list is the elements themselves.
@@ -2470,19 +2627,18 @@ def callNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Valu
   | .arrayIsArray =>
     match args[0]?.getD undefValue with
     | .obj r => do pure (.prim (.bool (← readObj r).isArray))
-    | .prim _ => pure (.prim (.bool false))
+    | _ => pure (.prim (.bool false))
   | .arrayPush =>
     match thisArg with
-    | .prim _ => throwJsError .typeError "Array.prototype.push called on non-array"
     | .obj r => do
       match (← readObj r).kind with
       | .array len _ => do
         pushElements thisArg len args
         pure (Value.ofNat (len + args.length))
       | _ => throwJsError .typeError "Array.prototype.push called on non-array"
+    | _ => throwJsError .typeError "Array.prototype.push called on non-array"
   | .arrayJoin =>
     match thisArg with
-    | .prim _ => throwJsError .typeError "Array.prototype.join called on non-array"
     | .obj r => do
       match (← readObj r).kind with
       | .array len _ => do
@@ -2492,6 +2648,7 @@ def callNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Valu
           | v :: _ => toStringValue v
         pure (.prim (.str (← joinElements thisArg 0 len sep)))
       | _ => throwJsError .typeError "Array.prototype.join called on non-array"
+    | _ => throwJsError .typeError "Array.prototype.join called on non-array"
   | .numberCtor => do pure (.prim (.num (← numberArg args)))
   | .numberIsFinite =>
     match args[0]?.getD undefValue with
@@ -2608,6 +2765,14 @@ def callNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Valu
   | .objectValues
   | .functionProto | .functionCtor | .functionCall | .functionApply | .functionBind
   | .functionToString => callReflectNative f thisArg args
+  -- The `Symbol` surface and `JSON` are two more groups of their own,
+  -- for the same reason and with `callReflectNative`'s standing: neither
+  -- is in `tarski_eval`.
+  | .symbolCtor | .symbolFor | .symbolKeyFor | .symbolProtoToString
+  | .symbolProtoValueOf | .symbolDescription | .symbolToPrimitive
+  | .aggregateErrorCtor | .functionHasInstance | .objectGetOwnPropertySymbols
+  | .errorIsError => callSymbolNative f thisArg args
+  | .jsonParse | .jsonStringify => callJsonNative f thisArg args
   | .print => do
     -- The host's output binding. There is no IO in `EvalM`, so the line
     -- is appended to `%PrintLog%` and the binary writes the log out once
@@ -2659,16 +2824,21 @@ the twenty-nine constructors below here. -/
 def callReflectNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Value :=
   match f with
   | .objectProtoToString =>
-    -- 20.1.3.6. The two nullish tags come first, then ToObject and the
-    -- builtin tag; a string answers its tag without a wrapper to link to
-    -- (#391).
+    -- 20.1.3.6. The two nullish tags come first, then ToObject, the
+    -- builtin tag, and finally `Get(O, @@toStringTag)`: a string there
+    -- replaces the tag, which is what makes `[object Math]`,
+    -- `[object JSON]`, `[object Symbol]`, and a user's own tag. A string
+    -- primitive answers its tag without a wrapper to link to (#391).
     match thisArg with
     | .prim .undef => pure (.prim (.str "[object Undefined]"))
     | .prim .null => pure (.prim (.str "[object Null]"))
     | .prim (.str _) => pure (.prim (.str "[object String]"))
     | v => do
       let r ← toObjectValue v
-      pure (.prim (.str ("[object " ++ builtinTag (← readObj r) ++ "]")))
+      let builtin := builtinTag (← readObj r)
+      match ← getProp (.obj r) WellKnownSymbol.toStringTag.key with
+      | .prim (.str tag) => pure (.prim (.str ("[object " ++ tag ++ "]")))
+      | _ => pure (.prim (.str ("[object " ++ builtin ++ "]")))
   | .objectProtoValueOf => do pure (.obj (← toObjectValue thisArg))
   | .objectProtoToLocaleString => do
     -- 20.1.3.5 is Invoke(this, "toString"), not a call of the intrinsic:
@@ -2680,7 +2850,7 @@ def callReflectNative (f : NativeFn) (thisArg : Value) (args : List Value) : Eva
     | .obj v => do
       let r ← toObjectValue thisArg
       pure (.prim (.bool (← protoChainHas v r)))
-    | .prim _ => pure (.prim (.bool false))
+    | _ => pure (.prim (.bool false))
   | .objectProtoPropertyIsEnumerable => do
     -- ToPropertyKey first, then ToObject, as 20.1.3.4 orders them.
     let key ← toPropertyKey (args[0]?.getD undefValue)
@@ -2706,7 +2876,7 @@ def callReflectNative (f : NativeFn) (thisArg : Value) (args : List Value) : Eva
   | .objectDefineProperties => do
     match args[0]?.getD undefValue with
     | .obj r => defineProperties (.obj r) (args[1]?.getD undefValue)
-    | .prim _ => throwJsError .typeError "Object.defineProperties called on non-object"
+    | _ => throwJsError .typeError "Object.defineProperties called on non-object"
   | .objectDefineProperty => do
     match args[0]?.getD undefValue with
     | .obj r => do
@@ -2714,13 +2884,13 @@ def callReflectNative (f : NativeFn) (thisArg : Value) (args : List Value) : Eva
       let d ← toDescriptor (args[2]?.getD undefValue)
       definePropertyOrThrow r key d
       pure (.obj r)
-    | .prim _ => throwJsError .typeError "Object.defineProperty called on non-object"
+    | _ => throwJsError .typeError "Object.defineProperty called on non-object"
   | .objectEntries => do
     let r ← toObjectValue (args[0]?.getD undefValue)
-    newArray (← enumerableOwn r true (← readObj r).ownKeys)
+    newArray (← enumerableOwn r true (← readObj r).stringKeys)
   | .objectValues => do
     let r ← toObjectValue (args[0]?.getD undefValue)
-    newArray (← enumerableOwn r false (← readObj r).ownKeys)
+    newArray (← enumerableOwn r false (← readObj r).stringKeys)
   | .objectFreeze =>
     -- 20.1.2.6: a primitive answers itself, having no properties to
     -- close.
@@ -2746,15 +2916,15 @@ def callReflectNative (f : NativeFn) (thisArg : Value) (args : List Value) : Eva
     -- properties to be otherwise about.
     match args[0]?.getD undefValue with
     | .obj r => do pure (.prim (.bool ((← readObj r).testIntegrity true)))
-    | .prim _ => pure (.prim (.bool true))
+    | _ => pure (.prim (.bool true))
   | .objectIsSealed =>
     match args[0]?.getD undefValue with
     | .obj r => do pure (.prim (.bool ((← readObj r).testIntegrity false)))
-    | .prim _ => pure (.prim (.bool true))
+    | _ => pure (.prim (.bool true))
   | .objectIsExtensible =>
     match args[0]?.getD undefValue with
     | .obj r => do pure (.prim (.bool (← readObj r).extensible))
-    | .prim _ => pure (.prim (.bool false))
+    | _ => pure (.prim (.bool false))
   | .objectGetOwnPropertyDescriptor => do
     let r ← toObjectValue (args[0]?.getD undefValue)
     let key ← toPropertyKey (args[1]?.getD undefValue)
@@ -2768,7 +2938,7 @@ def callReflectNative (f : NativeFn) (thisArg : Value) (args : List Value) : Eva
     pure (.obj target)
   | .objectGetOwnPropertyNames => do
     let r ← toObjectValue (args[0]?.getD undefValue)
-    newArray ((← readObj r).ownKeys.map (fun k => .prim (.str k)))
+    newArray ((← readObj r).stringKeys.map (fun k => .prim (.str k)))
   | .objectGetPrototypeOf =>
     -- A Number or a Boolean answers its wrapper prototype without
     -- allocating a wrapper, as `getProp` does for the same reason.
@@ -2797,9 +2967,6 @@ def callReflectNative (f : NativeFn) (thisArg : Value) (args : List Value) : Eva
         throwJsError .typeError
           s!"Object prototype may only be an Object or null: {formatValue v}"
     match target with
-    -- A primitive `O` answers itself once the prototype has been
-    -- checked: there is nothing to write.
-    | .prim _ => pure target
     | .obj r => do
       let o ← readObj r
       if o.proto == proto then pure target
@@ -2820,6 +2987,9 @@ def callReflectNative (f : NativeFn) (thisArg : Value) (args : List Value) : Eva
           else do
             writeObj r { o with proto := some p }
             pure target
+    -- A primitive `O` answers itself once the prototype has been
+    -- checked: there is nothing to write.
+    | _ => pure target
   | .functionProto =>
     -- 20.2.3: `%Function.prototype%` accepts anything and answers
     -- `undefined`.
@@ -2841,11 +3011,10 @@ def callReflectNative (f : NativeFn) (thisArg : Value) (args : List Value) : Eva
         | .obj r => do
           let len ← toLengthValue (← getProp (.obj r) "length")
           listFromArrayLike (.obj r) 0 len
-        | .prim _ => throwJsError .typeError "CreateListFromArrayLike called on non-object"
+        | _ => throwJsError .typeError "CreateListFromArrayLike called on non-object"
       callFunction thisArg (args.headD undefValue) argList
   | .functionBind => do
     match thisArg with
-    | .prim _ => throwJsError .typeError "Bind must be called on a function"
     | .obj t =>
       if !(← isCallable thisArg) then
         throwJsError .typeError "Bind must be called on a function"
@@ -2881,9 +3050,10 @@ def callReflectNative (f : NativeFn) (thisArg : Value) (args : List Value) : Eva
               some (.bound { target := t, boundThis := args.headD undefValue,
                              boundArgs, constructs }),
             properties :=
-              [ ("length", Property.attribute length),
-                ("name", Property.attribute (.prim (.str ("bound " ++ name)))) ] }
+              [ (Key.str "length", Property.attribute length),
+                (Key.str "name", Property.attribute (.prim (.str ("bound " ++ name)))) ] }
         pure (.obj f)
+    | _ => throwJsError .typeError "Bind must be called on a function"
   | .functionToString => do
     -- 20.2.3.5 allows the NativeFunction form for any function whose
     -- `[[SourceText]]` is unavailable, and the bridge keeps none: the
@@ -2893,6 +3063,401 @@ def callReflectNative (f : NativeFn) (thisArg : Value) (args : List Value) : Eva
     else
       throwJsError .typeError
         "Function.prototype.toString requires that 'this' be a Function"
+  | _ => pure undefValue
+  partial_fixpoint
+
+/-- InstallErrorCause (20.5.8.1): when `options` is an object with a
+`cause`, the error gets a non-enumerable `cause` of its own, defined
+after `message`. Every other `options` — a primitive, or an object with
+no such key — leaves the error without one, which is what makes
+`"cause" in new Error("m")` false. -/
+def installErrorCause (target : Value) (options : Value) : EvalM Unit := do
+  match options, target with
+  | .obj o, .obj r =>
+    if ← hasProperty o "cause" then do
+      let cause ← getProp options "cause"
+      modifyObj r (fun ob => ob.define "cause" (Property.method cause))
+    else pure ()
+  | _, _ => pure ()
+  partial_fixpoint
+
+/-- The `Symbol` surface, `AggregateError`, `Error.isError`,
+`Object.getOwnPropertySymbols`, and `%Function.prototype[@@hasInstance]%`.
+
+It is a definition of its own, and **not** in `tarski_eval`, for
+`callReflectNative`'s reason: `callNative`'s arms are already past the
+depth at which Lean generates a match's equation lemmas, and no proof
+today reads a symbol. `callNative` routes exactly the constructors below
+here, so the last arm is unreachable. -/
+def callSymbolNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Value :=
+  match f with
+  | .symbolCtor =>
+    -- 20.4.1.1. A *missing* description and an `undefined` one are the
+    -- same absent description; everything else is ToString'd.
+    match args with
+    | [] => do pure (.sym (← allocSymbol none))
+    | .prim .undef :: _ => do pure (.sym (← allocSymbol none))
+    | d :: _ => do
+      let text ← toStringValue d
+      pure (.sym (← allocSymbol (some text)))
+  | .symbolFor => do
+    -- 20.4.2.2: the registry's own key, or a fresh symbol written there
+    -- under it. The description of a registered symbol is its key.
+    let key ← toStringValue (args.headD undefValue)
+    match (← readObj symbolRegistryRef).getOwn (.str key) with
+    | some v => pure v
+    | none => do
+      let sy ← allocSymbol (some key)
+      modifyObj symbolRegistryRef (fun o => o.define (.str key) (Property.ordinary (.sym sy)))
+      pure (.sym sy)
+  | .symbolKeyFor =>
+    match args.headD undefValue with
+    | .sym sy => do pure (registryKeyFor (← readObj symbolRegistryRef).properties sy)
+    | v => throwJsError .typeError s!"{formatValue v} is not a symbol"
+  | .symbolProtoToString => do
+    let sy ← thisSymbolValue "toString" thisArg
+    pure (.prim (.str sy.descriptiveString))
+  | .symbolProtoValueOf => do pure (.sym (← thisSymbolValue "valueOf" thisArg))
+  | .symbolDescription => do
+    let sy ← thisSymbolValue "description" thisArg
+    match sy.description with
+    | some d => pure (.prim (.str d))
+    | none => pure undefValue
+  | .symbolToPrimitive => do
+    -- 20.4.3.5 ignores the hint: a symbol is already a primitive.
+    pure (.sym (← thisSymbolValue "[Symbol.toPrimitive]" thisArg))
+  | .functionHasInstance => do
+    pure (.prim (.bool (← ordinaryHasInstance thisArg (args.headD undefValue))))
+  | .objectGetOwnPropertySymbols => do
+    let r ← toObjectValue (args.headD undefValue)
+    newArray ((← readObj r).symbolKeys.map Value.sym)
+  | .errorIsError =>
+    -- 20.5.2.1: the question is `[[ErrorData]]`, which is `ObjKind.error`,
+    -- so `Error.prototype` — an ordinary object — answers `false`.
+    match args.headD undefValue with
+    | .obj r => do
+      match (← readObj r).kind with
+      | .error => pure (.prim (.bool true))
+      | _ => pure (.prim (.bool false))
+    | _ => pure (.prim (.bool false))
+  | .aggregateErrorCtor => do
+    -- 20.5.7.1.1, in its order: `message`, then the cause, then
+    -- `errors`. The errors are read as an **array-like** rather than
+    -- iterated: IterableToList is #394's, and the two agree for every
+    -- argument whose `@@iterator` is the intrinsic one. #394 replaces
+    -- this read with the iteration.
+    match args[1]?.getD undefValue with
+    | .prim .undef => pure ()
+    | m => do
+      let msg ← toStringValue m
+      match thisArg with
+      | .obj r => modifyObj r (fun o => o.define "message" (Property.method (.prim (.str msg))))
+      | _ => pure ()
+    installErrorCause thisArg (args[2]?.getD undefValue)
+    let errorsArg := args.headD undefValue
+    let items ← errorsAsList errorsArg
+    let arr ← newArray items
+    match thisArg with
+    | .obj r => modifyObj r (fun o => o.define "errors" (Property.method arr))
+    | _ => pure ()
+    pure thisArg
+  | _ => pure undefValue
+  partial_fixpoint
+
+/-- `JSON.stringify`'s replacer (25.5.2 steps 4–5): a callable one is
+carried as it stands, an array one is reduced to its PropertyList, and
+anything else is neither. -/
+def jsonReplacerOf (replacerArg : Value) : EvalM (Option Value × Option (List String)) := do
+  match replacerArg with
+  | .obj rr =>
+    if ← isCallable replacerArg then pure (some replacerArg, none)
+    else
+      match (← readObj rr).arrayLength? with
+      | some (len, _) => do
+        let items ← listFromArrayLike replacerArg 0 len
+        pure (none, some (← propertyListOf [] items))
+      | none => pure (none, none)
+  | _ => pure (none, none)
+  partial_fixpoint
+
+/-- `JSON.stringify`'s `space` (25.5.2 step 6) with its wrapper
+unwrapped; the clamping is the caller's. -/
+def jsonSpaceOf (spaceArg : Value) : EvalM Value := do
+  match spaceArg with
+  | .obj r =>
+    match (← readObj r).kind with
+    | .number _ => do pure (Value.prim (.num (← toNumberValue spaceArg)))
+    -- A String wrapper joins this arm with #391.
+    | _ => pure spaceArg
+  | _ => pure spaceArg
+  partial_fixpoint
+
+/-- `AggregateError`'s `errors` argument as a list. It is read as an
+**array-like** — `length` and then the indices — rather than iterated:
+IterableToList is #394's, and the two agree for every argument whose
+`@@iterator` is the intrinsic one. A string is its characters, as
+iterating one would give; `undefined`, `null`, and every other primitive
+are the specification's refusal. -/
+def errorsAsList (errorsArg : Value) : EvalM (List Value) := do
+  match errorsArg with
+  | .obj _ => do
+    let len ← toLengthValue (← getProp errorsArg "length")
+    listFromArrayLike errorsArg 0 len
+  | .prim (.str text) =>
+    pure ((List.range (stringLength text)).map
+      (fun i => Value.prim (.str ((stringIndex? text i).getD ""))))
+  | v => throwJsError .typeError s!"{formatValue v} is not iterable"
+  partial_fixpoint
+
+/-- `JSON.parse`'s tree-to-heap step: allocation and nothing else. An
+object's members are *definitions*, so a repeated key is the last one and
+`__proto__` becomes an own property rather than a prototype change. -/
+def jsonToValue : JsonTree → EvalM Value
+  | .null => pure (.prim .null)
+  | .bool b => pure (.prim (.bool b))
+  | .num x => pure (.prim (.num x))
+  | .str text => pure (.prim (.str text))
+  | .arr items => do newArray (← jsonToValues items)
+  | .obj members => do
+    let r ← newObject
+    jsonMembersInto r members
+    pure (.obj r)
+  partial_fixpoint
+
+/-- `jsonToValue`'s list walk. -/
+def jsonToValues : List JsonTree → EvalM (List Value)
+  | [] => pure []
+  | t :: rest => do
+    let v ← jsonToValue t
+    let vs ← jsonToValues rest
+    pure (v :: vs)
+  partial_fixpoint
+
+/-- `jsonToValue`'s member walk. -/
+def jsonMembersInto (r : Ref) : List (String × JsonTree) → EvalM Unit
+  | [] => pure ()
+  | (k, t) :: rest => do
+    let v ← jsonToValue t
+    modifyObj r (fun o => o.define (.str k) (Property.ordinary v))
+    jsonMembersInto r rest
+  partial_fixpoint
+
+/-- InternalizeJSONProperty (25.5.1.1): the reviver's walk, depth first,
+each member replaced or deleted before the holder itself is offered. An
+array is walked by its length and an object by its enumerable own string
+keys, both re-read from the heap as the walk goes, which is what lets a
+reviver see what an earlier call did. -/
+def internalizeJsonProperty (holder : Ref) (key : String) (reviver : Value) : EvalM Value := do
+  let val ← getProp (.obj holder) key
+  match val with
+  | .obj r => do
+    match (← readObj r).arrayLength? with
+    | some (len, _) => reviveElements r reviver 0 len
+    | none => reviveKeys r reviver (← readObj r).enumerableKeys
+  | _ => pure ()
+  callFunction reviver (.obj holder) [.prim (.str key), val]
+  partial_fixpoint
+
+/-- The reviver's walk over an array's indices. -/
+def reviveElements (r : Ref) (reviver : Value) (i len : Nat) : EvalM Unit := do
+  if i < len then do
+    let newElement ← internalizeJsonProperty r (Nat.repr i) reviver
+    match newElement with
+    | .prim .undef => removeIfConfigurable r (.str (Nat.repr i))
+    | v => createDataProperty r (.str (Nat.repr i)) v
+    reviveElements r reviver (i + 1) len
+  else pure ()
+  partial_fixpoint
+
+/-- The reviver's walk over an object's keys. -/
+def reviveKeys (r : Ref) (reviver : Value) : List String → EvalM Unit
+  | [] => pure ()
+  | k :: rest => do
+    let newElement ← internalizeJsonProperty r k reviver
+    match newElement with
+    | .prim .undef => removeIfConfigurable r (.str k)
+    | v => createDataProperty r (.str k) v
+    reviveKeys r reviver rest
+  partial_fixpoint
+
+/-- `JSON.stringify`'s PropertyList (25.5.2 step 4.b): the array
+replacer's members, strings and Numbers only, ToString'd and
+deduplicated, keeping the first occurrence's place. -/
+def propertyListOf (acc : List String) : List Value → EvalM (List String)
+  | [] => pure acc
+  | v :: rest => do
+    match ← propertyListItem? v with
+    | some k => propertyListOf (if acc.contains k then acc else acc ++ [k]) rest
+    | none => propertyListOf acc rest
+  partial_fixpoint
+
+/-- One member of an array replacer: a string, a Number, or a wrapper
+around one of those, and `none` for everything else. A String wrapper
+joins the `.number` arm with #391. -/
+def propertyListItem? (v : Value) : EvalM (Option String) := do
+  match v with
+  | .prim (.str text) => pure (some text)
+  | .prim (.num x) => pure (some (Number.toDecimalString x))
+  | .obj r =>
+    match (← readObj r).kind with
+    | .number _ => do pure (some (← toStringValue v))
+    | _ => pure none
+  | _ => pure none
+  partial_fixpoint
+
+/-- SerializeJSONProperty (25.5.2.2): one member of a holder, or `none`
+for a value JSON has no text for — `undefined`, a symbol, and a callable
+— which an object omits and an array writes as `null`. -/
+def serializeJsonProperty (st : JsonState) (stack : List Ref) (indent : String)
+    (key : String) (holder : Ref) : EvalM (Option String) := do
+  let read ← getProp (.obj holder) key
+  let converted ← jsonToJson read key
+  -- A replacer function is called on the *holder*, with the key.
+  let replaced ←
+    match st.replacer with
+    | some rep => callFunction rep (.obj holder) [.prim (.str key), converted]
+    | none => pure converted
+  serializeJsonValue st stack indent (← jsonUnwrap replaced)
+  partial_fixpoint
+
+/-- SerializeJSONProperty's steps 4–11, once the value is the one to be
+written. -/
+def serializeJsonValue (st : JsonState) (stack : List Ref) (indent : String) (value : Value) :
+    EvalM (Option String) := do
+  match value with
+  | .prim .null => pure (some "null")
+  | .prim (.bool b) => pure (some (if b then "true" else "false"))
+  | .prim (.str text) => pure (some (quoteJsonString text))
+  | .prim (.num x) =>
+    -- A finite Number is `Number::toString`, which is what makes `-0`
+    -- serialize as `0`; NaN and the infinities are `null`.
+    if Number.FloatOps.tsIsFinite x then pure (some (Number.toDecimalString x))
+    else pure (some "null")
+  | .prim (.bigint _) => throwJsError .typeError "Do not know how to serialize a BigInt"
+  | .prim .undef => pure none
+  | .sym _ => pure none
+  | .obj r => do
+    if ← isCallable value then pure none
+    else if stack.contains r then
+      throwJsError .typeError "Converting circular structure to JSON"
+    else if (← readObj r).isArray then serializeJsonArray st (r :: stack) indent r
+    else serializeJsonObject st (r :: stack) indent r
+  partial_fixpoint
+
+/-- SerializeJSONProperty step 2: `toJSON` looked up on the value with
+`GetV` and called with the key. Only an object has one to look up; a
+BigInt's is unreachable, `serializeJsonValue` refusing every BigInt. -/
+def jsonToJson (value : Value) (key : String) : EvalM Value := do
+  match value with
+  | .obj _ => do
+    let toJson ← getProp value "toJSON"
+    if ← isCallable toJson then callFunction toJson value [.prim (.str key)]
+    else pure value
+  | _ => pure value
+  partial_fixpoint
+
+/-- SerializeJSONProperty steps 4–6: a Number or a Boolean wrapper is
+unwrapped. A String wrapper is #391's. -/
+def jsonUnwrap (value : Value) : EvalM Value := do
+  match value with
+  | .obj r =>
+    match (← readObj r).kind with
+    | .number _ => do pure (Value.prim (.num (← toNumberValue value)))
+    | .boolean b => pure (.prim (.bool b))
+    | _ => pure value
+  | _ => pure value
+  partial_fixpoint
+
+/-- SerializeJSONObject (25.5.2.4). -/
+def serializeJsonObject (st : JsonState) (stack : List Ref) (indent : String) (r : Ref) :
+    EvalM (Option String) := do
+  let stepback := indent
+  let inner := indent ++ st.gap
+  let keys ←
+    match st.propertyList with
+    | some ks => pure ks
+    | none => pure (← readObj r).enumerableKeys
+  let parts ← serializeJsonMembers st stack inner r keys
+  if parts.isEmpty then pure (some "{}")
+  else if st.gap.isEmpty then pure (some ("{" ++ String.intercalate "," parts ++ "}"))
+  else
+    pure (some ("{\n" ++ inner ++ String.intercalate (",\n" ++ inner) parts ++
+      "\n" ++ stepback ++ "}"))
+  partial_fixpoint
+
+/-- An object's members, in order, the omitted ones dropped. -/
+def serializeJsonMembers (st : JsonState) (stack : List Ref) (indent : String) (r : Ref) :
+    List String → EvalM (List String)
+  | [] => pure []
+  | k :: rest => do
+    let member ← serializeJsonProperty st stack indent k r
+    let tail ← serializeJsonMembers st stack indent r rest
+    match member with
+    | some text =>
+      pure ((quoteJsonString k ++ (if st.gap.isEmpty then ":" else ": ") ++ text) :: tail)
+    | none => pure tail
+  partial_fixpoint
+
+/-- SerializeJSONArray (25.5.2.5). -/
+def serializeJsonArray (st : JsonState) (stack : List Ref) (indent : String) (r : Ref) :
+    EvalM (Option String) := do
+  let stepback := indent
+  let inner := indent ++ st.gap
+  let len ← toLengthValue (← getProp (.obj r) "length")
+  let parts ← serializeJsonElements st stack inner r 0 len
+  if parts.isEmpty then pure (some "[]")
+  else if st.gap.isEmpty then pure (some ("[" ++ String.intercalate "," parts ++ "]"))
+  else
+    pure (some ("[\n" ++ inner ++ String.intercalate (",\n" ++ inner) parts ++
+      "\n" ++ stepback ++ "]"))
+  partial_fixpoint
+
+/-- An array's elements, an omitted one written as `null`. -/
+def serializeJsonElements (st : JsonState) (stack : List Ref) (indent : String) (r : Ref)
+    (i len : Nat) : EvalM (List String) := do
+  if i < len then do
+    let element ← serializeJsonProperty st stack indent (Nat.repr i) r
+    let rest ← serializeJsonElements st stack indent r (i + 1) len
+    pure ((element.getD "null") :: rest)
+  else pure []
+  partial_fixpoint
+
+/-- `JSON.parse` and `JSON.stringify`. Out of `tarski_eval` for
+`callSymbolNative`'s reason. -/
+def callJsonNative (f : NativeFn) (_thisArg : Value) (args : List Value) : EvalM Value :=
+  match f with
+  | .jsonParse => do
+    let text ← toStringValue (args.headD undefValue)
+    match parseJson text with
+    | .error e => throwJsError .syntaxError e.message
+    | .ok tree => do
+      let unfiltered ← jsonToValue tree
+      let reviver := args[1]?.getD undefValue
+      if ← isCallable reviver then do
+        let root ← newObject
+        modifyObj root (fun o => o.define (.str "") (Property.ordinary unfiltered))
+        internalizeJsonProperty root "" reviver
+      else pure unfiltered
+  | .jsonStringify => do
+    let value := args.headD undefValue
+    let (replacer, propertyList) ← jsonReplacerOf (args[1]?.getD undefValue)
+    let space ← jsonSpaceOf (args[2]?.getD undefValue)
+    -- A number is clamped to ten spaces, a string is cut to its first
+    -- ten characters, and anything else gives no gap at all.
+    let gap :=
+      match space with
+      | .prim (.num x) =>
+        match Number.FloatOps.integerOrInfinity? x with
+        | some i => spaces (if i ≤ 0 then 0 else if 10 ≤ i then 10 else i.toNat)
+        | none => spaces (if x < 0.0 then 0 else 10)
+      | .prim (.str text) => String.ofList (text.toList.take 10)
+      | _ => ""
+    let st : JsonState := { replacer, propertyList, gap }
+    let wrapper ← newObject
+    modifyObj wrapper (fun o => o.define (.str "") (Property.ordinary value))
+    match ← serializeJsonProperty st [] "" "" wrapper with
+    | some text => pure (.prim (.str text))
+    | none => pure undefValue
   | _ => pure undefValue
   partial_fixpoint
 
@@ -2913,7 +3478,7 @@ def allocFromConstructor (newTarget : Value) (fallback : Ref) : EvalM Ref := do
   let protoVal ← getProp newTarget "prototype"
   let proto := match protoVal with
     | .obj p => some p
-    | .prim _ => some fallback
+    | _ => some fallback
   allocObj { proto }
   partial_fixpoint
 
@@ -2937,6 +3502,7 @@ one that returns anything else returns the instance. An arrow has no
 def construct (f : Value) (newTarget : Value) (args : List Value) : EvalM Value :=
   match f with
   | .prim _ => throwJsError .typeError "not a constructor"
+  | .sym _ => throwJsError .typeError "not a constructor"
   | .obj r => do
     let o ← readObj r
     match o.callable with
@@ -2948,6 +3514,10 @@ def construct (f : Value) (newTarget : Value) (args : List Value) : EvalM Value 
       let fresh ← allocFromConstructor newTarget k.protoRef
       modifyObj fresh (fun o => { o with kind := .error })
       callNative (.errorCtor k) (.obj fresh) args
+    | some (.native .aggregateErrorCtor) => do
+      let fresh ← allocFromConstructor newTarget aggregateErrorProtoRef
+      modifyObj fresh (fun o => { o with kind := .error })
+      callNative .aggregateErrorCtor (.obj fresh) args
     | some (.native n) =>
       if n.constructs then constructNative n newTarget args
       else throwJsError .typeError "not a constructor"
@@ -2962,7 +3532,7 @@ def construct (f : Value) (newTarget : Value) (args : List Value) : EvalM Value 
         let fresh ← allocFromConstructor newTarget objectProtoRef
         match ← callFunction f (.obj fresh) args with
         | .obj result => pure (.obj result)
-        | .prim _ => pure (.obj fresh)
+        | _ => pure (.obj fresh)
   partial_fixpoint
 
 /-- `[[Construct]]` of a bound function (10.4.1.2): the target
@@ -3012,7 +3582,7 @@ def constructClass (r : Ref) (c : Closure) (derived implicit : Bool)
           throwJsError .referenceError
             ("Must call super constructor in derived class before accessing 'this' " ++
               "or returning from derived constructor")
-      | .prim _ =>
+      | _ =>
         throwJsError .typeError "Derived constructors may only return object or undefined"
   else do
     let fresh ← allocFromConstructor newTarget objectProtoRef
@@ -3021,7 +3591,7 @@ def constructClass (r : Ref) (c : Closure) (derived implicit : Bool)
     else
       match ← runConstructor r c (some (.obj fresh)) newTarget args with
       | (.obj result, _) => pure (.obj result)
-      | (.prim _, _) => pure (.obj fresh)
+      | _ => pure (.obj fresh)
   partial_fixpoint
 
 /-- A class constructor's body, run in a scope carrying the four
@@ -3108,7 +3678,7 @@ def initFieldList (env : Env) (target : Value) : List ClassField → EvalM Unit
       addPrivate t name k v
     -- The target is always the object being built, so this arm is
     -- unreachable; `Value` is not a subtype.
-    | .prim _, _ => pure ()
+    | _, _ => pure ()
     initFieldList env target rest
   partial_fixpoint
 
@@ -3145,7 +3715,7 @@ def evalClass (env : Env) (d : ClassDef) (name : String) : EvalM Value := do
         if ← isConstructor v then
           let ctorParent := match v with
             | .obj r => some r
-            | .prim _ => none
+            | _ => none
           match ← getProp v "prototype" with
           | .obj p => pure (some p, ctorParent, true)
           | .prim .null => pure (none, ctorParent, true)
@@ -3224,13 +3794,13 @@ def superBase (env : Env) : EvalM (Option Ref × Value) := do
     let receiver ← evalExpr env .this
     match home with
     | .obj h => pure ((← readObj h).proto, receiver)
-    | .prim _ => pure (none, receiver)
+    | _ => pure (none, receiver)
   partial_fixpoint
 
 /-- The read itself, once `superBase` has the two halves of the
 reference. A home object with no prototype reads through null, which is
 `getProp`'s own `TypeError` rather than a message of its own. -/
-def superRead (parent : Option Ref) (receiver : Value) (key : String) : EvalM Value :=
+def superRead (parent : Option Ref) (receiver : Value) (key : Key) : EvalM Value :=
   match parent with
   | some p => getFrom p key receiver
   | none => getProp (.prim .null) key
@@ -3346,26 +3916,52 @@ def evalCatch (env : Env) (h : CatchClause) (e : Value) : EvalM (Option Value) :
   evalBlock inner h.body (some undefValue)
   partial_fixpoint
 
-/-- InstanceofOperator. `Symbol.hasInstance` is #392's, so this is always
-OrdinaryHasInstance: the right operand must be a function, its
-`prototype` property must be an object, and the question is whether that
-object is on the left operand's prototype chain. A primitive left operand
-is not an instance of anything, and says so rather than throwing. -/
+/-- InstanceofOperator (13.10.2). `GetMethod(target, @@hasInstance)`
+comes first, and only a non-object right operand with no handler at all
+is the `not callable` refusal. The intrinsic handler is short-circuited
+**by identity**: calling `%Function.prototype[@@hasInstance]%` would run
+OrdinaryHasInstance and nothing else, so a proof about an ordinary
+`instanceof` pays one `getProp` and no call. -/
 def instanceOf (v target : Value) : EvalM Bool := do
+  match target with
+  | .obj _ => do
+    match ← getProp target WellKnownSymbol.hasInstance.key with
+    | .obj h =>
+      if h == functionHasInstanceRef then ordinaryHasInstance target v
+      else if ← isCallable (.obj h) then
+        pure (toBooleanPrim (← callFunction (.obj h) target [v]))
+      else throwJsError .typeError "Right-hand side of 'instanceof' is not callable"
+    | .prim .undef =>
+      if ← isCallable target then ordinaryHasInstance target v
+      else throwJsError .typeError "Right-hand side of 'instanceof' is not callable"
+    | .prim .null =>
+      if ← isCallable target then ordinaryHasInstance target v
+      else throwJsError .typeError "Right-hand side of 'instanceof' is not callable"
+    | _ => throwJsError .typeError "Right-hand side of 'instanceof' is not callable"
+  | _ => throwJsError .typeError "Right-hand side of 'instanceof' is not callable"
+  partial_fixpoint
+
+/-- OrdinaryHasInstance (7.3.22): a non-callable right operand is
+`false` rather than a throw — the refusal belongs to `instanceOf`'s own
+step 4 — a bound function defers to its target, the `prototype` property
+must be an object, and the question is then whether that object is on the
+left operand's prototype chain. A primitive left operand is not an
+instance of anything. -/
+def ordinaryHasInstance (target v : Value) : EvalM Bool := do
   match target with
   | .obj r =>
     match (← readObj r).callable with
-    | none => throwJsError .typeError "Right-hand side of 'instanceof' is not callable"
+    | none => pure false
     | some (.bound b) => instanceOfBound v b
     | some _ =>
       match v with
-      | .prim _ => pure false
       | .obj o =>
         match ← getProp target "prototype" with
         | .obj p => protoChainHas o p
-        | .prim _ =>
+        | _ =>
           throwJsError .typeError "Function has non-object prototype in instanceof check"
-  | .prim _ => throwJsError .typeError "Right-hand side of 'instanceof' is not callable"
+      | _ => pure false
+  | _ => pure false
   partial_fixpoint
 
 /-- OrdinaryHasInstance step 2: a bound right operand defers to its
@@ -3589,7 +4185,7 @@ def evalForInLoop (env : Env) (labels : List String) (left : ForInLeft) (right :
                 (fun i => Value.prim (.str ((stringIndex? str i).getD "")))) }
       | _ => toObjectValue obj
     match ← attempt
-      (evalForIn env labels left body r (← readObj r).ownKeys [] (some undefValue)) with
+      (evalForIn env labels left body r (← readObj r).stringKeys [] (some undefValue)) with
     | .ok v => pure v
     | .error (.«break» none v) => pure v
     | .error c => throwCompletion c
@@ -3634,7 +4230,7 @@ def forInNext (env : Env) (labels : List String) (left : ForInLeft) (body : Stmt
   | none => pure acc
   | some p =>
     evalForIn env labels left body p
-      ((← readObj p).ownKeys.filter (fun k => !visited.contains k)) visited acc
+      ((← readObj p).stringKeys.filter (fun k => !visited.contains k)) visited acc
   partial_fixpoint
 
 /-- Bind one key to the head. A `var` or an assignment target writes the
@@ -3759,11 +4355,11 @@ grows one (#389) — ends abruptly here; both answer `none` and fall back
 to the printed form. -/
 def thrownSummary (v : Value) : EvalM (Option String) := do
   match v with
-  | .prim _ => pure none
   | .obj _ =>
     match ← attempt (toStringValue v) with
     | .ok s => pure (some s)
     | .error _ => pure none
+  | _ => pure none
 
 /-- How the binary names a thrown value: the object's own ToString —
 `<name>: <message>` for an Error — and its printed form for anything
@@ -3786,7 +4382,7 @@ def Heap.printedLines (h : Heap) : List String :=
     match o.kind with
     | .array len _ =>
       (List.range len).filterMap fun i =>
-        match o.getOwn (toString i) with
+        match o.getOwn (Key.str (toString i)) with
         | some (.prim (.str s)) => some s
         | _ => none
     | _ => []

@@ -13,9 +13,11 @@ namespace Tarski
 
 open Js
 
-/-- A value, as the binary prints it. Both the string and the object arm
-are reachable: a script may `throw "x"` or `throw {}`, and `describeThrown`
-falls back to this for a thrown value that is not an Error object. -/
+/-- A value, as the binary prints it. Every arm is reachable: a script
+may `throw "x"`, `throw {}`, or `throw Symbol()`, and `describeThrown`
+falls back to this for a thrown value that is not an Error object. The
+symbol arm is SymbolDescriptiveString, which is what `String(sym)`
+answers and the one place a symbol becomes text without a `TypeError`. -/
 def formatValue : Value → String
   | .prim (.num x) => Number.toDecimalString x
   | .prim (.bool b) => if b then "true" else "false"
@@ -24,5 +26,6 @@ def formatValue : Value → String
   | .prim (.str s) => s
   | .prim (.bigint i) => toString i ++ "n"
   | .obj _ => "[object Object]"
+  | .sym s => s.descriptiveString
 
 end Tarski

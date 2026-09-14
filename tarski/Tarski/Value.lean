@@ -39,14 +39,111 @@ what the specification requires and what a counter in the heap could not
 give. -/
 abbrev PrivateName := CellRef
 
-/-- A JS value: a primitive from the library's tagged domain, or a
-reference into the heap's object table. Every primitive operation the
-evaluator performs is the library's, so the primitive case carries
-`JsVal` itself rather than a copy of it. -/
+/-- A symbol's identity, spelled the way a Private Name's is: the *cell*
+is the name. `Symbol()` allocates a cell for the symbol it answers, so
+two calls give two symbols however they are described, and the heap
+needs no counter of its own to say so. The cell is immutable and empty
+and is never read; it exists to be distinct. -/
+abbrev SymbolId := CellRef
+
+/-- A Symbol: an identity and an optional description. The description
+rides in the value rather than in the heap so that `formatValue` and
+every message that prints a key stay pure functions of the value. -/
+structure Symbol where
+  id : SymbolId
+  description : Option String := none
+deriving Repr, DecidableEq, Inhabited
+
+/-- SymbolDescriptiveString (20.4.3.3.1): what `String(sym)` and
+`sym.toString()` answer, and what a message that names a symbol key
+prints. An absent description prints as the empty one. -/
+def Symbol.descriptiveString (s : Symbol) : String :=
+  "Symbol(" ++ s.description.getD "" ++ ")"
+
+/-- A JS value: a primitive from the library's tagged domain, a symbol,
+or a reference into the heap's object table. Every primitive operation
+the evaluator performs is the library's, so the primitive case carries
+`JsVal` itself rather than a copy of it.
+
+A symbol is the primitive the library has no tag for, and it is a
+constructor here rather than a `JsVal` one because `JsVal`'s inhabitants
+are values with no identity: two `Symbol("k")` calls differ, and nothing
+in `Js/` can express that. It is not an object either — it has no
+properties of its own, and reading one goes to `Symbol.prototype`. -/
 inductive Value where
   | prim (v : JsVal)
   | obj (ref : Ref)
+  | sym (s : Symbol)
 deriving Repr, DecidableEq, Inhabited
+
+/-- A property key: 6.1.7's Property Key, a String or a Symbol.
+
+`BEq` is written out rather than derived so that `simp` unfolding a key
+comparison meets a string comparison it already closes, and the `Coe`
+lets every call site that spells a string key stand as it was. -/
+inductive Key where
+  | str (s : String)
+  | sym (s : Symbol)
+deriving Repr, Inhabited
+
+/-- Key equality: strings by their text, symbols by their identity, and
+`false` across the two. -/
+def Key.beq : Key → Key → Bool
+  | .str a, .str b => a == b
+  | .sym a, .sym b => a.id == b.id
+  | .str _, .sym _ => false
+  | .sym _, .str _ => false
+
+instance : BEq Key := ⟨Key.beq⟩
+
+instance : Coe String Key := ⟨.str⟩
+
+/-! A key comparison is the comparison of what is inside it. These four
+are `@[simp]` rather than members of the evaluator's own set because they
+are why retyping the property list from `String` to `Key` left every
+proof where it was: without them `simp` meets an opaque `BEq Key`
+instance at each of a property list's dozens of entries, and with them it
+meets the `String` and `Nat` comparisons it already closes. -/
+
+@[simp] theorem beq_key_str (a b : String) :
+    (Key.str a == Key.str b) = (a == b) := rfl
+
+@[simp] theorem beq_key_sym (a b : Symbol) :
+    (Key.sym a == Key.sym b) = (a.id == b.id) := rfl
+
+@[simp] theorem beq_key_str_sym (a : String) (b : Symbol) :
+    (Key.str a == Key.sym b) = false := rfl
+
+@[simp] theorem beq_key_sym_str (a : Symbol) (b : String) :
+    (Key.sym a == Key.str b) = false := rfl
+
+/-- A key's text, or `none` for a symbol: the question
+`Object.getOwnPropertyNames`, `Object.keys`, `for`-`in`, and
+`JSON.stringify` all ask, each of them being string-only by
+specification. -/
+def Key.str? : Key → Option String
+  | .str s => some s
+  | .sym _ => none
+
+/-- SetFunctionName (10.2.9) step 1's name for a key: a string key is
+itself, a symbol key with a description is that description in brackets,
+and a symbol key **with none is the empty string** rather than `"[]"`. -/
+def Key.functionName : Key → String
+  | .str s => s
+  | .sym { description := some d, .. } => "[" ++ d ++ "]"
+  | .sym { description := none, .. } => ""
+
+/-- A key's symbol, or `none` for a string. -/
+def Key.sym? : Key → Option Symbol
+  | .str _ => none
+  | .sym s => some s
+
+/-- How a key prints in a message: its text, or the symbol's descriptive
+string. -/
+instance : ToString Key where
+  toString
+    | .str s => s
+    | .sym s => s.descriptiveString
 
 /-- A scope chain, innermost first. Lookup takes the first match, so a
 block's binding shadows an outer one of the same name without any
@@ -101,9 +198,11 @@ structure Closure where
 deriving Repr, Inhabited
 
 /-- The `Error` constructors the language has, in the order
-`Tarski/Realm.lean` lays them out. `AggregateError` is absent: it takes
-an iterable and has an `errors` property, neither of which this slice
-can build. -/
+`Tarski/Realm.lean` lays them out. `AggregateError` is absent by design
+and not by omission: this is the set the evaluator itself throws and the
+set the emitter accepts by name, `AggregateError` is neither, and
+`ErrorKind.all`'s order fixes the realm's first references and cells. It
+is a `NativeFn` of its own instead. -/
 inductive ErrorKind where
   | error
   | typeError
@@ -306,6 +405,34 @@ inductive NativeFn where
   | functionBind
   /-- `Function.prototype.toString`. -/
   | functionToString
+  /-- `Symbol`, the constructor. It has a `[[Construct]]` that throws:
+  `isConstructor(Symbol)` is true and `class X extends Symbol` is
+  well-formed, while `new Symbol()` is a `TypeError` (20.4.1). -/
+  | symbolCtor
+  /-- `Symbol.for`. -/
+  | symbolFor
+  /-- `Symbol.keyFor`. -/
+  | symbolKeyFor
+  /-- `Symbol.prototype.toString`. -/
+  | symbolProtoToString
+  /-- `Symbol.prototype.valueOf`. -/
+  | symbolProtoValueOf
+  /-- `get Symbol.prototype.description`. -/
+  | symbolDescription
+  /-- `Symbol.prototype[@@toPrimitive]`. -/
+  | symbolToPrimitive
+  /-- `JSON.parse`. -/
+  | jsonParse
+  /-- `JSON.stringify`. -/
+  | jsonStringify
+  /-- The `AggregateError` constructor. -/
+  | aggregateErrorCtor
+  /-- `Function.prototype[@@hasInstance]`. -/
+  | functionHasInstance
+  /-- `Object.getOwnPropertySymbols`. -/
+  | objectGetOwnPropertySymbols
+  /-- `Error.isError`. -/
+  | errorIsError
 deriving Repr, DecidableEq, Inhabited
 
 /-- A bound function exotic object's three internal slots plus the one
@@ -353,8 +480,9 @@ reads to answer `[object Arguments]`, so the kind *is* that slot.
 `hasOwn`, `ownKeys`, and `truncate` treat `arguments` as ordinary. A kind
 with a `Float` in it still derives `DecidableEq`, because propositional
 equality on `Float` is SameValue (`Js/Val.lean` says so), which is the
-right test for a `[[NumberData]]`. A later slice adds a boxed string
-(#391). -/
+right test for a `[[NumberData]]`. `symbol` is the Symbol wrapper object
+`Object(sym)` builds, carrying `[[SymbolData]]`. A later slice adds a
+boxed string (#391). -/
 inductive ObjKind where
   | ordinary
   | array (length : Nat) (lengthWritable : Bool)
@@ -362,6 +490,7 @@ inductive ObjKind where
   | boolean (value : Bool)
   | arguments
   | error
+  | symbol (value : Symbol)
 deriving Repr, DecidableEq, Inhabited
 
 /-- An accessor property's two functions. Named `getter` and `setter`
@@ -463,7 +592,7 @@ structure Obj where
   two properties of one name, and what lets `ownKeys` interleave the two
   kinds as OrdinaryOwnPropertyKeys requires. An array's elements are
   here, under their index keys; its `length` is not. -/
-  properties : List (String × Property) := []
+  properties : List (Key × Property) := []
   /-- `[[Call]]`. An object with one is a function. -/
   callable : Option Callable := none
   /-- The exotic-object classification. Defaulted, so an ordinary
@@ -555,44 +684,49 @@ function and 10.1.6.3 asks the question twice. -/
 def sameValueValue : Value → Value → Bool
   | .prim a, .prim b => JsVal.sameValue a b
   | .obj r₁, .obj r₂ => r₁ == r₂
+  | .sym a, .sym b => a.id == b.id
   | .prim _, .obj _ => false
+  | .prim _, .sym _ => false
   | .obj _, .prim _ => false
+  | .obj _, .sym _ => false
+  | .sym _, .prim _ => false
+  | .sym _, .obj _ => false
 
 /-- Find a key in a property list. -/
-def propGet : List (String × Property) → String → Option Property
+def propGet : List (Key × Property) → Key → Option Property
   | [], _ => none
   | (k, v) :: rest, key => if k == key then some v else propGet rest key
 
 /-- Create or overwrite a key in a property list. An existing key keeps
 its place in the insertion order; a new one goes last. -/
-def propSet : List (String × Property) → String → Property → List (String × Property)
+def propSet : List (Key × Property) → Key → Property → List (Key × Property)
   | [], key, v => [(key, v)]
   | (k, w) :: rest, key, v =>
     if k == key then (key, v) :: rest else (k, w) :: propSet rest key v
 
 /-- Drop a key from a property list, keeping the rest in order. -/
-def propDrop : List (String × Property) → String → List (String × Property)
+def propDrop : List (Key × Property) → Key → List (Key × Property)
   | [], _ => []
   | (k, v) :: rest, key => if k == key then rest else (k, v) :: propDrop rest key
 
 /-- An own property, attributes and all, or `none` if the object does
 not have one under that key. An array's `length` is not here: it lives in
 the kind, and `Eval.findProperty` synthesizes its descriptor. -/
-def Obj.getOwnProperty (o : Obj) (key : String) : Option Property :=
+def Obj.getOwnProperty (o : Obj) (key : Key) : Option Property :=
   propGet o.properties key
 
 /-- An own *data* property's value, or `none` if the object has no own
 property under that key or has an accessor there. Walking the prototype
 chain is `Eval`'s business: it runs user code, so it cannot be a pure
 function of the heap. -/
-def Obj.getOwn (o : Obj) (key : String) : Option Value :=
+def Obj.getOwn (o : Obj) (key : Key) : Option Value :=
   match o.getOwnProperty key with
   | some p => p.value?
   | none => none
 
 /-- An own accessor property, or `none` if the object has no own
 property under that key or has a data property there. -/
-def Obj.getOwnAccessor (o : Obj) (key : String) : Option Accessor :=
+def Obj.getOwnAccessor (o : Obj) (key : Key) : Option Accessor :=
   match o.getOwnProperty key with
   | some p => p.accessor?
   | none => none
@@ -601,7 +735,7 @@ def Obj.getOwnAccessor (o : Obj) (key : String) : Option Accessor :=
 not a write: an accessor of the same name is replaced rather than
 called, which is what makes a class field ignore a prototype setter. An
 existing key keeps its place in the insertion order. -/
-def Obj.define (o : Obj) (key : String) (p : Property) : Obj :=
+def Obj.define (o : Obj) (key : Key) (p : Property) : Obj :=
   { o with properties := propSet o.properties key p }
 
 /-- Define one half of an accessor property, merging into an accessor
@@ -610,7 +744,7 @@ with two halves, and replacing a data property outright. An absent half
 leaves whatever is there standing, which is
 ValidateAndApplyPropertyDescriptor's own rule: a descriptor without a
 `[[Set]]` field does not erase one. -/
-def Obj.defineAccessorHalf (o : Obj) (key : String) (getter setter : Option Value)
+def Obj.defineAccessorHalf (o : Obj) (key : Key) (getter setter : Option Value)
     (enumerable configurable : Bool) : Obj :=
   let a : Accessor :=
     match o.getOwnAccessor key with
@@ -624,14 +758,14 @@ def Obj.defineAccessorHalf (o : Obj) (key : String) (getter setter : Option Valu
 attributes and takes the value, and a key that is not there becomes an
 ordinary data property. The writability and extensibility checks are
 `Eval.setProp`'s, which has the `TypeError`s to throw. -/
-def Obj.setOwn (o : Obj) (key : String) (v : Value) : Obj :=
+def Obj.setOwn (o : Obj) (key : Key) (v : Value) : Obj :=
   match o.getOwnProperty key with
   | some p => o.define key { p with slot := .data v (p.writable?.getD true) }
   | none => o.define key (Property.ordinary v)
 
 /-- `[[Delete]]`'s write half: drop the key. The configurability check is
 `Eval.deleteProp`'s. -/
-def Obj.remove (o : Obj) (key : String) : Obj :=
+def Obj.remove (o : Obj) (key : Key) : Obj :=
   { o with properties := propDrop o.properties key }
 
 /-- Find a private element. -/
@@ -697,6 +831,11 @@ def arrayIndex? (key : String) : Option Nat :=
     | some n => if n < 4294967295 then some n else none
     | none => none
 
+/-- A *key* read as an array index: a symbol is never one. -/
+def Key.arrayIndex? : Key → Option Nat
+  | .str s => _root_.Tarski.arrayIndex? s
+  | .sym _ => none
+
 /-- Whether an object is an Array exotic object. -/
 def Obj.isArray (o : Obj) : Bool :=
   match o.kind with
@@ -715,17 +854,17 @@ case): the own property under a key, **with an array's `length`
 synthesized** — a non-enumerable, non-configurable data property whose
 value is the live length and whose `[[Writable]]` is the kind's, because
 it is an own property that does not live in the property list. -/
-def Obj.ownProperty (o : Obj) (key : String) : Option Property :=
+def Obj.ownProperty (o : Obj) (key : Key) : Option Property :=
   match o.kind with
   | .array n w =>
-    if key == "length" then
+    if key == Key.str "length" then
       some { slot := .data (Value.ofNat n) w, enumerable := false, configurable := false }
     else o.getOwnProperty key
   | _ => o.getOwnProperty key
 
 /-- `[[GetOwnProperty]]` reduced to a yes or no, which is all
 `Object.prototype.hasOwnProperty` and `Object.hasOwn` ask. -/
-def Obj.hasOwn (o : Obj) (key : String) : Bool :=
+def Obj.hasOwn (o : Obj) (key : Key) : Bool :=
   (o.ownProperty key).isSome
 
 /-- SetIntegrityLevel (7.3.15) as a pure function: the object stops being
@@ -764,8 +903,8 @@ def Obj.testIntegrity (o : Obj) (frozen : Bool) : Bool :=
 dropped while it is configurable. The first non-configurable one stops
 the scan and fixes the length at one past it, which is 10.4.2.4 steps
 12–14 exactly. -/
-def truncateDrop (props : List (String × Property)) (reached : Nat) :
-    List (Nat × String) → List (String × Property) × Nat
+def truncateDrop (props : List (Key × Property)) (reached : Nat) :
+    List (Nat × Key) → List (Key × Property) × Nat
   | [] => (props, reached)
   | (i, k) :: rest =>
     match propGet props k with
@@ -786,39 +925,53 @@ def Obj.truncate (o : Obj) (n : Nat) : Obj × Nat :=
     | _ => true
   let doomed :=
     (o.properties.filterMap (fun p =>
-      match arrayIndex? p.1 with
+      match Key.arrayIndex? p.1 with
       | some i => if n ≤ i then some (i, p.1) else none
       | none => none)).mergeSort (fun a b => decide (b.1 ≤ a.1))
   let (props, reached) := truncateDrop o.properties n doomed
   ({ o with kind := .array reached w, properties := props }, reached)
 
-/-- OrdinaryOwnPropertyKeys: the index keys in ascending numeric order,
-then every other key in insertion order, **data and accessor properties
-interleaved** because they are one list. An array's `length` joins after
-the index keys and before the rest — it is an own property, so
-`Object.getOwnPropertyNames([1])` is `["0", "length"]`, even though it
-does not live in the property list. Symbols are #392's. -/
-def Obj.ownKeys (o : Obj) : List String :=
+/-- OrdinaryOwnPropertyKeys (10.1.11.1) in full: the index keys in
+ascending numeric order, then every other string key in insertion order,
+then **the symbol keys in insertion order** — data and accessor
+properties interleaved, because they are one list. An array's `length`
+joins after the index keys and before the rest: it is an own property,
+so `Object.getOwnPropertyNames([1])` is `["0", "length"]`, even though it
+does not live in the property list. -/
+def Obj.ownKeys (o : Obj) : List Key :=
   let keys := o.properties.map (·.1)
-  let indexed := keys.filterMap (fun k => (arrayIndex? k).map (fun i => (i, k)))
+  let indexed := keys.filterMap (fun k => k.arrayIndex?.map (fun i => (i, k)))
   (indexed.mergeSort (fun a b => decide (a.1 ≤ b.1))).map (·.2)
-    ++ (if o.isArray then ["length"] else [])
-    ++ keys.filter (fun k => (arrayIndex? k).isNone)
+    ++ (if o.isArray then [Key.str "length"] else [])
+    ++ keys.filter (fun k => k.arrayIndex?.isNone && k.str?.isSome)
+    ++ keys.filter (fun k => k.sym?.isSome)
 
-/-- The own keys `Object.keys` and `for`-`in` see: `ownKeys` filtered by
-`[[Enumerable]]`. An array's `length` is non-enumerable, so it never
-appears. -/
+/-- The own *string* keys, in `ownKeys` order: what
+`Object.getOwnPropertyNames` answers. -/
+def Obj.stringKeys (o : Obj) : List String :=
+  o.ownKeys.filterMap Key.str?
+
+/-- The own *symbol* keys, in `ownKeys` order: what
+`Object.getOwnPropertySymbols` answers. -/
+def Obj.symbolKeys (o : Obj) : List Symbol :=
+  o.ownKeys.filterMap Key.sym?
+
+/-- The own keys `Object.keys` and `for`-`in` see: the string keys
+filtered by `[[Enumerable]]`. EnumerableOwnProperties and
+EnumerateObjectProperties are string-only by specification, so a
+symbol-keyed property is never here however enumerable it is. An array's
+`length` is non-enumerable, so it never appears either. -/
 def Obj.enumerableKeys (o : Obj) : List String :=
-  o.ownKeys.filter (fun k =>
-    match o.getOwnProperty k with
+  o.stringKeys.filter (fun k =>
+    match o.getOwnProperty (.str k) with
     | some p => p.enumerable
     | none => false)
 
 /-- A list of values as index-keyed ordinary data properties, numbered
 from `start`. -/
-def indexProps (start : Nat) : List Value → List (String × Property)
+def indexProps (start : Nat) : List Value → List (Key × Property)
   | [] => []
-  | v :: rest => (Nat.repr start, Property.ordinary v) :: indexProps (start + 1) rest
+  | v :: rest => (.str (Nat.repr start), Property.ordinary v) :: indexProps (start + 1) rest
 
 /-- ArrayCreate's object: the elements under their index keys, the
 length — writable, as ArrayCreate leaves it — in the kind, and the given
@@ -909,7 +1062,7 @@ existing attribute standing on an old one.
 The throw belongs to the one caller that has a `TypeError` to raise, so
 the whole table is `#guard`-testable without a heap
 (`Test/Tarski/DescriptorTest.lean`). -/
-def Obj.applyDescriptor (o : Obj) (key : String) (d : Descriptor) : Option Obj :=
+def Obj.applyDescriptor (o : Obj) (key : Key) (d : Descriptor) : Option Obj :=
   match o.getOwnProperty key with
   | none =>
     if !o.extensible then none
