@@ -44,9 +44,10 @@ its own `constructor` property → that closure's `env` → `Env.lookup` of
 `prototype.constructor` is intact; a program that overwrote it reads
 `none`, which projects to `other`, which is the safe direction.
 
-Nothing here mentions thales or emission. The per-class readers an
-emitted model needs are built *out of* `readOwnField` and
-`readPrivateField` on the other side of the boundary. -/
+This module holds meaning and nothing else: no engine, no syntax, no
+artifact. A per-class reader is built *out of* `readOwnField` and
+`readPrivateField`, and it is built on the far side of this package's
+boundary, by whatever produced the model. -/
 
 namespace Tarski
 
