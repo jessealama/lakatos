@@ -12,20 +12,21 @@ defined by `partial_fixpoint`, so the equations are theorems and a
 non-terminating program is `none`, not an axiom.
 
 The non-recursive helpers live outside the `mutual` block on purpose:
-their equations are ordinary and `simp` may use them freely. Four of the
+their equations are ordinary and `simp` may use them freely. Five of the
 recursive ones are never added to a simp set and are unfolded one step at
-a time with `rw`: `evalWhile`, `evalFor`, `getProp`, and `joinElements`.
-The rule is not "recursive" but "recursive on something other than
-syntax" — `evalExpr` and its neighbours recurse on a concrete AST, which
-runs out, while a loop recurses until a heap value says stop, a prototype
-walk until a heap link does, and a join until an array's length does, and
-`simp` unfolds all three under a binder it has not resolved, forever.
-What decides membership in the block is whether a definition can reach
-user code: `getProp`, `toPrimitive`, and `setProp` can (a prototype chain
-is unbounded, ToPrimitive calls `valueOf`, and ArraySetLength coerces its
-value with ToNumber, which is ToPrimitive on an object), so they are
-inside; `instantiateBlock` and `makeFunction` only touch the heap, so
-they are outside.
+a time with `rw`: `evalWhile`, `evalFor`, `getFrom`, `findAccessor`, and
+`joinElements`. The rule is not "recursive" but "recursive on something
+other than syntax" — `evalExpr` and its neighbours recurse on a concrete
+AST, which runs out, while a loop recurses until a heap value says stop,
+a prototype walk until a heap link does, and a join until an array's
+length does, and `simp` unfolds all three under a binder it has not
+resolved, forever. `getProp` is not on the list: it is the dispatch onto
+`getFrom`, which is the walk. What decides membership in the block is
+whether a definition can reach user code: `getProp`, `toPrimitive`, and
+`setProp` can (a getter or a setter is user code, ToPrimitive calls
+`valueOf`, and ArraySetLength coerces its value with ToNumber, which is
+ToPrimitive on an object), so they are inside; `instantiateBlock` and
+`makeFunction` only touch the heap, so they are outside.
 
 A block's declarations are instantiated before its first statement runs.
 That is one mechanism answering three needs: the temporal dead zone (a
@@ -74,6 +75,7 @@ new refusal is written against a list rather than invented.
 | `(1).toFixed(f)` with an `f` outside 0–100         | `RangeError`     | `toFixed() digits argument must be between 0 and 100`         |
 | `(1).toExponential(f)` with an `f` outside 0–100   | `RangeError`     | `toExponential() argument must be between 0 and 100`          |
 | `(1).toPrecision(p)` with a `p` outside 1–100      | `RangeError`     | `toPrecision() argument must be between 1 and 100`            |
+| a write through an accessor with no setter         | `TypeError`      | `Cannot set property {key} of #<Object> which has only a getter` |
 
 `Tarski/Monad.lean` holds two more, for the two arms a reference the
 evaluator handed out cannot reach. -/
@@ -777,8 +779,11 @@ answer is the same, and the receiver a method call then gets is still the
 primitive, which is why `thisNumberValue` accepts both. A bigint base
 still answers `undefined`, that being #392's.
 
-This is inside the fixpoint block for the walk today, and for #389's
-accessors, which will call user code from here. -/
+This is inside the fixpoint block because a getter is user code called
+from here. It is no longer the walk itself, though: `getFrom` is, and
+this is the dispatch onto it, so this one may join a simp set while
+`getFrom` is unfolded a step at a time like every other heap
+recursion. -/
 def getProp (base : Value) (key : String) : EvalM Value :=
   match base with
   | .prim .undef =>
@@ -791,20 +796,61 @@ def getProp (base : Value) (key : String) : EvalM Value :=
       match arrayIndex? key with
       | some i => pure (((stringIndex? s i).map (fun c => Value.prim (.str c))).getD undefValue)
       | none => pure undefValue
-  | .prim (.num _) => getProp (.obj numberProtoRef) key
-  | .prim (.bool _) => getProp (.obj booleanProtoRef) key
+  | .prim (.num _) => getFrom numberProtoRef key base
+  | .prim (.bool _) => getFrom booleanProtoRef key base
   | .prim _ => pure undefValue
-  | .obj r => do
-    let o ← readObj r
-    match o.kind, key == "length" with
-    | .array len, true => pure (Value.ofNat len)
-    | _, _ =>
+  | .obj r => getFrom r key base
+  partial_fixpoint
+
+/-- OrdinaryGet (10.1.8.1): the prototype walk itself, carrying the
+*receiver* the read started from. An own accessor property's getter is
+called on that receiver rather than on the object the property was found
+on, which is what makes an inherited getter see the instance; a getter-
+less accessor reads `undefined`. A Number or a Boolean base starts the
+walk at its wrapper prototype with the primitive as the receiver, which
+is why `thisNumberValue` accepts one.
+
+Recursive on the heap rather than on syntax, so its equation is `rw`'s
+and never a simp set's — the rule `evalWhile` and `joinElements` are
+under, and the one `getProp` used to be under before the dispatch was
+split off. -/
+def getFrom (r : Ref) (key : String) (receiver : Value) : EvalM Value := do
+  let o ← readObj r
+  match o.kind, key == "length" with
+  | .array len, true => pure (Value.ofNat len)
+  | _, _ =>
+    match o.getOwnAccessor key with
+    | some a =>
+      match a.getter with
+      | some g => callFunction g receiver []
+      | none => pure undefValue
+    | none =>
       match o.getOwn key with
       | some v => pure v
       | none =>
         match o.proto with
-        | some p => getProp (.obj p) key
+        | some p => getFrom p key receiver
         | none => pure undefValue
+  partial_fixpoint
+
+/-- OrdinarySet's search (10.1.9.2) for the accessor a write goes
+through: the first own accessor property on the chain, `none` as soon as
+an own *data* property — or an array's own `length` — shadows everything
+above it, and `none` at the top. Writability is not here, having no
+descriptors to read (#389); what is here is the one thing a write cannot
+do without, which is finding an inherited setter.
+
+`rw`'s, like `getFrom`, and for the same reason. -/
+def findAccessor (r : Ref) (key : String) : EvalM (Option Accessor) := do
+  let o ← readObj r
+  match o.getOwnAccessor key with
+  | some a => pure (some a)
+  | none =>
+    if (o.getOwn key).isSome || (o.isArray && key == "length") then pure none
+    else
+      match o.proto with
+      | some p => findAccessor p key
+      | none => pure none
   partial_fixpoint
 
 /-- Set a property. Strict mode throughout, so a primitive base is a
@@ -813,22 +859,36 @@ one key whose write is not a property write: assigning to it truncates
 or grows, and assigning to an index at or past the end grows the length
 to hold it, which is the whole of the Array exotic object's
 `[[DefineOwnProperty]]` at this slice's fidelity. Inside the fixpoint
-block because that coercion can reach user code; writability checks and
-prototype-chain setters arrive with descriptors (#389). -/
+block because that coercion can reach user code, and because a setter
+anywhere on the chain is user code too; writability checks arrive with
+descriptors (#389). -/
 def setProp (base : Value) (key : String) (v : Value) : EvalM Unit :=
   match base with
   | .obj r => do
-    let o ← readObj r
-    match o.kind with
-    | .array len =>
-      if key == "length" then setArrayLength r o v
-      else
-        match arrayIndex? key with
-        | some i => writeObj r { o.setOwn key v with kind := .array (max len (i + 1)) }
-        | none => writeObj r (o.setOwn key v)
-    -- A wrapper object takes an ordinary write like any other object: its
-    -- `[[NumberData]]` is a field, not a property, so nothing can reach it.
-    | _ => writeObj r (o.setOwn key v)
+    -- OrdinarySet: an accessor anywhere on the chain answers the write,
+    -- and only a chain with none of them reaches the own-property write
+    -- below. A setter-less accessor is a strict-mode `TypeError`.
+    match ← findAccessor r key with
+    | some a =>
+      match a.setter with
+      | some s => do
+        let _ ← callFunction s base [v]
+        pure ()
+      | none =>
+        throwJsError .typeError
+          s!"Cannot set property {key} of #<Object> which has only a getter"
+    | none => do
+      let o ← readObj r
+      match o.kind with
+      | .array len =>
+        if key == "length" then setArrayLength r o v
+        else
+          match arrayIndex? key with
+          | some i => writeObj r { o.setOwn key v with kind := .array (max len (i + 1)) }
+          | none => writeObj r (o.setOwn key v)
+      -- A wrapper object takes an ordinary write like any other object: its
+      -- `[[NumberData]]` is a field, not a property, so nothing can reach it.
+      | _ => writeObj r (o.setOwn key v)
   | .prim _ =>
     throwJsError .typeError
       s!"Cannot set properties of {formatValue base} (setting '{key}')"

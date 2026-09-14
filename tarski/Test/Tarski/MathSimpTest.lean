@@ -13,10 +13,10 @@ fifty-three-object `Heap.initial` is still a literal `simp` can push
 `readObj` through** — the realm grew by twenty-four objects here, and
 nothing needed a size lemma to stay computable.
 
-`getProp` is unfolded with `rw` for the reason `ObjectSimpTest` records,
-through `getProp.eq_def` because the outer match's arms overlap: once per
-member read, and once only, since `trunc` and `sign` are own properties of
-`Math` rather than inherited ones. -/
+`getFrom`, the prototype walk `getProp` dispatches onto, is unfolded with
+`rw` for the reason `ObjectSimpTest` records: once per member read, and
+once only, since `trunc` and `sign` are own properties of `Math` rather
+than inherited ones. -/
 
 open Tarski
 
@@ -33,14 +33,14 @@ attribute [local simp] evalExpr evalExprs evalStmt evalStmts evalDeclarators
   callFunction callNative catchReturn makeFunction bindParams pushElements
   newObject newArray newArrayOfLength Obj.array indexProps
   Value.ofNat Obj.truncate Obj.ownKeys Obj.isArray Obj.hasOwn
-  NativeFn.constructs setProp
+  NativeFn.constructs getProp setProp
   applyUnary applyBinary toPrimitive BinaryOp.coerces toNumberPrim toBooleanPrim isStrPrim
   toNumberValue mathUnary mathRef
   allocCell getCell readCell writeCell initCell
   allocObj readObj writeObj modifyObj
   Env.lookup Heap.alloc Heap.read Heap.write
   Heap.allocObj Heap.readObj Heap.writeObj
-  Obj.getOwn Obj.setOwn propGet propSet
+  Obj.getOwn Obj.setOwn propGet propSet Obj.getOwnAccessor accessorGet
   undefValue thisName DeclKind.isMutable
   Heap.initial globalEnv objectProtoRef arrayProtoRef runScript runProgram evalProgram
   ExceptT.run_bind Except.map throwJsError throwCompletion
@@ -56,8 +56,8 @@ attribute [local simp] evalExpr evalExprs evalStmt evalStmts evalDeclarators
 
 example : runProgram program = some (.ok (some (.prim (.num 1.0)))) := by
   simp [program]
-  rw [getProp.eq_def]; simp   -- `Math.trunc`, an own property of `Math`
-  rw [getProp.eq_def]; simp   -- `Math.sign`, likewise
+  rw [getFrom.eq_def]; simp   -- `Math.trunc`, an own property of `Math`
+  rw [getFrom.eq_def]; simp   -- `Math.sign`, likewise
 
 /-- info: some (Except.ok (some (Tarski.Value.prim (Js.JsVal.num 1.000000)))) -/
 #guard_msgs in

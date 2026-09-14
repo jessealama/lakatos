@@ -216,10 +216,25 @@ inductive ObjKind where
   | boolean (value : Bool)
 deriving Repr, DecidableEq, Inhabited
 
+/-- An accessor property's two functions. Named `getter` and `setter`
+rather than `get` and `set` because those two spellings are the state
+monad's, and a field projection of either name would shadow one wherever
+an `Obj` was open. Both are `Option`: a property may have only a getter,
+only a setter, or — after a `get x` and a `set x` on one name — both. -/
+structure Accessor where
+  /-- `[[Get]]`. A read of a getter-less accessor property is
+  `undefined`. -/
+  getter : Option Value := none
+  /-- `[[Set]]`. A write to a setter-less accessor property is a
+  `TypeError` in strict mode. -/
+  setter : Option Value := none
+deriving Repr, Inhabited
+
 /-- An ordinary object: a prototype link, own data properties in
-insertion order, and — for a function — what calling it does. There are
-no property descriptors and no accessors; writability, enumerability,
-and getters are #389's. -/
+insertion order, own accessor properties beside them, and — for a
+function — what calling it does. There are still no property
+descriptors: writability and enumerability are #389's, which is also
+what folds these two lists into one. -/
 structure Obj where
   /-- `[[Prototype]]`. `none` is the null prototype; a function object's
   is one until `Function.prototype` exists (#389). -/
@@ -232,6 +247,12 @@ structure Obj where
   /-- The exotic-object classification. Defaulted, so an ordinary
   object's literal says nothing about it. -/
   kind : ObjKind := .ordinary
+  /-- Own accessor properties, in insertion order. **A key is in at most
+  one of the two lists**: `Obj.defineData` and `Obj.defineAccessor` are
+  the only ways in, and each drops the key from the other list first, so
+  redefining a getter as a data property and back is the spec's
+  replacement rather than two properties of one name. -/
+  accessors : List (String × Accessor) := []
 deriving Repr, Inhabited
 
 /-- A variable binding. `mutable` is `false` for `const`, which is what
@@ -324,6 +345,52 @@ def Obj.getOwn (o : Obj) (key : String) : Option Value :=
 def Obj.setOwn (o : Obj) (key : String) (v : Value) : Obj :=
   { o with properties := propSet o.properties key v }
 
+/-- Drop a key from a property list, keeping the rest in order. -/
+def propDrop : List (String × Value) → String → List (String × Value)
+  | [], _ => []
+  | (k, v) :: rest, key => if k == key then rest else (k, v) :: propDrop rest key
+
+/-- Find a key in an accessor list. -/
+def accessorGet : List (String × Accessor) → String → Option Accessor
+  | [], _ => none
+  | (k, a) :: rest, key => if k == key then some a else accessorGet rest key
+
+/-- Drop a key from an accessor list. -/
+def accessorDrop : List (String × Accessor) → String → List (String × Accessor)
+  | [], _ => []
+  | (k, a) :: rest, key => if k == key then rest else (k, a) :: accessorDrop rest key
+
+/-- Create or extend an accessor entry. An absent half leaves whatever is
+already there standing, which is ValidateAndApplyPropertyDescriptor's own
+rule: a descriptor without a `[[Set]]` field does not erase one. -/
+def accessorSet : List (String × Accessor) → String → Option Value → Option Value →
+    List (String × Accessor)
+  | [], key, g, s => [(key, { getter := g, setter := s })]
+  | (k, a) :: rest, key, g, s =>
+    if k == key then
+      (key, { getter := match g with | some _ => g | none => a.getter,
+              setter := match s with | some _ => s | none => a.setter }) :: rest
+    else (k, a) :: accessorSet rest key g s
+
+/-- An own accessor property, or `none` if the object does not have one
+under that key. -/
+def Obj.getOwnAccessor (o : Obj) (key : String) : Option Accessor :=
+  accessorGet o.accessors key
+
+/-- Define an own data property. A *definition*, not a write: an accessor
+of the same name is replaced rather than called, which is what makes a
+class field ignore a prototype setter. -/
+def Obj.defineData (o : Obj) (key : String) (v : Value) : Obj :=
+  { o with accessors := accessorDrop o.accessors key,
+           properties := propSet o.properties key v }
+
+/-- Define an own accessor property, replacing a data property of the
+same name and merging into an accessor already there, so that a `get x`
+and a `set x` make one property with two halves. -/
+def Obj.defineAccessor (o : Obj) (key : String) (getter setter : Option Value) : Obj :=
+  { o with properties := propDrop o.properties key,
+           accessors := accessorSet o.accessors key getter setter }
+
 /-- Resolve a name in a scope chain: the innermost binding wins. -/
 def Env.lookup : Env → String → Option CellRef
   | [], _ => none
@@ -370,11 +437,12 @@ def Obj.isArray (o : Obj) : Bool :=
 /-- `[[GetOwnProperty]]` reduced to a yes or no, which is all
 `Object.prototype.hasOwnProperty` asks. An array's `length` is an own
 property that lives in the kind rather than the property list, so it is
-answered here by hand. -/
+answered here by hand; an accessor property is one too, so the second
+list is consulted beside the first. -/
 def Obj.hasOwn (o : Obj) (key : String) : Bool :=
   match o.kind with
-  | .array _ => key == "length" || (o.getOwn key).isSome
-  | _ => (o.getOwn key).isSome
+  | .array _ => key == "length" || (o.getOwn key).isSome || (o.getOwnAccessor key).isSome
+  | _ => (o.getOwn key).isSome || (o.getOwnAccessor key).isSome
 
 /-- ArraySetLength's shortening half: drop every element at an index at
 or past the new length, keep the rest in order, and record the length.
@@ -391,12 +459,16 @@ def Obj.truncate (o : Obj) (n : Nat) : Obj :=
 then every other key in insertion order. Symbols are #392's, and an
 array's `length` is not here because it is not in the property list —
 `Object.keys([7, 8])` is `["0", "1"]`. Enumerability arrives with
-descriptors (#389), so until then every own key is listed. -/
+descriptors (#389), so until then every own key is listed, accessor keys
+included; they come after the data keys rather than interleaved with
+them, which is an ordering limit #389 removes along with the second
+list. -/
 def Obj.ownKeys (o : Obj) : List String :=
   let keys := o.properties.map (·.1)
   let indexed := keys.filterMap (fun k => (arrayIndex? k).map (fun i => (i, k)))
   (indexed.mergeSort (fun a b => decide (a.1 ≤ b.1))).map (·.2)
     ++ keys.filter (fun k => (arrayIndex? k).isNone)
+    ++ o.accessors.map (·.1)
 
 /-- A list of values as index-keyed properties, numbered from `start`. -/
 def indexProps (start : Nat) : List Value → List (String × Value)
