@@ -10,6 +10,11 @@ on:
   # check that never reports reads as pending forever, not as skipped. The
   # push trigger above stays filtered — nothing gates on it.
   pull_request:
+  # The whole-suite run, weekly and on demand. Monday, three hours before
+  # `lean-update`'s own cron, so the two never contend for a runner.
+  schedule:
+    - cron: "0 5 * * 1"
+  workflow_dispatch:
 
 env:
   LC_ALL: C.UTF-8
@@ -23,6 +28,9 @@ defaults:
 jobs:
   build-and-test:
     name: Build + Lean tests
+    # The PR job and the whole-suite run share a workflow and never each
+    # other's triggers.
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -167,12 +175,13 @@ jobs:
         timeout-minutes: 5
         run: node scripts/setup-test262.js
 
-      # The PR-gated slice. The committed table is the ratchet: a count
-      # that moved in either direction fails until it is written down.
-      # The three built-ins directories are pinned all-unsupported for the
-      # reason `tarski/CLAUDE.md` gives — they load the suite's own
-      # `assert.js`, which opens with a `switch` — and they ratchet with
-      # #393 and #383 rather than with a built-ins slice.
+      # The PR-gated slice, which is the first of the two CI tiers; the
+      # second is the `full-run` job below. The committed table is the
+      # ratchet: a count that moved in either direction fails until it is
+      # written down. The three built-ins directories are pinned
+      # all-unsupported for the reason `tarski/CLAUDE.md` gives — they load
+      # the suite's own `assert.js`, which opens with a `switch` — and they
+      # ratchet with #393 and #383 rather than with a built-ins slice.
       - name: test262 slice
         timeout-minutes: 15
         run: |
@@ -187,3 +196,124 @@ jobs:
         env:
           LAKATOS_TARSKI_E2E: "1"
         run: npx vitest run tarski/frontend/tests/test262-e2e.test.ts
+
+  # The second tier: the whole of `language`, `built-ins`, and `intl402`,
+  # weekly and on demand, writing `tarski/test262/results.{md,json}`. A
+  # regression shows as a diff in those files on the next run rather than
+  # as a red pull request. The slices, the per-test timeout, and the
+  # budget all live in `scripts/test262-full.sh`, which is also what a
+  # person runs locally to reproduce the table.
+  full-run:
+    name: Full test262 run
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    # The run's own budget is 240 minutes inside a 300-minute step inside
+    # this job, so exhausting the budget writes a table saying so rather
+    # than losing the run to a cancelled job.
+    timeout-minutes: 330
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install Lean toolchain
+        uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: tarski
+          auto-config: false
+          build: false
+          test: false
+          lint: false
+          use-github-cache: false
+
+      - name: Cache Lake build artifacts
+        uses: actions/cache@v6
+        with:
+          path: tarski/.lake/build
+          key: tarski-${{ runner.os }}-${{ hashFiles('tarski/lean-toolchain', 'tarski/lakefile.lean') }}
+          restore-keys: |
+            tarski-${{ runner.os }}-
+
+      - name: Install npm dependencies
+        working-directory: .
+        run: npm ci
+
+      - name: Build the TypeScript
+        working-directory: .
+        run: npm run build
+
+      - name: Build the evaluator's binary
+        run: lake build tarski
+
+      - name: Cache test262
+        uses: actions/cache@v6
+        with:
+          path: tarski/.test262
+          key: test262-${{ hashFiles('tarski/test262/pin.json') }}
+
+      - name: Set up test262
+        timeout-minutes: 5
+        run: node scripts/setup-test262.js
+
+      - name: Full run
+        timeout-minutes: 300
+        run: sh scripts/test262-full.sh
+
+      # The table is committed only when it changed, so an unchanged week
+      # leaves no commit behind. The push to `main` is tried first and
+      # falls back to a pull request: the `main` ruleset (read 2026-09-14)
+      # requires four status checks with no bypass actor, and a commit the
+      # job has just made has no check runs, so no token can land it. If a
+      # maintainer ever adds a bypass actor for the Actions app the push
+      # simply starts working; until then the table arrives as a pull
+      # request which, like `lean-update`'s, needs a close-and-reopen
+      # before its checks will run.
+      - name: Commit the table
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tarski/test262/results.md tarski/test262/results.json
+          if git diff --cached --quiet; then
+            echo "results unchanged"
+            exit 0
+          fi
+          pin=$(jq -r .commit tarski/test262/pin.json)
+          git commit -m "test262 results at $pin from ${{ github.sha }}"
+          if git push origin HEAD:main; then
+            echo "pushed to main"
+            exit 0
+          fi
+          echo "the main ruleset refused the push; opening a pull request"
+          git push --force origin HEAD:refs/heads/test262-results
+          totals=$(jq -r '.totals | "\(.pass) pass, \(.fail) fail, \(.unsupported) unsupported, \(.timeout) timeout, \(.harnessError) harness-error, \(.notRun | add) not-run"' tarski/test262/results.json)
+          cat > /tmp/test262-results-body.md <<BODY
+          The scheduled whole-suite run over \`test/language\`, \`test/built-ins\`, and \`test/intl402\`, at test262 \`$pin\`, from ${{ github.sha }}.
+
+          Totals: $totals.
+
+          Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          This arrives as a pull request because the \`main\` ruleset requires status checks with no bypass actor, so the job's own commit cannot be pushed to \`main\`. A pull request opened by \`GITHUB_TOKEN\` gets no CI run until it is closed and reopened, or pushed to.
+
+          🤖 Generated with [Claude Code](https://claude.com/claude-code)
+          BODY
+          number=$(gh pr list --head test262-results --state open --json number --jq '.[0].number // empty')
+          if [ -z "$number" ]; then
+            gh pr create --base main --head test262-results \
+              --title "test262 results at $pin" \
+              --body-file /tmp/test262-results-body.md
+          else
+            gh pr edit "$number" --body-file /tmp/test262-results-body.md
+          fi
