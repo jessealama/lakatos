@@ -13,8 +13,8 @@ this package could not have one at all. The set is the list, kept once.
 out, so it is an ordinary member: `evalExpr` and its neighbours descend a
 concrete AST. A definition that recurses on a *loop* never stops, so it
 is never in the set at all and is unfolded one step at a time with `rw`:
-`evalWhile`, `evalDoWhile`, `evalFor`, and `joinElements`, whose tests are
-the `*UnfoldTest` files. A definition that recurses on the *heap* is in
+`evalWhile`, `evalDoWhile`, `evalFor`, `evalForOf`, and `joinElements`,
+whose tests are the `*UnfoldTest` files. A definition that recurses on the *heap* is in
 between: it stops as soon as the heap says so, but `simp` will unfold it
 forever under a reference it has not yet resolved. Those four —
 `getFromUp`, `findPropertyUp`, `protoChainHas`, and `construct` — join
@@ -46,7 +46,9 @@ and so do the three steps a bound function's target is reached by,
 `callBound`, `constructBound`, and `instanceOfBound`; each is `rw`'s and
 none is here. `rawSegments`, `String.raw`'s walk, is one of them.
 `callStringNative`, the `String` surface, is out for `callReflectNative`'s
-reason rather than for a loop's. -/
+reason rather than for a loop's. So are the four walks that run until an
+*iterator* says stop: `evalForOf`, `iteratorToList`, `fromEntriesInto`,
+and `groupByInto`. -/
 
 namespace Tarski
 
@@ -60,10 +62,26 @@ recurses on syntax or not at all. -/
 -- Evaluation proper, and the instantiation a block is preceded by.
 -- `evalNamed` is NamedEvaluation, a dispatch onto `evalExpr`.
 attribute [tarski_eval]
-  evalExpr evalCallee evalExprs evalStmt evalStmts evalPropDefs evalPropKey
+  evalExpr evalCallee evalExprs evalArgs evalArrayElements defineFrom
+  evalStmt evalStmts evalPropDefs evalPropKey
   evalTemplate getTemplateObject evalDeclarators evalBlock evalNamed
-  evalForInLoop evalForIn bindForIn
-  instantiateBlock hoistNames hoistDeclarators initFunctions
+  evalForInLoop evalForIn bindForIn evalForOfLoop
+  instantiateBlock hoistNames hoistDeclarators allocNames initFunctions
+
+-- The iteration protocol and destructuring. `getIterator`,
+-- `iteratorStep`, and `iteratorClose` call user code and stop; the
+-- pattern walk recurses on syntax; `callIteratorNative` is split out of
+-- `callNative` for `callReflectNative`'s reason but is **in** the set,
+-- its seven arms being far below the equation-lemma ceiling — which is
+-- what lets a closed destructuring or one `for`-`of` step reduce with no
+-- local lemma list at all.
+attribute [tarski_eval]
+  getIterator iteratorStep iteratorClose createIterResult
+  evalLeafRef writeLeaf patternLeafRef bindOne bindPattern bindProps bindElements bindRest
+  copyDataProperties copyKeys callIteratorNative
+  Pattern.boundNames patternElemsNames patternPropsNames patternRestNames targetBoundNames
+  Pattern.containsExpression patternElemsContain patternPropsContain patternRestContains
+  PropKey.isComputed
 
 -- `var` hoisting: VarDeclaredNames over a body, and the cells it gives them.
 attribute [tarski_eval]
@@ -97,6 +115,8 @@ attribute [tarski_eval]
   mentionsArgumentsTarget mentionsArgumentsArrow mentionsArgumentsParams
   mentionsArgumentsClass mentionsArgumentsStmts mentionsArgumentsStmt
   mentionsArgumentsForInit mentionsArgumentsDecls mentionsArgumentsCases
+  mentionsArgumentsPattern mentionsArgumentsElems mentionsArgumentsProps
+  mentionsArgumentsPatternOpt
 
 -- Classes and private elements.
 attribute [tarski_eval]
@@ -229,6 +249,8 @@ attribute [tarski_eval]
   jsonRef jsonParseRef jsonStringifyRef
   aggregateErrorProtoRef aggregateErrorCtorRef functionHasInstanceRef
   objectGetOwnPropertySymbolsRef errorIsErrorRef
+  iteratorProtoRef iteratorProtoIteratorRef arrayIteratorProtoRef arrayIteratorNextRef
+  arrayKeysRef arrayValuesRef arrayEntriesRef objectFromEntriesRef objectGroupByRef
   symbolCellRef jsonCellRef aggregateErrorCellRef wellKnownSymbolCellBase
   WellKnownSymbol.name WellKnownSymbol.description WellKnownSymbol.id
   WellKnownSymbol.symbol WellKnownSymbol.key WellKnownSymbol.all

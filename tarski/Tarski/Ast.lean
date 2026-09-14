@@ -8,9 +8,11 @@ against one another. A node kind outside this file is not a runtime
 error: `Decode` refuses it as `unsupported`, and that is the only place
 the word appears.
 
-Strict mode only. A parameter is a `Param`: a name and an optional
-default, which is what `AssignmentPattern` decodes to; rest parameters
-and binding patterns are #394's and arrive as `Unsupported`. `var` is
+Strict mode only. A parameter is a `Param`: a target, an optional
+default, and a `rest` flag. The target is a `Pattern` — an
+`Identifier`, an `ArrayPattern`, or an `ObjectPattern` — and one
+`Pattern` serves every binding position and every assignment pattern
+too, a `Declarator`, a `CatchClause`, and a `for` head included. `var` is
 here, so hoisting covers two scopes at once: `let`, `const`, and function
 declarations are instantiated per block, while a `var` is hoisted to the
 enclosing function or script and initialized to `undefined` there, with
@@ -20,7 +22,16 @@ are here, and so are parameter defaults and `arguments`, and so are
 `delete`, `in`, and `for`-`in`, which are `[[Delete]]`,
 `[[HasProperty]]`, and EnumerateObjectProperties and so belong with the
 property protocol #389 defines rather than with the loops; `new.target`
-is #486's, `for`-`of` and binding patterns #394's.
+is #486's.
+
+**The iteration protocol's syntax is here**: `for`-`of` (`forOfStmt`,
+whose head is the same `ForInLeft` a `for`-`in` has), spread in an array
+literal, a call, a `new`, a `super` call, and an object literal
+(`Expr.spread`, `PropDef.spread`), an array literal's holes
+(`Expr.hole`), and destructuring — binding patterns with defaults,
+elisions, and rest in declarations, parameters, `catch` clauses, and
+loop heads, plus the assignment form (`Expr.assignPattern`). Generators
+and `for await` are not: they stay refused by name in the decoder.
 
 **Templates are here**, tagged and untagged, the tagged form carrying a
 site number the decoder assigns so that the template object can be cached
@@ -244,15 +255,14 @@ inductive Expr where
   | call (callee : Expr) (args : List Expr)
   /-- ESTree `NewExpression`. -/
   | new (callee : Expr) (args : List Expr)
-  /-- ESTree `ArrayExpression`. A hole and a spread are both outside the
-  slice and arrive as `Unsupported` elements in place — `OmittedExpression`
-  and `SpreadElement` — so the literal survives and only the element is
-  refused; evaluated holes and spread are #394's. -/
+  /-- ESTree `ArrayExpression`. An element may be `Expr.hole`, which is
+  ESTree's JSON `null` and the source's elision, or `Expr.spread`; both
+  are ordinary elements of this list, which is ESTree's own shape and
+  what keeps every `.arrayLit [.numLit 1.0]` spelling standing. -/
   | arrayLit (elements : List Expr)
   /-- ESTree `ObjectExpression`, its members in source order. Every
-  member form is here but spread, which is #394's and arrives as an
-  `Unsupported` member in place. A duplicate key is a redefinition and
-  the last one wins. -/
+  member form is here, spread included (`PropDef.spread`). A duplicate
+  key is a redefinition and the last one wins. -/
   | objectLit (props : List PropDef)
   /-- ESTree `TemplateLiteral` outside a tag. `strings` are the quasis'
   cooked values and there is one more of them than there are `exprs`, so
@@ -299,6 +309,22 @@ inductive Expr where
   of use, and anything else is evaluated for its effects and answers
   `true`. A `super` member operand is a decoder refusal. -/
   | delete (operand : Expr)
+  /-- ESTree `AssignmentExpression` with `operator: "="` whose `left` is
+  an `ArrayPattern` or an `ObjectPattern`: DestructuringAssignmentEvaluation
+  (13.15.5), whose value is the *right* operand's. A constructor of its
+  own rather than a widening of `assign`'s `Target`, which every program
+  here spells with a dot-constructor. -/
+  | assignPattern (pattern : Pattern) (value : Expr)
+  /-- ESTree `SpreadElement`. Legal only as an `arrayLit` element or a
+  `call`, `new`, or `superCall` argument, where the list evaluation
+  iterates it; the decoder never places one anywhere else, so reaching
+  `evalExpr` with one is the `SyntaxError` the message table lists. -/
+  | spread (argument : Expr)
+  /-- An `ArrayExpression` element that is JSON `null`: an elision.
+  ArrayAccumulation counts it and defines nothing, so `[1, , 2]` has
+  length 3 and no `1` key. Outside an array literal it is the same
+  `SyntaxError` `spread` is. -/
+  | hole
 
 /-- ESTree `Property.key`. A `name` is what an `Identifier` key, a string
 `Literal` key, and a shorthand's own name all decode to; a `computed` key
@@ -321,6 +347,11 @@ inductive PropDef where
   `[[HomeObject]]`, so `super.x` inside one reads through the literal's
   prototype. -/
   | method (kind : MethodKind) (key : PropKey) (params : List Param) (body : List Stmt)
+  /-- ESTree `SpreadElement` as an object-literal member:
+  CopyDataProperties (7.3.26) into the literal with no excluded keys, so
+  every own enumerable key of the source — string and symbol both — is
+  *defined* on the literal rather than written to it. -/
+  | spread (value : Expr)
   /-- A non-computed, non-shorthand `__proto__` key: B.3.1's `__proto__`
   Property Names in Object Initializers. The value is evaluated, and when
   it is an object or `null` it becomes `[[Prototype]]`; otherwise nothing
@@ -349,6 +380,44 @@ inductive Target where
   write to a private element is not a property write: the element must
   already be on the object, or the write is a `TypeError`. -/
   | privateMember (object : Expr) (name : String)
+
+/-- ESTree `ArrayPattern`, `ObjectPattern`, and the leaf they bottom out
+in. One type serves a *binding* pattern and an *assignment* pattern
+both, because ESTree gives them one node family and 14.3.3 and 13.15.5
+are one walk; what differs is how a leaf is written, which is `BindMode`
+in `Tarski/Eval.lean`, and that a binding position admits only an
+identifier leaf — which the decoder enforces rather than a second type. -/
+inductive Pattern where
+  /-- An ESTree `Identifier` or, in an assignment pattern, a
+  `MemberExpression`. -/
+  | target (t : Target)
+  /-- ESTree `ArrayPattern`. A `none` element is an elision, which steps
+  the iterator and binds nothing; `rest` is the `RestElement`'s
+  `argument`, which may itself be a pattern. -/
+  | array (elements : List (Option PatternElem)) (rest : Option Pattern)
+  /-- ESTree `ObjectPattern`. `rest` is a `RestElement` whose argument
+  the grammar requires to be a leaf in both pattern families. -/
+  | object (props : List PatternProp) (rest : Option Target)
+
+/-- One element of an `ArrayPattern`: a target, plus the `right` of the
+`AssignmentPattern` when the element is written with a default. -/
+structure PatternElem where
+  /-- The element's target. -/
+  target : Pattern
+  /-- The `AssignmentPattern`'s `right`, or `none`. -/
+  default : Option Expr
+
+/-- One `Property` of an `ObjectPattern`. A shorthand `{ a }` and a
+defaulted shorthand `{ a = 1 }` both decode to the key `.name "a"` with
+the target `.target (.ident "a")`; a computed or numeric key is a
+`PropKey.computed`, exactly as an object literal's is. -/
+structure PatternProp where
+  /-- ESTree `Property.key`. -/
+  key : PropKey
+  /-- The property's target. -/
+  target : Pattern
+  /-- The `AssignmentPattern`'s `right`, or `none`. -/
+  default : Option Expr
 
 /-- Statements. -/
 inductive Stmt where
@@ -411,22 +480,33 @@ inductive Stmt where
   head gets a fresh binding per iteration, so two closures the body makes
   see two cells. A nullish right operand runs the body not at all. -/
   | forInStmt (left : ForInLeft) (right : Expr) (body : Stmt)
+  /-- ESTree `ForOfStatement` with `await: false`. GetIterator of the
+  right operand, one IteratorStepValue per iteration, and IteratorClose
+  on every exit but exhaustion and a throw from the iterator itself. The
+  head is a `ForInLeft`, the two loops' heads being the same production. -/
+  | forOfStmt (left : ForInLeft) (right : Expr) (body : Stmt)
   /-- ESTree `ClassDeclaration`. Hoisted like a `let`: the cell exists
   from the block's first statement and is in its temporal dead zone until
   the declaration runs, so `new A(); class A {}` is a `ReferenceError`.
   The binding is writable, unlike the class's own inner name. -/
   | classDecl (name : String) (cls : ClassDef)
 
-/-- ESTree `ForInStatement.left`: what each key is bound to. A
-declaration head is exactly one declarator with no initializer — the
-sloppy `for (var x = 1 in o)` form is a decoder refusal — and an
-assignment target is any of the three `Target` shapes, written to once
-per key. -/
+/-- The head of a `for`-`in` *or* a `for`-`of`: what each key or value is
+bound to. A declaration head is exactly one declarator with no
+initializer — the sloppy `for (var x = 1 in o)` form is a decoder
+refusal — an assignment target is any of the `Target` shapes, and an
+`ArrayPattern` or `ObjectPattern` head is
+DestructuringAssignmentEvaluation once per iteration. -/
 inductive ForInLeft where
-  /-- A `VariableDeclaration` in the head, one declarator, no `init`. -/
-  | decl (kind : DeclKind) (name : String)
+  /-- A `VariableDeclaration` in the head, one declarator, no `init`.
+  The declarator's `id` may be a binding pattern. -/
+  | decl (kind : DeclKind) (target : Pattern)
   /-- An assignment target in the head: `for (k in o)`, `for (o.p in q)`. -/
   | target (t : Target)
+  /-- An assignment *pattern* in the head: `for ([a, b] of xs)`. A
+  `.pattern (.target t)` is never produced and would mean what
+  `.target t` means. -/
+  | pattern (p : Pattern)
 
 /-- ESTree `ForStatement.init`: a declaration, an expression evaluated
 for its effect, or nothing. A declaration head is its own scope — the
@@ -448,14 +528,12 @@ structure SwitchCase where
   body : List Stmt
 
 /-- ESTree `CatchClause`. `param` is `none` for the optional-binding
-form, `catch { }`; a binding pattern is #394's and arrives as
-`Unsupported`, so the clause survives and only the binding is refused.
-The parameter is a mutable binding in a scope of its own, holding nothing
-but itself, which is why it does not collide with a same-named binding
-outside. -/
+form, `catch { }`. The parameter's bindings are mutable and live in a
+scope of their own, holding nothing but themselves, which is why they do
+not collide with same-named bindings outside. -/
 structure CatchClause where
-  /-- ESTree `CatchClause.param`, an `Identifier` or nothing. -/
-  param : Option String
+  /-- ESTree `CatchClause.param`, a binding pattern or nothing. -/
+  param : Option Pattern
   /-- ESTree `CatchClause.body`, a `BlockStatement`'s statements. -/
   body : List Stmt
 
@@ -499,26 +577,32 @@ structure ClassDef where
   elements : List ClassElement
 
 /-- One formal parameter. ESTree gives a plain parameter as an
-`Identifier` in a `params` list and a defaulted one as an
-`AssignmentPattern` whose `left` is one; `default` is that node's
-`right`, and it is evaluated only when the argument is `undefined` —
-which is why `f(1, undefined)` runs the default and `f(1, null)` does
-not. A rest parameter and a binding pattern are #394's and arrive as
-`Unsupported`, so the parameter is refused and the function survives. -/
+`Identifier` in a `params` list, a defaulted one as an
+`AssignmentPattern`, a destructuring one as an `ArrayPattern` or an
+`ObjectPattern`, and a rest parameter as a `RestElement`. `default` is
+the `AssignmentPattern`'s `right`, and it is evaluated only when the
+argument is `undefined` — which is why `f(1, undefined)` runs the
+default and `f(1, null)` does not. -/
 structure Param where
-  /-- ESTree `Identifier.name`. -/
-  name : String
+  /-- What the argument is bound to. -/
+  target : Pattern
   /-- The `AssignmentPattern`'s `right`, or `none` for a plain
   parameter. -/
   default : Option Expr
+  /-- Whether this is a `RestElement` parameter, which takes every
+  argument left over as a fresh array. The decoder enforces what the
+  grammar says: a rest parameter is last and is never defaulted. -/
+  rest : Bool := false
 
 /-- One declarator of a `VariableDeclaration`. `none` binds `undefined`.
 JS requires an initializer on a `const`, but as an early error, and early
 errors are outside this epic — so `const x;` binds `undefined` here where
 an engine refuses the script. -/
 structure Declarator where
-  /-- ESTree `VariableDeclarator.id`, an `Identifier`. -/
-  name : String
+  /-- ESTree `VariableDeclarator.id`, an `Identifier` or a binding
+  pattern. A pattern without an initializer does not parse, and the
+  decoder refuses one as `malformed`. -/
+  target : Pattern
   /-- ESTree `VariableDeclarator.init`. -/
   init : Option Expr
 
@@ -531,36 +615,115 @@ end
 -- decision procedure on syntax: the tests compare programs by `repr` and
 -- results by `Value`, which stays decidable.
 deriving instance Repr, Inhabited for Expr, PropKey, PropDef, ArrowBody, Target, Stmt, ForInit,
-  ForInLeft,
+  ForInLeft, Pattern, PatternElem, PatternProp,
   SwitchCase, CatchClause, Param, Declarator, ClassField, ClassElement, ClassDef
+
+/-- A plain name is the pattern that binds it, so a test and a literal
+program may still spell `.decl .«const» "k"`, `{ target := "x", init :=
+… }`, and `param := some "e"`. -/
+instance : Coe String Pattern := ⟨fun n => .target (.ident n)⟩
 
 /-- A plain name is a parameter with no default, so a test and a
 literal program may still spell `params := ["x"]`. The coercion is
 `CoeHead`-free and elaborates inside a list literal, which is what keeps
 every program written before defaults existed unchanged. -/
-instance : Coe String Param := ⟨fun name => { name, default := none }⟩
+instance : Coe String Param :=
+  ⟨fun name => { target := .target (.ident name), default := none }⟩
+
+/-- Whether a key is computed, which is what ContainsExpression asks of
+an `ObjectPattern`'s property. -/
+def PropKey.isComputed : PropKey → Bool
+  | .name _ => false
+  | .computed _ => true
 
 /-- A written key is a plain string, so a test and a literal program may
 spell `.init "a" (.numLit 1.0)`. The coercion elaborates inside a list
 literal, which is what `Coe String Param` does for `params := ["x"]`. -/
 instance : Coe String PropKey := ⟨.name⟩
 
-/-- The parameters' names, in order — BoundNames of a formal parameter
-list, restricted to the single-name bindings this AST has. -/
-def Param.names (ps : List Param) : List String := ps.map (·.name)
+/-- The names an optional leaf target binds; see `Pattern.boundNames`. -/
+def targetBoundNames : Option Target → List String
+  | some (.ident n) => [n]
+  | _ => []
 
-/-- Whether any parameter has an initializer. FunctionDeclarationInstantiation
-(10.2.11) branches on this: with a default present the `var`s get a scope
-of their own (step 28), without one they share the parameters' cells
-(step 27). -/
-def hasDefaults (ps : List Param) : Bool := ps.any (·.default.isSome)
+mutual
+
+/-- BoundNames (8.2.1) of a pattern: its `Identifier` leaves in source
+order. A member leaf contributes nothing — it is an assignment target
+and not a binding, and the decoder admits one only where PutValue is the
+write. -/
+def Pattern.boundNames : Pattern → List String
+  | .target t => targetBoundNames (some t)
+  | .array elements rest => patternElemsNames elements ++ patternRestNames rest
+  | .object props rest => patternPropsNames props ++ targetBoundNames rest
+
+/-- An `ArrayPattern`'s elements; see `Pattern.boundNames`. -/
+def patternElemsNames : List (Option PatternElem) → List String
+  | [] => []
+  | none :: rest => patternElemsNames rest
+  | some ⟨t, _⟩ :: rest => Pattern.boundNames t ++ patternElemsNames rest
+
+/-- An `ObjectPattern`'s properties; see `Pattern.boundNames`. -/
+def patternPropsNames : List PatternProp → List String
+  | [] => []
+  | ⟨_, t, _⟩ :: rest => Pattern.boundNames t ++ patternPropsNames rest
+
+/-- An `ArrayPattern`'s rest; see `Pattern.boundNames`. -/
+def patternRestNames : Option Pattern → List String
+  | none => []
+  | some p => Pattern.boundNames p
+
+end
+
+mutual
+
+/-- ContainsExpression (8.4.3) of a pattern: whether a default or a
+computed key appears anywhere inside it. A leaf never does — a member
+leaf cannot reach a parameter list, which is the only place this is
+asked. -/
+def Pattern.containsExpression : Pattern → Bool
+  | .target _ => false
+  | .array elements rest => patternElemsContain elements || patternRestContains rest
+  | .object props _ => patternPropsContain props
+
+/-- An `ArrayPattern`'s elements; see `Pattern.containsExpression`. -/
+def patternElemsContain : List (Option PatternElem) → Bool
+  | [] => false
+  | none :: rest => patternElemsContain rest
+  | some ⟨t, d⟩ :: rest =>
+    d.isSome || Pattern.containsExpression t || patternElemsContain rest
+
+/-- An `ObjectPattern`'s properties; see `Pattern.containsExpression`. -/
+def patternPropsContain : List PatternProp → Bool
+  | [] => false
+  | ⟨k, t, d⟩ :: rest =>
+    d.isSome || k.isComputed || Pattern.containsExpression t || patternPropsContain rest
+
+/-- An `ArrayPattern`'s rest; see `Pattern.containsExpression`. -/
+def patternRestContains : Option Pattern → Bool
+  | none => false
+  | some p => Pattern.containsExpression p
+
+end
+
+/-- The parameters' names, in order — BoundNames of a formal parameter
+list, a pattern parameter's leaves included. -/
+def Param.names (ps : List Param) : List String := ps.flatMap (·.target.boundNames)
+
+/-- hasParameterExpressions, the test FunctionDeclarationInstantiation
+(10.2.11) step 20 makes: whether any parameter carries an initializer or
+a pattern with one inside it. With one present the `var`s get a scope of
+their own (step 28), without one they share the parameters' cells
+(step 27). The name is the one every caller already spells. -/
+def hasDefaults (ps : List Param) : Bool :=
+  ps.any (fun p => p.default.isSome || p.target.containsExpression)
 
 /-- ExpectedArgumentCount (15.1.5), which is a function's `length`: the
-parameters strictly before the first one with an initializer. A rest
-parameter would stop the count too, but one is outside this AST. -/
+parameters strictly before the first one with an initializer or a rest
+parameter. A pattern parameter with no default still counts as one. -/
 def expectedArgumentCount : List Param → Nat
   | [] => 0
-  | p :: rest => if p.default.isSome then 0 else expectedArgumentCount rest + 1
+  | p :: rest => if p.default.isSome || p.rest then 0 else expectedArgumentCount rest + 1
 
 /-- The first `ctor` element of a class body. A second is an early
 error, which this epic does not check, so the first one wins. -/
