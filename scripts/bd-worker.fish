@@ -137,7 +137,15 @@ while true
     # stderr (MCP and hook noise) goes to a sibling .stderr file.
     set -l claude_cmd (set -q BD_WORKER_CLAUDE; and echo $BD_WORKER_CLAUDE; or echo claude)
     $claude_cmd -p --model $model --dangerously-skip-permissions --output-format stream-json --verbose $prompt 2>>$log.stderr \
-        | tee $log | jq --unbuffered -R -r --arg prefix "[$role] [$claimed]" -f $root/scripts/bd-worker-render.jq
+        | tee $log | begin
+            jq --unbuffered -R -r --arg prefix "[$role] [$claimed]" -f $root/scripts/bd-worker-render.jq
+            # A renderer failure must not close the pipe under tee, or the log
+            # stops with the worker still running; drain the stream instead.
+            or begin
+                echo "[$role] [$claimed] renderer failed; the run continues, see the log" >&2
+                cat >/dev/null
+            end
+        end
     set -l status_after (bd -C $root show $claimed --json | jq -r '(.[0] // .) | .status')
 
     if test "$status_after" = in_progress
