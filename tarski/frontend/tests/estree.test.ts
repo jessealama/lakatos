@@ -43,6 +43,7 @@ const FIXTURES = [
   "emitter-classes",
   "hoisting-arguments",
   "exe-example",
+  "object-function",
 ];
 
 describe("parseScript", () => {
@@ -1154,14 +1155,14 @@ describe("parseScript", () => {
 
   // The two loop forms that are not in the slice, each named by its own
   // tsc kind so the runner's histogram says which one to land next.
-  it.each([
-    ["for (k in o) ;", "ForInStatement"],
-    ["for (x of xs) ;", "ForOfStatement"],
-  ])("refuses %s as %s", (source, kind) => {
-    const program = parseScript(`"use strict";\n${source}\n`, "l.js");
-    expect(program.body[1]).toEqual({ type: "Unsupported", kind });
-    validate(program);
-  });
+  it.each([["for (x of xs) ;", "ForOfStatement"]])(
+    "refuses %s as %s",
+    (source, kind) => {
+      const program = parseScript(`"use strict";\n${source}\n`, "l.js");
+      expect(program.body[1]).toEqual({ type: "Unsupported", kind });
+      validate(program);
+    },
+  );
 
   // `do`/`while` is in the slice: the body comes first, as it does in
   // the source.
@@ -1176,6 +1177,59 @@ describe("parseScript", () => {
       test: { type: "BinaryExpression", operator: "<" },
     });
     validate(program);
+  });
+
+  // `for`-`in`'s four head shapes. A declaration head keeps the
+  // declarator list the Lean decoder then insists has exactly one entry
+  // with no initializer; an assignment target is an ordinary expression.
+  it.each([
+    ["for (var k in o) ;", { type: "VariableDeclaration", kind: "var" }],
+    ["for (const k in o) ;", { type: "VariableDeclaration", kind: "const" }],
+    ["for (k in o) ;", { type: "Identifier", name: "k" }],
+    ["for (o.p in q) ;", { type: "MemberExpression", computed: false }],
+  ])("emits %s as a ForInStatement", (source, left) => {
+    const program = parseScript(`"use strict";\n${source}\n`, "l.js");
+    const stmt = program.body[1] as { type: string; left: unknown };
+    expect(stmt.type).toBe("ForInStatement");
+    expect(stmt.left).toMatchObject(left);
+    validate(program);
+  });
+
+  // `delete` is a UnaryExpression here, as ESTree has it; the Lean AST
+  // gives it a node of its own because it takes a reference.
+  it.each(["delete o.x;", "delete o[k];"])("emits %s as delete", (source) => {
+    const program = parseScript(`"use strict";\n${source}\n`, "l.js");
+    expect(program.body[1]).toMatchObject({
+      type: "ExpressionStatement",
+      expression: { type: "UnaryExpression", operator: "delete", prefix: true },
+    });
+    validate(program);
+  });
+
+  it("emits `in` as a BinaryExpression", () => {
+    const program = parseScript('"use strict";\n"a" in o;\n', "i.js");
+    expect(program.body[1]).toMatchObject({
+      type: "ExpressionStatement",
+      expression: { type: "BinaryExpression", operator: "in" },
+    });
+    validate(program);
+  });
+
+  it("rejects a ForInStatement whose left is a literal", () => {
+    expect(() =>
+      validate({
+        type: "Program",
+        sourceType: "script",
+        body: [
+          {
+            type: "ForInStatement",
+            left: { type: "Literal", value: 1 },
+            right: { type: "Identifier", name: "o" },
+            body: { type: "EmptyStatement" },
+          },
+        ],
+      }),
+    ).toThrow();
   });
 
   // A destructuring binding is not an Identifier, and the schema's `id`

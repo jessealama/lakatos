@@ -374,15 +374,17 @@ private def classWithM : Stmt :=
   == "1"
 
 -- `class A { m() {} get x() { return 1; } } Object.keys(A.prototype).join();`
--- — every own key is listed until enumerability exists (#389), and an
--- accessor key comes after the data keys.
+-- — `constructor` and every class element are non-enumerable (15.4.4),
+-- so a class prototype lists nothing.
+-- `Test/Tarski/ObjectReflectionTest.lean` pins the keys that *are*
+-- there.
 #guard outcome
     [ cls "A" [.method .method false "m" [] [],
                .method .getter false "x" [] [.returnStmt (some (.numLit 1.0))]],
       .exprStmt (.call (.member
         (.call (.member (.ident "Object") "keys") [.member (.ident "A") "prototype"])
         "join") []) ]
-  == "constructor,m,x"
+  == ""
 
 /-! ## `static` -/
 
@@ -601,8 +603,10 @@ private def classWithM : Stmt :=
       .classDecl "A" { name := some "A", superClass := some (.ident "F"), elements := [] } ]
   == "uncaught: TypeError: Class extends value does not have valid prototype property 1"
 
--- `class A extends null {} new A();` — `extends null` gives no constructor
--- parent, so the implicit derived constructor has nothing to forward to.
+-- `class A extends null {} new A();` — `extends null` gives the
+-- constructor `%Function.prototype%` as its `[[Prototype]]` (15.7.14
+-- step 10.b), which is callable and not constructible, so the implicit
+-- derived constructor has nothing to forward to.
 #guard outcome
     [ .classDecl "A" { name := some "A", superClass := some .nullLit, elements := [] },
       .exprStmt (.new (.ident "A") []) ]

@@ -117,10 +117,9 @@ is NaN. -/
       [.objectLit [("valueOf", .funcExpr none [] [.returnStmt (some (.numLit 7.0))])]]))
   == "7"
 
--- `Number({});` — pinned as pre-#389: `Object.prototype` has neither
--- `valueOf` nor `toString` yet, so ToPrimitive has nothing to call.
-#guard outcome (expr (numberCall [.objectLit []]))
-  == "uncaught: TypeError: Cannot convert object to primitive value"
+-- `Number({});` — ToPrimitive gives `"[object Object]"`, whose
+-- StringToNumber is NaN.
+#guard outcome (expr (numberCall [.objectLit []])) == "NaN"
 
 /-! ## `new Number(v)`, the wrapper object
 
@@ -497,8 +496,9 @@ radix, which is what the log below observes. -/
 #guard outcome (expr (.binary .strictEq (numberProp "parseFloat") (.ident "parseFloat"))) == "true"
 #guard outcome (expr (.binary .strictEq (numberProp "parseInt") (.ident "parseInt"))) == "true"
 #guard outcome (expr (.unary .typeof (.ident "parseInt"))) == "function"
--- Function `length` and `name` are #389's, so they read `undefined`.
-#guard outcome (expr (.member (.ident "parseInt") "length")) == "undefined"
+-- Every built-in carries the `length` 17.1 gives it;
+-- `Test/Tarski/FunctionBuiltinsTest.lean` pins the attributes.
+#guard outcome (expr (.member (.ident "parseInt") "length")) == "2"
 
 #guard outcome (expr (.call (.ident "parseInt") [.strLit "0x1F"])) == "31"
 -- ToInt32 of 2^32 is 0, which means radix 10.

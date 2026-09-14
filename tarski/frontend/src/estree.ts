@@ -299,6 +299,17 @@ export interface ForStatement {
   body: Statement;
 }
 
+/** ESTree `ForInStatement`. The head is a declaration of exactly one
+ * declarator with no initializer, or an assignment target; the Lean
+ * decoder refuses every other shape by name. `for`-`of` has no interface
+ * here and arrives as `Unsupported`. */
+export interface ForInStatement {
+  type: "ForInStatement";
+  left: VariableDeclaration | Expression;
+  right: Expression;
+  body: Statement;
+}
+
 export interface SwitchCase {
   type: "SwitchCase";
   test: Expression | null;
@@ -374,6 +385,7 @@ export type Statement =
   | WhileStatement
   | DoWhileStatement
   | ForStatement
+  | ForInStatement
   | SwitchStatement
   | EmptyStatement
   | BlockStatement
@@ -784,6 +796,14 @@ function expression(node: ts.Expression, sf: ts.SourceFile): Expression {
       prefix: true,
     };
   }
+  if (ts.isDeleteExpression(node)) {
+    return {
+      type: "UnaryExpression",
+      operator: "delete",
+      argument: expression(node.expression, sf),
+      prefix: true,
+    };
+  }
   if (ts.isPropertyAccessExpression(node)) {
     // An optional chain has semantics of its own — it short-circuits the
     // whole chain — so the access leaves the slice as a whole.
@@ -996,15 +1016,15 @@ function catchClause(node: ts.CatchClause, sf: ts.SourceFile): CatchClause {
   return { type: "CatchClause", param, body: blockStatement(node.block, sf) };
 }
 
-/** A `for` head's first part: a declaration, an expression, or nothing.
- * A declaration binding a pattern is refused as a whole — the schema's
- * declarator `id` is an Identifier — and stands in the head's place, so
- * the loop around it still reaches the Lean decoder. */
-function forInitializer(
-  node: ts.ForInitializer | undefined,
+/** A loop head's declaration-or-expression part, which `for` and
+ * `for`-`in` spell the same way. A declaration binding a pattern is
+ * refused as a whole — the schema's declarator `id` is an Identifier —
+ * and stands in the head's place, so the loop around it still reaches
+ * the Lean decoder. */
+function forHead(
+  node: ts.ForInitializer,
   sf: ts.SourceFile,
-): VariableDeclaration | Expression | null {
-  if (!node) return null;
+): VariableDeclaration | Expression {
   if (!ts.isVariableDeclarationList(node)) return expression(node, sf);
   const declarations = declarators(node, sf);
   if (!declarations) return unsupported(node);
@@ -1013,6 +1033,15 @@ function forInitializer(
     kind: declarationKind(node),
     declarations,
   };
+}
+
+/** A `for` head's first part, which unlike a `for`-`in`'s may be absent:
+ * `for (;;)` has no initializer at all. */
+function forInitializer(
+  node: ts.ForInitializer | undefined,
+  sf: ts.SourceFile,
+): VariableDeclaration | Expression | null {
+  return node ? forHead(node, sf) : null;
 }
 
 /** One `switch` clause. `default` is the one with no test; a clause is
@@ -1105,6 +1134,17 @@ function statement(node: ts.Statement, sf: ts.SourceFile): Statement {
       init: forInitializer(node.initializer, sf),
       test: node.condition ? expression(node.condition, sf) : null,
       update: node.incrementor ? expression(node.incrementor, sf) : null,
+      body: statement(node.statement, sf),
+    };
+  }
+  // A `for await (… of …)` is a `ForOfStatement` in tsc, so there is
+  // nothing to refuse here: `for`-`of` has no arm at all and leaves as
+  // `Unsupported`.
+  if (ts.isForInStatement(node)) {
+    return {
+      type: "ForInStatement",
+      left: forHead(node.initializer, sf),
+      right: expression(node.expression, sf),
       body: statement(node.statement, sf),
     };
   }

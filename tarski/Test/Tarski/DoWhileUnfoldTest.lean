@@ -22,7 +22,7 @@ private def program : Program :=
       (.binary .lt (.ident "n") (.numLit 3.0)),
     .exprStmt (.ident "n") ]
 
-attribute [local simp] evalExpr evalStmt evalStmts evalDeclarators
+attribute [local simp] evalExpr evalStmt evalStmts evalDeclarators evalNamed
   instantiateBlock hoistNames hoistDeclarators initFunctions
   varNames varNamesStmt varNamesCases hoistVars
   allocCell getCell readCell writeCell initCell putIdent

@@ -196,11 +196,12 @@ private def calleeMessage : String :=
 #guard outcome (callF [] [.returnStmt (some (.unary .typeof args))] []) == "object"
 
 -- `function f() { return Object.keys(arguments).join(); } f(1, 2);` —
--- pinned as pre-#389: an engine hides `length` and `callee` behind the
--- enumerable attribute this slice does not have yet, so both are listed.
+-- the indices alone: 10.4.4.7 makes `length` and `callee`
+-- non-enumerable, and only the arguments themselves are ordinary data
+-- properties.
 #guard outcome
     (callF []
       [ .returnStmt (some (.call
           (.member (.call (.member (.ident "Object") "keys") [args]) "join") [])) ]
       [num 1.0, num 2.0])
-  == "0,1,length,callee"
+  == "0,1"

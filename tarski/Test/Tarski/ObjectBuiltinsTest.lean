@@ -152,12 +152,11 @@ private def keysOf (e : Expr) : Expr := .call (.member (.ident "Object") "keys")
 #guard outcome (expr (keysOf .nullLit))
   == "uncaught: TypeError: Cannot convert undefined or null to object"
 
--- `Object.keys(function f() {}).join();` — pinned as pre-#389: an
--- engine hides `length` and `prototype` with an attribute this slice
--- does not have.
+-- `Object.keys(function f() {}).join();` — a function's three own
+-- properties are all non-enumerable, so there is nothing to list.
 #guard outcome
     (expr (.call (.member (keysOf (.funcExpr (some "f") [] [])) "join") []))
-  == "length,prototype"
+  == ""
 
 /-! ## `Object` as a function and as a constructor
 
@@ -202,11 +201,11 @@ string still refuses, its wrapper being #391's. -/
 -- `({}) instanceof Object;`
 #guard outcome (expr (.binary .instanceof (.objectLit []) (.ident "Object"))) == "true"
 
--- `(function () {}) instanceof Object;` — pinned as pre-#389: a function
--- object's own `[[Prototype]]` is still null for want of
--- `Function.prototype`.
+-- `(function () {}) instanceof Object;` — a function object's
+-- `[[Prototype]]` is `Function.prototype`, whose own is
+-- `Object.prototype`.
 #guard outcome
     (expr (.binary .instanceof (.funcExpr none [] []) (.ident "Object")))
-  == "false"
+  == "true"
 
 #guard outcome (expr (.unary .typeof (.ident "Object"))) == "function"

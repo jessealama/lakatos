@@ -48,7 +48,7 @@ describe("tabulate", () => {
       }),
       ran("test/a", "three.js", {
         class: "unsupported",
-        kind: "DeleteExpression",
+        kind: "ForOfStatement",
       }),
       ran("test/a", "four.js", { class: "timeout" }),
       ran("test/a", "five.js", {
@@ -199,15 +199,15 @@ describe("renderDetails", () => {
       },
       ran("test/a", "five.js", {
         class: "unsupported",
-        kind: "DeleteExpression",
+        kind: "ForOfStatement",
       }),
       ran("test/a", "six.js", {
         class: "unsupported",
-        kind: "ForInStatement",
+        kind: "TemplateExpression",
       }),
       ran("test/a", "seven.js", {
         class: "unsupported",
-        kind: "ForInStatement",
+        kind: "TemplateExpression",
       }),
       ran("test/a", "eight.js", {
         class: "fail",
@@ -228,8 +228,8 @@ describe("renderDetails", () => {
         "skipped:",
         "  parse-negative  1",
         "unsupported:",
-        "  ForInStatement  2",
-        "  DeleteExpression  1",
+        "  TemplateExpression  2",
+        "  ForOfStatement  1",
         "failures:",
         "  test/a/eight.js  Uncaught Test262Error: boom",
         "harness errors:",
@@ -241,16 +241,16 @@ describe("renderDetails", () => {
   });
 
   it("breaks a tie in the histogram by name, whichever came first", () => {
-    const golden = "unsupported:\n  DeleteExpression  1\n  ForInStatement  1";
+    const golden = "unsupported:\n  ForOfStatement  1\n  TemplateExpression  1";
     expect(
       renderDetails([
         ran("test/a", "one.js", {
           class: "unsupported",
-          kind: "ForInStatement",
+          kind: "TemplateExpression",
         }),
         ran("test/a", "two.js", {
           class: "unsupported",
-          kind: "DeleteExpression",
+          kind: "ForOfStatement",
         }),
       ]),
     ).toBe(golden);
@@ -258,11 +258,11 @@ describe("renderDetails", () => {
       renderDetails([
         ran("test/a", "one.js", {
           class: "unsupported",
-          kind: "DeleteExpression",
+          kind: "ForOfStatement",
         }),
         ran("test/a", "two.js", {
           class: "unsupported",
-          kind: "ForInStatement",
+          kind: "TemplateExpression",
         }),
       ]),
     ).toBe(golden);

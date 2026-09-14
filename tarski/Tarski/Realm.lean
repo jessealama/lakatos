@@ -40,11 +40,16 @@ the literal against the constants so the two cannot drift apart.
 | 59        | `%ThrowTypeError%`                                       |
 | 60        | `console`                                                 |
 | 61        | `console.log`                                             |
+| 62        | `Function.prototype`, itself callable and answering `undefined` |
+| 63        | `Function`                                               |
+| 64–67     | `Function.prototype.call`, `apply`, `bind`, `toString`    |
+| 68–72     | `Object.prototype.toString`, `valueOf`, `toLocaleString`, `isPrototypeOf`, `propertyIsEnumerable` |
+| 73–90     | `Object.assign`, `create`, `defineProperties`, `defineProperty`, `entries`, `freeze`, `getOwnPropertyDescriptor`, `getOwnPropertyDescriptors`, `getOwnPropertyNames`, `getPrototypeOf`, `hasOwn`, `isExtensible`, `isFrozen`, `isSealed`, `preventExtensions`, `seal`, `setPrototypeOf`, `values` |
 
-The twenty global bindings are cells 0–19: the seven `Error`
-constructors, then `Object`, `Array`, `String`, `print`, `$262`,
-`Number`, `Boolean`, `Math`, `NaN`, `Infinity`, `parseFloat`,
-`parseInt`, and `console`.
+Ninety-one objects, then, and twenty-one cells. The twenty-one global
+bindings are cells 0–20: the seven `Error` constructors, then `Object`,
+`Array`, `String`, `print`, `$262`, `Number`, `Boolean`, `Math`, `NaN`,
+`Infinity`, `parseFloat`, `parseInt`, `console`, and `Function`.
 
 `parseFloat` and `parseInt` are **one function object each**, bound
 globally and read as `Number.parseFloat` and `Number.parseInt`, so
@@ -79,8 +84,10 @@ hooks — `evalScript`, `createRealm`, `detachArrayBuffer`, `gc`, `agent`,
 than failed; the object itself exists, empty, so that `typeof $262` is
 `"object"` and `$262.IsHTMLDDA` reads `undefined`, which is what the
 suite asks of a host that does not provide it. There is still no global
-*object* — `globalThis`, a top-level `this`, and `$262.global` wait for
-#389 with the rest of the intrinsics' surface.
+*object*: `globalThis`, a top-level `this`, `$262.global`, and
+`Object.prototype.__proto__` are #487's, because a global object whose
+properties *are* these cells is a change to `Env` and `hoistVars` that no
+part of the intrinsics' surface needs.
 
 `console` is not test262's; it is `lakatos exe`'s, the binding an
 ordinary program writes its output through. Its `log` appends to the
@@ -88,24 +95,38 @@ ordinary program writes its output through. Its `log` appends to the
 program order however the two were mixed, and it holds no other member:
 `console.error`, `console.warn`, and the rest are outside #386.
 
-`Object.prototype` exists as of #380, and it carries `hasOwnProperty`
-and nothing else: `toString`, `valueOf`, and the rest of its surface are
-#389's, so `{} + 1` still throws where an engine answers
-`"[object Object]1"`. Object literals, function `prototype` objects,
-`Error.prototype`, and `Array.prototype` all link to it. Every
-`[[Prototype]]` that ought to be `Function.prototype` is still null,
-that intrinsic being #389's too, and a chain that would reach one ends
-instead. What is *not* faked is the part this slice observes — each
-subclass prototype links to `Error.prototype` and each subclass
-constructor to `Error`, which is what makes
-`new TypeError("t") instanceof Error` true.
+`Object.prototype` carries its whole surface but the two accessors:
+`toString`, `valueOf`, `toLocaleString`, `isPrototypeOf`,
+`propertyIsEnumerable`, and `hasOwnProperty`, so `{} + 1` is
+`"[object Object]1"`. `__proto__` is #487's and `@@toStringTag` is
+#392's. Object literals, function `prototype` objects,
+`Error.prototype`, and `Array.prototype` all link to it, and
+`Object.prototype` itself is null-prototyped.
+
+**Every function object here links to `Function.prototype`**, and so does
+every function a script makes: that is what `f.call`, `f.bind`, and
+`(function () {}) instanceof Function` all read through.
+`Function.prototype` is itself a function — callable, answering
+`undefined` whatever it is handed, as 20.2.3 requires — and its own
+`[[Prototype]]` is `Object.prototype`. The `Function` constructor exists
+as an object because 163 tests reach `Function.prototype` through it;
+*calling* it is `eval` by another name and so outside this epic, which
+the decoder refuses by name and `callNative` refuses through an alias.
 
 `Array.prototype` is itself an Array exotic object of length 0, as the
 spec has it, which is why `Array.isArray(Array.prototype)` is true.
 
-Property attributes are absent with descriptors (#389), so `name`,
-`message`, `constructor`, and `prototype` are ordinary data properties a
-script can overwrite. -/
+**Every property here carries its specified attributes.** `Obj.builtin`
+is the shape 17.1 gives every built-in function — a non-writable,
+non-enumerable, configurable `length` and `name`, in that order, so
+`Object.getOwnPropertyNames(Math.abs)` is `["length", "name"]` — and a
+constructor adds its `prototype` (no attribute at all) and its statics
+(writable and configurable, never enumerable) after them. A prototype's
+`constructor`, an `Error.prototype`'s `name` and `message`, and every
+`Math` and `Number` method are the same non-enumerable shape; every
+`Math` and `Number` *constant* has no attribute at all, which is what
+makes `Math.PI = 1` a strict-mode `TypeError`. The constructors are
+`@[reducible]`, so `Heap.initial` is still a literal to `simp`. -/
 
 namespace Tarski
 
@@ -274,6 +295,113 @@ specification has it, which is what makes the two halves of that
 accessor the same function. It has no global binding: nothing in source
 can name it. -/
 def throwTypeErrorRef : Ref := 59
+/-- `%Function.prototype%`: callable, answering `undefined`, and the
+`[[Prototype]]` of every function object in the realm and of every
+function a script makes. -/
+def functionProtoRef : Ref := 62
+
+/-- `Function`. The object exists; calling it does not (see
+`NativeFn.functionCtor`). -/
+def functionCtorRef : Ref := 63
+
+/-- `Function.prototype.call`. -/
+def functionCallRef : Ref := 64
+
+/-- `Function.prototype.apply`. -/
+def functionApplyRef : Ref := 65
+
+/-- `Function.prototype.bind`. -/
+def functionBindRef : Ref := 66
+
+/-- `Function.prototype.toString`. -/
+def functionToStringRef : Ref := 67
+
+/-- `Object.prototype.toString`. -/
+def objectProtoToStringRef : Ref := 68
+
+/-- `Object.prototype.valueOf`. -/
+def objectProtoValueOfRef : Ref := 69
+
+/-- `Object.prototype.toLocaleString`. -/
+def objectProtoToLocaleStringRef : Ref := 70
+
+/-- `Object.prototype.isPrototypeOf`. -/
+def objectProtoIsPrototypeOfRef : Ref := 71
+
+/-- `Object.prototype.propertyIsEnumerable`. -/
+def objectProtoPropertyIsEnumerableRef : Ref := 72
+
+/-- `Object.assign`. -/
+def objectAssignRef : Ref := 73
+
+/-- `Object.create`. -/
+def objectCreateRef : Ref := 74
+
+/-- `Object.defineProperties`. -/
+def objectDefinePropertiesRef : Ref := 75
+
+/-- `Object.defineProperty`. -/
+def objectDefinePropertyRef : Ref := 76
+
+/-- `Object.entries`. -/
+def objectEntriesRef : Ref := 77
+
+/-- `Object.freeze`. -/
+def objectFreezeRef : Ref := 78
+
+/-- `Object.getOwnPropertyDescriptor`. -/
+def objectGetOwnPropertyDescriptorRef : Ref := 79
+
+/-- `Object.getOwnPropertyDescriptors`. -/
+def objectGetOwnPropertyDescriptorsRef : Ref := 80
+
+/-- `Object.getOwnPropertyNames`. -/
+def objectGetOwnPropertyNamesRef : Ref := 81
+
+/-- `Object.getPrototypeOf`. -/
+def objectGetPrototypeOfRef : Ref := 82
+
+/-- `Object.hasOwn`. -/
+def objectHasOwnRef : Ref := 83
+
+/-- `Object.isExtensible`. -/
+def objectIsExtensibleRef : Ref := 84
+
+/-- `Object.isFrozen`. -/
+def objectIsFrozenRef : Ref := 85
+
+/-- `Object.isSealed`. -/
+def objectIsSealedRef : Ref := 86
+
+/-- `Object.preventExtensions`. -/
+def objectPreventExtensionsRef : Ref := 87
+
+/-- `Object.seal`. -/
+def objectSealRef : Ref := 88
+
+/-- `Object.setPrototypeOf`. -/
+def objectSetPrototypeOfRef : Ref := 89
+
+/-- `Object.values`. -/
+def objectValuesRef : Ref := 90
+
+/-- A built-in function object with extra own properties after its
+`length` and `name`: 17.1's shape, which is what makes
+`Object.getOwnPropertyNames(Object)` start `["length", "name",
+"prototype"]`. `@[reducible]`, so `Heap.initial` is still a literal to
+`simp`. -/
+@[reducible] def Obj.builtinWith (f : NativeFn) (name : String) (length : Nat)
+    (props : List (String × Property)) : Obj :=
+  { proto := some functionProtoRef,
+    callable := some (.native f),
+    properties :=
+      ("length", Property.attribute (Value.ofNat length)) ::
+      ("name", Property.attribute (.prim (.str name))) :: props }
+
+/-- A built-in function object with nothing but its `length` and
+`name`. -/
+@[reducible] def Obj.builtin (f : NativeFn) (name : String) (length : Nat) : Obj :=
+  Obj.builtinWith f name length []
 
 /-- `console`, the host object `lakatos exe` writes through. -/
 def consoleRef : Ref := 60
@@ -336,9 +464,12 @@ def parseIntCellRef : CellRef := 18
 object binding. -/
 def consoleCellRef : CellRef := 19
 
+/-- The cell `Function` is bound in. -/
+def functionCellRef : CellRef := 20
+
 /-- The scope a script's own declarations are instantiated on top of:
 `ErrorKind.all.map (fun k => (k.name, k.cellRef))`, written out so that
-`simp` sees a literal list. There is no global *object* yet (#389), so a
+`simp` sees a literal list. There is no global *object* (#487), so a
 binding here is an ordinary cell and `globalThis` is absent. -/
 def globalEnv : Env :=
   [ ("Error", 0),
@@ -360,7 +491,8 @@ def globalEnv : Env :=
     ("Infinity", 16),
     ("parseFloat", 17),
     ("parseInt", 18),
-    ("console", 19) ]
+    ("console", 19),
+    ("Function", 20) ]
 
 /-- The heap a script starts from: the realm, laid out at the references
 above. -/
@@ -391,131 +523,150 @@ def Heap.initial : Heap where
          value := some (.prim (.num Number.POSITIVE_INFINITY)) },
        { mutable := true, value := some (.obj 53) },  -- parseFloat
        { mutable := true, value := some (.obj 54) },  -- parseInt
-       { mutable := true, value := some (.obj 60) } ] -- console
+       { mutable := true, value := some (.obj 60) },  -- console
+       { mutable := true, value := some (.obj 63) } ] -- Function
   objects :=
     #[ -- 0: Error.prototype. `toString` is on it because the binary's
-       -- uncaught-error report runs that algorithm anyway.
+       -- uncaught-error report runs that algorithm anyway. It is an
+       -- ordinary object, not an `error` one: `[[ErrorData]]` is on the
+       -- instances, so `Object.prototype.toString.call(Error.prototype)`
+       -- is `[object Object]`, which is what the suite checks.
        { proto := some 15,
          properties :=
-           [ ("constructor", .obj 7),
-             ("name", .prim (.str "Error")),
-             ("message", .prim (.str "")),
-             ("toString", .obj 14) ] },
+           [ ("constructor", Property.method (.obj 7)),
+             ("name", Property.method (.prim (.str "Error"))),
+             ("message", Property.method (.prim (.str ""))),
+             ("toString", Property.method (.obj 14)) ] },
        -- 1: TypeError.prototype
        { proto := some 0,
          properties :=
-           [ ("constructor", .obj 8),
-             ("name", .prim (.str "TypeError")),
-             ("message", .prim (.str "")) ] },
+           [ ("constructor", Property.method (.obj 8)),
+             ("name", Property.method (.prim (.str "TypeError"))),
+             ("message", Property.method (.prim (.str ""))) ] },
        -- 2: RangeError.prototype
        { proto := some 0,
          properties :=
-           [ ("constructor", .obj 9),
-             ("name", .prim (.str "RangeError")),
-             ("message", .prim (.str "")) ] },
+           [ ("constructor", Property.method (.obj 9)),
+             ("name", Property.method (.prim (.str "RangeError"))),
+             ("message", Property.method (.prim (.str ""))) ] },
        -- 3: ReferenceError.prototype
        { proto := some 0,
          properties :=
-           [ ("constructor", .obj 10),
-             ("name", .prim (.str "ReferenceError")),
-             ("message", .prim (.str "")) ] },
+           [ ("constructor", Property.method (.obj 10)),
+             ("name", Property.method (.prim (.str "ReferenceError"))),
+             ("message", Property.method (.prim (.str ""))) ] },
        -- 4: SyntaxError.prototype
        { proto := some 0,
          properties :=
-           [ ("constructor", .obj 11),
-             ("name", .prim (.str "SyntaxError")),
-             ("message", .prim (.str "")) ] },
+           [ ("constructor", Property.method (.obj 11)),
+             ("name", Property.method (.prim (.str "SyntaxError"))),
+             ("message", Property.method (.prim (.str ""))) ] },
        -- 5: EvalError.prototype
        { proto := some 0,
          properties :=
-           [ ("constructor", .obj 12),
-             ("name", .prim (.str "EvalError")),
-             ("message", .prim (.str "")) ] },
+           [ ("constructor", Property.method (.obj 12)),
+             ("name", Property.method (.prim (.str "EvalError"))),
+             ("message", Property.method (.prim (.str ""))) ] },
        -- 6: URIError.prototype
        { proto := some 0,
          properties :=
-           [ ("constructor", .obj 13),
-             ("name", .prim (.str "URIError")),
-             ("message", .prim (.str "")) ] },
+           [ ("constructor", Property.method (.obj 13)),
+             ("name", Property.method (.prim (.str "URIError"))),
+             ("message", Property.method (.prim (.str ""))) ] },
        -- 7: Error. A subclass constructor's `[[Prototype]]` is `Error`
        -- itself, which is what `TypeError instanceof Error`-shaped
-       -- lookups walk; `Error`'s own is Function.prototype in a real
-       -- realm and null here.
-       { proto := none,
-         properties := [("prototype", .obj 0)],
-         callable := some (.native (.errorCtor .error)) },
+       -- lookups walk; `Error`'s own is `Function.prototype`.
+       Obj.builtinWith (.errorCtor .error) "Error" 1
+         [("prototype", Property.constant (.obj 0))],
        -- 8: TypeError
-       { proto := some 7,
-         properties := [("prototype", .obj 1)],
-         callable := some (.native (.errorCtor .typeError)) },
+       { Obj.builtinWith (.errorCtor .typeError) "TypeError" 1
+           [("prototype", Property.constant (.obj 1))] with proto := some 7 },
        -- 9: RangeError
-       { proto := some 7,
-         properties := [("prototype", .obj 2)],
-         callable := some (.native (.errorCtor .rangeError)) },
+       { Obj.builtinWith (.errorCtor .rangeError) "RangeError" 1
+           [("prototype", Property.constant (.obj 2))] with proto := some 7 },
        -- 10: ReferenceError
-       { proto := some 7,
-         properties := [("prototype", .obj 3)],
-         callable := some (.native (.errorCtor .referenceError)) },
+       { Obj.builtinWith (.errorCtor .referenceError) "ReferenceError" 1
+           [("prototype", Property.constant (.obj 3))] with proto := some 7 },
        -- 11: SyntaxError
-       { proto := some 7,
-         properties := [("prototype", .obj 4)],
-         callable := some (.native (.errorCtor .syntaxError)) },
+       { Obj.builtinWith (.errorCtor .syntaxError) "SyntaxError" 1
+           [("prototype", Property.constant (.obj 4))] with proto := some 7 },
        -- 12: EvalError
-       { proto := some 7,
-         properties := [("prototype", .obj 5)],
-         callable := some (.native (.errorCtor .evalError)) },
+       { Obj.builtinWith (.errorCtor .evalError) "EvalError" 1
+           [("prototype", Property.constant (.obj 5))] with proto := some 7 },
        -- 13: URIError
-       { proto := some 7,
-         properties := [("prototype", .obj 6)],
-         callable := some (.native (.errorCtor .uriError)) },
+       { Obj.builtinWith (.errorCtor .uriError) "URIError" 1
+           [("prototype", Property.constant (.obj 6))] with proto := some 7 },
        -- 14: Error.prototype.toString
-       { callable := some (.native .errorToString) },
+       Obj.builtin .errorToString "toString" 0,
        -- 15: Object.prototype. The root of every ordinary chain, and
-       -- itself null-prototyped. `hasOwnProperty` is the whole of its
-       -- surface until #389.
+       -- itself null-prototyped. `__proto__` is #487's and
+       -- `@@toStringTag` #392's; the rest of 20.1.3 is here.
        { proto := none,
          properties :=
-           [ ("constructor", .obj 16),
-             ("hasOwnProperty", .obj 17) ] },
-       -- 16: Object
-       { properties :=
-           [ ("prototype", .obj 15),
-             ("is", .obj 18),
-             ("keys", .obj 19) ],
-         callable := some (.native .objectCtor) },
+           [ ("constructor", Property.method (.obj 16)),
+             ("hasOwnProperty", Property.method (.obj 17)),
+             ("isPrototypeOf", Property.method (.obj 71)),
+             ("propertyIsEnumerable", Property.method (.obj 72)),
+             ("toLocaleString", Property.method (.obj 70)),
+             ("toString", Property.method (.obj 68)),
+             ("valueOf", Property.method (.obj 69)) ] },
+       -- 16: Object. `fromEntries` and `groupBy` want iterators (#394)
+       -- and `getOwnPropertySymbols` wants symbols (#392); everything
+       -- else 20.1.2 lists is here.
+       Obj.builtinWith .objectCtor "Object" 1
+         [ ("prototype", Property.constant (.obj 15)),
+           ("assign", Property.method (.obj 73)),
+           ("create", Property.method (.obj 74)),
+           ("defineProperties", Property.method (.obj 75)),
+           ("defineProperty", Property.method (.obj 76)),
+           ("entries", Property.method (.obj 77)),
+           ("freeze", Property.method (.obj 78)),
+           ("getOwnPropertyDescriptor", Property.method (.obj 79)),
+           ("getOwnPropertyDescriptors", Property.method (.obj 80)),
+           ("getOwnPropertyNames", Property.method (.obj 81)),
+           ("getPrototypeOf", Property.method (.obj 82)),
+           ("hasOwn", Property.method (.obj 83)),
+           ("is", Property.method (.obj 18)),
+           ("isExtensible", Property.method (.obj 84)),
+           ("isFrozen", Property.method (.obj 85)),
+           ("isSealed", Property.method (.obj 86)),
+           ("keys", Property.method (.obj 19)),
+           ("preventExtensions", Property.method (.obj 87)),
+           ("seal", Property.method (.obj 88)),
+           ("setPrototypeOf", Property.method (.obj 89)),
+           ("values", Property.method (.obj 90)) ],
        -- 17: Object.prototype.hasOwnProperty
-       { callable := some (.native .objectHasOwnProperty) },
+       Obj.builtin .objectHasOwnProperty "hasOwnProperty" 1,
        -- 18: Object.is
-       { callable := some (.native .objectIs) },
+       Obj.builtin .objectIs "is" 2,
        -- 19: Object.keys
-       { callable := some (.native .objectKeys) },
+       Obj.builtin .objectKeys "keys" 1,
        -- 20: Array.prototype, an array of length 0.
        { proto := some 15,
          properties :=
-           [ ("constructor", .obj 21),
-             ("push", .obj 22),
-             ("join", .obj 23) ],
-         kind := .array 0 },
+           [ ("constructor", Property.method (.obj 21)),
+             ("push", Property.method (.obj 22)),
+             ("join", Property.method (.obj 23)) ],
+         kind := .array 0 true },
        -- 21: Array
-       { properties :=
-           [ ("prototype", .obj 20),
-             ("isArray", .obj 24) ],
-         callable := some (.native .arrayCtor) },
+       Obj.builtinWith .arrayCtor "Array" 1
+         [ ("prototype", Property.constant (.obj 20)),
+           ("isArray", Property.method (.obj 24)) ],
        -- 22: Array.prototype.push
-       { callable := some (.native .arrayPush) },
+       Obj.builtin .arrayPush "push" 1,
        -- 23: Array.prototype.join
-       { callable := some (.native .arrayJoin) },
+       Obj.builtin .arrayJoin "join" 1,
        -- 24: Array.isArray
-       { callable := some (.native .arrayIsArray) },
+       Obj.builtin .arrayIsArray "isArray" 1,
        -- 25: String. No `prototype` property: the wrapper is #391's, so
        -- `new String("x")` refuses until then.
-       { callable := some (.native .stringCtor) },
+       Obj.builtin .stringCtor "String" 1,
        -- 26: %PrintLog%, the array `print` appends to. It is no script's
        -- to reach: nothing binds it, so a run's output is exactly what
        -- `print` put there.
-       { proto := some 20, kind := .array 0 },
+       { proto := some 20, kind := .array 0 true },
        -- 27: print
-       { callable := some (.native .print) },
+       Obj.builtin .print "print" 1,
        -- 28: $262. Empty on purpose — its hooks are decoder refusals,
        -- and what is left is an object for `typeof` to see and a missing
        -- `IsHTMLDDA` to read as `undefined`.
@@ -525,126 +676,212 @@ def Heap.initial : Heap where
        { proto := some 15,
          kind := .number 0.0,
          properties :=
-           [ ("constructor", .obj 30),
-             ("toString", .obj 31),
-             ("valueOf", .obj 32),
-             ("toFixed", .obj 55),
-             ("toExponential", .obj 56),
-             ("toPrecision", .obj 57),
-             ("toLocaleString", .obj 58) ] },
+           [ ("constructor", Property.method (.obj 30)),
+             ("toString", Property.method (.obj 31)),
+             ("valueOf", Property.method (.obj 32)),
+             ("toFixed", Property.method (.obj 55)),
+             ("toExponential", Property.method (.obj 56)),
+             ("toPrecision", Property.method (.obj 57)),
+             ("toLocaleString", Property.method (.obj 58)) ] },
        -- 30: Number. Every constant is the library's own definition
        -- under its source spelling, and `parseFloat` and `parseInt` are
        -- the same two objects the globals name.
-       { properties :=
-           [ ("prototype", .obj 29),
-             ("isFinite", .obj 33),
-             ("isInteger", .obj 34),
-             ("isNaN", .obj 35),
-             ("isSafeInteger", .obj 36),
-             ("EPSILON", .prim (.num Number.EPSILON)),
-             ("MAX_SAFE_INTEGER", .prim (.num Number.MAX_SAFE_INTEGER)),
-             ("MIN_SAFE_INTEGER", .prim (.num Number.MIN_SAFE_INTEGER)),
-             ("MAX_VALUE", .prim (.num Number.MAX_VALUE)),
-             ("MIN_VALUE", .prim (.num Number.MIN_VALUE)),
-             ("POSITIVE_INFINITY", .prim (.num Number.POSITIVE_INFINITY)),
-             ("NEGATIVE_INFINITY", .prim (.num Number.NEGATIVE_INFINITY)),
-             ("NaN", .prim (.num Number.NaN)),
-             ("parseFloat", .obj 53),
-             ("parseInt", .obj 54) ],
-         callable := some (.native .numberCtor) },
+       Obj.builtinWith .numberCtor "Number" 1
+         [ ("prototype", Property.constant (.obj 29)),
+           ("isFinite", Property.method (.obj 33)),
+           ("isInteger", Property.method (.obj 34)),
+           ("isNaN", Property.method (.obj 35)),
+           ("isSafeInteger", Property.method (.obj 36)),
+           ("EPSILON", Property.constant (.prim (.num Number.EPSILON))),
+           ("MAX_SAFE_INTEGER", Property.constant (.prim (.num Number.MAX_SAFE_INTEGER))),
+           ("MIN_SAFE_INTEGER", Property.constant (.prim (.num Number.MIN_SAFE_INTEGER))),
+           ("MAX_VALUE", Property.constant (.prim (.num Number.MAX_VALUE))),
+           ("MIN_VALUE", Property.constant (.prim (.num Number.MIN_VALUE))),
+           ("POSITIVE_INFINITY", Property.constant (.prim (.num Number.POSITIVE_INFINITY))),
+           ("NEGATIVE_INFINITY", Property.constant (.prim (.num Number.NEGATIVE_INFINITY))),
+           ("NaN", Property.constant (.prim (.num Number.NaN))),
+           ("parseFloat", Property.method (.obj 53)),
+           ("parseInt", Property.method (.obj 54)) ],
        -- 31: Number.prototype.toString
-       { callable := some (.native .numberToString) },
+       Obj.builtin .numberToString "toString" 1,
        -- 32: Number.prototype.valueOf
-       { callable := some (.native .numberValueOf) },
+       Obj.builtin .numberValueOf "valueOf" 0,
        -- 33: Number.isFinite
-       { callable := some (.native .numberIsFinite) },
+       Obj.builtin .numberIsFinite "isFinite" 1,
        -- 34: Number.isInteger
-       { callable := some (.native .numberIsInteger) },
+       Obj.builtin .numberIsInteger "isInteger" 1,
        -- 35: Number.isNaN
-       { callable := some (.native .numberIsNaN) },
+       Obj.builtin .numberIsNaN "isNaN" 1,
        -- 36: Number.isSafeInteger
-       { callable := some (.native .numberIsSafeInteger) },
+       Obj.builtin .numberIsSafeInteger "isSafeInteger" 1,
        -- 37: Boolean.prototype, itself a Boolean object of value
        -- `false`.
        { proto := some 15,
          kind := .boolean false,
          properties :=
-           [ ("constructor", .obj 38),
-             ("toString", .obj 39),
-             ("valueOf", .obj 40) ] },
+           [ ("constructor", Property.method (.obj 38)),
+             ("toString", Property.method (.obj 39)),
+             ("valueOf", Property.method (.obj 40)) ] },
        -- 38: Boolean
-       { properties := [("prototype", .obj 37)],
-         callable := some (.native .booleanCtor) },
+       Obj.builtinWith .booleanCtor "Boolean" 1
+         [("prototype", Property.constant (.obj 37))],
        -- 39: Boolean.prototype.toString
-       { callable := some (.native .booleanToString) },
+       Obj.builtin .booleanToString "toString" 0,
        -- 40: Boolean.prototype.valueOf
-       { callable := some (.native .booleanValueOf) },
+       Obj.builtin .booleanValueOf "valueOf" 0,
        -- 41: Math. No `callable`: `Math()` is `not a function` and
        -- `new Math()` is `not a constructor`. The members are exactly
        -- the ones the library expresses — the transcendental family,
        -- `random`, `clz32`, and `imul` are absent rather than faked
-       -- (#434 for the first, ToUint32/ToInt32 for the last two).
+       -- (#434 for the first, ToUint32/ToInt32 for the last two). The
+       -- eight constants have no attribute at all, so `Math.PI = 1` is
+       -- the strict-mode refusal it is in an engine.
        { proto := some 15,
          properties :=
-           [ ("E", .prim (.num Math.E)),
-             ("LN10", .prim (.num Math.LN10)),
-             ("LN2", .prim (.num Math.LN2)),
-             ("LOG10E", .prim (.num Math.LOG10E)),
-             ("LOG2E", .prim (.num Math.LOG2E)),
-             ("PI", .prim (.num Math.PI)),
-             ("SQRT1_2", .prim (.num Math.SQRT1_2)),
-             ("SQRT2", .prim (.num Math.SQRT2)),
-             ("abs", .obj 42),
-             ("ceil", .obj 43),
-             ("floor", .obj 44),
-             ("fround", .obj 45),
-             ("round", .obj 46),
-             ("sign", .obj 47),
-             ("sqrt", .obj 48),
-             ("trunc", .obj 49),
-             ("max", .obj 50),
-             ("min", .obj 51),
-             ("pow", .obj 52) ] },
+           [ ("E", Property.constant (.prim (.num Math.E))),
+             ("LN10", Property.constant (.prim (.num Math.LN10))),
+             ("LN2", Property.constant (.prim (.num Math.LN2))),
+             ("LOG10E", Property.constant (.prim (.num Math.LOG10E))),
+             ("LOG2E", Property.constant (.prim (.num Math.LOG2E))),
+             ("PI", Property.constant (.prim (.num Math.PI))),
+             ("SQRT1_2", Property.constant (.prim (.num Math.SQRT1_2))),
+             ("SQRT2", Property.constant (.prim (.num Math.SQRT2))),
+             ("abs", Property.method (.obj 42)),
+             ("ceil", Property.method (.obj 43)),
+             ("floor", Property.method (.obj 44)),
+             ("fround", Property.method (.obj 45)),
+             ("round", Property.method (.obj 46)),
+             ("sign", Property.method (.obj 47)),
+             ("sqrt", Property.method (.obj 48)),
+             ("trunc", Property.method (.obj 49)),
+             ("max", Property.method (.obj 50)),
+             ("min", Property.method (.obj 51)),
+             ("pow", Property.method (.obj 52)) ] },
        -- 42: Math.abs
-       { callable := some (.native .mathAbs) },
+       Obj.builtin .mathAbs "abs" 1,
        -- 43: Math.ceil
-       { callable := some (.native .mathCeil) },
+       Obj.builtin .mathCeil "ceil" 1,
        -- 44: Math.floor
-       { callable := some (.native .mathFloor) },
+       Obj.builtin .mathFloor "floor" 1,
        -- 45: Math.fround
-       { callable := some (.native .mathFround) },
+       Obj.builtin .mathFround "fround" 1,
        -- 46: Math.round
-       { callable := some (.native .mathRound) },
+       Obj.builtin .mathRound "round" 1,
        -- 47: Math.sign
-       { callable := some (.native .mathSign) },
+       Obj.builtin .mathSign "sign" 1,
        -- 48: Math.sqrt
-       { callable := some (.native .mathSqrt) },
+       Obj.builtin .mathSqrt "sqrt" 1,
        -- 49: Math.trunc
-       { callable := some (.native .mathTrunc) },
+       Obj.builtin .mathTrunc "trunc" 1,
        -- 50: Math.max
-       { callable := some (.native .mathMax) },
+       Obj.builtin .mathMax "max" 2,
        -- 51: Math.min
-       { callable := some (.native .mathMin) },
+       Obj.builtin .mathMin "min" 2,
        -- 52: Math.pow
-       { callable := some (.native .mathPow) },
+       Obj.builtin .mathPow "pow" 2,
        -- 53: parseFloat, the global and `Number.parseFloat`
-       { callable := some (.native .parseFloat) },
+       Obj.builtin .parseFloat "parseFloat" 1,
        -- 54: parseInt, the global and `Number.parseInt`
-       { callable := some (.native .parseInt) },
+       Obj.builtin .parseInt "parseInt" 2,
        -- 55: Number.prototype.toFixed
-       { callable := some (.native .numberToFixed) },
+       Obj.builtin .numberToFixed "toFixed" 1,
        -- 56: Number.prototype.toExponential
-       { callable := some (.native .numberToExponential) },
+       Obj.builtin .numberToExponential "toExponential" 1,
        -- 57: Number.prototype.toPrecision
-       { callable := some (.native .numberToPrecision) },
+       Obj.builtin .numberToPrecision "toPrecision" 1,
        -- 58: Number.prototype.toLocaleString
-       { callable := some (.native .numberToLocaleString) },
-       -- 59: %ThrowTypeError%
-       { callable := some (.native .throwTypeError) },
+       Obj.builtin .numberToLocaleString "toLocaleString" 0,
+       -- 59: %ThrowTypeError%. The one function whose `name` is not
+       -- configurable: 10.2.4.1 makes both its `length` and its `name`
+       -- non-writable, non-enumerable, and non-configurable, so a script
+       -- that reaches it through `arguments.callee` cannot redefine
+       -- either.
+       { proto := some 62,
+         callable := some (.native .throwTypeError),
+         properties :=
+           [ ("length", Property.constant (Value.ofNat 0)),
+             ("name", Property.constant (.prim (.str ""))) ] },
        -- 60: console, `lakatos exe`'s host binding. `log` and nothing
-       -- else.
-       { proto := some 15, properties := [("log", .obj 61)] },
+       -- else; a method like any other, and `log` a built-in like any
+       -- other, `Function.prototype`-linked with its `length` and `name`.
+       { proto := some 15, properties := [("log", Property.method (.obj 61))] },
        -- 61: console.log
-       { callable := some (.native .consoleLog) } ]
+       Obj.builtin .consoleLog "log" 0,
+       -- 62: Function.prototype. It is itself a function — 20.2.3 makes
+       -- it callable and has it answer `undefined` whatever it is
+       -- handed — and it is the only function object whose
+       -- `[[Prototype]]` is `Object.prototype` rather than itself. Its
+       -- `name` is the empty string, as the spec has it.
+       { proto := some 15,
+         callable := some (.native .functionProto),
+         properties :=
+           [ ("length", Property.attribute (Value.ofNat 0)),
+             ("name", Property.attribute (.prim (.str ""))),
+             ("constructor", Property.method (.obj 63)),
+             ("apply", Property.method (.obj 65)),
+             ("bind", Property.method (.obj 66)),
+             ("call", Property.method (.obj 64)),
+             ("toString", Property.method (.obj 67)) ] },
+       -- 63: Function. The object is here because every `call`,
+       -- `apply`, and `bind` spelling reaches `Function.prototype`
+       -- through it and because `isConstructor(Function)` is true;
+       -- calling it is the decoder's refusal and, through an alias,
+       -- `callNative`'s.
+       Obj.builtinWith .functionCtor "Function" 1
+         [("prototype", Property.constant (.obj 62))],
+       -- 64: Function.prototype.call
+       Obj.builtin .functionCall "call" 1,
+       -- 65: Function.prototype.apply
+       Obj.builtin .functionApply "apply" 2,
+       -- 66: Function.prototype.bind
+       Obj.builtin .functionBind "bind" 1,
+       -- 67: Function.prototype.toString
+       Obj.builtin .functionToString "toString" 0,
+       -- 68: Object.prototype.toString
+       Obj.builtin .objectProtoToString "toString" 0,
+       -- 69: Object.prototype.valueOf
+       Obj.builtin .objectProtoValueOf "valueOf" 0,
+       -- 70: Object.prototype.toLocaleString
+       Obj.builtin .objectProtoToLocaleString "toLocaleString" 0,
+       -- 71: Object.prototype.isPrototypeOf
+       Obj.builtin .objectProtoIsPrototypeOf "isPrototypeOf" 1,
+       -- 72: Object.prototype.propertyIsEnumerable
+       Obj.builtin .objectProtoPropertyIsEnumerable "propertyIsEnumerable" 1,
+       -- 73: Object.assign
+       Obj.builtin .objectAssign "assign" 2,
+       -- 74: Object.create
+       Obj.builtin .objectCreate "create" 2,
+       -- 75: Object.defineProperties
+       Obj.builtin .objectDefineProperties "defineProperties" 2,
+       -- 76: Object.defineProperty
+       Obj.builtin .objectDefineProperty "defineProperty" 3,
+       -- 77: Object.entries
+       Obj.builtin .objectEntries "entries" 1,
+       -- 78: Object.freeze
+       Obj.builtin .objectFreeze "freeze" 1,
+       -- 79: Object.getOwnPropertyDescriptor
+       Obj.builtin .objectGetOwnPropertyDescriptor "getOwnPropertyDescriptor" 2,
+       -- 80: Object.getOwnPropertyDescriptors
+       Obj.builtin .objectGetOwnPropertyDescriptors "getOwnPropertyDescriptors" 1,
+       -- 81: Object.getOwnPropertyNames
+       Obj.builtin .objectGetOwnPropertyNames "getOwnPropertyNames" 1,
+       -- 82: Object.getPrototypeOf
+       Obj.builtin .objectGetPrototypeOf "getPrototypeOf" 1,
+       -- 83: Object.hasOwn
+       Obj.builtin .objectHasOwn "hasOwn" 2,
+       -- 84: Object.isExtensible
+       Obj.builtin .objectIsExtensible "isExtensible" 1,
+       -- 85: Object.isFrozen
+       Obj.builtin .objectIsFrozen "isFrozen" 1,
+       -- 86: Object.isSealed
+       Obj.builtin .objectIsSealed "isSealed" 1,
+       -- 87: Object.preventExtensions
+       Obj.builtin .objectPreventExtensions "preventExtensions" 1,
+       -- 88: Object.seal
+       Obj.builtin .objectSeal "seal" 1,
+       -- 89: Object.setPrototypeOf
+       Obj.builtin .objectSetPrototypeOf "setPrototypeOf" 2,
+       -- 90: Object.values
+       Obj.builtin .objectValues "values" 1 ]
 
 end Tarski

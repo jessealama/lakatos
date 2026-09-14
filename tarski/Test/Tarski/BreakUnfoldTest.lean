@@ -28,7 +28,7 @@ private def program : Program :=
 -- caught completion add. `attempt` is in it and `evalWhile` is not: the
 -- first is an ordinary definition whose unfolding terminates, the second
 -- is the loop.
-attribute [local simp] evalExpr evalStmt evalStmts evalDeclarators
+attribute [local simp] evalExpr evalStmt evalStmts evalDeclarators evalNamed
   instantiateBlock hoistNames hoistDeclarators initFunctions
   varNames varNamesStmt varNamesCases hoistVars
   allocCell getCell readCell writeCell initCell putIdent

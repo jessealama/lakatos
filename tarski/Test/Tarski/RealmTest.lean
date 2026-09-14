@@ -15,8 +15,8 @@ open Tarski
 
 /-! ## The shape -/
 
-#guard Heap.initial.cells.size == 20
-#guard Heap.initial.objects.size == 62
+#guard Heap.initial.cells.size == 21
+#guard Heap.initial.objects.size == 91
 
 /-! ## Each kind's prototype
 
@@ -52,7 +52,7 @@ private def ctorOf (k : ErrorKind) : Option Obj := Heap.initial.readObj k.ctorRe
   | none => false
   | some o =>
     o.getOwn "prototype" == some (.obj k.protoRef)
-      && o.proto == (if k == .error then none else some ErrorKind.error.ctorRef)
+      && o.proto == (if k == .error then some functionProtoRef else some ErrorKind.error.ctorRef)
       && (match o.callable with
           | some (.native (.errorCtor k')) => k' == k
           | _ => false)
@@ -68,7 +68,7 @@ constructor object. -/
         | some c => c.value == some (.obj k.ctorRef)
         | none => false)
 
-#guard globalEnv.length == 20
+#guard globalEnv.length == 21
 
 /-! ## `Error.prototype.toString` -/
 
@@ -78,28 +78,170 @@ constructor object. -/
 
 /-! ## `Object.prototype` and `Object`
 
-`hasOwnProperty` is the whole of `Object.prototype`'s surface: `toString`
-and `valueOf` are #389's, and `ObjectsTest` pins that `{} + 1` still
-throws for want of them. -/
+`Object.prototype` carries the whole of 20.1.3 but `__proto__` (#487)
+and `@@toStringTag` (#392); `Object` carries the whole of 20.1.2 but
+`fromEntries` and `groupBy` (iterators, #394) and
+`getOwnPropertySymbols` (#392). -/
 
 #guard match Heap.initial.readObj objectProtoRef with
   | some o =>
     o.proto == none
       && o.getOwn "constructor" == some (.obj objectCtorRef)
       && o.getOwn "hasOwnProperty" == some (.obj objectHasOwnPropertyRef)
-      && o.getOwn "toString" == none
-      && o.getOwn "valueOf" == none
+      && o.getOwn "toString" == some (.obj objectProtoToStringRef)
+      && o.getOwn "valueOf" == some (.obj objectProtoValueOfRef)
+      && o.getOwn "toLocaleString" == some (.obj objectProtoToLocaleStringRef)
+      && o.getOwn "isPrototypeOf" == some (.obj objectProtoIsPrototypeOfRef)
+      && o.getOwn "propertyIsEnumerable" == some (.obj objectProtoPropertyIsEnumerableRef)
+      && o.getOwn "__proto__" == none
       && o.kind == .ordinary
   | none => false
+
+private def objectStatics : List (String × Ref) :=
+  [ ("assign", objectAssignRef),
+    ("create", objectCreateRef),
+    ("defineProperties", objectDefinePropertiesRef),
+    ("defineProperty", objectDefinePropertyRef),
+    ("entries", objectEntriesRef),
+    ("freeze", objectFreezeRef),
+    ("getOwnPropertyDescriptor", objectGetOwnPropertyDescriptorRef),
+    ("getOwnPropertyDescriptors", objectGetOwnPropertyDescriptorsRef),
+    ("getOwnPropertyNames", objectGetOwnPropertyNamesRef),
+    ("getPrototypeOf", objectGetPrototypeOfRef),
+    ("hasOwn", objectHasOwnRef),
+    ("is", objectIsRef),
+    ("isExtensible", objectIsExtensibleRef),
+    ("isFrozen", objectIsFrozenRef),
+    ("isSealed", objectIsSealedRef),
+    ("keys", objectKeysRef),
+    ("preventExtensions", objectPreventExtensionsRef),
+    ("seal", objectSealRef),
+    ("setPrototypeOf", objectSetPrototypeOfRef),
+    ("values", objectValuesRef) ]
 
 #guard match Heap.initial.readObj objectCtorRef with
   | some o =>
     o.getOwn "prototype" == some (.obj objectProtoRef)
-      && o.getOwn "is" == some (.obj objectIsRef)
-      && o.getOwn "keys" == some (.obj objectKeysRef)
+      && objectStatics.all (fun p => o.getOwn p.1 == some (.obj p.2))
+      && o.getOwn "fromEntries" == none
+      && o.getOwn "groupBy" == none
       && (match o.callable with
           | some (.native .objectCtor) => true
           | _ => false)
+  | none => false
+
+/-! ## `Function.prototype` and `Function`
+
+`Function.prototype` is itself a function — 20.2.3 makes it callable and
+has it answer `undefined` — and it is the one function object whose
+`[[Prototype]]` is `Object.prototype` rather than itself. Its `name` is
+the empty string. -/
+
+#guard match Heap.initial.readObj functionProtoRef with
+  | some o =>
+    o.proto == some objectProtoRef
+      && o.getOwn "name" == some (.prim (.str ""))
+      && o.getOwn "length" == some (Value.ofNat 0)
+      && o.getOwn "constructor" == some (.obj functionCtorRef)
+      && o.getOwn "call" == some (.obj functionCallRef)
+      && o.getOwn "apply" == some (.obj functionApplyRef)
+      && o.getOwn "bind" == some (.obj functionBindRef)
+      && o.getOwn "toString" == some (.obj functionToStringRef)
+      && o.getOwn "prototype" == none
+      && (match o.callable with
+          | some (.native .functionProto) => true
+          | _ => false)
+  | none => false
+
+#guard match Heap.initial.readObj functionCtorRef with
+  | some o =>
+    o.proto == some functionProtoRef
+      && o.getOwn "prototype" == some (.obj functionProtoRef)
+      && o.getOwn "name" == some (.prim (.str "Function"))
+      && (match o.callable with
+          | some (.native .functionCtor) => true
+          | _ => false)
+  | none => false
+
+#guard Env.lookup globalEnv "Function" == some functionCellRef
+#guard (Heap.initial.read functionCellRef).bind (·.value) == some (.obj functionCtorRef)
+
+/-! ## Every function object links to `Function.prototype`
+
+That is what `f.call`, `f.bind`, and `(function () {}) instanceof
+Function` all read through. The one exception is `Function.prototype`
+itself, whose own `[[Prototype]]` is `Object.prototype`; the `Error`
+subclass constructors link to `Error`, which links to
+`Function.prototype` in its turn. -/
+
+#guard (List.range Heap.initial.objects.size).all fun r =>
+  match Heap.initial.readObj r with
+  | some o =>
+    if o.callable.isNone then true
+    else if r == functionProtoRef then o.proto == some objectProtoRef
+    else o.proto.isSome
+  | none => false
+
+#guard (List.range Heap.initial.objects.size).all fun r =>
+  match Heap.initial.readObj r with
+  | some o =>
+    if o.callable.isNone || r == functionProtoRef then true
+    else
+      -- Either linked straight to `Function.prototype`, or — for the six
+      -- `Error` subclass constructors — to `Error`, which is.
+      o.proto == some functionProtoRef || o.proto == some ErrorKind.error.ctorRef
+  | none => false
+
+/-! ## Property attributes
+
+Every built-in function has a non-writable, non-enumerable,
+configurable `length` and `name`, in that order (17.1), `%ThrowTypeError%`'s
+alone being non-configurable (10.2.4.1); a method is
+writable and configurable but never enumerable; a constructor's
+`prototype` and every `Number` and `Math` constant have no attribute at
+all. -/
+
+#guard (List.range Heap.initial.objects.size).all fun r =>
+  match Heap.initial.readObj r with
+  | some o =>
+    if o.callable.isNone then true
+    else
+      match o.properties with
+      | ("length", lp) :: ("name", np) :: _ =>
+        -- `%ThrowTypeError%` is the exception 10.2.4.1 makes: both of
+        -- its own properties are non-configurable too, so a script that
+        -- reaches it through `arguments.callee` cannot redefine either.
+        [lp, np].all fun p =>
+          !p.enumerable && p.configurable == (r != throwTypeErrorRef)
+            && p.writable? == some false
+      | _ => false
+  | none => false
+
+#guard match (Heap.initial.readObj numberCtorRef).bind (·.getOwnProperty "EPSILON") with
+  | some p => !p.enumerable && !p.configurable && p.writable? == some false
+  | none => false
+
+#guard match (Heap.initial.readObj objectProtoRef).bind (·.getOwnProperty "hasOwnProperty") with
+  | some p => !p.enumerable && p.configurable && p.writable? == some true
+  | none => false
+
+#guard match (Heap.initial.readObj ErrorKind.error.protoRef).bind (·.getOwnProperty "name") with
+  | some p => !p.enumerable && p.configurable && p.writable? == some true
+  | none => false
+
+#guard match (Heap.initial.readObj objectCtorRef).bind (·.getOwnProperty "prototype") with
+  | some p => !p.enumerable && !p.configurable && p.writable? == some false
+  | none => false
+
+/-! ## `[[ErrorData]]` is on the instances, not on the prototypes
+
+`Object.prototype.toString.call(Error.prototype)` is `[object Object]`,
+which is what the suite checks; `throwJsError` and the `Error`
+constructors are what set the kind. -/
+
+#guard ErrorKind.all.all fun k =>
+  match Heap.initial.readObj k.protoRef with
+  | some o => o.kind == .ordinary
   | none => false
 
 #guard match Heap.initial.readObj objectHasOwnPropertyRef with
@@ -121,7 +263,7 @@ explicit about and `Array.isArray(Array.prototype)` observes. -/
 
 #guard match Heap.initial.readObj arrayProtoRef with
   | some o =>
-    o.kind == .array 0
+    o.kind == .array 0 true
       && o.proto == some objectProtoRef
       && o.getOwn "constructor" == some (.obj arrayCtorRef)
       && o.getOwn "push" == some (.obj arrayPushRef)
@@ -162,7 +304,7 @@ No `prototype` property: the wrapper object and `String.prototype` are
           | _ => false)
   | none => false
 
-/-! ## The three new global bindings -/
+/-! ## The `Object`, `Array`, and `String` global bindings -/
 
 #guard Env.lookup globalEnv "Object" == some objectCellRef
 #guard Env.lookup globalEnv "Array" == some arrayCellRef
@@ -181,7 +323,7 @@ are decoder refusals, and what is left is an object for `typeof` to see
 and an absent `IsHTMLDDA` to read as `undefined`. -/
 
 #guard match Heap.initial.readObj printLogRef with
-  | some o => o.kind == .array 0 && o.proto == some arrayProtoRef && o.properties == []
+  | some o => o.kind == .array 0 true && o.proto == some arrayProtoRef && o.properties == []
   | none => false
 
 #guard match Heap.initial.readObj printRef with
@@ -206,7 +348,7 @@ and `log` writes to the same `%PrintLog%` `print` does. -/
   | some o =>
     o.proto == some objectProtoRef
       && o.callable.isNone
-      && o.properties == [("log", .obj consoleLogRef)]
+      && o.properties == [("log", Property.method (.obj consoleLogRef))]
   | none => false
 
 #guard match Heap.initial.readObj consoleLogRef with
@@ -383,7 +525,36 @@ private def nativeAt (r : Ref) (n : NativeFn) : Bool :=
          (mathTruncRef, .mathTrunc),
          (mathMaxRef, .mathMax),
          (mathMinRef, .mathMin),
-         (mathPowRef, .mathPow) ].all fun p => nativeAt p.1 p.2
+         (mathPowRef, .mathPow),
+         (functionProtoRef, .functionProto),
+         (functionCtorRef, .functionCtor),
+         (functionCallRef, .functionCall),
+         (functionApplyRef, .functionApply),
+         (functionBindRef, .functionBind),
+         (functionToStringRef, .functionToString),
+         (objectProtoToStringRef, .objectProtoToString),
+         (objectProtoValueOfRef, .objectProtoValueOf),
+         (objectProtoToLocaleStringRef, .objectProtoToLocaleString),
+         (objectProtoIsPrototypeOfRef, .objectProtoIsPrototypeOf),
+         (objectProtoPropertyIsEnumerableRef, .objectProtoPropertyIsEnumerable),
+         (objectAssignRef, .objectAssign),
+         (objectCreateRef, .objectCreate),
+         (objectDefinePropertiesRef, .objectDefineProperties),
+         (objectDefinePropertyRef, .objectDefineProperty),
+         (objectEntriesRef, .objectEntries),
+         (objectFreezeRef, .objectFreeze),
+         (objectGetOwnPropertyDescriptorRef, .objectGetOwnPropertyDescriptor),
+         (objectGetOwnPropertyDescriptorsRef, .objectGetOwnPropertyDescriptors),
+         (objectGetOwnPropertyNamesRef, .objectGetOwnPropertyNames),
+         (objectGetPrototypeOfRef, .objectGetPrototypeOf),
+         (objectHasOwnRef, .objectHasOwn),
+         (objectIsExtensibleRef, .objectIsExtensible),
+         (objectIsFrozenRef, .objectIsFrozen),
+         (objectIsSealedRef, .objectIsSealed),
+         (objectPreventExtensionsRef, .objectPreventExtensions),
+         (objectSealRef, .objectSeal),
+         (objectSetPrototypeOfRef, .objectSetPrototypeOf),
+         (objectValuesRef, .objectValues) ].all fun p => nativeAt p.1 p.2
 
 /-! ## The five new global bindings
 

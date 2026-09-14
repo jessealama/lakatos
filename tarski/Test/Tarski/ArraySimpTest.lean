@@ -15,15 +15,17 @@ the index parse close by `decide` and not by `simp`, so each one the
 program reaches is a `@[local simp]` lemma here, as `WhileUnfoldTest`
 carries `bump0`.
 
-`getFromUp` and `findAccessorUp` — the prototype *steps* — are taken by
+`getFromUp` and `findPropertyUp` — the prototype *steps* — are taken by
 the guarded simprocs `Tarski/Simp.lean` declares, one firing per link
 climbed, for the reason `ObjectSimpTest` records. This program climbs
 three: `push` is one link up on `Array.prototype`, and the write pays for
-the climb too, since `push` goes through `setProp`, which looks for a
-setter on the whole chain before writing. `Obj.ownKeys` and `Obj.truncate`
-are in the set but never reached: this program calls neither
-`Object.keys` nor a `length` write, so a stall on `List.mergeSort` would
-mean the set had grown a case the program does not have. -/
+the climb too, since `push` goes through `setProp`, which looks for the
+first property on the whole chain before writing, so the one element it
+stores costs two steps where before the descriptor fold it cost none.
+`Obj.ownKeys` and `Obj.truncate` are in the set but never reached: this
+program calls neither `Object.keys` nor a `length` write, so a stall on
+`List.mergeSort` would mean the set had grown a case the program does
+not have. -/
 
 open Tarski
 
