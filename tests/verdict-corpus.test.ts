@@ -1,4 +1,4 @@
-import { afterEach, describe, it, expect, vi } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import {
@@ -101,6 +101,14 @@ describe.runIf(enabled)("verdict corpus", () => {
   // Timeout and blame the fixtures. stubEnv restores what was there.
   afterEach(() => {
     vi.unstubAllEnvs();
+  });
+
+  // The corpus grades verdicts, not models, and a correspondence proof at
+  // the real budget costs about half a minute per declaration. One
+  // heartbeat makes every declaration report the budget reason in
+  // milliseconds; check:verdict-channel exercises the real budget.
+  beforeEach(() => {
+    vi.stubEnv("LAKATOS_PROVE_VALIDATE_HEARTBEATS", "1");
   });
 
   useRepoScratchDir(

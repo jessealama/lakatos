@@ -15,6 +15,13 @@ const { parseVerdicts, runArtifact } = await frontend("run");
 // fixture, in command order; reasonPattern, when present, must match the
 // reason; counterexample, when present, must deep-equal the verdict's
 // (and only expected entries may carry one).
+//
+// `models` is the same for the model channel: [function, status,
+// reasonPattern?] in command order, defaulting to none, so every fixture
+// here pins that it prints no model lines. `diagnostics`, when present,
+// allows unframed stdout and requires the lines to match it; without it
+// no unframed line is allowed, which is the rule for every fixture that
+// does not deliberately print a goal.
 const FIXTURES = [
   {
     file: "verdict-channel.lean",
@@ -223,11 +230,48 @@ const FIXTURES = [
     file: "class-binder-clamp.lean",
     expected: [["Clamp#distance", "Theorem"]],
   },
+  {
+    // The model channel, at the real correspondence budget: a validated
+    // declaration, a wrong model, budget exhaustion, the emitter's bare
+    // form, a boolean return, a module constant, and an obligation that
+    // does not elaborate. The verdicts beside them are untouched by any
+    // of it — an unvalidated model never moves a verdict (D7).
+    file: "validate.lean",
+    expected: [
+      ["wrong", "Theorem"],
+      ["bad", "NotTried"],
+    ],
+    models: [
+      ["add", "validated"],
+      [
+        "wrong",
+        "unvalidated",
+        /^the run of 'wrong' did not reduce to its model$/,
+      ],
+      [
+        "add",
+        "unvalidated",
+        /^budget: the attempt exceeded thales\.validateHeartbeats = 1$/,
+      ],
+      ["pow", "unvalidated", /^'\*\*' is not supported$/],
+      ["isSmall", "validated"],
+      ["K", "validated"],
+      ["bad", "unvalidated", /did not elaborate/],
+    ],
+    // The stuck goal and the elaboration error go to the diagnostics
+    // stream on purpose: that is where a person reads what did not reduce.
+    diagnostics: /unvalidated 'wrong'|did not elaborate/,
+  },
 ];
 
 const { check, done } = checker("verdict-channel");
 
-for (const { file, expected } of FIXTURES) {
+for (const {
+  file,
+  expected,
+  models: expectedModels = [],
+  diagnostics: allowedDiagnostics,
+} of FIXTURES) {
   const run = runArtifact(
     engineRoot,
     path.join(engineRoot, "tests", "fixtures", file),
@@ -239,12 +283,49 @@ for (const { file, expected } of FIXTURES) {
     `${file}: expected exit 0, got ${run.status}\nstderr:\n${run.stderr}`,
   );
 
-  const { verdicts, diagnostics, messages } = parseVerdicts(run.stdout ?? "");
-  check(
-    diagnostics.length === 0,
-    `${file}: unframed stdout line(s):\n${diagnostics.join("\n")}`,
+  const { verdicts, models, diagnostics, messages } = parseVerdicts(
+    run.stdout ?? "",
   );
+  if (allowedDiagnostics === undefined) {
+    check(
+      diagnostics.length === 0,
+      `${file}: unframed stdout line(s):\n${diagnostics.join("\n")}`,
+    );
+  } else {
+    check(
+      diagnostics.length > 0 && allowedDiagnostics.test(diagnostics.join("\n")),
+      `${file}: unframed stdout does not match ${allowedDiagnostics}:\n${diagnostics.join("\n")}`,
+    );
+  }
   for (const m of messages) check(false, `${file}: ${m}`);
+
+  // The model channel, under the verdict channel's rules: one line per
+  // command, in command order, and a reason exactly when unvalidated.
+  check(
+    models.length === expectedModels.length,
+    `${file}: expected ${expectedModels.length} model lines, got ${models.length}:\n${run.stdout}`,
+  );
+  if (models.length === expectedModels.length) {
+    const gotModels = models.map((m) => [m.function, m.status]);
+    const wantModels = expectedModels.map(([fn, status]) => [fn, status]);
+    check(
+      JSON.stringify(gotModels) === JSON.stringify(wantModels),
+      `${file}: expected models ${JSON.stringify(wantModels)}, got ${JSON.stringify(gotModels)}`,
+    );
+    for (const [i, [, , reasonPattern]] of expectedModels.entries()) {
+      if (reasonPattern !== undefined) {
+        check(
+          reasonPattern.test(models[i].reason ?? ""),
+          `${file}: model ${i} reason ${JSON.stringify(models[i].reason)} does not match ${reasonPattern}`,
+        );
+      }
+      check(
+        (models[i].reason !== undefined) ===
+          (models[i].status === "unvalidated"),
+        `${file}: model ${i} (${models[i].status}) carries reason ${JSON.stringify(models[i].reason)}`,
+      );
+    }
+  }
   check(
     verdicts.length === expected.length,
     `${file}: expected ${expected.length} verdict lines, got ${verdicts.length}:\n${run.stdout}`,

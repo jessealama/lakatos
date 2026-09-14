@@ -2,9 +2,19 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { findEngineRoot, runEmission } from "../src/run.js";
+import {
+  findEngineRoot,
+  LEAN_TIMEOUT_MS,
+  runEmission,
+  VALIDATE_TIMEOUT_MS,
+} from "../src/run.js";
 
-type SpawnCall = { cmd: string; args: string[]; cwd: string };
+type SpawnCall = {
+  cmd: string;
+  args: string[];
+  cwd: string;
+  timeout: number | undefined;
+};
 
 /** A canned spawnSync: one scripted result per call, in order (the last
  * result repeats if calls overrun). Records every call for assertions. */
@@ -21,8 +31,12 @@ function fakeSpawn(
   calls: SpawnCall[] = [],
 ) {
   let i = 0;
-  const spawn = ((cmd: string, args: string[], opts: { cwd?: string }) => {
-    calls.push({ cmd, args, cwd: String(opts.cwd) });
+  const spawn = ((
+    cmd: string,
+    args: string[],
+    opts: { cwd?: string; timeout?: number },
+  ) => {
+    calls.push({ cmd, args, cwd: String(opts.cwd), timeout: opts.timeout });
     const r = results[Math.min(i++, results.length - 1)]!;
     // Omitted streams become null, as spawnSync yields on spawn failure.
     return {
@@ -40,6 +54,9 @@ const verdictLine = (fn: string, szs: string) =>
   "thales-verdict:" +
   JSON.stringify({ identity: ["t.ts", fn, "p"], szs, reason: "r" }) +
   "\n";
+
+const modelLine = (o: Record<string, unknown>) =>
+  "thales-model:" + JSON.stringify(o) + "\n";
 
 describe("the lean pass, through runEmission", () => {
   /** One emission job per artifact: the emit steps all succeed here, so
@@ -67,6 +84,7 @@ describe("the lean pass, through runEmission", () => {
     const res = runEmission(jobsOf(["a.lean", "b.lean"]), "/engine", spawn);
     expect(res).toEqual({
       kind: "completed",
+      models: [],
       verdicts: [
         { identity: ["t.ts", "f", "p"], szs: "Theorem", reason: "r" },
         { identity: ["t.ts", "g", "p"], szs: "GaveUp", reason: "r" },
@@ -92,6 +110,7 @@ describe("the lean pass, through runEmission", () => {
     );
     expect(res).toMatchObject({
       kind: "completed",
+      models: [],
       verdicts: [
         {
           identity: ["t.ts", "f", "p"],
@@ -115,6 +134,7 @@ describe("the lean pass, through runEmission", () => {
     );
     expect(res).toMatchObject({
       kind: "completed",
+      models: [],
       verdicts: [{ counterexample: { n: 1, b: false } }],
       failures: [],
     });
@@ -169,6 +189,7 @@ describe("the lean pass, through runEmission", () => {
     );
     expect(res).toMatchObject({
       kind: "completed",
+      models: [],
       verdicts: [{ identity: ["t.ts", "g", "p"], szs: "Theorem", reason: "r" }],
       failures: [
         {
@@ -193,6 +214,7 @@ describe("the lean pass, through runEmission", () => {
     );
     expect(res).toMatchObject({
       kind: "completed",
+      models: [],
       failures: [
         {
           file: "a.lean",
@@ -287,6 +309,7 @@ describe("the lean pass, through runEmission", () => {
     );
     expect(res).toMatchObject({
       kind: "completed",
+      models: [],
       verdicts: [
         {
           identity: ["t.ts", "f", "p"],
@@ -312,6 +335,7 @@ describe("the lean pass, through runEmission", () => {
     );
     expect(res).toMatchObject({
       kind: "completed",
+      models: [],
       verdicts: [],
       failures: [
         {
@@ -330,6 +354,7 @@ describe("the lean pass, through runEmission", () => {
     );
     expect(res).toEqual({
       kind: "completed",
+      models: [],
       verdicts: [],
       failures: [],
       diagnostics: [],
@@ -379,10 +404,168 @@ describe("the lean pass, through runEmission", () => {
     );
     expect(res).toEqual({
       kind: "completed",
+      models: [],
       verdicts: [{ identity: ["t.ts", "f", "p"], szs: "Theorem", reason: "r" }],
       failures: [],
       diagnostics: ["note: some linter chatter"],
     });
+  });
+
+  // The model channel: a second sentinel in the same stream, read under
+  // the same discipline as the first.
+
+  test("model lines ride the same stream as verdicts, in order", () => {
+    const res = runEmission(
+      jobsOf(["a.lean", "b.lean"]),
+      "/engine",
+      fakeSpawn([
+        ...beforeLean(2),
+        {
+          status: 0,
+          stdout:
+            modelLine({ file: "t.ts", function: "f", status: "validated" }) +
+            verdictLine("f", "Theorem"),
+        },
+        {
+          status: 0,
+          stdout: modelLine({
+            file: "t.ts",
+            function: "g",
+            status: "unvalidated",
+            reason: "the run of 'g' did not reduce to its model",
+          }),
+        },
+      ]).spawn,
+    );
+    expect(res).toEqual({
+      kind: "completed",
+      models: [
+        { file: "t.ts", function: "f", status: "validated" },
+        {
+          file: "t.ts",
+          function: "g",
+          status: "unvalidated",
+          reason: "the run of 'g' did not reduce to its model",
+        },
+      ],
+      verdicts: [{ identity: ["t.ts", "f", "p"], szs: "Theorem", reason: "r" }],
+      failures: [],
+      diagnostics: [],
+    });
+  });
+
+  test.each([
+    [
+      "a validated line carrying a reason",
+      modelLine({
+        file: "t.ts",
+        function: "f",
+        status: "validated",
+        reason: "r",
+      }),
+    ],
+    [
+      "an unvalidated line carrying none",
+      modelLine({ file: "t.ts", function: "f", status: "unvalidated" }),
+    ],
+    [
+      "an unvalidated line with an empty reason",
+      modelLine({
+        file: "t.ts",
+        function: "f",
+        status: "unvalidated",
+        reason: "",
+      }),
+    ],
+    [
+      "an unknown status",
+      modelLine({ file: "t.ts", function: "f", status: "maybe" }),
+    ],
+    ["a missing function", modelLine({ file: "t.ts", status: "validated" })],
+  ])("%s breaks the contract and fails the artifact", (_label, line) => {
+    const res = runEmission(
+      jobsOf(["a.lean"]),
+      "/engine",
+      fakeSpawn([
+        ...beforeLean(1),
+        { status: 0, stdout: line + verdictLine("f", "Theorem") },
+      ]).spawn,
+    );
+    // The artifact's verdicts are withheld with its model lines: a model
+    // line the engine cannot state is the engine reporting on itself.
+    expect(res).toMatchObject({
+      kind: "completed",
+      models: [],
+      verdicts: [],
+      failures: [
+        { file: "a.lean", messages: [`malformed model line: ${line.trim()}`] },
+      ],
+    });
+  });
+
+  test("an unparseable model line is one message, not a diagnostic", () => {
+    const line = "thales-model:{oops";
+    const res = runEmission(
+      jobsOf(["a.lean"]),
+      "/engine",
+      fakeSpawn([...beforeLean(1), { status: 0, stdout: line + "\n" }]).spawn,
+    );
+    expect(res).toMatchObject({
+      kind: "completed",
+      models: [],
+      failures: [
+        { file: "a.lean", messages: [`unparseable model line: ${line}`] },
+      ],
+      diagnostics: [],
+    });
+  });
+
+  test("forwards LAKATOS_PROVE_VALIDATE_HEARTBEATS to lean as a weak option", () => {
+    const { spawn, calls } = fakeSpawn([...beforeLean(1), { status: 0 }]);
+    vi.stubEnv("LAKATOS_PROVE_VALIDATE_HEARTBEATS", "7");
+    runEmission(jobsOf(["a.lean"]), "/engine", spawn);
+    const leanCall = calls.find((c) => c.args[1] === "lean");
+    expect(leanCall?.args).toContain("-Dweak.thales.validateHeartbeats=7");
+  });
+
+  test.each([
+    ["non-numeric", "lots"],
+    ["zero", "0"],
+  ])("ignores a %s LAKATOS_PROVE_VALIDATE_HEARTBEATS", (_label, value) => {
+    const { spawn, calls } = fakeSpawn([...beforeLean(1), { status: 0 }]);
+    vi.stubEnv("LAKATOS_PROVE_VALIDATE_HEARTBEATS", value);
+    runEmission(jobsOf(["a.lean"]), "/engine", spawn);
+    expect(calls.flatMap((c) => c.args).join(" ")).not.toContain(
+      "thales.validateHeartbeats",
+    );
+  });
+
+  test("an artifact's timeout allows for each correspondence proof it asks for", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "thales-validate-"));
+    const leanFile = path.join(dir, "a.lean");
+    fs.writeFileSync(
+      leanFile,
+      [
+        "import ThalesDsl",
+        '#thales_validate "t.ts" "f" := True',
+        '#thales_validate "t.ts" "g" unvalidated "r"',
+        "-- #thales_validate in a comment is not a command",
+        "",
+      ].join("\n"),
+    );
+    const { spawn, calls } = fakeSpawn([...beforeLean(2), { status: 0 }]);
+    runEmission(
+      jobsOf([leanFile, path.join(dir, "missing.lean")]),
+      "/engine",
+      spawn,
+    );
+    const leanCalls = calls.filter((c) => c.args[1] === "lean");
+    expect(leanCalls.map((c) => c.timeout)).toEqual([
+      LEAN_TIMEOUT_MS + 2 * VALIDATE_TIMEOUT_MS,
+      // An artifact the reader cannot open gets the plain budget.
+      LEAN_TIMEOUT_MS,
+    ]);
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 });
 
@@ -434,6 +617,7 @@ describe("runEmission", () => {
     const res = runEmission(JOBS, "/engine", spawn);
     expect(res).toEqual({
       kind: "completed",
+      models: [],
       verdicts: [
         { identity: ["t.ts", "f", "p"], szs: "Theorem", reason: "r" },
         { identity: ["t.ts", "g", "p"], szs: "GaveUp", reason: "r" },

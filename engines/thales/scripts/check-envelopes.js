@@ -302,6 +302,13 @@ const EXPECTED_FILE = path.join(
 );
 const updating = process.env.UPDATE_ENVELOPES === "1";
 
+// The store records verdicts, not models, so nothing here reads a
+// correspondence proof — and the manifest's 289 declarations would cost
+// about two hours at the real budget. One heartbeat makes every
+// declaration report the budget reason in milliseconds; the real budget is
+// exercised by check:verdict-channel's validate.lean fixture.
+process.env.LAKATOS_PROVE_VALIDATE_HEARTBEATS ??= "1";
+
 const { check, done } = checker("envelopes");
 check(
   !updating || process.env.LAKATOS_PROVE_E2E === "1",

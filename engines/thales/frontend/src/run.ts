@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -27,10 +27,26 @@ export interface FileFailure {
   messages: string[];
 }
 
+/** One #thales_validate model line: the correspondence between a
+ * declaration's model and the evaluator's run of its own closure. One per
+ * entry-module function and constant the emitter wrote a command for; the
+ * envelope joins them onto the declaration's annotations. A reason is
+ * carried exactly when the model is unvalidated — the construct that has
+ * no run, the goal that did not reduce, or the budget that ran out. */
+export type ModelLine =
+  | { file: string; function: string; status: "validated" }
+  | {
+      file: string;
+      function: string;
+      status: "unvalidated";
+      reason: string;
+    };
+
 export type LeanRunResult =
   | {
       kind: "completed";
       verdicts: LeanVerdict[];
+      models: ModelLine[];
       failures: FileFailure[];
       diagnostics: string[];
     }
@@ -47,6 +63,10 @@ export const EMIT_TIMEOUT_MS = 120_000;
  * only framed lines are part of the contract. ThalesDsl's
  * `Verdict.sentinel` prints it. */
 export const VERDICT_SENTINEL = "thales-verdict:";
+
+/** Frames each model line, beside the verdict sentinel and in the same
+ * stream. ThalesDsl's `ModelLine.sentinel` prints it. */
+export const MODEL_SENTINEL = "thales-model:";
 
 /** Locate the ThalesDsl lake project: walk up from this module looking for
  * a lakefile here or under engines/thales — covers the source tree, the
@@ -117,19 +137,51 @@ function isVerdict(v: unknown): v is LeanVerdict {
   );
 }
 
-/** Split one artifact's stdout into verdicts, unframed diagnostic lines,
- * and contract violations. Shared with the engine's check scripts so the
- * channel is parsed and validated in exactly one place. */
+/** A model line must say why it is unvalidated and must not pretend a
+ * validated one has anything to explain: the reason is present, non-empty,
+ * and `unvalidated` together, or absent and `validated` together. */
+function isModelLine(v: unknown): v is ModelLine {
+  if (typeof v !== "object" || v === null) return false;
+  const o = v as Record<string, unknown>;
+  if (typeof o.file !== "string" || typeof o.function !== "string")
+    return false;
+  if (o.status === "validated") return o.reason === undefined;
+  if (o.status !== "unvalidated") return false;
+  return typeof o.reason === "string" && o.reason.length > 0;
+}
+
+/** Split one artifact's stdout into verdicts, model lines, unframed
+ * diagnostic lines, and contract violations. Shared with the engine's
+ * check scripts so the channel is parsed and validated in exactly one
+ * place. A broken model line fails the artifact the way a broken verdict
+ * line does: both are the engine reporting on itself. */
 export function parseVerdicts(stdout: string): {
   verdicts: LeanVerdict[];
+  models: ModelLine[];
   diagnostics: string[];
   messages: string[];
 } {
   const verdicts: LeanVerdict[] = [];
+  const models: ModelLine[] = [];
   const diagnostics: string[] = [];
   const messages: string[] = [];
   for (const line of stdout.split("\n")) {
     if (line.trim() === "") continue;
+    if (line.startsWith(MODEL_SENTINEL)) {
+      let m: unknown;
+      try {
+        m = JSON.parse(line.slice(MODEL_SENTINEL.length));
+      } catch {
+        messages.push(`unparseable model line: ${line}`);
+        continue;
+      }
+      if (!isModelLine(m)) {
+        messages.push(`malformed model line: ${line}`);
+        continue;
+      }
+      models.push(m);
+      continue;
+    }
     if (!line.startsWith(VERDICT_SENTINEL)) {
       diagnostics.push(line);
       continue;
@@ -147,7 +199,7 @@ export function parseVerdicts(stdout: string): {
     }
     verdicts.push(v);
   }
-  return { verdicts, diagnostics, messages };
+  return { verdicts, models, diagnostics, messages };
 }
 
 function isEnoent(e: Error | undefined): boolean {
@@ -167,11 +219,41 @@ function failed(r: SpawnOutcome): LeanRunResult {
  * other unusable value: Lean reads maxHeartbeats 0 as unlimited, so
  * forwarding it would widen the budget instead of shrinking it. */
 function heartbeatArgs(): string[] {
+  const args: string[] = [];
   const v = process.env.LAKATOS_PROVE_HEARTBEATS;
-  return v !== undefined && /^\d+$/.test(v) && Number(v) > 0
-    ? [`-Dweak.thales.heartbeats=${v}`]
-    : [];
+  if (v !== undefined && /^\d+$/.test(v) && Number(v) > 0)
+    args.push(`-Dweak.thales.heartbeats=${v}`);
+  // The correspondence budget, under the same rule. The store run and the
+  // e2e suites shrink it so every declaration reports the budget reason in
+  // milliseconds, the way the prove budget is shrunk to exercise Timeout;
+  // the real budget is exercised by the verdict-channel fixture.
+  const m = process.env.LAKATOS_PROVE_VALIDATE_HEARTBEATS;
+  if (m !== undefined && /^\d+$/.test(m) && Number(m) > 0)
+    args.push(`-Dweak.thales.validateHeartbeats=${m}`);
+  return args;
 }
+
+/** How many correspondence proofs an artifact asks for. An artifact the
+ * reader cannot open counts none: the timeout is then the plain one, and
+ * the run's own failure reports the missing file. */
+function validateCount(file: string): number {
+  let text: string;
+  try {
+    text = readFileSync(file, "utf8");
+  } catch {
+    return 0;
+  }
+  return text.split("\n").filter((l) => l.startsWith("#thales_validate "))
+    .length;
+}
+
+/** What one correspondence proof is allowed to add to an artifact's wall
+ * clock. A proof partially evaluates the declaration's whole realm and
+ * costs about half a minute on a laptop, so the containment scales with
+ * the work the artifact carries: a file with many validated declarations
+ * is not killed for being large, and a stuck one is still bounded by its
+ * own heartbeat budget. */
+export const VALIDATE_TIMEOUT_MS = 120_000;
 
 /** Run one artifact through `lake env lean` under the containment budget.
  * Shared with the engine's check scripts so the argv, the heartbeat
@@ -184,7 +266,11 @@ export function runArtifact(
   return spawn(
     "lake",
     ["env", "lean", ...heartbeatArgs(), path.resolve(file)],
-    { cwd: engineRoot, encoding: "utf8", timeout: LEAN_TIMEOUT_MS },
+    {
+      cwd: engineRoot,
+      encoding: "utf8",
+      timeout: LEAN_TIMEOUT_MS + validateCount(file) * VALIDATE_TIMEOUT_MS,
+    },
   );
 }
 
@@ -239,6 +325,7 @@ function leanPass(
   spawn: Spawn,
 ): LeanRunResult {
   const verdicts: LeanVerdict[] = [];
+  const models: ModelLine[] = [];
   const failures: FileFailure[] = [];
   const diagnostics: string[] = [];
   for (const file of leanFiles) {
@@ -267,8 +354,9 @@ function leanPass(
       continue;
     }
     verdicts.push(...parsed.verdicts);
+    models.push(...parsed.models);
   }
-  return { kind: "completed", verdicts, failures, diagnostics };
+  return { kind: "completed", verdicts, models, failures, diagnostics };
 }
 
 /** One emission JSON and where thales-emit renders its artifact. */

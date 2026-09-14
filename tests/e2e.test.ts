@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import {
@@ -18,6 +18,17 @@ const enabled = process.env.LAKATOS_PROVE_E2E === "1";
 const repoRoot = process.cwd();
 
 describe.runIf(enabled)("lakatos prove end-to-end (tracer)", () => {
+  // The e2e grades verdicts, not models, and a correspondence proof at the
+  // real budget costs about half a minute per declaration. One heartbeat
+  // makes every declaration report the budget reason in milliseconds;
+  // check:verdict-channel exercises the real budget.
+  beforeEach(() => {
+    vi.stubEnv("LAKATOS_PROVE_VALIDATE_HEARTBEATS", "1");
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   useRepoScratchDir(path.join(repoRoot, ".lakatos", "e2e-work"), (dir) => {
     fs.copyFileSync(
       path.join(
