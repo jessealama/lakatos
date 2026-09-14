@@ -94,6 +94,10 @@ export default defineConfig({
         // a `CoverInitializedName`, a BigInt key, and a TypeScript
         // modifier. The one ignore added with them is a template piece's
         // raw text, which the parser always sets.
+        // Ratcheted 2026-09-15: the model channel joined `run.ts` fully
+        // covered — both sentinels' parse and validation arms, the
+        // correspondence budget's forwarding rule, and the per-artifact
+        // timeout allowance, each reached by a test.
         //
         // Measure this from a path with no dot-directory in it. The include
         // globs above do not match through one, and a run from, say, a

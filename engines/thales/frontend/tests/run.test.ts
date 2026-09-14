@@ -482,6 +482,10 @@ describe("the lean pass, through runEmission", () => {
       modelLine({ file: "t.ts", function: "f", status: "maybe" }),
     ],
     ["a missing function", modelLine({ file: "t.ts", status: "validated" })],
+    // Parseable JSON that is not an object at all: the sentinel frames a
+    // line, it does not promise what is behind it.
+    ["a number payload", "thales-model:3\n"],
+    ["a null payload", "thales-model:null\n"],
   ])("%s breaks the contract and fails the artifact", (_label, line) => {
     const res = runEmission(
       jobsOf(["a.lean"]),
