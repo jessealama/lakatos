@@ -45,6 +45,7 @@ const FIXTURES = [
   "exe-example",
   "object-function",
   "template-object",
+  "symbol-json-error",
 ];
 
 describe("parseScript", () => {

@@ -74,12 +74,13 @@ def Outcome.ofModel {α : Type} : JsM α → Outcome α
   | .error (.error kind) => .error kind
 
 /-- The `Error` kind a thrown value belongs to, by its `[[Prototype]]`
-against the seven the realm fixes. A primitive, a reference the heap does
-not have, a null prototype, and any other prototype — a subclass's
-included — are `none`. -/
+against the seven the realm fixes. A primitive, a symbol, a reference the
+heap does not have, a null prototype, and any other prototype — a
+subclass's included — are `none`. -/
 @[tarski_eval]
 def errorKindOf (h : Heap) : Value → Option ErrorKind
   | .prim _ => none
+  | .sym _ => none
   | .obj r =>
     match h.readObj r with
     | none => none
@@ -132,6 +133,9 @@ quantifies over. -/
 def readPrim (_h : Heap) : Value → Option JsVal
   | .prim v => some v
   | .obj _ => none
+  -- The model has no symbol: `Js.JsVal` is the library's domain, and a
+  -- symbol is the one primitive it has no tag for.
+  | .sym _ => none
 
 /-- An own *data* property. An accessor property and an inherited one are
 both `none`: a field of a model is a field, and a getter is a call. -/
@@ -140,8 +144,9 @@ def readOwnField (h : Heap) : Value → String → Option Value
   | .obj r, key =>
     match h.readObj r with
     | none => none
-    | some o => o.getOwn key
+    | some o => o.getOwn (.str key)
   | .prim _, _ => none
+  | .sym _, _ => none
 
 /-- A private field, by its `#name`. The name is a cell reference, so it
 is resolved the only way the heap allows: through the class scope the
@@ -169,5 +174,6 @@ def readPrivateField (h : Heap) : Value → String → Option Value
             | _ => none
           | _ => none
   | .prim _, _ => none
+  | .sym _, _ => none
 
 end Tarski

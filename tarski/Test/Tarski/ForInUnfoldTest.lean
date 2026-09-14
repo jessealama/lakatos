@@ -1,4 +1,4 @@
-import Tarski.Eval
+import Tarski.Simp
 
 /-! A `for`-`in` reduced under `simp`, one *object* at a time.
 
@@ -55,13 +55,18 @@ private def accumulated : Option Value :=
 -- The evaluator's non-loop equations plus the enumeration's own. `evalForIn`
 -- and `bindForIn` are in the set and `forInNext` is not: the first two run
 -- out with the key list, the third is the chain.
+-- `applyCoercing_prim` and `toNumberValue_prim` (`Tarski/Simp.lean`) are
+-- the two ground lemmas that close a coercion of a primitive in one
+-- rewrite: ToPrimitive answers a `Value` now, so without them every
+-- iteration's arithmetic pushes `simp` through a constructor match.
 attribute [local simp] evalExpr evalNamed evalStmt evalStmts evalForIn bindForIn
   DeclKind.isMutable
   allocCell getCell readCell writeCell initCell putIdent
   readObj writeObj Env.lookup Heap.alloc Heap.read Heap.write Heap.readObj
-  Obj.ownProperty Obj.getOwnProperty Obj.ownKeys Obj.isArray Obj.arrayLength?
+  Obj.ownProperty Obj.getOwnProperty Obj.ownKeys Obj.stringKeys Obj.isArray
+  Obj.arrayLength? Key.str? Key.sym? Key.arrayIndex?
   propGet arrayIndex? digitsToNat
-  applyBinary BinaryOp.coerces applyCoercing toPrimitive
+  applyBinary BinaryOp.coerces applyCoercing toPrimitive toNumberValue applyCoercing_prim toNumberValue_prim
   toNumberPrim toBooleanPrim isStrPrim toStringPrim
   attempt liftCompletion loopContinues undefValue
   ExceptT.run_bind Except.map throwJsError throwCompletion

@@ -100,8 +100,8 @@ export default defineConfig({
         // worktree under .claude/ silently reports every loaded file instead
         // — different denominator, different numbers.
         autoUpdate: true,
-        statements: 99.65,
-        branches: 98.88,
+        statements: 99.66,
+        branches: 98.95,
         functions: 100,
         lines: 99.73,
       },
