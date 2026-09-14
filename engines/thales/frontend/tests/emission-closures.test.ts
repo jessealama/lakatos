@@ -24,6 +24,14 @@ function residualConstructs(
   );
 }
 
+/** A declaration with the AST it now carries dropped. What the closure is
+ * belongs to `emission-ast.test.ts`, where it is computed by the bridge;
+ * a body-IR pin has no business restating one. */
+function withoutAst<T extends object>(d: T): T {
+  const { ast: _ast, ...rest } = d as T & { ast?: unknown };
+  return rest as T;
+}
+
 /** An in-memory module tree, keyed the way the walk resolves: absolute
  * paths against the importing file's directory. */
 function reader(files: Record<string, string>): ModuleReader {
@@ -686,7 +694,7 @@ describe("imported module constants", () => {
       reader({ "constants.mts": CONSTANTS }),
     );
     expect(classified).toEqual([]);
-    expect(emission.declarations[0]).toEqual({
+    expect(withoutAst(emission.declarations[0]!)).toEqual({
       kind: "constant",
       name: "daysInWeek",
       module: "constants.mts",
@@ -792,7 +800,7 @@ describe("imported module constants", () => {
       reader({ "constants.mts": CONSTANTS }),
     );
     expect(classified).toEqual([]);
-    expect(emission.declarations[1]).toEqual({
+    expect(withoutAst(emission.declarations[1]!)).toEqual({
       kind: "constant",
       name: "hoursInWeek",
       init: {
@@ -829,7 +837,7 @@ describe("imported module constants", () => {
       reader({ "units.mts": units }),
     );
     expect(classified).toEqual([]);
-    expect(emission.declarations[1]).toEqual({
+    expect(withoutAst(emission.declarations[1]!)).toEqual({
       kind: "constant",
       name: "m",
       module: "units.mts",

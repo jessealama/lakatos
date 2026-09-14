@@ -46,7 +46,130 @@
           ]
         }
       ],
-      "methods": []
+      "methods": [],
+      "ast": {
+        "type": "Program",
+        "sourceType": "script",
+        "body": [
+          {
+            "type": "ExpressionStatement",
+            "expression": {
+              "type": "Literal",
+              "value": "use strict",
+              "raw": "\"use strict\""
+            },
+            "directive": "use strict"
+          },
+          {
+            "type": "ClassDeclaration",
+            "id": {
+              "type": "Identifier",
+              "name": "Box"
+            },
+            "superClass": null,
+            "body": {
+              "type": "ClassBody",
+              "body": [
+                {
+                  "type": "PropertyDefinition",
+                  "key": {
+                    "type": "PrivateIdentifier",
+                    "name": "v"
+                  },
+                  "value": null,
+                  "computed": false,
+                  "static": false
+                },
+                {
+                  "type": "MethodDefinition",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "constructor"
+                  },
+                  "value": {
+                    "type": "FunctionExpression",
+                    "id": null,
+                    "params": [
+                      {
+                        "type": "Identifier",
+                        "name": "v"
+                      }
+                    ],
+                    "body": {
+                      "type": "BlockStatement",
+                      "body": [
+                        {
+                          "type": "ExpressionStatement",
+                          "expression": {
+                            "type": "AssignmentExpression",
+                            "operator": "=",
+                            "left": {
+                              "type": "MemberExpression",
+                              "object": {
+                                "type": "ThisExpression"
+                              },
+                              "property": {
+                                "type": "PrivateIdentifier",
+                                "name": "v"
+                              },
+                              "computed": false
+                            },
+                            "right": {
+                              "type": "Identifier",
+                              "name": "v"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    "async": false,
+                    "generator": false
+                  },
+                  "kind": "constructor",
+                  "computed": false,
+                  "static": false
+                },
+                {
+                  "type": "MethodDefinition",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "v"
+                  },
+                  "value": {
+                    "type": "FunctionExpression",
+                    "id": null,
+                    "params": [],
+                    "body": {
+                      "type": "BlockStatement",
+                      "body": [
+                        {
+                          "type": "ReturnStatement",
+                          "argument": {
+                            "type": "MemberExpression",
+                            "object": {
+                              "type": "ThisExpression"
+                            },
+                            "property": {
+                              "type": "PrivateIdentifier",
+                              "name": "v"
+                            },
+                            "computed": false
+                          }
+                        }
+                      ]
+                    },
+                    "async": false,
+                    "generator": false
+                  },
+                  "kind": "get",
+                  "computed": false,
+                  "static": false
+                }
+              ]
+            }
+          }
+        ]
+      }
     },
     {
       "kind": "class",
@@ -116,7 +239,173 @@
           ]
         }
       ],
-      "methods": []
+      "methods": [],
+      "ast": {
+        "type": "Program",
+        "sourceType": "script",
+        "body": [
+          {
+            "type": "ExpressionStatement",
+            "expression": {
+              "type": "Literal",
+              "value": "use strict",
+              "raw": "\"use strict\""
+            },
+            "directive": "use strict"
+          },
+          {
+            "type": "ClassDeclaration",
+            "id": {
+              "type": "Identifier",
+              "name": "Gate"
+            },
+            "superClass": null,
+            "body": {
+              "type": "ClassBody",
+              "body": [
+                {
+                  "type": "PropertyDefinition",
+                  "key": {
+                    "type": "PrivateIdentifier",
+                    "name": "lo"
+                  },
+                  "value": null,
+                  "computed": false,
+                  "static": false
+                },
+                {
+                  "type": "MethodDefinition",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "constructor"
+                  },
+                  "value": {
+                    "type": "FunctionExpression",
+                    "id": null,
+                    "params": [
+                      {
+                        "type": "Identifier",
+                        "name": "a"
+                      }
+                    ],
+                    "body": {
+                      "type": "BlockStatement",
+                      "body": [
+                        {
+                          "type": "IfStatement",
+                          "test": {
+                            "type": "BinaryExpression",
+                            "operator": "<",
+                            "left": {
+                              "type": "Identifier",
+                              "name": "a"
+                            },
+                            "right": {
+                              "type": "Literal",
+                              "value": 0,
+                              "raw": "0"
+                            }
+                          },
+                          "consequent": {
+                            "type": "BlockStatement",
+                            "body": [
+                              {
+                                "type": "ThrowStatement",
+                                "argument": {
+                                  "type": "NewExpression",
+                                  "callee": {
+                                    "type": "Identifier",
+                                    "name": "RangeError"
+                                  },
+                                  "arguments": [
+                                    {
+                                      "type": "Literal",
+                                      "value": "negative",
+                                      "raw": "\"negative\""
+                                    }
+                                  ]
+                                }
+                              }
+                            ]
+                          },
+                          "alternate": {
+                            "type": "BlockStatement",
+                            "body": [
+                              {
+                                "type": "ExpressionStatement",
+                                "expression": {
+                                  "type": "AssignmentExpression",
+                                  "operator": "=",
+                                  "left": {
+                                    "type": "MemberExpression",
+                                    "object": {
+                                      "type": "ThisExpression"
+                                    },
+                                    "property": {
+                                      "type": "PrivateIdentifier",
+                                      "name": "lo"
+                                    },
+                                    "computed": false
+                                  },
+                                  "right": {
+                                    "type": "Identifier",
+                                    "name": "a"
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    },
+                    "async": false,
+                    "generator": false
+                  },
+                  "kind": "constructor",
+                  "computed": false,
+                  "static": false
+                },
+                {
+                  "type": "MethodDefinition",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "lo"
+                  },
+                  "value": {
+                    "type": "FunctionExpression",
+                    "id": null,
+                    "params": [],
+                    "body": {
+                      "type": "BlockStatement",
+                      "body": [
+                        {
+                          "type": "ReturnStatement",
+                          "argument": {
+                            "type": "MemberExpression",
+                            "object": {
+                              "type": "ThisExpression"
+                            },
+                            "property": {
+                              "type": "PrivateIdentifier",
+                              "name": "lo"
+                            },
+                            "computed": false
+                          }
+                        }
+                      ]
+                    },
+                    "async": false,
+                    "generator": false
+                  },
+                  "kind": "get",
+                  "computed": false,
+                  "static": false
+                }
+              ]
+            }
+          }
+        ]
+      }
     },
     {
       "kind": "class",
@@ -220,7 +509,234 @@
             }
           ]
         }
-      ]
+      ],
+      "ast": {
+        "type": "Program",
+        "sourceType": "script",
+        "body": [
+          {
+            "type": "ExpressionStatement",
+            "expression": {
+              "type": "Literal",
+              "value": "use strict",
+              "raw": "\"use strict\""
+            },
+            "directive": "use strict"
+          },
+          {
+            "type": "ClassDeclaration",
+            "id": {
+              "type": "Identifier",
+              "name": "Doubler"
+            },
+            "superClass": null,
+            "body": {
+              "type": "ClassBody",
+              "body": [
+                {
+                  "type": "PropertyDefinition",
+                  "key": {
+                    "type": "PrivateIdentifier",
+                    "name": "v"
+                  },
+                  "value": null,
+                  "computed": false,
+                  "static": false
+                },
+                {
+                  "type": "MethodDefinition",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "constructor"
+                  },
+                  "value": {
+                    "type": "FunctionExpression",
+                    "id": null,
+                    "params": [
+                      {
+                        "type": "Identifier",
+                        "name": "v"
+                      }
+                    ],
+                    "body": {
+                      "type": "BlockStatement",
+                      "body": [
+                        {
+                          "type": "ExpressionStatement",
+                          "expression": {
+                            "type": "AssignmentExpression",
+                            "operator": "=",
+                            "left": {
+                              "type": "MemberExpression",
+                              "object": {
+                                "type": "ThisExpression"
+                              },
+                              "property": {
+                                "type": "PrivateIdentifier",
+                                "name": "v"
+                              },
+                              "computed": false
+                            },
+                            "right": {
+                              "type": "Identifier",
+                              "name": "v"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    "async": false,
+                    "generator": false
+                  },
+                  "kind": "constructor",
+                  "computed": false,
+                  "static": false
+                },
+                {
+                  "type": "MethodDefinition",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "double"
+                  },
+                  "value": {
+                    "type": "FunctionExpression",
+                    "id": null,
+                    "params": [],
+                    "body": {
+                      "type": "BlockStatement",
+                      "body": [
+                        {
+                          "type": "ReturnStatement",
+                          "argument": {
+                            "type": "BinaryExpression",
+                            "operator": "*",
+                            "left": {
+                              "type": "MemberExpression",
+                              "object": {
+                                "type": "ThisExpression"
+                              },
+                              "property": {
+                                "type": "PrivateIdentifier",
+                                "name": "v"
+                              },
+                              "computed": false
+                            },
+                            "right": {
+                              "type": "Literal",
+                              "value": 2,
+                              "raw": "2"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    "async": false,
+                    "generator": false
+                  },
+                  "kind": "method",
+                  "computed": false,
+                  "static": false
+                },
+                {
+                  "type": "MethodDefinition",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "base"
+                  },
+                  "value": {
+                    "type": "FunctionExpression",
+                    "id": null,
+                    "params": [],
+                    "body": {
+                      "type": "BlockStatement",
+                      "body": [
+                        {
+                          "type": "ReturnStatement",
+                          "argument": {
+                            "type": "MemberExpression",
+                            "object": {
+                              "type": "ThisExpression"
+                            },
+                            "property": {
+                              "type": "PrivateIdentifier",
+                              "name": "v"
+                            },
+                            "computed": false
+                          }
+                        }
+                      ]
+                    },
+                    "async": false,
+                    "generator": false
+                  },
+                  "kind": "method",
+                  "computed": false,
+                  "static": false
+                },
+                {
+                  "type": "MethodDefinition",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "twice"
+                  },
+                  "value": {
+                    "type": "FunctionExpression",
+                    "id": null,
+                    "params": [],
+                    "body": {
+                      "type": "BlockStatement",
+                      "body": [
+                        {
+                          "type": "ReturnStatement",
+                          "argument": {
+                            "type": "BinaryExpression",
+                            "operator": "+",
+                            "left": {
+                              "type": "CallExpression",
+                              "callee": {
+                                "type": "MemberExpression",
+                                "object": {
+                                  "type": "ThisExpression"
+                                },
+                                "property": {
+                                  "type": "Identifier",
+                                  "name": "base"
+                                },
+                                "computed": false
+                              },
+                              "arguments": []
+                            },
+                            "right": {
+                              "type": "CallExpression",
+                              "callee": {
+                                "type": "MemberExpression",
+                                "object": {
+                                  "type": "ThisExpression"
+                                },
+                                "property": {
+                                  "type": "Identifier",
+                                  "name": "base"
+                                },
+                                "computed": false
+                              },
+                              "arguments": []
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    "async": false,
+                    "generator": false
+                  },
+                  "kind": "method",
+                  "computed": false,
+                  "static": false
+                }
+              ]
+            }
+          }
+        ]
+      }
     }
   ],
   "obligations": [

@@ -11,6 +11,12 @@ set_option autoImplicit false
 --   }
 --   return y;
 -- }
+def TsModel.pick.ast : Tarski.Program :=
+  [.funcDecl "pick" ["y"]
+      [.ifStmt (.binary .strictEq (.ident "y") .undefLit) (.block [.returnStmt (some (.numLit 0))])
+          none,
+        .returnStmt (some (.ident "y"))]]
+
 @[js_norm, grind]
 def TsModel.pick (y : JsVal) : JsM JsNumber := do
   if JsVal.strictEq y JsVal.undef then
@@ -23,6 +29,12 @@ def TsModel.pick (y : JsVal) : JsM JsNumber := do
 --   }
 --   return x + by;
 -- }
+def TsModel.step.ast : Tarski.Program :=
+  [.funcDecl "step" ["x", "by"]
+      [.ifStmt (.binary .strictEq (.ident "by") .undefLit)
+          (.block [.returnStmt (some (.binary .add (.ident "x") (.numLit 1)))]) none,
+        .returnStmt (some (.binary .add (.ident "x") (.ident "by")))]]
+
 @[js_norm, grind]
 def TsModel.step (x : JsNumber) («by» : JsVal) : JsM JsNumber := do
   if JsVal.strictEq «by» JsVal.undef then
@@ -47,6 +59,17 @@ def TsModel.step (x : JsNumber) («by» : JsVal) : JsM JsNumber := do
 structure TsModel.Counter where
   n : JsNumber
   deriving Inhabited
+
+def TsModel.Counter.ast : Tarski.Program :=
+  [.classDecl "Counter"
+      { name := some "Counter", superClass := none,
+        elements :=
+          [.field false (.«public» "n") none,
+            .ctor ["n"] [.exprStmt (.assign (.member .this "n") (.ident "n"))],
+            .method .method false "bump" ["by"]
+              [.ifStmt (.binary .strictEq (.ident "by") .undefLit)
+                  (.block [.returnStmt (some (.binary .add (.member .this "n") (.numLit 1)))]) none,
+                .returnStmt (some (.binary .add (.member .this "n") (.ident "by")))]] }]
 
 @[js_norm, grind]
 def TsModel.Counter.construct (n : JsNumber) : JsM TsModel.Counter := do

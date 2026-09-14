@@ -11,6 +11,12 @@ set_option autoImplicit false
 --   }
 --   return 0;
 -- }
+def TsModel.toNum.ast : Tarski.Program :=
+  [.funcDecl "toNum" ["v"]
+      [.ifStmt (.binary .strictEq (.unary .typeof (.ident "v")) (.strLit "number"))
+          (.block [.returnStmt (some (.ident "v"))]) none,
+        .returnStmt (some (.numLit 0))]]
+
 @[js_norm, grind]
 def TsModel.toNum (v : JsVal) : JsM JsNumber := do
   if JsVal.typeof v == TypeofResult.number then
@@ -23,6 +29,12 @@ def TsModel.toNum (v : JsVal) : JsM JsNumber := do
 --   }
 --   return 0;
 -- }
+def TsModel.nullFlag.ast : Tarski.Program :=
+  [.funcDecl "nullFlag" ["v"]
+      [.ifStmt (.call (.member (.ident "Object") "is") [.ident "v", .nullLit])
+          (.block [.returnStmt (some (.numLit 1))]) none,
+        .returnStmt (some (.numLit 0))]]
+
 @[js_norm, grind]
 def TsModel.nullFlag (v : JsVal) : JsM JsNumber := do
   if JsVal.sameValue v JsVal.null then
@@ -32,6 +44,13 @@ def TsModel.nullFlag (v : JsVal) : JsM JsNumber := do
 -- export function relay(v: number | string): number {
 --   return toNum(v);
 -- }
+def TsModel.relay.ast : Tarski.Program :=
+  [.funcDecl "toNum" ["v"]
+      [.ifStmt (.binary .strictEq (.unary .typeof (.ident "v")) (.strLit "number"))
+          (.block [.returnStmt (some (.ident "v"))]) none,
+        .returnStmt (some (.numLit 0))],
+    .funcDecl "relay" ["v"] [.returnStmt (some (.call (.ident "toNum") [.ident "v"]))]]
+
 @[js_norm, grind]
 def TsModel.relay (v : JsVal) : JsM JsNumber := do
   return (← TsModel.toNum v)
@@ -43,6 +62,13 @@ def TsModel.relay (v : JsVal) : JsM JsNumber := do
 --   }
 --   return 0;
 -- }
+def TsModel.viaLocal.ast : Tarski.Program :=
+  [.funcDecl "viaLocal" ["v"]
+      [.varDecl .«const» [{ name := "w", init := some (.ident "v") }],
+        .ifStmt (.binary .strictEq (.unary .typeof (.ident "w")) (.strLit "number"))
+          (.block [.returnStmt (some (.ident "w"))]) none,
+        .returnStmt (some (.numLit 0))]]
+
 @[js_norm, grind]
 def TsModel.viaLocal (v : JsVal) : JsM JsNumber := do
   let w : JsVal := v
@@ -58,6 +84,14 @@ def TsModel.viaLocal (v : JsVal) : JsM JsNumber := do
 --   }
 --   return 1;
 -- }
+def TsModel.settle.ast : Tarski.Program :=
+  [.funcDecl "settle" ["x"]
+      [.varDecl .«let» [{ name := "pending", init := some .undefLit }],
+        .exprStmt (.assign (.ident "pending") (.ident "x")),
+        .ifStmt (.binary .strictEq (.unary .typeof (.ident "pending")) (.strLit "number"))
+          (.block [.returnStmt (some (.ident "pending"))]) none,
+        .returnStmt (some (.numLit 1))]]
+
 @[js_norm, grind]
 def TsModel.settle (x : JsNumber) : JsM JsNumber := do
   let mut pending : JsVal := JsVal.undef

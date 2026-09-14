@@ -62,7 +62,69 @@
             }
           }
         }
-      ]
+      ],
+      "ast": {
+        "type": "Program",
+        "sourceType": "script",
+        "body": [
+          {
+            "type": "ExpressionStatement",
+            "expression": {
+              "type": "Literal",
+              "value": "use strict",
+              "raw": "\"use strict\""
+            },
+            "directive": "use strict"
+          },
+          {
+            "type": "FunctionDeclaration",
+            "id": {
+              "type": "Identifier",
+              "name": "add"
+            },
+            "params": [
+              {
+                "type": "Identifier",
+                "name": "x"
+              },
+              {
+                "type": "AssignmentPattern",
+                "left": {
+                  "type": "Identifier",
+                  "name": "y"
+                },
+                "right": {
+                  "type": "Literal",
+                  "value": 0,
+                  "raw": "0"
+                }
+              }
+            ],
+            "body": {
+              "type": "BlockStatement",
+              "body": [
+                {
+                  "type": "ReturnStatement",
+                  "argument": {
+                    "type": "BinaryExpression",
+                    "operator": "+",
+                    "left": {
+                      "type": "Identifier",
+                      "name": "x"
+                    },
+                    "right": {
+                      "type": "Identifier",
+                      "name": "y"
+                    }
+                  }
+                }
+              ]
+            },
+            "async": false,
+            "generator": false
+          }
+        ]
+      }
     },
     {
       "kind": "function",
@@ -125,7 +187,69 @@
             "name": "y"
           }
         }
-      ]
+      ],
+      "ast": {
+        "type": "Program",
+        "sourceType": "script",
+        "body": [
+          {
+            "type": "ExpressionStatement",
+            "expression": {
+              "type": "Literal",
+              "value": "use strict",
+              "raw": "\"use strict\""
+            },
+            "directive": "use strict"
+          },
+          {
+            "type": "FunctionDeclaration",
+            "id": {
+              "type": "Identifier",
+              "name": "twice"
+            },
+            "params": [
+              {
+                "type": "Identifier",
+                "name": "x"
+              },
+              {
+                "type": "AssignmentPattern",
+                "left": {
+                  "type": "Identifier",
+                  "name": "y"
+                },
+                "right": {
+                  "type": "BinaryExpression",
+                  "operator": "*",
+                  "left": {
+                    "type": "Identifier",
+                    "name": "x"
+                  },
+                  "right": {
+                    "type": "Literal",
+                    "value": 2,
+                    "raw": "2"
+                  }
+                }
+              }
+            ],
+            "body": {
+              "type": "BlockStatement",
+              "body": [
+                {
+                  "type": "ReturnStatement",
+                  "argument": {
+                    "type": "Identifier",
+                    "name": "y"
+                  }
+                }
+              ]
+            },
+            "async": false,
+            "generator": false
+          }
+        ]
+      }
     },
     {
       "kind": "function",
@@ -188,7 +312,69 @@
             }
           }
         }
-      ]
+      ],
+      "ast": {
+        "type": "Program",
+        "sourceType": "script",
+        "body": [
+          {
+            "type": "ExpressionStatement",
+            "expression": {
+              "type": "Literal",
+              "value": "use strict",
+              "raw": "\"use strict\""
+            },
+            "directive": "use strict"
+          },
+          {
+            "type": "FunctionDeclaration",
+            "id": {
+              "type": "Identifier",
+              "name": "lead"
+            },
+            "params": [
+              {
+                "type": "AssignmentPattern",
+                "left": {
+                  "type": "Identifier",
+                  "name": "x"
+                },
+                "right": {
+                  "type": "Literal",
+                  "value": 1,
+                  "raw": "1"
+                }
+              },
+              {
+                "type": "Identifier",
+                "name": "y"
+              }
+            ],
+            "body": {
+              "type": "BlockStatement",
+              "body": [
+                {
+                  "type": "ReturnStatement",
+                  "argument": {
+                    "type": "BinaryExpression",
+                    "operator": "+",
+                    "left": {
+                      "type": "Identifier",
+                      "name": "x"
+                    },
+                    "right": {
+                      "type": "Identifier",
+                      "name": "y"
+                    }
+                  }
+                }
+              ]
+            },
+            "async": false,
+            "generator": false
+          }
+        ]
+      }
     },
     {
       "kind": "function",
@@ -267,7 +453,93 @@
             }
           }
         }
-      ]
+      ],
+      "ast": {
+        "type": "Program",
+        "sourceType": "script",
+        "body": [
+          {
+            "type": "ExpressionStatement",
+            "expression": {
+              "type": "Literal",
+              "value": "use strict",
+              "raw": "\"use strict\""
+            },
+            "directive": "use strict"
+          },
+          {
+            "type": "FunctionDeclaration",
+            "id": {
+              "type": "Identifier",
+              "name": "bump"
+            },
+            "params": [
+              {
+                "type": "Identifier",
+                "name": "x"
+              },
+              {
+                "type": "AssignmentPattern",
+                "left": {
+                  "type": "Identifier",
+                  "name": "by"
+                },
+                "right": {
+                  "type": "Literal",
+                  "value": 1,
+                  "raw": "1"
+                }
+              }
+            ],
+            "body": {
+              "type": "BlockStatement",
+              "body": [
+                {
+                  "type": "ExpressionStatement",
+                  "expression": {
+                    "type": "AssignmentExpression",
+                    "operator": "=",
+                    "left": {
+                      "type": "Identifier",
+                      "name": "by"
+                    },
+                    "right": {
+                      "type": "BinaryExpression",
+                      "operator": "+",
+                      "left": {
+                        "type": "Identifier",
+                        "name": "by"
+                      },
+                      "right": {
+                        "type": "Literal",
+                        "value": 0,
+                        "raw": "0"
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "ReturnStatement",
+                  "argument": {
+                    "type": "BinaryExpression",
+                    "operator": "+",
+                    "left": {
+                      "type": "Identifier",
+                      "name": "x"
+                    },
+                    "right": {
+                      "type": "Identifier",
+                      "name": "by"
+                    }
+                  }
+                }
+              ]
+            },
+            "async": false,
+            "generator": false
+          }
+        ]
+      }
     },
     {
       "kind": "function",
@@ -347,7 +619,90 @@
             }
           }
         }
-      ]
+      ],
+      "ast": {
+        "type": "Program",
+        "sourceType": "script",
+        "body": [
+          {
+            "type": "ExpressionStatement",
+            "expression": {
+              "type": "Literal",
+              "value": "use strict",
+              "raw": "\"use strict\""
+            },
+            "directive": "use strict"
+          },
+          {
+            "type": "FunctionDeclaration",
+            "id": {
+              "type": "Identifier",
+              "name": "orNull"
+            },
+            "params": [
+              {
+                "type": "Identifier",
+                "name": "x"
+              },
+              {
+                "type": "AssignmentPattern",
+                "left": {
+                  "type": "Identifier",
+                  "name": "y"
+                },
+                "right": {
+                  "type": "Literal",
+                  "value": null,
+                  "raw": "null"
+                }
+              }
+            ],
+            "body": {
+              "type": "BlockStatement",
+              "body": [
+                {
+                  "type": "IfStatement",
+                  "test": {
+                    "type": "BinaryExpression",
+                    "operator": "===",
+                    "left": {
+                      "type": "Identifier",
+                      "name": "y"
+                    },
+                    "right": {
+                      "type": "Literal",
+                      "value": null,
+                      "raw": "null"
+                    }
+                  },
+                  "consequent": {
+                    "type": "BlockStatement",
+                    "body": [
+                      {
+                        "type": "ReturnStatement",
+                        "argument": {
+                          "type": "Identifier",
+                          "name": "x"
+                        }
+                      }
+                    ]
+                  },
+                  "alternate": null
+                },
+                {
+                  "type": "ReturnStatement",
+                  "argument": {
+                    "type": "Identifier",
+                    "name": "y"
+                  }
+                }
+              ]
+            },
+            "async": false,
+            "generator": false
+          }
+        ]
+      }
     },
     {
       "kind": "class",
@@ -504,7 +859,214 @@
             }
           ]
         }
-      ]
+      ],
+      "ast": {
+        "type": "Program",
+        "sourceType": "script",
+        "body": [
+          {
+            "type": "ExpressionStatement",
+            "expression": {
+              "type": "Literal",
+              "value": "use strict",
+              "raw": "\"use strict\""
+            },
+            "directive": "use strict"
+          },
+          {
+            "type": "ClassDeclaration",
+            "id": {
+              "type": "Identifier",
+              "name": "Counter"
+            },
+            "superClass": null,
+            "body": {
+              "type": "ClassBody",
+              "body": [
+                {
+                  "type": "PropertyDefinition",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "n"
+                  },
+                  "value": null,
+                  "computed": false,
+                  "static": false
+                },
+                {
+                  "type": "MethodDefinition",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "constructor"
+                  },
+                  "value": {
+                    "type": "FunctionExpression",
+                    "id": null,
+                    "params": [
+                      {
+                        "type": "Identifier",
+                        "name": "n"
+                      }
+                    ],
+                    "body": {
+                      "type": "BlockStatement",
+                      "body": [
+                        {
+                          "type": "ExpressionStatement",
+                          "expression": {
+                            "type": "AssignmentExpression",
+                            "operator": "=",
+                            "left": {
+                              "type": "MemberExpression",
+                              "object": {
+                                "type": "ThisExpression"
+                              },
+                              "property": {
+                                "type": "Identifier",
+                                "name": "n"
+                              },
+                              "computed": false
+                            },
+                            "right": {
+                              "type": "Identifier",
+                              "name": "n"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    "async": false,
+                    "generator": false
+                  },
+                  "kind": "constructor",
+                  "computed": false,
+                  "static": false
+                },
+                {
+                  "type": "MethodDefinition",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "step"
+                  },
+                  "value": {
+                    "type": "FunctionExpression",
+                    "id": null,
+                    "params": [
+                      {
+                        "type": "AssignmentPattern",
+                        "left": {
+                          "type": "Identifier",
+                          "name": "by"
+                        },
+                        "right": {
+                          "type": "Literal",
+                          "value": 1,
+                          "raw": "1"
+                        }
+                      }
+                    ],
+                    "body": {
+                      "type": "BlockStatement",
+                      "body": [
+                        {
+                          "type": "ReturnStatement",
+                          "argument": {
+                            "type": "BinaryExpression",
+                            "operator": "+",
+                            "left": {
+                              "type": "MemberExpression",
+                              "object": {
+                                "type": "ThisExpression"
+                              },
+                              "property": {
+                                "type": "Identifier",
+                                "name": "n"
+                              },
+                              "computed": false
+                            },
+                            "right": {
+                              "type": "Identifier",
+                              "name": "by"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    "async": false,
+                    "generator": false
+                  },
+                  "kind": "method",
+                  "computed": false,
+                  "static": false
+                },
+                {
+                  "type": "MethodDefinition",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "twice"
+                  },
+                  "value": {
+                    "type": "FunctionExpression",
+                    "id": null,
+                    "params": [
+                      {
+                        "type": "AssignmentPattern",
+                        "left": {
+                          "type": "Identifier",
+                          "name": "by"
+                        },
+                        "right": {
+                          "type": "MemberExpression",
+                          "object": {
+                            "type": "ThisExpression"
+                          },
+                          "property": {
+                            "type": "Identifier",
+                            "name": "n"
+                          },
+                          "computed": false
+                        }
+                      }
+                    ],
+                    "body": {
+                      "type": "BlockStatement",
+                      "body": [
+                        {
+                          "type": "ReturnStatement",
+                          "argument": {
+                            "type": "BinaryExpression",
+                            "operator": "+",
+                            "left": {
+                              "type": "MemberExpression",
+                              "object": {
+                                "type": "ThisExpression"
+                              },
+                              "property": {
+                                "type": "Identifier",
+                                "name": "n"
+                              },
+                              "computed": false
+                            },
+                            "right": {
+                              "type": "Identifier",
+                              "name": "by"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    "async": false,
+                    "generator": false
+                  },
+                  "kind": "method",
+                  "computed": false,
+                  "static": false
+                }
+              ]
+            }
+          }
+        ]
+      }
     }
   ],
   "obligations": [

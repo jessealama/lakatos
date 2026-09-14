@@ -383,3 +383,34 @@ private def keywordsDoc : String := r#"{"type":"VariableDeclaration","kind":"var
 
 #eval show Elab.Command.CommandElabM Unit from
   documentRoundTrips `keywordsRoundTrip keywordsDoc
+
+open Elab Command in
+/-- Every closure the store's emissions carry, round-tripped. These are the
+bridge's own documents for the fixtures, so what is compared is the
+decoder's reading of production input. -/
+def emissionRoundTrips (tag emissionPath : String) : CommandElabM Unit := do
+  let text ← IO.FS.readFile emissionPath
+  let json ← IO.ofExcept (Json.parse text)
+  let e ← IO.ofExcept (decodeEmission json)
+  let mut n := 0
+  for d in e.declarations do
+    let ast := match d with
+      | .fn f => f.ast | .cls c => c.ast | .const c => c.ast | .residual _ => none
+    if let some (.program p) := ast then
+      n := n + 1
+      roundTrips (Name.mkSimple s!"roundTrip_{tag}_{n}") p
+  if n == 0 then
+    throwError "{emissionPath} carries no decoded closure to round-trip"
+
+#eval show Elab.Command.CommandElabM Unit from
+  emissionRoundTrips "tracer" "tests/fixtures/tracer.emission.json"
+#eval show Elab.Command.CommandElabM Unit from
+  emissionRoundTrips "statements" "tests/fixtures/statements.emission.json"
+#eval show Elab.Command.CommandElabM Unit from
+  emissionRoundTrips "classes" "tests/fixtures/classes.emission.json"
+#eval show Elab.Command.CommandElabM Unit from
+  emissionRoundTrips "module_consts" "tests/fixtures/module-consts.emission.json"
+#eval show Elab.Command.CommandElabM Unit from
+  emissionRoundTrips "operators" "tests/fixtures/operators.emission.json"
+#eval show Elab.Command.CommandElabM Unit from
+  emissionRoundTrips "degradations" "tests/fixtures/degradations.emission.json"

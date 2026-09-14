@@ -493,6 +493,10 @@
         "noncomputable": {
           "const": true,
           "description": "Present exactly when the body reaches a residual site, directly or through a callee that does; a valueless opaque compiles to 'pure', which the evaluation rung would prove through."
+        },
+        "ast": {
+          "$ref": "tarski-estree.schema.json#/definitions/Program",
+          "description": "The ESTree of the declaration's dependency closure, as tarski's parser bridge produced it: a strict script whose statements are, in module order, the top-level declarations the declaration reaches — imported constants, callees, the classes it names — and the declaration itself. The emitter selects statements and writes no node. Absent when no closed script could be assembled: a binding renamed on import, or one name declared by two modules of the closure."
         }
       }
     },
@@ -591,6 +595,10 @@
               }
             }
           }
+        },
+        "ast": {
+          "$ref": "tarski-estree.schema.json#/definitions/Program",
+          "description": "The ESTree of the class's dependency closure, as tarski's parser bridge produced it: a strict script whose statements are, in module order, the top-level declarations the class reaches — imported constants, callees, the classes it names — and the class itself. Its members share it, since a member's replay runs the class's own program. The emitter selects statements and writes no node. Absent when no closed script could be assembled: a binding renamed on import, or one name declared by two modules of the closure."
         }
       }
     },
@@ -610,6 +618,10 @@
         "source": {
           "type": "string",
           "description": "The declaration's original text, echoed as comments above the def."
+        },
+        "ast": {
+          "$ref": "tarski-estree.schema.json#/definitions/Program",
+          "description": "The ESTree of the declaration's dependency closure, as tarski's parser bridge produced it: a strict script whose statements are, in module order, the top-level declarations the declaration reaches — imported constants, callees, the classes it names — and the declaration itself. The emitter selects statements and writes no node. Absent when no closed script could be assembled: a binding renamed on import, or one name declared by two modules of the closure."
         }
       }
     },

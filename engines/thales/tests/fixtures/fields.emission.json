@@ -29,7 +29,94 @@
         ]
       },
       "getters": [],
-      "methods": []
+      "methods": [],
+      "ast": {
+        "type": "Program",
+        "sourceType": "script",
+        "body": [
+          {
+            "type": "ExpressionStatement",
+            "expression": {
+              "type": "Literal",
+              "value": "use strict",
+              "raw": "\"use strict\""
+            },
+            "directive": "use strict"
+          },
+          {
+            "type": "ClassDeclaration",
+            "id": {
+              "type": "Identifier",
+              "name": "Inner"
+            },
+            "superClass": null,
+            "body": {
+              "type": "ClassBody",
+              "body": [
+                {
+                  "type": "PropertyDefinition",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "v"
+                  },
+                  "value": null,
+                  "computed": false,
+                  "static": false
+                },
+                {
+                  "type": "MethodDefinition",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "constructor"
+                  },
+                  "value": {
+                    "type": "FunctionExpression",
+                    "id": null,
+                    "params": [
+                      {
+                        "type": "Identifier",
+                        "name": "v"
+                      }
+                    ],
+                    "body": {
+                      "type": "BlockStatement",
+                      "body": [
+                        {
+                          "type": "ExpressionStatement",
+                          "expression": {
+                            "type": "AssignmentExpression",
+                            "operator": "=",
+                            "left": {
+                              "type": "MemberExpression",
+                              "object": {
+                                "type": "ThisExpression"
+                              },
+                              "property": {
+                                "type": "Identifier",
+                                "name": "v"
+                              },
+                              "computed": false
+                            },
+                            "right": {
+                              "type": "Identifier",
+                              "name": "v"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    "async": false,
+                    "generator": false
+                  },
+                  "kind": "constructor",
+                  "computed": false,
+                  "static": false
+                }
+              ]
+            }
+          }
+        ]
+      }
     },
     {
       "kind": "class",
@@ -139,7 +226,246 @@
           ]
         }
       ],
-      "methods": []
+      "methods": [],
+      "ast": {
+        "type": "Program",
+        "sourceType": "script",
+        "body": [
+          {
+            "type": "ExpressionStatement",
+            "expression": {
+              "type": "Literal",
+              "value": "use strict",
+              "raw": "\"use strict\""
+            },
+            "directive": "use strict"
+          },
+          {
+            "type": "ClassDeclaration",
+            "id": {
+              "type": "Identifier",
+              "name": "Cell"
+            },
+            "superClass": null,
+            "body": {
+              "type": "ClassBody",
+              "body": [
+                {
+                  "type": "PropertyDefinition",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "value"
+                  },
+                  "value": null,
+                  "computed": false,
+                  "static": false
+                },
+                {
+                  "type": "PropertyDefinition",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "inner"
+                  },
+                  "value": null,
+                  "computed": false,
+                  "static": false
+                },
+                {
+                  "type": "PropertyDefinition",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "n"
+                  },
+                  "value": null,
+                  "computed": false,
+                  "static": false
+                },
+                {
+                  "type": "MethodDefinition",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "constructor"
+                  },
+                  "value": {
+                    "type": "FunctionExpression",
+                    "id": null,
+                    "params": [
+                      {
+                        "type": "Identifier",
+                        "name": "n"
+                      },
+                      {
+                        "type": "Identifier",
+                        "name": "i"
+                      }
+                    ],
+                    "body": {
+                      "type": "BlockStatement",
+                      "body": [
+                        {
+                          "type": "IfStatement",
+                          "test": {
+                            "type": "BinaryExpression",
+                            "operator": "<",
+                            "left": {
+                              "type": "Identifier",
+                              "name": "n"
+                            },
+                            "right": {
+                              "type": "Literal",
+                              "value": 0,
+                              "raw": "0"
+                            }
+                          },
+                          "consequent": {
+                            "type": "BlockStatement",
+                            "body": [
+                              {
+                                "type": "ExpressionStatement",
+                                "expression": {
+                                  "type": "AssignmentExpression",
+                                  "operator": "=",
+                                  "left": {
+                                    "type": "MemberExpression",
+                                    "object": {
+                                      "type": "ThisExpression"
+                                    },
+                                    "property": {
+                                      "type": "Identifier",
+                                      "name": "value"
+                                    },
+                                    "computed": false
+                                  },
+                                  "right": {
+                                    "type": "Identifier",
+                                    "name": "undefined"
+                                  }
+                                }
+                              }
+                            ]
+                          },
+                          "alternate": {
+                            "type": "BlockStatement",
+                            "body": [
+                              {
+                                "type": "ExpressionStatement",
+                                "expression": {
+                                  "type": "AssignmentExpression",
+                                  "operator": "=",
+                                  "left": {
+                                    "type": "MemberExpression",
+                                    "object": {
+                                      "type": "ThisExpression"
+                                    },
+                                    "property": {
+                                      "type": "Identifier",
+                                      "name": "value"
+                                    },
+                                    "computed": false
+                                  },
+                                  "right": {
+                                    "type": "Identifier",
+                                    "name": "n"
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        },
+                        {
+                          "type": "ExpressionStatement",
+                          "expression": {
+                            "type": "AssignmentExpression",
+                            "operator": "=",
+                            "left": {
+                              "type": "MemberExpression",
+                              "object": {
+                                "type": "ThisExpression"
+                              },
+                              "property": {
+                                "type": "Identifier",
+                                "name": "inner"
+                              },
+                              "computed": false
+                            },
+                            "right": {
+                              "type": "Identifier",
+                              "name": "i"
+                            }
+                          }
+                        },
+                        {
+                          "type": "ExpressionStatement",
+                          "expression": {
+                            "type": "AssignmentExpression",
+                            "operator": "=",
+                            "left": {
+                              "type": "MemberExpression",
+                              "object": {
+                                "type": "ThisExpression"
+                              },
+                              "property": {
+                                "type": "Identifier",
+                                "name": "n"
+                              },
+                              "computed": false
+                            },
+                            "right": {
+                              "type": "Identifier",
+                              "name": "n"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    "async": false,
+                    "generator": false
+                  },
+                  "kind": "constructor",
+                  "computed": false,
+                  "static": false
+                },
+                {
+                  "type": "MethodDefinition",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "plain"
+                  },
+                  "value": {
+                    "type": "FunctionExpression",
+                    "id": null,
+                    "params": [],
+                    "body": {
+                      "type": "BlockStatement",
+                      "body": [
+                        {
+                          "type": "ReturnStatement",
+                          "argument": {
+                            "type": "MemberExpression",
+                            "object": {
+                              "type": "ThisExpression"
+                            },
+                            "property": {
+                              "type": "Identifier",
+                              "name": "n"
+                            },
+                            "computed": false
+                          }
+                        }
+                      ]
+                    },
+                    "async": false,
+                    "generator": false
+                  },
+                  "kind": "get",
+                  "computed": false,
+                  "static": false
+                }
+              ]
+            }
+          }
+        ]
+      }
     },
     {
       "kind": "class",
@@ -264,7 +590,235 @@
             }
           ]
         }
-      ]
+      ],
+      "ast": {
+        "type": "Program",
+        "sourceType": "script",
+        "body": [
+          {
+            "type": "ExpressionStatement",
+            "expression": {
+              "type": "Literal",
+              "value": "use strict",
+              "raw": "\"use strict\""
+            },
+            "directive": "use strict"
+          },
+          {
+            "type": "ClassDeclaration",
+            "id": {
+              "type": "Identifier",
+              "name": "Reading"
+            },
+            "superClass": null,
+            "body": {
+              "type": "ClassBody",
+              "body": [
+                {
+                  "type": "PropertyDefinition",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "value"
+                  },
+                  "value": null,
+                  "computed": false,
+                  "static": false
+                },
+                {
+                  "type": "MethodDefinition",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "constructor"
+                  },
+                  "value": {
+                    "type": "FunctionExpression",
+                    "id": null,
+                    "params": [
+                      {
+                        "type": "Identifier",
+                        "name": "value"
+                      }
+                    ],
+                    "body": {
+                      "type": "BlockStatement",
+                      "body": [
+                        {
+                          "type": "ExpressionStatement",
+                          "expression": {
+                            "type": "AssignmentExpression",
+                            "operator": "=",
+                            "left": {
+                              "type": "MemberExpression",
+                              "object": {
+                                "type": "ThisExpression"
+                              },
+                              "property": {
+                                "type": "Identifier",
+                                "name": "value"
+                              },
+                              "computed": false
+                            },
+                            "right": {
+                              "type": "Identifier",
+                              "name": "value"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    "async": false,
+                    "generator": false
+                  },
+                  "kind": "constructor",
+                  "computed": false,
+                  "static": false
+                },
+                {
+                  "type": "MethodDefinition",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "get"
+                  },
+                  "value": {
+                    "type": "FunctionExpression",
+                    "id": null,
+                    "params": [],
+                    "body": {
+                      "type": "BlockStatement",
+                      "body": [
+                        {
+                          "type": "ReturnStatement",
+                          "argument": {
+                            "type": "ConditionalExpression",
+                            "test": {
+                              "type": "BinaryExpression",
+                              "operator": "===",
+                              "left": {
+                                "type": "MemberExpression",
+                                "object": {
+                                  "type": "ThisExpression"
+                                },
+                                "property": {
+                                  "type": "Identifier",
+                                  "name": "value"
+                                },
+                                "computed": false
+                              },
+                              "right": {
+                                "type": "Identifier",
+                                "name": "undefined"
+                              }
+                            },
+                            "consequent": {
+                              "type": "Literal",
+                              "value": 0,
+                              "raw": "0"
+                            },
+                            "alternate": {
+                              "type": "MemberExpression",
+                              "object": {
+                                "type": "ThisExpression"
+                              },
+                              "property": {
+                                "type": "Identifier",
+                                "name": "value"
+                              },
+                              "computed": false
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    "async": false,
+                    "generator": false
+                  },
+                  "kind": "method",
+                  "computed": false,
+                  "static": false
+                },
+                {
+                  "type": "MethodDefinition",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "narrow"
+                  },
+                  "value": {
+                    "type": "FunctionExpression",
+                    "id": null,
+                    "params": [],
+                    "body": {
+                      "type": "BlockStatement",
+                      "body": [
+                        {
+                          "type": "IfStatement",
+                          "test": {
+                            "type": "BinaryExpression",
+                            "operator": "===",
+                            "left": {
+                              "type": "UnaryExpression",
+                              "operator": "typeof",
+                              "argument": {
+                                "type": "MemberExpression",
+                                "object": {
+                                  "type": "ThisExpression"
+                                },
+                                "property": {
+                                  "type": "Identifier",
+                                  "name": "value"
+                                },
+                                "computed": false
+                              },
+                              "prefix": true
+                            },
+                            "right": {
+                              "type": "Literal",
+                              "value": "number",
+                              "raw": "\"number\""
+                            }
+                          },
+                          "consequent": {
+                            "type": "BlockStatement",
+                            "body": [
+                              {
+                                "type": "ReturnStatement",
+                                "argument": {
+                                  "type": "MemberExpression",
+                                  "object": {
+                                    "type": "ThisExpression"
+                                  },
+                                  "property": {
+                                    "type": "Identifier",
+                                    "name": "value"
+                                  },
+                                  "computed": false
+                                }
+                              }
+                            ]
+                          },
+                          "alternate": null
+                        },
+                        {
+                          "type": "ReturnStatement",
+                          "argument": {
+                            "type": "Literal",
+                            "value": 0,
+                            "raw": "0"
+                          }
+                        }
+                      ]
+                    },
+                    "async": false,
+                    "generator": false
+                  },
+                  "kind": "method",
+                  "computed": false,
+                  "static": false
+                }
+              ]
+            }
+          }
+        ]
+      }
     },
     {
       "kind": "class",
@@ -322,7 +876,138 @@
             }
           ]
         }
-      ]
+      ],
+      "ast": {
+        "type": "Program",
+        "sourceType": "script",
+        "body": [
+          {
+            "type": "ExpressionStatement",
+            "expression": {
+              "type": "Literal",
+              "value": "use strict",
+              "raw": "\"use strict\""
+            },
+            "directive": "use strict"
+          },
+          {
+            "type": "ClassDeclaration",
+            "id": {
+              "type": "Identifier",
+              "name": "Pair"
+            },
+            "superClass": null,
+            "body": {
+              "type": "ClassBody",
+              "body": [
+                {
+                  "type": "PropertyDefinition",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "inner"
+                  },
+                  "value": null,
+                  "computed": false,
+                  "static": false
+                },
+                {
+                  "type": "MethodDefinition",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "constructor"
+                  },
+                  "value": {
+                    "type": "FunctionExpression",
+                    "id": null,
+                    "params": [
+                      {
+                        "type": "Identifier",
+                        "name": "i"
+                      }
+                    ],
+                    "body": {
+                      "type": "BlockStatement",
+                      "body": [
+                        {
+                          "type": "ExpressionStatement",
+                          "expression": {
+                            "type": "AssignmentExpression",
+                            "operator": "=",
+                            "left": {
+                              "type": "MemberExpression",
+                              "object": {
+                                "type": "ThisExpression"
+                              },
+                              "property": {
+                                "type": "Identifier",
+                                "name": "inner"
+                              },
+                              "computed": false
+                            },
+                            "right": {
+                              "type": "Identifier",
+                              "name": "i"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    "async": false,
+                    "generator": false
+                  },
+                  "kind": "constructor",
+                  "computed": false,
+                  "static": false
+                },
+                {
+                  "type": "MethodDefinition",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "peek"
+                  },
+                  "value": {
+                    "type": "FunctionExpression",
+                    "id": null,
+                    "params": [],
+                    "body": {
+                      "type": "BlockStatement",
+                      "body": [
+                        {
+                          "type": "ReturnStatement",
+                          "argument": {
+                            "type": "MemberExpression",
+                            "object": {
+                              "type": "MemberExpression",
+                              "object": {
+                                "type": "ThisExpression"
+                              },
+                              "property": {
+                                "type": "Identifier",
+                                "name": "inner"
+                              },
+                              "computed": false
+                            },
+                            "property": {
+                              "type": "Identifier",
+                              "name": "v"
+                            },
+                            "computed": false
+                          }
+                        }
+                      ]
+                    },
+                    "async": false,
+                    "generator": false
+                  },
+                  "kind": "method",
+                  "computed": false,
+                  "static": false
+                }
+              ]
+            }
+          }
+        ]
+      }
     }
   ],
   "obligations": [
