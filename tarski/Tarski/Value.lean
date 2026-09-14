@@ -229,6 +229,104 @@ def ErrorKind.name : ErrorKind → String
 def ErrorKind.all : List ErrorKind :=
   [.error, .typeError, .rangeError, .referenceError, .syntaxError, .evalError, .uriError]
 
+/-- The `String` surface: `String`'s three statics and
+`String.prototype`'s thirty-one methods, in the order `Tarski/Realm.lean`
+lays them out, which is the order `StringFn.all` lists and `StringFn.ref`
+counts in.
+
+Three constructors are spelled with guillemets rather than plainly.
+`«repeat»` is a Lean keyword. `«toString»` and `«toUpperCase»` are what
+`scripts/check-boundary.sh` bans in method syntax under `Tarski/` — the
+pattern that catches `Float.toString` and `.toUInt16` catches `.toString`
+and `.toUpperCase` too — and the escape is cheaper than a constructor
+whose name is not the method's.
+
+The regex-taking members (`match`, `matchAll`, `search`), the iterator,
+and Annex B's methods are not here: a `RegExp` is outside #376, the
+iterator is #394's, and Annex B is not in this slice's test262
+directory. -/
+inductive StringFn where
+  /-- `String.fromCharCode`. -/
+  | fromCharCode
+  /-- `String.fromCodePoint`. -/
+  | fromCodePoint
+  /-- `String.raw`. -/
+  | raw
+  /-- `String.prototype.at`. -/
+  | at
+  /-- `String.prototype.charAt`. -/
+  | charAt
+  /-- `String.prototype.charCodeAt`. -/
+  | charCodeAt
+  /-- `String.prototype.codePointAt`. -/
+  | codePointAt
+  /-- `String.prototype.concat`. -/
+  | concat
+  /-- `String.prototype.endsWith`. -/
+  | endsWith
+  /-- `String.prototype.includes`. -/
+  | includes
+  /-- `String.prototype.indexOf`. -/
+  | indexOf
+  /-- `String.prototype.isWellFormed`. -/
+  | isWellFormed
+  /-- `String.prototype.lastIndexOf`. -/
+  | lastIndexOf
+  /-- `String.prototype.localeCompare`. -/
+  | localeCompare
+  /-- `String.prototype.normalize`. -/
+  | normalize
+  /-- `String.prototype.padEnd`. -/
+  | padEnd
+  /-- `String.prototype.padStart`. -/
+  | padStart
+  /-- `String.prototype.repeat`. -/
+  | «repeat»
+  /-- `String.prototype.replace`. -/
+  | replace
+  /-- `String.prototype.replaceAll`. -/
+  | replaceAll
+  /-- `String.prototype.slice`. -/
+  | slice
+  /-- `String.prototype.split`. -/
+  | split
+  /-- `String.prototype.startsWith`. -/
+  | startsWith
+  /-- `String.prototype.substring`. -/
+  | substring
+  /-- `String.prototype.toLocaleLowerCase`. -/
+  | toLocaleLowerCase
+  /-- `String.prototype.toLocaleUpperCase`. -/
+  | toLocaleUpperCase
+  /-- `String.prototype.toLowerCase`. -/
+  | toLowerCase
+  /-- `String.prototype.toString`. -/
+  | «toString»
+  /-- `String.prototype.toUpperCase`. -/
+  | «toUpperCase»
+  /-- `String.prototype.toWellFormed`. -/
+  | toWellFormed
+  /-- `String.prototype.trim`. -/
+  | trim
+  /-- `String.prototype.trimEnd`. -/
+  | trimEnd
+  /-- `String.prototype.trimStart`. -/
+  | trimStart
+  /-- `String.prototype.valueOf`. -/
+  | valueOf
+deriving Repr, DecidableEq, Inhabited
+
+/-- Every member, in the realm's order: the three statics and then the
+thirty-one prototype methods, which is the order `String.prototype`'s
+property list is in and the order `StringFn.ref` counts references in. -/
+def StringFn.all : List StringFn :=
+  [ .fromCharCode, .fromCodePoint, .raw,
+    .at, .charAt, .charCodeAt, .codePointAt, .concat, .endsWith, .includes, .indexOf,
+    .isWellFormed, .lastIndexOf, .localeCompare, .normalize, .padEnd, .padStart,
+    .«repeat», .replace, .replaceAll, .slice, .split, .startsWith, .substring,
+    .toLocaleLowerCase, .toLocaleUpperCase, .toLowerCase, .«toString», .«toUpperCase»,
+    .toWellFormed, .trim, .trimEnd, .trimStart, .valueOf ]
+
 /-- A built-in function's body: an identity Lean dispatches on, not a
 `Closure`. A built-in is not self-hosted for two reasons — a native
 constructor must be able to construct when called without `new`, which
@@ -247,9 +345,18 @@ inductive NativeFn where
   | errorCtor (kind : ErrorKind)
   /-- `Error.prototype.toString`. -/
   | errorToString
-  /-- `String`, called as a function: ToString of its argument. It is not
-  a constructor here — the wrapper object is #391's. -/
+  /-- `String`: ToString of its argument when it is called, and the
+  wrapper object when it is `new`ed. `constructNative` is what `new`
+  does. -/
   | stringCtor
+  /-- One of `String`'s statics or one of `String.prototype`'s methods.
+  The surface is **one** `NativeFn` constructor over a sub-enum rather
+  than thirty-four constructors of its own, because `NativeFn` is already
+  at the ceiling `Tarski/Simp.lean` documents: a `match` over sixty
+  constructors with a body that size has no equation lemmas, which is why
+  `callReflectNative` was split out of `callNative`, and thirty-four more
+  arms would put the dispatch past it again. -/
+  | string (f : StringFn)
   /-- `Object`, the constructor. -/
   | objectCtor
   /-- `Object.is`. -/
@@ -482,13 +589,19 @@ reads to answer `[object Arguments]`, so the kind *is* that slot.
 with a `Float` in it still derives `DecidableEq`, because propositional
 equality on `Float` is SameValue (`Js/Val.lean` says so), which is the
 right test for a `[[NumberData]]`. `symbol` is the Symbol wrapper object
-`Object(sym)` builds, carrying `[[SymbolData]]`. A later slice adds a
-boxed string (#391). -/
+`Object(sym)` builds, carrying `[[SymbolData]]`. `string` is
+`[[StringData]]`, and it is the **opposite** arrangement from the array's:
+a String exotic object's index properties are synthesized from the slot,
+because they are unbounded data an object should not copy, while its
+`length` is a real own `constant` property, because StringCreate
+(10.4.3.4) defines it once with DefinePropertyOrThrow and it can never
+change — which is also what puts it first among the non-index keys. -/
 inductive ObjKind where
   | ordinary
   | array (length : Nat) (lengthWritable : Bool)
   | number (value : Float)
   | boolean (value : Bool)
+  | string (value : JsString)
   | arguments
   | error
   | symbol (value : Symbol)
@@ -843,6 +956,28 @@ def Obj.isArray (o : Obj) : Bool :=
   | .array _ _ => true
   | _ => false
 
+/-- Whether an object is a String exotic object. -/
+def Obj.isString (o : Obj) : Bool :=
+  match o.kind with
+  | .string _ => true
+  | _ => false
+
+/-- `[[StringData]]`, or `none` for anything that is not a String
+exotic object. -/
+def Obj.stringData? (o : Obj) : Option JsString :=
+  match o.kind with
+  | .string s => some s
+  | _ => none
+
+/-- A String exotic object's own index property (10.4.3.5): the one-unit
+string at the index, enumerable, neither writable nor configurable. The
+`none` arm is unreachable — every caller has already checked the index
+against the length — and answers `undefined` rather than inventing a
+`get!`. -/
+def Obj.stringIndexProperty (s : JsString) (i : Nat) : Property :=
+  { slot := .data (.prim (.str ((s.unitAt? i).getD (JsString.ofString "")))) false,
+    enumerable := true, configurable := false }
+
 /-- An array's live `length` and its `[[Writable]]`, or `none` for
 anything that is not an Array exotic object. -/
 def Obj.arrayLength? (o : Obj) : Option (Nat × Bool) :=
@@ -850,17 +985,26 @@ def Obj.arrayLength? (o : Obj) : Option (Nat × Bool) :=
   | .array n w => some (n, w)
   | _ => none
 
-/-- `[[GetOwnProperty]]` (10.1.5.1, and 10.4.2.1 for the one exotic
-case): the own property under a key, **with an array's `length`
-synthesized** — a non-enumerable, non-configurable data property whose
-value is the live length and whose `[[Writable]]` is the kind's, because
-it is an own property that does not live in the property list. -/
+/-- `[[GetOwnProperty]]` (10.1.5.1, plus 10.4.2.1 and 10.4.3.5 for the
+two exotic cases): the own property under a key, **with an array's
+`length` and a String object's indices synthesized** — each an own
+property that does not live in the property list. A String object's
+`length` is not synthesized: it is a real `constant` property, because
+StringCreate defines it once and it can never change.
+
+This is the one `[[GetOwnProperty]]`: `getFrom`, `findProperty`,
+`deleteProp`, and `applyDescriptor` all read it, so the array's `length`
+and the string's indices are answered in one place. -/
 def Obj.ownProperty (o : Obj) (key : Key) : Option Property :=
   match o.kind with
   | .array n w =>
     if key == Key.str "length" then
       some { slot := .data (Value.ofNat n) w, enumerable := false, configurable := false }
     else o.getOwnProperty key
+  | .string s =>
+    match key.arrayIndex? with
+    | some i => if i < s.length then some (Obj.stringIndexProperty s i) else o.getOwnProperty key
+    | none => o.getOwnProperty key
   | _ => o.getOwnProperty key
 
 /-- `[[GetOwnProperty]]` reduced to a yes or no, which is all
@@ -938,11 +1082,16 @@ then **the symbol keys in insertion order** — data and accessor
 properties interleaved, because they are one list. An array's `length`
 joins after the index keys and before the rest: it is an own property,
 so `Object.getOwnPropertyNames([1])` is `["0", "length"]`, even though it
-does not live in the property list. -/
+does not live in the property list. A String object's index keys come
+first for the same reason and can never collide with the property list's,
+an index below the length being unwritable. -/
 def Obj.ownKeys (o : Obj) : List Key :=
   let keys := o.properties.map (·.1)
+  let synthesized : List Key := match o.kind with
+    | .string s => (List.range s.length).map (fun i => Key.str (Nat.repr i))
+    | _ => []
   let indexed := keys.filterMap (fun k => k.arrayIndex?.map (fun i => (i, k)))
-  (indexed.mergeSort (fun a b => decide (a.1 ≤ b.1))).map (·.2)
+  synthesized ++ (indexed.mergeSort (fun a b => decide (a.1 ≤ b.1))).map (·.2)
     ++ (if o.isArray then [Key.str "length"] else [])
     ++ keys.filter (fun k => k.arrayIndex?.isNone && k.str?.isSome)
     ++ keys.filter (fun k => k.sym?.isSome)
@@ -958,13 +1107,14 @@ def Obj.symbolKeys (o : Obj) : List Symbol :=
   o.ownKeys.filterMap Key.sym?
 
 /-- The own keys `Object.keys` and `for`-`in` see: the string keys
-filtered by `[[Enumerable]]`. EnumerableOwnProperties and
+filtered by `[[Enumerable]]` — through `ownProperty`, so a String
+object's synthesized indices are seen. EnumerableOwnProperties and
 EnumerateObjectProperties are string-only by specification, so a
 symbol-keyed property is never here however enumerable it is. An array's
 `length` is non-enumerable, so it never appears either. -/
 def Obj.enumerableKeys (o : Obj) : List String :=
   o.stringKeys.filter (fun k =>
-    match o.getOwnProperty (.str k) with
+    match o.ownProperty (.str k) with
     | some p => p.enumerable
     | none => false)
 
@@ -979,6 +1129,16 @@ length — writable, as ArrayCreate leaves it — in the kind, and the given
 prototype. -/
 def Obj.array (proto : Option Ref) (elements : List Value) : Obj :=
   { kind := .array elements.length true, proto, properties := indexProps 0 elements }
+
+/-- StringCreate (10.4.3.4): the String exotic object around a string.
+Its `length` is a real own property — non-writable, non-enumerable,
+non-configurable — defined once, which is what puts it after the indices
+and before everything else in `ownKeys`; the indices themselves are
+synthesized from the slot. `@[reducible]`, so `String.prototype` keeps
+`Heap.initial` a literal to `simp`. -/
+@[reducible] def Obj.stringWrapper (proto : Option Ref) (s : JsString) : Obj :=
+  { proto, kind := .string s,
+    properties := [("length", Property.constant (Value.ofNat s.length))] }
 
 /-- A *partial* Property Descriptor (6.2.6): every field may be absent,
 and absence is not the same as `undefined`. `{ get: undefined }` is an
@@ -1047,23 +1207,30 @@ def descriptorKeeps (field : Option Value) (current : Option Value) : Bool :=
   | none => true
   | some v => sameValueValue v (current.getD (.prim .undef))
 
-/-- ValidateAndApplyPropertyDescriptor (10.1.6.3) as a **pure function**
-on an object: `none` is the specification's `false` — the change is
-refused — and `some o` is the object with the property replaced or
-appended.
+/-- 10.1.6.3 steps 5–7 as a **predicate** on the property already there:
+whether a redefinition is allowed at all. A non-configurable property
+will not become configurable, will not flip its enumerability, will not
+change kind, will not take a different value while non-writable, will not
+become writable, and will not exchange either accessor half.
 
-The refusals are the table's: a non-configurable property will not
-become configurable, will not flip its enumerability, will not change
-kind, will not take a different value while non-writable, will not
-become writable, and will not exchange either accessor half; and a key
-that is not there cannot be added to a non-extensible object. An absent
-field defaults to `false` or `undefined` on a new key and leaves the
-existing attribute standing on an old one.
+It is lifted out of `applyDescriptor` because a String exotic object's
+index property is not in the property list and so has to be validated
+against without being replaced: 10.4.3.5's `[[DefineOwnProperty]]` is
+exactly "accept an identical redefinition, refuse anything else". -/
+def Property.accepts (cur : Property) (d : Descriptor) : Bool :=
+  !(!cur.configurable &&
+    (d.configurable == some true ||
+      (d.enumerable.isSome && d.enumerable != some cur.enumerable) ||
+      (!d.isGeneric && d.isAccessor != cur.isAccessor) ||
+      (match cur.slot with
+       | .accessor a =>
+         !(descriptorKeeps d.getter a.getter && descriptorKeeps d.setter a.setter)
+       | .data v w =>
+         !w && (d.writable == some true || !descriptorKeeps d.value (some v)))))
 
-The throw belongs to the one caller that has a `TypeError` to raise, so
-the whole table is `#guard`-testable without a heap
-(`Test/Tarski/DescriptorTest.lean`). -/
-def Obj.applyDescriptor (o : Obj) (key : Key) (d : Descriptor) : Option Obj :=
+/-- `applyDescriptor` for everything that is not a String object's own
+index: OrdinaryDefineOwnProperty over the property list. -/
+def Obj.applyOrdinaryDescriptor (o : Obj) (key : Key) (d : Descriptor) : Option Obj :=
   match o.getOwnProperty key with
   | none =>
     if !o.extensible then none
@@ -1082,17 +1249,7 @@ def Obj.applyDescriptor (o : Obj) (key : Key) (d : Descriptor) : Option Obj :=
   | some cur =>
     if d.isEmpty then some o
     else
-      let refused :=
-        !cur.configurable &&
-          (d.configurable == some true ||
-            (d.enumerable.isSome && d.enumerable != some cur.enumerable) ||
-            (!d.isGeneric && d.isAccessor != cur.isAccessor) ||
-            (match cur.slot with
-             | .accessor a =>
-               !(descriptorKeeps d.getter a.getter && descriptorKeeps d.setter a.setter)
-             | .data v w =>
-               !w && (d.writable == some true || !descriptorKeeps d.value (some v))))
-      if refused then none
+      if !cur.accepts d then none
       else
         let enumerable := d.enumerable.getD cur.enumerable
         let configurable := d.configurable.getD cur.configurable
@@ -1110,5 +1267,33 @@ def Obj.applyDescriptor (o : Obj) (key : Key) (d : Descriptor) : Option Obj :=
               { getter := match d.getter with | some g => accessorHalf (some g) | none => a.getter,
                 setter := match d.setter with | some s => accessorHalf (some s) | none => a.setter }
         some (o.define key { slot, enumerable, configurable })
+
+/-- ValidateAndApplyPropertyDescriptor (10.1.6.3) as a **pure function**
+on an object: `none` is the specification's `false` — the change is
+refused — and `some o` is the object with the property replaced or
+appended.
+
+The refusals are the table's: a non-configurable property will not
+become configurable, will not flip its enumerability, will not change
+kind, will not take a different value while non-writable, will not
+become writable, and will not exchange either accessor half; and a key
+that is not there cannot be added to a non-extensible object. An absent
+field defaults to `false` or `undefined` on a new key and leaves the
+existing attribute standing on an old one.
+
+The throw belongs to the one caller that has a `TypeError` to raise, so
+the whole table is `#guard`-testable without a heap
+(`Test/Tarski/DescriptorTest.lean`). -/
+def Obj.applyDescriptor (o : Obj) (key : Key) (d : Descriptor) : Option Obj :=
+  match o.kind, key.arrayIndex? with
+  -- 10.4.3.5: a String exotic object's index property is synthesized
+  -- from `[[StringData]]`, so there is nothing to replace. An identical
+  -- redefinition is the specification's no-op and anything else is
+  -- refused.
+  | .string s, some i =>
+    if i < s.length then
+      (if (Obj.stringIndexProperty s i).accepts d then some o else none)
+    else o.applyOrdinaryDescriptor key d
+  | _, _ => o.applyOrdinaryDescriptor key d
 
 end Tarski

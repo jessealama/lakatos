@@ -58,7 +58,10 @@ the literal against the constants so the two cannot drift apart.
 | 107       | `Object.getOwnPropertySymbols`                            |
 | 108       | `Error.isError`                                          |
 
-A hundred and nine objects, then, and thirty-seven cells. The
+| 109       | `String.prototype`, itself a String object of `""`        |
+| 110–112   | `String.fromCharCode`, `String.fromCodePoint`, `String.raw` |
+| 113–143   | `String.prototype.at`, `charAt`, `charCodeAt`, `codePointAt`, `concat`, `endsWith`, `includes`, `indexOf`, `isWellFormed`, `lastIndexOf`, `localeCompare`, `normalize`, `padEnd`, `padStart`, `repeat`, `replace`, `replaceAll`, `slice`, `split`, `startsWith`, `substring`, `toLocaleLowerCase`, `toLocaleUpperCase`, `toLowerCase`, `toString`, `toUpperCase`, `toWellFormed`, `trim`, `trimEnd`, `trimStart`, `valueOf` |
+A hundred and forty-four objects, then, and thirty-seven cells. The
 twenty-four global bindings are cells 0–23: the seven `Error`
 constructors, then `Object`, `Array`, `String`, `print`, `$262`,
 `Number`, `Boolean`, `Math`, `NaN`, `Infinity`, `parseFloat`,
@@ -104,8 +107,12 @@ rather than a second copy of them. `Number.prototype` and
 as the specification has them: it costs one field each and test262
 observes it (`Number.prototype.valueOf()` is `0`). `Math` has no
 `[[Call]]` and no `[[Construct]]`, so `Math()` is `not a function`, and
-its `@@toStringTag` is `"Math"`. The `String` wrapper object is #391's,
-so `String` still has no `prototype` property here.
+its `@@toStringTag` is `"Math"`. `String.prototype` is itself a String
+exotic object of the empty string, as 22.1.3 has it, so
+`Object.prototype.toString.call(String.prototype)` is `[object String]`;
+every one of its methods is generic — RequireObjectCoercible then
+ToString — but `toString` and `valueOf`, which want a String primitive or
+a String object.
 
 `print` and `$262` are the two host-defined bindings test262 requires of
 an implementation. `print` has no IO to do: it appends ToString of its
@@ -213,8 +220,8 @@ def arrayJoinRef : Ref := 23
 /-- `Array.isArray`. -/
 def arrayIsArrayRef : Ref := 24
 
-/-- `String`. It has no `prototype` property yet: the wrapper object and
-`String.prototype` are #391's. -/
+/-- `String`, the constructor: a converter when it is called and the
+wrapper object when it is `new`ed. -/
 def stringCtorRef : Ref := 25
 
 /-- `%PrintLog%`, the array `print` appends to. It is an intrinsic with
@@ -582,6 +589,52 @@ field of `Heap` because the heap's shape is a value-domain decision this
 slice does not reopen. -/
 def templateMapRef : Ref := 91
 
+/-- `String.prototype`, itself a String object whose `[[StringData]]` is
+the empty string, as 22.1.3 has it — so
+`Object.prototype.toString.call(String.prototype)` is `[object String]`
+and `String.prototype.length` is `0`. -/
+def stringProtoRef : Ref := 109
+
+/-- Each `String` member's object: the three statics at 93–95 and
+`String.prototype`'s thirty-one methods at 96–126, in `StringFn.all`'s
+order. Written as a match rather than as an index into `StringFn.all`, so
+that every reference is a literal to `simp`. -/
+def StringFn.ref : StringFn → Ref
+  | .fromCharCode => 110
+  | .fromCodePoint => 111
+  | .raw => 112
+  | .at => 113
+  | .charAt => 114
+  | .charCodeAt => 115
+  | .codePointAt => 116
+  | .concat => 117
+  | .endsWith => 118
+  | .includes => 119
+  | .indexOf => 120
+  | .isWellFormed => 121
+  | .lastIndexOf => 122
+  | .localeCompare => 123
+  | .normalize => 124
+  | .padEnd => 125
+  | .padStart => 126
+  | .«repeat» => 127
+  | .replace => 128
+  | .replaceAll => 129
+  | .slice => 130
+  | .split => 131
+  | .startsWith => 132
+  | .substring => 133
+  | .toLocaleLowerCase => 134
+  | .toLocaleUpperCase => 135
+  | .toLowerCase => 136
+  | .«toString» => 137
+  | .«toUpperCase» => 138
+  | .toWellFormed => 139
+  | .trim => 140
+  | .trimEnd => 141
+  | .trimStart => 142
+  | .valueOf => 143
+
 /-- The cell the kind's global binding lives in: 0–6, in the same
 order. -/
 def ErrorKind.cellRef : ErrorKind → CellRef
@@ -863,9 +916,12 @@ def Heap.initial : Heap where
        Obj.builtin .arrayJoin "join" 1,
        -- 24: Array.isArray
        Obj.builtin .arrayIsArray "isArray" 1,
-       -- 25: String. No `prototype` property: the wrapper is #391's, so
-       -- `new String("x")` refuses until then.
-       Obj.builtin .stringCtor "String" 1,
+       -- 25: String, with its `prototype` and its three statics.
+       Obj.builtinWith .stringCtor "String" 1
+         [ ("prototype", Property.constant (.obj 109)),
+           ("fromCharCode", Property.method (.obj 110)),
+           ("fromCodePoint", Property.method (.obj 111)),
+           ("raw", Property.method (.obj 112)) ],
        -- 26: %PrintLog%, the array `print` appends to. It is no script's
        -- to reach: nothing binds it, so a run's output is exactly what
        -- `print` put there.
@@ -1178,6 +1234,119 @@ def Heap.initial : Heap where
        -- 107: Object.getOwnPropertySymbols
        Obj.builtin .objectGetOwnPropertySymbols "getOwnPropertySymbols" 1,
        -- 108: Error.isError
-       Obj.builtin .errorIsError "isError" 1 ]
+       Obj.builtin .errorIsError "isError" 1,
+       -- 109: String.prototype. It is itself a String exotic object whose
+       -- `[[StringData]]` is the empty string, as 22.1.3 has it and as
+       -- `Number.prototype` and `Boolean.prototype` already are here, so
+       -- `Object.prototype.toString.call(String.prototype)` answers
+       -- `[object String]` and `String.prototype.length` is `0`. Every
+       -- method on it but `toString` and `valueOf` is generic. The keys
+       -- are spelled `Key.str` because the list is thirty-three long: past
+       -- thirty-two elements Lean elaborates a list literal in chunks and
+       -- the `String → Key` coercion no longer reaches the tail.
+       { proto := some 15,
+         kind := .string (Js.JsString.ofString ""),
+         properties :=
+           [ (Key.str "length", Property.constant (Value.ofNat 0)),
+             (Key.str "constructor", Property.method (.obj 25)),
+             (Key.str "at", Property.method (.obj 113)),
+             (Key.str "charAt", Property.method (.obj 114)),
+             (Key.str "charCodeAt", Property.method (.obj 115)),
+             (Key.str "codePointAt", Property.method (.obj 116)),
+             (Key.str "concat", Property.method (.obj 117)),
+             (Key.str "endsWith", Property.method (.obj 118)),
+             (Key.str "includes", Property.method (.obj 119)),
+             (Key.str "indexOf", Property.method (.obj 120)),
+             (Key.str "isWellFormed", Property.method (.obj 121)),
+             (Key.str "lastIndexOf", Property.method (.obj 122)),
+             (Key.str "localeCompare", Property.method (.obj 123)),
+             (Key.str "normalize", Property.method (.obj 124)),
+             (Key.str "padEnd", Property.method (.obj 125)),
+             (Key.str "padStart", Property.method (.obj 126)),
+             (Key.str "repeat", Property.method (.obj 127)),
+             (Key.str "replace", Property.method (.obj 128)),
+             (Key.str "replaceAll", Property.method (.obj 129)),
+             (Key.str "slice", Property.method (.obj 130)),
+             (Key.str "split", Property.method (.obj 131)),
+             (Key.str "startsWith", Property.method (.obj 132)),
+             (Key.str "substring", Property.method (.obj 133)),
+             (Key.str "toLocaleLowerCase", Property.method (.obj 134)),
+             (Key.str "toLocaleUpperCase", Property.method (.obj 135)),
+             (Key.str "toLowerCase", Property.method (.obj 136)),
+             (Key.str "toString", Property.method (.obj 137)),
+             (Key.str "toUpperCase", Property.method (.obj 138)),
+             (Key.str "toWellFormed", Property.method (.obj 139)),
+             (Key.str "trim", Property.method (.obj 140)),
+             (Key.str "trimEnd", Property.method (.obj 141)),
+             (Key.str "trimStart", Property.method (.obj 142)),
+             (Key.str "valueOf", Property.method (.obj 143)) ] },
+       -- 110: String.fromCharCode
+       Obj.builtin (.string .fromCharCode) "fromCharCode" 1,
+       -- 111: String.fromCodePoint
+       Obj.builtin (.string .fromCodePoint) "fromCodePoint" 1,
+       -- 112: String.raw
+       Obj.builtin (.string .raw) "raw" 1,
+       -- 113: String.prototype.at
+       Obj.builtin (.string .at) "at" 1,
+       -- 114: String.prototype.charAt
+       Obj.builtin (.string .charAt) "charAt" 1,
+       -- 115: String.prototype.charCodeAt
+       Obj.builtin (.string .charCodeAt) "charCodeAt" 1,
+       -- 116: String.prototype.codePointAt
+       Obj.builtin (.string .codePointAt) "codePointAt" 1,
+       -- 117: String.prototype.concat
+       Obj.builtin (.string .concat) "concat" 1,
+       -- 118: String.prototype.endsWith
+       Obj.builtin (.string .endsWith) "endsWith" 1,
+       -- 119: String.prototype.includes
+       Obj.builtin (.string .includes) "includes" 1,
+       -- 120: String.prototype.indexOf
+       Obj.builtin (.string .indexOf) "indexOf" 1,
+       -- 121: String.prototype.isWellFormed
+       Obj.builtin (.string .isWellFormed) "isWellFormed" 0,
+       -- 122: String.prototype.lastIndexOf
+       Obj.builtin (.string .lastIndexOf) "lastIndexOf" 1,
+       -- 123: String.prototype.localeCompare
+       Obj.builtin (.string .localeCompare) "localeCompare" 1,
+       -- 124: String.prototype.normalize
+       Obj.builtin (.string .normalize) "normalize" 0,
+       -- 125: String.prototype.padEnd
+       Obj.builtin (.string .padEnd) "padEnd" 1,
+       -- 126: String.prototype.padStart
+       Obj.builtin (.string .padStart) "padStart" 1,
+       -- 127: String.prototype.repeat
+       Obj.builtin (.string .«repeat») "repeat" 1,
+       -- 128: String.prototype.replace
+       Obj.builtin (.string .replace) "replace" 2,
+       -- 129: String.prototype.replaceAll
+       Obj.builtin (.string .replaceAll) "replaceAll" 2,
+       -- 130: String.prototype.slice
+       Obj.builtin (.string .slice) "slice" 2,
+       -- 131: String.prototype.split
+       Obj.builtin (.string .split) "split" 2,
+       -- 132: String.prototype.startsWith
+       Obj.builtin (.string .startsWith) "startsWith" 1,
+       -- 133: String.prototype.substring
+       Obj.builtin (.string .substring) "substring" 2,
+       -- 134: String.prototype.toLocaleLowerCase
+       Obj.builtin (.string .toLocaleLowerCase) "toLocaleLowerCase" 0,
+       -- 135: String.prototype.toLocaleUpperCase
+       Obj.builtin (.string .toLocaleUpperCase) "toLocaleUpperCase" 0,
+       -- 136: String.prototype.toLowerCase
+       Obj.builtin (.string .toLowerCase) "toLowerCase" 0,
+       -- 137: String.prototype.toString
+       Obj.builtin (.string .«toString») "toString" 0,
+       -- 138: String.prototype.toUpperCase
+       Obj.builtin (.string .«toUpperCase») "toUpperCase" 0,
+       -- 139: String.prototype.toWellFormed
+       Obj.builtin (.string .toWellFormed) "toWellFormed" 0,
+       -- 140: String.prototype.trim
+       Obj.builtin (.string .trim) "trim" 0,
+       -- 141: String.prototype.trimEnd
+       Obj.builtin (.string .trimEnd) "trimEnd" 0,
+       -- 142: String.prototype.trimStart
+       Obj.builtin (.string .trimStart) "trimStart" 0,
+       -- 143: String.prototype.valueOf
+       Obj.builtin (.string .valueOf) "valueOf" 0 ]
 
 end Tarski

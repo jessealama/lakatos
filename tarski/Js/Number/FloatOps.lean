@@ -351,4 +351,19 @@ def tsToInt32 (x : Float) : Int :=
     let bits := i.emod 4294967296
     if bits ≥ 2147483648 then bits - 4294967296 else bits
 
+/-- ToUint32 (7.1.6): the same truncation as `tsToInt32`, read unsigned.
+`String.prototype.split`'s `limit` is what takes its argument through
+it. -/
+def tsToUint32 (x : Float) : Nat :=
+  match integerOrInfinity? x with
+  | none => 0
+  | some i => (i.emod 4294967296).toNat
+
+/-- ToUint16 (7.1.7), which is what `String.fromCharCode` converts each
+of its arguments with. -/
+def tsToUint16 (x : Float) : UInt16 :=
+  match integerOrInfinity? x with
+  | none => 0
+  | some i => UInt16.ofNat (i.emod 65536).toNat
+
 end Js.Number.FloatOps

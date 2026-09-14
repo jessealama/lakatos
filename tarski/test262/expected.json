@@ -29,8 +29,8 @@
       }
     },
     "test/built-ins/Boolean": {
-      "pass": 19,
-      "fail": 4,
+      "pass": 20,
+      "fail": 3,
       "unsupported": 2,
       "timeout": 0,
       "harnessError": 0,
@@ -295,8 +295,8 @@
       }
     },
     "test/built-ins/Function/prototype/apply": {
-      "pass": 13,
-      "fail": 2,
+      "pass": 14,
+      "fail": 1,
       "unsupported": 28,
       "timeout": 0,
       "harnessError": 0,
@@ -337,8 +337,8 @@
       }
     },
     "test/built-ins/Function/prototype/call": {
-      "pass": 16,
-      "fail": 2,
+      "pass": 17,
+      "fail": 1,
       "unsupported": 26,
       "timeout": 0,
       "harnessError": 0,
@@ -463,8 +463,8 @@
       }
     },
     "test/built-ins/JSON/stringify": {
-      "pass": 41,
-      "fail": 16,
+      "pass": 46,
+      "fail": 11,
       "unsupported": 9,
       "timeout": 0,
       "harnessError": 0,
@@ -1303,8 +1303,8 @@
       }
     },
     "test/built-ins/Number": {
-      "pass": 113,
-      "fail": 5,
+      "pass": 114,
+      "fail": 4,
       "unsupported": 2,
       "timeout": 0,
       "harnessError": 0,
@@ -1527,8 +1527,8 @@
       }
     },
     "test/built-ins/Number/prototype/toString": {
-      "pass": 88,
-      "fail": 2,
+      "pass": 89,
+      "fail": 1,
       "unsupported": 0,
       "timeout": 0,
       "harnessError": 0,
@@ -1555,8 +1555,8 @@
       }
     },
     "test/built-ins/Object": {
-      "pass": 28,
-      "fail": 12,
+      "pass": 34,
+      "fail": 6,
       "unsupported": 21,
       "timeout": 0,
       "harnessError": 0,
@@ -1569,8 +1569,8 @@
       }
     },
     "test/built-ins/Object/assign": {
-      "pass": 29,
-      "fail": 9,
+      "pass": 34,
+      "fail": 4,
       "unsupported": 0,
       "timeout": 0,
       "harnessError": 0,
@@ -1583,8 +1583,8 @@
       }
     },
     "test/built-ins/Object/create": {
-      "pass": 272,
-      "fail": 47,
+      "pass": 284,
+      "fail": 35,
       "unsupported": 1,
       "timeout": 0,
       "harnessError": 0,
@@ -1597,8 +1597,8 @@
       }
     },
     "test/built-ins/Object/defineProperties": {
-      "pass": 580,
-      "fail": 48,
+      "pass": 593,
+      "fail": 35,
       "unsupported": 4,
       "timeout": 0,
       "harnessError": 0,
@@ -1611,8 +1611,8 @@
       }
     },
     "test/built-ins/Object/defineProperty": {
-      "pass": 1029,
-      "fail": 87,
+      "pass": 1050,
+      "fail": 66,
       "unsupported": 7,
       "timeout": 0,
       "harnessError": 0,
@@ -1625,8 +1625,8 @@
       }
     },
     "test/built-ins/Object/entries": {
-      "pass": 15,
-      "fail": 5,
+      "pass": 16,
+      "fail": 4,
       "unsupported": 1,
       "timeout": 0,
       "harnessError": 0,
@@ -1639,8 +1639,8 @@
       }
     },
     "test/built-ins/Object/freeze": {
-      "pass": 42,
-      "fail": 9,
+      "pass": 45,
+      "fail": 6,
       "unsupported": 1,
       "timeout": 0,
       "harnessError": 0,
@@ -1667,8 +1667,8 @@
       }
     },
     "test/built-ins/Object/getOwnPropertyDescriptor": {
-      "pass": 185,
-      "fail": 123,
+      "pass": 209,
+      "fail": 99,
       "unsupported": 2,
       "timeout": 0,
       "harnessError": 0,
@@ -1681,8 +1681,8 @@
       }
     },
     "test/built-ins/Object/getOwnPropertyDescriptors": {
-      "pass": 12,
-      "fail": 5,
+      "pass": 13,
+      "fail": 4,
       "unsupported": 1,
       "timeout": 0,
       "harnessError": 0,
@@ -1695,8 +1695,8 @@
       }
     },
     "test/built-ins/Object/getOwnPropertyNames": {
-      "pass": 32,
-      "fail": 13,
+      "pass": 39,
+      "fail": 6,
       "unsupported": 0,
       "timeout": 0,
       "harnessError": 0,
@@ -1709,8 +1709,8 @@
       }
     },
     "test/built-ins/Object/getOwnPropertySymbols": {
-      "pass": 7,
-      "fail": 5,
+      "pass": 8,
+      "fail": 4,
       "unsupported": 0,
       "timeout": 0,
       "harnessError": 0,
@@ -1723,8 +1723,8 @@
       }
     },
     "test/built-ins/Object/getPrototypeOf": {
-      "pass": 32,
-      "fail": 7,
+      "pass": 34,
+      "fail": 5,
       "unsupported": 0,
       "timeout": 0,
       "harnessError": 0,
@@ -1779,8 +1779,8 @@
       }
     },
     "test/built-ins/Object/is": {
-      "pass": 19,
-      "fail": 2,
+      "pass": 21,
+      "fail": 0,
       "unsupported": 0,
       "timeout": 0,
       "harnessError": 0,
@@ -1793,8 +1793,8 @@
       }
     },
     "test/built-ins/Object/isExtensible": {
-      "pass": 31,
-      "fail": 7,
+      "pass": 32,
+      "fail": 6,
       "unsupported": 0,
       "timeout": 0,
       "harnessError": 0,
@@ -1807,8 +1807,8 @@
       }
     },
     "test/built-ins/Object/isFrozen": {
-      "pass": 51,
-      "fail": 8,
+      "pass": 53,
+      "fail": 6,
       "unsupported": 0,
       "timeout": 0,
       "harnessError": 0,
@@ -1821,8 +1821,8 @@
       }
     },
     "test/built-ins/Object/isSealed": {
-      "pass": 26,
-      "fail": 7,
+      "pass": 27,
+      "fail": 6,
       "unsupported": 0,
       "timeout": 0,
       "harnessError": 0,
@@ -1835,8 +1835,8 @@
       }
     },
     "test/built-ins/Object/keys": {
-      "pass": 47,
-      "fail": 8,
+      "pass": 50,
+      "fail": 5,
       "unsupported": 4,
       "timeout": 0,
       "harnessError": 0,
@@ -1849,8 +1849,8 @@
       }
     },
     "test/built-ins/Object/preventExtensions": {
-      "pass": 30,
-      "fail": 9,
+      "pass": 33,
+      "fail": 6,
       "unsupported": 0,
       "timeout": 0,
       "harnessError": 0,
@@ -1989,8 +1989,8 @@
       }
     },
     "test/built-ins/Object/prototype/propertyIsEnumerable": {
-      "pass": 15,
-      "fail": 1,
+      "pass": 16,
+      "fail": 0,
       "unsupported": 0,
       "timeout": 0,
       "harnessError": 0,
@@ -2017,8 +2017,8 @@
       }
     },
     "test/built-ins/Object/prototype/toString": {
-      "pass": 17,
-      "fail": 16,
+      "pass": 20,
+      "fail": 13,
       "unsupported": 8,
       "timeout": 0,
       "harnessError": 0,
@@ -2031,8 +2031,8 @@
       }
     },
     "test/built-ins/Object/prototype/valueOf": {
-      "pass": 18,
-      "fail": 1,
+      "pass": 19,
+      "fail": 0,
       "unsupported": 1,
       "timeout": 0,
       "harnessError": 0,
@@ -2045,8 +2045,8 @@
       }
     },
     "test/built-ins/Object/seal": {
-      "pass": 52,
-      "fail": 36,
+      "pass": 55,
+      "fail": 33,
       "unsupported": 5,
       "timeout": 0,
       "harnessError": 0,
@@ -2073,9 +2073,583 @@
       }
     },
     "test/built-ins/Object/values": {
-      "pass": 16,
-      "fail": 3,
+      "pass": 17,
+      "fail": 2,
       "unsupported": 1,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String": {
+      "pass": 67,
+      "fail": 7,
+      "unsupported": 17,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 1,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/fromCharCode": {
+      "pass": 15,
+      "fail": 0,
+      "unsupported": 2,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/fromCodePoint": {
+      "pass": 11,
+      "fail": 0,
+      "unsupported": 0,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/prototype": {
+      "pass": 5,
+      "fail": 0,
+      "unsupported": 2,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/prototype/Symbol.iterator": {
+      "pass": 1,
+      "fail": 5,
+      "unsupported": 0,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/prototype/at": {
+      "pass": 11,
+      "fail": 0,
+      "unsupported": 0,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/prototype/charAt": {
+      "pass": 29,
+      "fail": 1,
+      "unsupported": 0,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/prototype/charCodeAt": {
+      "pass": 24,
+      "fail": 1,
+      "unsupported": 0,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/prototype/codePointAt": {
+      "pass": 15,
+      "fail": 1,
+      "unsupported": 0,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/prototype/concat": {
+      "pass": 21,
+      "fail": 0,
+      "unsupported": 1,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/prototype/constructor": {
+      "pass": 1,
+      "fail": 0,
+      "unsupported": 1,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/prototype/endsWith": {
+      "pass": 25,
+      "fail": 0,
+      "unsupported": 2,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/prototype/includes": {
+      "pass": 25,
+      "fail": 0,
+      "unsupported": 2,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/prototype/indexOf": {
+      "pass": 33,
+      "fail": 6,
+      "unsupported": 8,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/prototype/isWellFormed": {
+      "pass": 7,
+      "fail": 0,
+      "unsupported": 1,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/prototype/lastIndexOf": {
+      "pass": 24,
+      "fail": 1,
+      "unsupported": 0,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/prototype/localeCompare": {
+      "pass": 12,
+      "fail": 1,
+      "unsupported": 0,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/prototype/match": {
+      "pass": 1,
+      "fail": 28,
+      "unsupported": 22,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/prototype/matchAll": {
+      "pass": 0,
+      "fail": 10,
+      "unsupported": 15,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/prototype/normalize": {
+      "pass": 11,
+      "fail": 3,
+      "unsupported": 0,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/prototype/padEnd": {
+      "pass": 13,
+      "fail": 0,
+      "unsupported": 0,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/prototype/padStart": {
+      "pass": 13,
+      "fail": 0,
+      "unsupported": 0,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/prototype/repeat": {
+      "pass": 16,
+      "fail": 0,
+      "unsupported": 0,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/prototype/replace": {
+      "pass": 22,
+      "fail": 4,
+      "unsupported": 27,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 2,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/prototype/replaceAll": {
+      "pass": 27,
+      "fail": 5,
+      "unsupported": 13,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/prototype/search": {
+      "pass": 1,
+      "fail": 32,
+      "unsupported": 10,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/prototype/slice": {
+      "pass": 36,
+      "fail": 0,
+      "unsupported": 2,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/prototype/split": {
+      "pass": 82,
+      "fail": 18,
+      "unsupported": 20,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/prototype/startsWith": {
+      "pass": 19,
+      "fail": 0,
+      "unsupported": 2,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/prototype/substring": {
+      "pass": 41,
+      "fail": 4,
+      "unsupported": 1,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/prototype/toLocaleLowerCase": {
+      "pass": 22,
+      "fail": 6,
+      "unsupported": 0,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/prototype/toLocaleUpperCase": {
+      "pass": 22,
+      "fail": 4,
+      "unsupported": 0,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/prototype/toLowerCase": {
+      "pass": 24,
+      "fail": 6,
+      "unsupported": 0,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/prototype/toString": {
+      "pass": 6,
+      "fail": 0,
+      "unsupported": 1,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/prototype/toUpperCase": {
+      "pass": 22,
+      "fail": 4,
+      "unsupported": 0,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/prototype/toWellFormed": {
+      "pass": 7,
+      "fail": 0,
+      "unsupported": 1,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/prototype/trim": {
+      "pass": 127,
+      "fail": 1,
+      "unsupported": 1,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/prototype/trimEnd": {
+      "pass": 23,
+      "fail": 0,
+      "unsupported": 0,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/prototype/trimStart": {
+      "pass": 23,
+      "fail": 0,
+      "unsupported": 0,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/prototype/valueOf": {
+      "pass": 6,
+      "fail": 0,
+      "unsupported": 1,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/String/raw": {
+      "pass": 30,
+      "fail": 0,
+      "unsupported": 0,
       "timeout": 0,
       "harnessError": 0,
       "notRun": {
@@ -2451,8 +3025,8 @@
       }
     },
     "test/built-ins/parseFloat": {
-      "pass": 50,
-      "fail": 3,
+      "pass": 51,
+      "fail": 2,
       "unsupported": 1,
       "timeout": 0,
       "harnessError": 0,
@@ -2465,8 +3039,8 @@
       }
     },
     "test/built-ins/parseInt": {
-      "pass": 50,
-      "fail": 4,
+      "pass": 52,
+      "fail": 2,
       "unsupported": 1,
       "timeout": 0,
       "harnessError": 0,
@@ -2479,8 +3053,8 @@
       }
     },
     "test/harness": {
-      "pass": 60,
-      "fail": 19,
+      "pass": 61,
+      "fail": 18,
       "unsupported": 20,
       "timeout": 0,
       "harnessError": 0,
@@ -2633,8 +3207,8 @@
       }
     },
     "test/language/expressions/addition": {
-      "pass": 29,
-      "fail": 12,
+      "pass": 34,
+      "fail": 7,
       "unsupported": 6,
       "timeout": 0,
       "harnessError": 0,
@@ -3361,8 +3935,8 @@
       }
     },
     "test/language/expressions/class/subclass-builtins": {
-      "pass": 12,
-      "fail": 24,
+      "pass": 13,
+      "fail": 23,
       "unsupported": 0,
       "timeout": 0,
       "harnessError": 0,
@@ -3375,8 +3949,8 @@
       }
     },
     "test/language/expressions/conditional": {
-      "pass": 16,
-      "fail": 3,
+      "pass": 18,
+      "fail": 1,
       "unsupported": 1,
       "timeout": 0,
       "harnessError": 0,
@@ -3389,8 +3963,8 @@
       }
     },
     "test/language/expressions/division": {
-      "pass": 22,
-      "fail": 16,
+      "pass": 24,
+      "fail": 14,
       "unsupported": 6,
       "timeout": 0,
       "harnessError": 0,
@@ -3459,8 +4033,8 @@
       }
     },
     "test/language/expressions/greater-than": {
-      "pass": 33,
-      "fail": 7,
+      "pass": 39,
+      "fail": 1,
       "unsupported": 8,
       "timeout": 0,
       "harnessError": 0,
@@ -3473,8 +4047,8 @@
       }
     },
     "test/language/expressions/greater-than-or-equal": {
-      "pass": 29,
-      "fail": 7,
+      "pass": 35,
+      "fail": 1,
       "unsupported": 6,
       "timeout": 0,
       "harnessError": 0,
@@ -3487,8 +4061,8 @@
       }
     },
     "test/language/expressions/less-than": {
-      "pass": 29,
-      "fail": 7,
+      "pass": 35,
+      "fail": 1,
       "unsupported": 8,
       "timeout": 0,
       "harnessError": 0,
@@ -3501,8 +4075,8 @@
       }
     },
     "test/language/expressions/less-than-or-equal": {
-      "pass": 33,
-      "fail": 7,
+      "pass": 39,
+      "fail": 1,
       "unsupported": 6,
       "timeout": 0,
       "harnessError": 0,
@@ -3515,8 +4089,8 @@
       }
     },
     "test/language/expressions/logical-and": {
-      "pass": 13,
-      "fail": 4,
+      "pass": 14,
+      "fail": 3,
       "unsupported": 0,
       "timeout": 0,
       "harnessError": 0,
@@ -3529,8 +4103,8 @@
       }
     },
     "test/language/expressions/logical-not": {
-      "pass": 14,
-      "fail": 3,
+      "pass": 15,
+      "fail": 2,
       "unsupported": 2,
       "timeout": 0,
       "harnessError": 0,
@@ -3543,8 +4117,8 @@
       }
     },
     "test/language/expressions/logical-or": {
-      "pass": 14,
-      "fail": 3,
+      "pass": 16,
+      "fail": 1,
       "unsupported": 0,
       "timeout": 0,
       "harnessError": 0,
@@ -3557,8 +4131,8 @@
       }
     },
     "test/language/expressions/modulus": {
-      "pass": 16,
-      "fail": 17,
+      "pass": 17,
+      "fail": 16,
       "unsupported": 6,
       "timeout": 0,
       "harnessError": 0,
@@ -3571,8 +4145,8 @@
       }
     },
     "test/language/expressions/multiplication": {
-      "pass": 20,
-      "fail": 14,
+      "pass": 22,
+      "fail": 12,
       "unsupported": 5,
       "timeout": 0,
       "harnessError": 0,
@@ -3585,8 +4159,8 @@
       }
     },
     "test/language/expressions/object": {
-      "pass": 227,
-      "fail": 10,
+      "pass": 228,
+      "fail": 9,
       "unsupported": 22,
       "timeout": 0,
       "harnessError": 0,
@@ -3655,8 +4229,8 @@
       }
     },
     "test/language/expressions/strict-does-not-equals": {
-      "pass": 15,
-      "fail": 6,
+      "pass": 19,
+      "fail": 2,
       "unsupported": 8,
       "timeout": 0,
       "harnessError": 0,
@@ -3669,8 +4243,8 @@
       }
     },
     "test/language/expressions/strict-equals": {
-      "pass": 15,
-      "fail": 6,
+      "pass": 19,
+      "fail": 2,
       "unsupported": 8,
       "timeout": 0,
       "harnessError": 0,
@@ -3683,8 +4257,8 @@
       }
     },
     "test/language/expressions/subtraction": {
-      "pass": 19,
-      "fail": 13,
+      "pass": 21,
+      "fail": 11,
       "unsupported": 5,
       "timeout": 0,
       "harnessError": 0,
@@ -3753,8 +4327,8 @@
       }
     },
     "test/language/function-code": {
-      "pass": 89,
-      "fail": 10,
+      "pass": 93,
+      "fail": 6,
       "unsupported": 9,
       "timeout": 0,
       "harnessError": 0,
@@ -4439,8 +5013,8 @@
       }
     },
     "test/language/statements/class/subclass-builtins": {
-      "pass": 12,
-      "fail": 24,
+      "pass": 13,
+      "fail": 23,
       "unsupported": 0,
       "timeout": 0,
       "harnessError": 0,
@@ -4677,8 +5251,8 @@
       }
     },
     "test/language/statements/class/subclass/builtin-objects/String": {
-      "pass": 0,
-      "fail": 3,
+      "pass": 3,
+      "fail": 0,
       "unsupported": 0,
       "timeout": 0,
       "harnessError": 0,
@@ -4873,8 +5447,8 @@
       }
     },
     "test/language/statements/for": {
-      "pass": 43,
-      "fail": 11,
+      "pass": 47,
+      "fail": 7,
       "unsupported": 8,
       "timeout": 0,
       "harnessError": 0,
@@ -4957,8 +5531,8 @@
       }
     },
     "test/language/statements/if": {
-      "pass": 14,
-      "fail": 10,
+      "pass": 15,
+      "fail": 9,
       "unsupported": 3,
       "timeout": 0,
       "harnessError": 0,

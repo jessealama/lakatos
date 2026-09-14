@@ -29,6 +29,14 @@ generator member, a static block, an `accessor` field, a decorator, and
 `super.x = v`. `new.target` and `#x in o` never reach this file — the
 bridge has no node for either, so each arrives as a placeholder.
 
+A string literal is decoded from its `raw` source text, not from its
+`value`: `Lean.Json` replaces a lone surrogate with U+FFFD, so `"\uD800"`
+would otherwise reach the evaluator as a string the source does not name.
+The two are cross-checked wherever the literal is representable both
+ways. A **legacy octal escape** is `unsupported` — a strict-mode early
+error, refused by name rather than guessed at, and the second thing in
+this file that says the word.
+
 `Function(...)` and `new Function(...)` are refused here by name, as the
 `$262` hooks are and for the same reason: the constructor's *semantics*
 are `eval` by another spelling and outside the epic, while the intrinsic
@@ -179,13 +187,120 @@ private def updateOp (s : String) : DecodeM UpdateOp :=
   | "--" => pure .dec
   | _ => throw (.unsupported s!"UpdateExpression {s}")
 
+/-- One hexadecimal digit's value. -/
+private def hexDigit? (c : Char) : Option Nat :=
+  if '0' ≤ c && c ≤ '9' then some (c.toNat - '0'.toNat)
+  else if 'a' ≤ c && c ≤ 'f' then some (c.toNat - 'a'.toNat + 10)
+  else if 'A' ≤ c && c ≤ 'F' then some (c.toNat - 'A'.toNat + 10)
+  else none
+
+/-- Exactly `n` hexadecimal digits, and what follows them. -/
+private def takeHex : Nat → Nat → List Char → Option (Nat × List Char)
+  | 0, acc, cs => some (acc, cs)
+  | _ + 1, _, [] => none
+  | n + 1, acc, c :: rest =>
+    match hexDigit? c with
+    | some d => takeHex n (acc * 16 + d) rest
+    | none => none
+
+/-- The digits of a `\u{…}` escape, up to the closing brace. At least one
+digit is required, which is what makes `"\u{}"` malformed. -/
+private def takeHexBrace (seen : Bool) (acc : Nat) : List Char → Option (Nat × List Char)
+  | [] => none
+  | '}' :: rest => if seen then some (acc, rest) else none
+  | c :: rest =>
+    match hexDigit? c with
+    | some d => takeHexBrace true (acc * 16 + d) rest
+    | none => none
+
+/-- The StringLiteral escape grammar (12.9.4) over a literal's source
+text, answering the code units it names.
+
+A string literal is decoded from its **`raw`** rather than from its
+`value` because `Lean.Json` cannot carry a lone surrogate: it reads
+`"\ud800"` as U+FFFD, silently, so `"\uD800"` would reach the evaluator
+as a different string than the one the source spells. The schema requires
+`raw` on every `Literal`, so nothing on the bridge's side has to change.
+
+A legacy octal escape is a strict-mode early error, and the epic does not
+check early errors, so it is refused **by name** rather than guessed
+at. -/
+private partial def decodeLiteralChars : List Char → DecodeM (List UInt16)
+  | [] => pure []
+  | ['\\'] => bad "Literal raw ends in a backslash"
+  | '\\' :: e :: rest => do
+    let unit (u : Nat) : DecodeM (List UInt16) := do
+      pure (UInt16.ofNat u :: (← decodeLiteralChars rest))
+    match e with
+    | 'b' => unit 0x8
+    | 'f' => unit 0xC
+    | 'n' => unit 0xA
+    | 'r' => unit 0xD
+    | 't' => unit 0x9
+    | 'v' => unit 0xB
+    | '0' =>
+      match rest with
+      | d :: _ => if '0' ≤ d && d ≤ '9' then throw (.unsupported "Literal octal escape") else unit 0
+      | [] => unit 0
+    | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' =>
+      throw (.unsupported "Literal octal escape")
+    | 'x' =>
+      match takeHex 2 0 rest with
+      | some (v, rest') => do pure (UInt16.ofNat v :: (← decodeLiteralChars rest'))
+      | none => bad "Literal \\x escape is not two hex digits"
+    | 'u' =>
+      match rest with
+      | '{' :: more =>
+        match takeHexBrace false 0 more with
+        | some (v, rest') =>
+          if v ≤ 0x10FFFF then do
+            pure (Js.JsString.encodeCodePoint v ++ (← decodeLiteralChars rest'))
+          else bad "Literal \\u{…} escape is past the last code point"
+        | none => bad "Literal \\u{…} escape is not hex digits in braces"
+      | _ =>
+        match takeHex 4 0 rest with
+        | some (v, rest') => do pure (UInt16.ofNat v :: (← decodeLiteralChars rest'))
+        | none => bad "Literal \\u escape is not four hex digits"
+    -- A LineContinuation contributes nothing at all.
+    | '\n' => decodeLiteralChars rest
+    | '\r' =>
+      match rest with
+      | '\n' :: more => decodeLiteralChars more
+      | _ => decodeLiteralChars rest
+    | c =>
+      if c.toNat == 0x2028 || c.toNat == 0x2029 then decodeLiteralChars rest
+      -- NonEscapeCharacter: the backslash goes and the character stands.
+      else do pure (Js.JsString.encodeCodePoint c.toNat ++ (← decodeLiteralChars rest))
+  | c :: rest => do pure (Js.JsString.encodeCodePoint c.toNat ++ (← decodeLiteralChars rest))
+
+/-- A string literal's source text — quotes and all — as code units. -/
+private def decodeStringLiteral (raw : String) : DecodeM Js.JsString := do
+  match raw.toList with
+  | [] => bad "Literal raw is empty"
+  | q :: rest =>
+    if q != '"' && q != '\'' then bad "Literal raw is not a quoted string"
+    else
+      match rest.reverse with
+      | [] => bad "Literal raw is not a quoted string"
+      | q' :: body =>
+        if q' != q then bad "Literal raw is not a quoted string"
+        else do pure ⟨← decodeLiteralChars body.reverse⟩
+
 /-- A `Literal`, by the JSON type of its `value`. -/
 private def decodeLiteral (j : Json) : DecodeM Expr := do
   match ← field j "value" with
   | .num n => pure (.numLit n.toFloat)
   | .bool b => pure (.boolLit b)
   | .null => pure .nullLit
-  | .str s => pure (.strLit s)
+  | .str value => do
+    let s ← decodeStringLiteral (← strField j "raw")
+    -- Where the literal *is* representable as a Lean `String`, the escape
+    -- grammar above is pinned against tsc's own reading of it, on every
+    -- literal in every document the decoder ever sees.
+    match Js.JsString.asString? s with
+    | some str => if str == value then pure (.strLit s)
+                  else bad "Literal raw disagrees with value"
+    | none => pure (.strLit s)
   | _ => bad "Literal value is neither a number, a string, a boolean, nor null"
 
 /-- An identifier's name; `undefined` is the literal, not a reference. -/

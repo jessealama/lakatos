@@ -326,9 +326,13 @@ runs. -/
     (expr (.binary .instanceof (.call (.ident "Object") [.numLit 1.0]) (.ident "Number")))
   == "true"
 
--- The String wrapper is #391's, so this still refuses.
-#guard outcome (expr (.call (.ident "Object") [.strLit "s"]))
-  == "uncaught: TypeError: Cannot convert a primitive to an object"
+-- ToObject of a string is the String wrapper, whose `[[StringData]]`
+-- reads back out through `valueOf`.
+#guard outcome
+    (expr (.binary .strictEq
+      (.call (.member (.call (.ident "Object") [.strLit "s"]) "valueOf") [])
+      (.strLit "s")))
+  == "true"
 
 /-! ## `**`
 

@@ -1,3 +1,5 @@
+import Js.String.Basic
+
 /-! The abstract syntax of the evaluated fragment.
 
 Every constructor names the ESTree node it decodes from, so this file,
@@ -194,8 +196,13 @@ what a strict-mode script's non-writable global binding means. -/
 inductive Expr where
   /-- ESTree `Literal` with a number value. -/
   | numLit (value : Float)
-  /-- ESTree `Literal` with a string value. -/
-  | strLit (value : String)
+  /-- ESTree `Literal` with a string value, **decoded from its `raw`
+  source text** rather than from `value`: Lean's JSON reader replaces a
+  lone surrogate with U+FFFD, so `"\uD800"` would reach the evaluator as
+  a different string than the one the source names. The schema requires
+  `raw`, so the decoder reads the escape grammar itself and cross-checks
+  the well-formed case against `value`. -/
+  | strLit (value : Js.JsString)
   /-- ESTree `Literal` with a boolean value. -/
   | boolLit (value : Bool)
   /-- ESTree `Identifier` named `undefined`. -/

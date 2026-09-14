@@ -45,16 +45,24 @@ private def simprocIn (n : Name) : CoreM Bool := do
   ``Tarski.readNumber].allM unfoldsIn)
 
 -- Recursion on a loop (`evalWhile`, `evalDoWhile`, `evalFor`, `joinElements`,
--- `listFromArrayLike`, `forInNext`, and the three bound-function steps)
--- or on the heap (the three prototype walks and `construct`): never a
--- plain unfolding. The first nine are `rw`'s, and the `*UnfoldTest` files
--- are where that happens; the last four are the guarded simprocs below.
+-- `listFromArrayLike`, `rawSegments`, `forInNext`, and the three
+-- bound-function steps) or on the heap (the three prototype walks and
+-- `construct`): never a plain unfolding. The loop arms are `rw`'s, and
+-- the `*UnfoldTest` files are where that happens; the four heap
+-- recursions are the guarded simprocs below.
+--
+-- The last two are neither: `callReflectNative` and `callStringNative`
+-- are out because of the *compiler's* ceiling rather than a loop's — a
+-- `match` over twenty-nine and thirty-four arms with bodies that size has
+-- no equation lemmas to register, so `rw` on either diverges and putting
+-- either in the set overflows `maxRecDepth` before a proof runs.
 /-- info: false -/
 #guard_msgs in
 #eval (#[``Tarski.evalWhile, ``Tarski.evalDoWhile, ``Tarski.evalFor, ``Tarski.joinElements,
   ``Tarski.getFromUp, ``Tarski.findPropertyUp, ``Tarski.protoChainHas,
-  ``Tarski.construct, ``Tarski.listFromArrayLike, ``Tarski.forInNext,
-  ``Tarski.callBound, ``Tarski.constructBound, ``Tarski.instanceOfBound].anyM unfoldsIn)
+  ``Tarski.construct, ``Tarski.listFromArrayLike, ``Tarski.forInNext, ``Tarski.rawSegments,
+  ``Tarski.callBound, ``Tarski.constructBound, ``Tarski.instanceOfBound,
+  ``Tarski.callReflectNative, ``Tarski.callStringNative].anyM unfoldsIn)
 
 -- The four heap recursions are in the set, as simprocs.
 /-- info: true -/

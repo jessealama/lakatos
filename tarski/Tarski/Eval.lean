@@ -214,13 +214,14 @@ def toNumberPrim : JsVal → Float
   | .bool b => if b then 1.0 else 0.0
   | .undef => floatNaN
   | .null => 0.0
-  | .str s => Number.stringToNumber s
+  | .str s => Number.stringToNumber s.toStringLossy
   | .bigint _ => floatNaN
 
 /-- ToString on primitives. An object never reaches this — ToPrimitive
 runs first — and the number arm is the library's `Number::toString`.
-`toPropertyKey` is this, and so is the string arm of `+`. -/
-def toStringPrim : JsVal → String
+`toPropertyKey` is this and then `JsString.toKey`, and so is the string
+arm of `+`. -/
+def toStringPrim : JsVal → JsString
   | .str s => s
   | .num x => Number.toDecimalString x
   | .bool b => if b then "true" else "false"
@@ -298,18 +299,6 @@ def PrimHint.name : PrimHint → String
   | .string => "string"
   | .«default» => "default"
 
-/-- A string's `length`, in code points. `JsVal.str` is a Lean `String`,
-which cannot hold a lone surrogate, so this is UTF-16 code-unit length
-for every string this slice can build; #391 owns the difference, along
-with `String.prototype` and the wrapper object. -/
-def stringLength (s : String) : Nat := s.length
-
-/-- The one-character string at an index, or `none` past the end — the
-String exotic object's own index properties, in code points for the
-reason `stringLength` gives. -/
-def stringIndex? (s : String) (i : Nat) : Option String :=
-  s.toList[i]?.map String.singleton
-
 /-- ToUint32 restricted to the values that are already one: an array
 `length` and an `Array(n)` argument are integers in `[0, 2^32)` or a
 `RangeError`, so nothing here wraps. The conversion is the library's
@@ -324,7 +313,7 @@ def uint32Of? (x : Float) : Option Nat :=
   | none => none
 
 /-- The index keys of something `length` long, as string values —
-`Object.keys` of a string, whose own properties are its indices. -/
+`Object.keys` of an array-like whose own properties are its indices. -/
 def indexKeys (n : Nat) : List Value :=
   (List.range n).map (fun i => .prim (.str (Nat.repr i)))
 
@@ -372,11 +361,12 @@ structure JsonState where
   gap : String := ""
 deriving Inhabited
 
-/-- Whether a built-in has a `[[Construct]]`. `String` does not: the
-wrapper object is #391's, so `new String("x")` refuses. `Math` is not a
-function at all, so it is not here either. -/
+/-- Whether a built-in has a `[[Construct]]`. `Math` is not a function at
+all, so it is not here; a `String.prototype` method is a function and not
+a constructor, so it is not either. -/
 def NativeFn.constructs : NativeFn → Bool
   | .errorCtor _ => true
+  | .stringCtor => true
   | .objectCtor => true
   | .arrayCtor => true
   | .numberCtor => true
@@ -424,6 +414,18 @@ def thisSymbolValue (who : String) (v : Value) : EvalM Symbol := do
     | _ => throwJsError .typeError s!"Symbol.prototype.{who} requires that 'this' be a Symbol"
   | _ => throwJsError .typeError s!"Symbol.prototype.{who} requires that 'this' be a Symbol"
 
+/-- thisStringValue (22.1.3.1): `[[StringData]]`, from the primitive or
+from a wrapper around one — the twin of `thisNumberValue`, and the only
+thing `toString` and `valueOf` accept. -/
+def thisStringValue (who : String) (v : Value) : EvalM JsString := do
+  match v with
+  | .prim (.str s) => pure s
+  | .obj r =>
+    match (← readObj r).kind with
+    | .string s => pure s
+    | _ => throwJsError .typeError s!"String.prototype.{who} requires that 'this' be a String"
+  | _ => throwJsError .typeError s!"String.prototype.{who} requires that 'this' be a String"
+
 /-- thisBooleanValue, the mirror of `thisNumberValue`. -/
 def thisBooleanValue (who : String) (v : Value) : EvalM Bool := do
   match v with
@@ -466,9 +468,10 @@ order when *both* sides are strings and numeric otherwise, which is
 IsLessThan's own split: `"10" < "9"` is true and `"a" < 1` is false,
 the latter because ToNumber of `"a"` is NaN and every relation on a NaN
 is false.
-Lean's `String` order is `List Char` order on the code points, so it is
-UTF-16 code-unit order for every string this slice can build — a lone
-surrogate cannot live in a Lean `String`, and #391 owns the difference.
+A string is a sequence of UTF-16 code units, so the four relations are
+IsLessThan step 3 exactly — **code-unit** order, under which
+`"\u{10000}" < "\uFFFF"` is true, where code-point order says the
+opposite.
 `%` is the library's `tsRem` — C `fmod`, not the IEEE remainder — `**` is
 its `tsPow`, which is `Math.pow`'s definition too, and the
 numeric relations are Lean's binary64 order, which is the library's model
@@ -540,6 +543,10 @@ argument carries. Both statements start from it rather than from empty —
 `eval("1; if (true) {}")` is `undefined`, not `1` — while a block that
 runs nothing completes empty and leaves the previous value standing. -/
 def undefValue : Value := .prim .undef
+
+/-- An argument by position, `undefined` past the end — the `args[i]` of
+every built-in's specification text. -/
+def argAt (args : List Value) (i : Nat) : Value := args[i]?.getD undefValue
 
 /-- The name an ordinary call's receiver is bound under. `this` is a
 keyword, so no identifier can collide with it, and a binding in the scope
@@ -815,6 +822,7 @@ def builtinTag (o : Obj) : String :=
     | .error => "Error"
     | .boolean _ => "Boolean"
     | .number _ => "Number"
+    | .string _ => "String"
     -- 20.1.3.6's table has no `Symbol` row: a Symbol wrapper's
     -- `[object Symbol]` comes from `Symbol.prototype`'s
     -- `@@toStringTag`, which the step after this one reads.
@@ -838,13 +846,12 @@ def nameOf (v : Value) : EvalM String := do
   | .sym _ => pure ""
   | .obj r =>
     match (← readObj r).getOwn "name" with
-    | some (.prim (.str s)) => pure s
+    | some (.prim (.str s)) => pure s.toStringLossy
     | _ => pure ""
 
 /-- ToObject (7.1.18) on a value, shared by the `Object` natives and by
-`Object.prototype`'s methods. A Number or a Boolean gets a fresh wrapper;
-a string is still the refusal #391 removes, there being no
-`String.prototype` to link one to.
+`Object.prototype`'s methods. A Number, a Boolean, or a String gets a
+fresh wrapper; a bigint is still the refusal #392 removes.
 
 Outside the fixpoint block: it allocates and it throws, but it cannot
 reach user code. -/
@@ -856,6 +863,7 @@ def toObjectValue (v : Value) : EvalM Ref :=
   | .prim (.num x) => allocObj { proto := some numberProtoRef, kind := .number x }
   | .prim (.bool b) => allocObj { proto := some booleanProtoRef, kind := .boolean b }
   | .sym s => allocObj { proto := some symbolProtoRef, kind := .symbol s }
+  | .prim (.str s) => allocObj (Obj.stringWrapper (some stringProtoRef) s)
   | .prim _ => throwJsError .typeError "Cannot convert a primitive to an object"
 
 /-- `[[Delete]]` (10.1.10) behind the `delete` operator, with the
@@ -872,23 +880,20 @@ def deleteProp (base : Value) (key : Key) : EvalM Bool :=
   | .prim .null =>
     throwJsError .typeError s!"Cannot read properties of null (reading '{key}')"
   | .prim (.str s) =>
-    if key == Key.str "length" || (key.arrayIndex?.any (fun i => i < stringLength s)) then
+    if key == Key.str "length" || (key.arrayIndex?.any (fun i => i < s.length)) then
       throwJsError .typeError s!"Cannot delete property '{key}' of #<Object>"
     else pure true
   | .prim _ => pure true
   | .sym _ => pure true
   | .obj r => do
     let o ← readObj r
-    if o.isArray && key == Key.str "length" then
-      throwJsError .typeError s!"Cannot delete property '{key}' of #<Object>"
-    else
-      match o.getOwnProperty key with
-      | none => pure true
-      | some p =>
-        if p.configurable then do
-          writeObj r (o.remove key)
-          pure true
-        else throwJsError .typeError s!"Cannot delete property '{key}' of #<Object>"
+    match o.ownProperty key with
+    | none => pure true
+    | some p =>
+      if p.configurable then do
+        writeObj r (o.remove key)
+        pure true
+      else throwJsError .typeError s!"Cannot delete property '{key}' of #<Object>"
 
 /-- FromPropertyDescriptor (6.2.6.4): the object
 `Object.getOwnPropertyDescriptor` answers, whose keys are in the
@@ -1708,12 +1713,12 @@ expression is evaluated, so a later expression's throw comes after an
 earlier value's `toString` has already run. The two lists are walked
 together and the strings are one longer; a mismatch is a document the
 decoder already refused, and answers what was built so far. -/
-def evalTemplate (env : Env) : List String → List Expr → String → EvalM Value
-  | [s], [], acc => pure (.prim (.str (acc ++ s)))
+def evalTemplate (env : Env) : List String → List Expr → JsString → EvalM Value
+  | [s], [], acc => pure (.prim (.str (acc ++ JsString.ofString s)))
   | s :: strs, e :: es, acc => do
     let v ← evalExpr env e
     let t ← toStringValue v
-    evalTemplate env strs es (acc ++ s ++ t)
+    evalTemplate env strs es (acc ++ JsString.ofString s ++ t)
   | _, _, acc => pure (.prim (.str acc))
   partial_fixpoint
 
@@ -1738,16 +1743,18 @@ that is the same answer the epic gives every other divergence.
 
 Two own properties do not live in a property list. A string answers its
 own `length` and its own index properties — the String exotic object's
-`[[GetOwnProperty]]` — and every other key on it is `undefined` until
-`String.prototype` exists (#391). An array answers its own `length` out
-of its kind, which is where the live length lives.
+`[[GetOwnProperty]]` — and every other key on it is read through
+`String.prototype`. An array answers its own `length` out of its kind,
+which is where the live length lives.
 
-A Number, a Boolean, or a Symbol base reads through its wrapper
-prototype **without allocating a wrapper**: the wrapper would have no own
-properties, so the answer is the same, and the receiver a method call
-then gets is still the primitive, which is why `thisNumberValue` and
-`thisSymbolValue` accept both. A bigint base still answers `undefined`,
-`BigInt.prototype` being outside this epic.
+A Number, a Boolean, a String, or a Symbol base reads through its wrapper
+prototype **without allocating a wrapper**: a Number's, a Boolean's, or a
+Symbol's wrapper would have no own properties, and a String's own
+properties are the ones answered above, so the answer is the same, and
+the receiver a method call then gets is still the primitive, which is why
+`thisNumberValue`, `thisStringValue`, and `thisSymbolValue` accept both. A
+bigint base still answers `undefined`, `BigInt.prototype` being outside
+this epic.
 
 This is inside the fixpoint block because a getter is user code called
 from here. It is no longer the walk itself, though: `getFrom` is, and
@@ -1761,11 +1768,11 @@ def getProp (base : Value) (key : Key) : EvalM Value :=
   | .prim .null =>
     throwJsError .typeError s!"Cannot read properties of null (reading '{key}')"
   | .prim (.str s) =>
-    if key == Key.str "length" then pure (Value.ofNat (stringLength s))
+    if key == Key.str "length" then pure (Value.ofNat s.length)
     else
-      match key.arrayIndex? with
-      | some i => pure (((stringIndex? s i).map (fun c => Value.prim (.str c))).getD undefValue)
-      | none => pure undefValue
+      match key.arrayIndex?.bind s.unitAt? with
+      | some u => pure (.prim (.str u))
+      | none => getFrom stringProtoRef key base
   | .prim (.num _) => getFrom numberProtoRef key base
   | .prim (.bool _) => getFrom booleanProtoRef key base
   | .sym _ => getFrom symbolProtoRef key base
@@ -1781,24 +1788,25 @@ less accessor reads `undefined`. A Number or a Boolean base starts the
 walk at its wrapper prototype with the primitive as the receiver, which
 is why `thisNumberValue` accepts one.
 
+The own step is `Obj.ownProperty`, the one `[[GetOwnProperty]]`, so an
+array's `length` and a String object's indices are answered here by the
+same definition `findProperty` and `deleteProp` read.
+
 The walk is `getFromUp`'s, not this one's: what recurses on the heap
 rather than on syntax may never join a simp set, so the step is a
 definition of its own and `getFrom` is free to be in one. -/
 def getFrom (r : Ref) (key : Key) (receiver : Value) : EvalM Value := do
   let o ← readObj r
-  match o.kind, key == Key.str "length" with
-  | .array len _, true => pure (Value.ofNat len)
-  | _, _ =>
-    match o.getOwnProperty key with
-    | some { slot := .accessor a, .. } =>
-      match a.getter with
-      | some g => callFunction g receiver []
-      | none => pure undefValue
-    | some { slot := .data v _, .. } => pure v
-    | none =>
-      match o.proto with
-      | some p => getFromUp p key receiver
-      | none => pure undefValue
+  match o.ownProperty key with
+  | some { slot := .accessor a, .. } =>
+    match a.getter with
+    | some g => callFunction g receiver []
+    | none => pure undefValue
+  | some { slot := .data v _, .. } => pure v
+  | none =>
+    match o.proto with
+    | some p => getFromUp p key receiver
+    | none => pure undefValue
   partial_fixpoint
 
 /-- OrdinaryGet's last step, taken on the parent an object named. It is
@@ -1937,15 +1945,15 @@ def pushElements (arr : Value) (i : Nat) : List Value → EvalM Unit
 and `null` contributing the empty string, joined by the separator. It
 recurses on the length rather than on syntax, so its equation is `rw`'s
 and never a simp set's. -/
-def joinElements (arr : Value) (i len : Nat) (sep : String) : EvalM String := do
+def joinElements (arr : Value) (i len : Nat) (sep : JsString) : EvalM JsString := do
   if i < len then
     let s ← match ← getProp arr (Nat.repr i) with
-      | .prim .undef => pure ""
-      | .prim .null => pure ""
+      | .prim .undef => pure (JsString.ofString "")
+      | .prim .null => pure (JsString.ofString "")
       | v => toStringValue v
     let rest ← joinElements arr (i + 1) len sep
     pure (if i + 1 < len then s ++ sep ++ rest else s ++ rest)
-  else pure ""
+  else pure (JsString.ofString "")
   partial_fixpoint
 
 /-- ToPrimitive (7.1.1). A primitive — a `JsVal` or a symbol — is
@@ -1986,7 +1994,7 @@ the primitive. `String(v)`, `join`, and the `Error` constructor's
 `message` all spell it this way. A symbol has no ToString: 7.1.17 step 2
 is a `TypeError`, which is why `String(sym)` is the `String`
 constructor's own arm rather than this. -/
-def toStringValue (v : Value) : EvalM String := do
+def toStringValue (v : Value) : EvalM JsString := do
   match ← toPrimitive .string v with
   | .prim p => pure (toStringPrim p)
   | .sym _ => throwJsError .typeError "Cannot convert a Symbol value to a string"
@@ -2011,11 +2019,11 @@ everything else is ToString of its ToPrimitive with the string hint. -/
 def toPropertyKey (v : Value) : EvalM Key :=
   match v with
   | .sym s => pure (.sym s)
-  | .prim p => pure (.str (toStringPrim p))
+  | .prim p => pure (.str (toStringPrim p).toKey)
   | .obj _ => do
     match ← toPrimitive .string v with
     | .sym s => pure (.sym s)
-    | .prim p => pure (.str (toStringPrim p))
+    | .prim p => pure (.str (toStringPrim p).toKey)
     | .obj _ => throwJsError .typeError "Cannot convert object to primitive value"
   partial_fixpoint
 
@@ -2184,7 +2192,7 @@ def toNumberValues : List Value → EvalM (List Float)
 `toNumberValues`'s twin, and what `console.log` joins with a space. The
 recursion is explicit for the reason its twin's is — a `mapM` inside the
 fixpoint block would need its own monotonicity lemma. -/
-def toStringValues : List Value → EvalM (List String)
+def toStringValues : List Value → EvalM (List JsString)
   | [] => pure []
   | v :: rest => do
     let x ← toStringValue v
@@ -2230,6 +2238,18 @@ def constructNative (n : NativeFn) (newTarget : Value) (args : List Value) : Eva
     let proto ← allocFromConstructor newTarget booleanProtoRef
     modifyObj proto (fun o => { o with kind := .boolean b })
     pure (.obj proto)
+  | .stringCtor => do
+    -- StringCreate (10.4.3.4): `length` is a real own property, defined
+    -- once, so it lands ahead of anything a subclass constructor adds.
+    let s ← match args with
+      | [] => pure (JsString.ofString "")
+      | v :: _ => toStringValue v
+    let r ← allocFromConstructor newTarget stringProtoRef
+    modifyObj r (fun o =>
+      { o with
+        kind := .string s,
+        properties := ("length", Property.constant (Value.ofNat s.length)) :: o.properties })
+    pure (.obj r)
   | .objectCtor =>
     -- `new Object(v)` with a non-nullish `v` answers `v` itself, exactly
     -- as `Object(v)` does, and NewTarget does not enter.
@@ -2510,13 +2530,13 @@ the receiver, each defaulting when absent, joined by `": "` unless one of
 them is empty. The uncaught-error report runs this same algorithm, which
 is the reason it is exposed at all.
 
-The rest are #380's floor. `String(v)` is ToString and nothing else —
-`new String(v)` refuses, the wrapper being #391's. `Object(v)` is an
-ordinary object for a nullish argument, the argument itself for an
-object, a wrapper for a Number or a Boolean, and a `TypeError` for a
-string until that wrapper exists (#391). `Object.keys` is OrdinaryOwnPropertyKeys of an
-object, the index keys of a string, and empty for any other non-nullish
-primitive. `push` and `join` require an Array exotic receiver: the
+The rest are #380's floor. `String(v)` is ToString and nothing else;
+`new String(v)` is `constructNative`'s, and the two differ only there, as
+`Number`'s two spellings do. `Object(v)` is an ordinary object for a
+nullish argument and ToObject otherwise — the argument itself for an
+object, and the wrapper for a Number, a Boolean, or a String.
+`Object.keys` is ToObject and then OrdinaryOwnPropertyKeys, so a string's
+answer is its index keys and a Number's is empty. `push` and `join` require an Array exotic receiver: the
 generic array-like forms, and the rest of `Array.prototype`, are
 #390's. A missing argument is `undefined` throughout.
 
@@ -2560,14 +2580,14 @@ def callNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Valu
     match thisArg with
     | .obj _ => do
       let name ← match ← getProp thisArg "name" with
-        | .prim .undef => pure "Error"
+        | .prim .undef => pure (JsString.ofString "Error")
         | v => toStringValue v
       let msg ← match ← getProp thisArg "message" with
-        | .prim .undef => pure ""
+        | .prim .undef => pure (JsString.ofString "")
         | v => toStringValue v
       if name.isEmpty then pure (.prim (.str msg))
       else if msg.isEmpty then pure (.prim (.str name))
-      else pure (.prim (.str (name ++ ": " ++ msg)))
+      else pure (.prim (.str (name ++ JsString.ofString ": " ++ msg)))
     | _ => throwJsError .typeError "Error.prototype.toString called on non-object"
   | .stringCtor =>
     -- 22.1.1.1 step 1.a: `String(sym)` is SymbolDescriptiveString, the
@@ -2581,25 +2601,16 @@ def callNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Valu
     | [] => do pure (.obj (← newObject))
     | .prim .undef :: _ => do pure (.obj (← newObject))
     | .prim .null :: _ => do pure (.obj (← newObject))
-    | .obj r :: _ => pure (.obj r)
-    | .sym sy :: _ => do
-      pure (.obj (← allocObj { proto := some symbolProtoRef, kind := .symbol sy }))
-    | .prim (.num x) :: _ => do
-      pure (.obj (← allocObj { proto := some numberProtoRef, kind := .number x }))
-    | .prim (.bool b) :: _ => do
-      pure (.obj (← allocObj { proto := some booleanProtoRef, kind := .boolean b }))
-    | .prim _ :: _ => throwJsError .typeError "Cannot convert a primitive to an object"
+    -- Everything else is ToObject: an object is itself, and a Number, a
+    -- Boolean, or a String is its wrapper.
+    | v :: _ => do pure (.obj (← toObjectValue v))
   | .objectIs =>
     pure (.prim (.bool (sameValueValue (args[0]?.getD undefValue) (args[1]?.getD undefValue))))
-  | .objectKeys =>
-    match args[0]?.getD undefValue with
-    | .prim .undef => throwJsError .typeError "Cannot convert undefined or null to object"
-    | .prim .null => throwJsError .typeError "Cannot convert undefined or null to object"
-    | .obj r => do newArray ((← readObj r).enumerableKeys.map (fun k => .prim (.str k)))
-    -- A string's index keys, until `String.prototype` and the wrapper
-    -- object make this ToObject like every other arm (#391).
-    | .prim (.str s) => newArray (indexKeys (stringLength s))
-    | _ => newArray []
+  | .objectKeys => do
+    -- ToObject like every other arm: a string's wrapper has its indices
+    -- as enumerable own properties, so `Object.keys("ab")` is `["0","1"]`.
+    let r ← toObjectValue (args[0]?.getD undefValue)
+    newArray ((← readObj r).enumerableKeys.map (fun k => .prim (.str (JsString.ofString k))))
   | .objectHasOwnProperty =>
     match thisArg with
     -- ToObject of a Number or a Boolean has no own properties, so the
@@ -2608,6 +2619,12 @@ def callNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Valu
     | .prim (.num _) | .prim (.bool _) => do
       let _ ← toPropertyKey (args[0]?.getD undefValue)
       pure (.prim (.bool false))
+    -- A string's wrapper *does* have own properties, and they are a
+    -- function of the string alone, so the answer costs no allocation
+    -- either.
+    | .prim (.str s) => do
+      let key ← toPropertyKey (args[0]?.getD undefValue)
+      pure (.prim (.bool ((Obj.stringWrapper none s).hasOwn key)))
     | .obj r => do
       let key ← toPropertyKey (args[0]?.getD undefValue)
       pure (.prim (.bool ((← readObj r).hasOwn key)))
@@ -2643,8 +2660,8 @@ def callNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Valu
       match (← readObj r).kind with
       | .array len _ => do
         let sep ← match args with
-          | [] => pure ","
-          | .prim .undef :: _ => pure ","
+          | [] => pure (JsString.ofString ",")
+          | .prim .undef :: _ => pure (JsString.ofString ",")
           | v :: _ => toStringValue v
         pure (.prim (.str (← joinElements thisArg 0 len sep)))
       | _ => throwJsError .typeError "Array.prototype.join called on non-array"
@@ -2720,11 +2737,11 @@ def callNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Valu
     pure (.prim (.str (Number.toDecimalString x)))
   | .parseFloat => do
     let s ← toStringValue (args.headD undefValue)
-    pure (.prim (.num (Number.parseFloat s)))
+    pure (.prim (.num (Number.parseFloat s.toStringLossy)))
   | .parseInt => do
     let s ← toStringValue (args.headD undefValue)
     let r ← toNumberValue (args[1]?.getD undefValue)
-    pure (.prim (.num (Number.parseInt s (Number.FloatOps.tsToInt32 r))))
+    pure (.prim (.num (Number.parseInt s.toStringLossy (Number.FloatOps.tsToInt32 r))))
   | .booleanCtor => pure (.prim (.bool (toBooleanPrim (args.headD undefValue))))
   | .booleanToString => do
     let b ← thisBooleanValue "toString" thisArg
@@ -2773,6 +2790,7 @@ def callNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Valu
   | .aggregateErrorCtor | .functionHasInstance | .objectGetOwnPropertySymbols
   | .errorIsError => callSymbolNative f thisArg args
   | .jsonParse | .jsonStringify => callJsonNative f thisArg args
+  | .string g => callStringNative g thisArg args
   | .print => do
     -- The host's output binding. There is no IO in `EvalM`, so the line
     -- is appended to `%PrintLog%` and the binary writes the log out once
@@ -2796,7 +2814,7 @@ def callNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Valu
     -- which is what `console.log()` prints under Node.
     let parts ← toStringValues args
     let _ ← callNative .arrayPush (.obj printLogRef)
-      [.prim (.str (String.intercalate " " parts))]
+      [.prim (.str (JsString.intercalate (JsString.ofString " ") parts))]
     pure undefValue
   partial_fixpoint
 
@@ -2825,14 +2843,13 @@ def callReflectNative (f : NativeFn) (thisArg : Value) (args : List Value) : Eva
   match f with
   | .objectProtoToString =>
     -- 20.1.3.6. The two nullish tags come first, then ToObject, the
-    -- builtin tag, and finally `Get(O, @@toStringTag)`: a string there
-    -- replaces the tag, which is what makes `[object Math]`,
-    -- `[object JSON]`, `[object Symbol]`, and a user's own tag. A string
-    -- primitive answers its tag without a wrapper to link to (#391).
+    -- builtin tag — which reads `[[StringData]]` as `String` — and
+    -- finally `Get(O, @@toStringTag)`: a string there replaces the tag,
+    -- which is what makes `[object Math]`, `[object JSON]`,
+    -- `[object Symbol]`, and a user's own tag.
     match thisArg with
     | .prim .undef => pure (.prim (.str "[object Undefined]"))
     | .prim .null => pure (.prim (.str "[object Null]"))
-    | .prim (.str _) => pure (.prim (.str "[object String]"))
     | v => do
       let r ← toObjectValue v
       let builtin := builtinTag (← readObj r)
@@ -2938,13 +2955,14 @@ def callReflectNative (f : NativeFn) (thisArg : Value) (args : List Value) : Eva
     pure (.obj target)
   | .objectGetOwnPropertyNames => do
     let r ← toObjectValue (args[0]?.getD undefValue)
-    newArray ((← readObj r).stringKeys.map (fun k => .prim (.str k)))
+    newArray ((← readObj r).stringKeys.map (fun k => .prim (.str (JsString.ofString k))))
   | .objectGetPrototypeOf =>
     -- A Number or a Boolean answers its wrapper prototype without
     -- allocating a wrapper, as `getProp` does for the same reason.
     match args[0]?.getD undefValue with
     | .prim (.num _) => pure (.obj numberProtoRef)
     | .prim (.bool _) => pure (.obj booleanProtoRef)
+    | .prim (.str _) => pure (.obj stringProtoRef)
     | v => do
       let r ← toObjectValue v
       match (← readObj r).proto with
@@ -3042,7 +3060,7 @@ def callReflectNative (f : NativeFn) (thisArg : Value) (args : List Value) : Eva
         -- list: a `name` getter runs, and its throw is `bind`'s. Step 14
         -- gives anything that is not a String the empty string.
         let name ← match ← getProp thisArg "name" with
-          | .prim (.str n) => pure n
+          | .prim (.str n) => pure n.toStringLossy
           | _ => pure ""
         let f ← allocObj
           { proto := target.proto,
@@ -3098,12 +3116,14 @@ def callSymbolNative (f : NativeFn) (thisArg : Value) (args : List Value) : Eval
     | [] => do pure (.sym (← allocSymbol none))
     | .prim .undef :: _ => do pure (.sym (← allocSymbol none))
     | d :: _ => do
+      -- A description is a Lean `String`, as a property key is, so it is
+      -- lossy at a lone surrogate (#519's boundary).
       let text ← toStringValue d
-      pure (.sym (← allocSymbol (some text)))
+      pure (.sym (← allocSymbol (some text.toStringLossy)))
   | .symbolFor => do
     -- 20.4.2.2: the registry's own key, or a fresh symbol written there
     -- under it. The description of a registered symbol is its key.
-    let key ← toStringValue (args.headD undefValue)
+    let key := (← toStringValue (args.headD undefValue)).toKey
     match (← readObj symbolRegistryRef).getOwn (.str key) with
     | some v => pure v
     | none => do
@@ -3187,7 +3207,7 @@ def jsonSpaceOf (spaceArg : Value) : EvalM Value := do
   | .obj r =>
     match (← readObj r).kind with
     | .number _ => do pure (Value.prim (.num (← toNumberValue spaceArg)))
-    -- A String wrapper joins this arm with #391.
+    | .string _ => do pure (Value.prim (.str (← toStringValue spaceArg)))
     | _ => pure spaceArg
   | _ => pure spaceArg
   partial_fixpoint
@@ -3204,8 +3224,8 @@ def errorsAsList (errorsArg : Value) : EvalM (List Value) := do
     let len ← toLengthValue (← getProp errorsArg "length")
     listFromArrayLike errorsArg 0 len
   | .prim (.str text) =>
-    pure ((List.range (stringLength text)).map
-      (fun i => Value.prim (.str ((stringIndex? text i).getD ""))))
+    pure ((List.range text.length).map
+      (fun i => Value.prim (.str ((text.unitAt? i).getD (JsString.ofString "")))))
   | v => throwJsError .typeError s!"{formatValue v} is not iterable"
   partial_fixpoint
 
@@ -3292,15 +3312,16 @@ def propertyListOf (acc : List String) : List Value → EvalM (List String)
   partial_fixpoint
 
 /-- One member of an array replacer: a string, a Number, or a wrapper
-around one of those, and `none` for everything else. A String wrapper
-joins the `.number` arm with #391. -/
+around one of those, and `none` for everything else. The key it becomes
+is a Lean `String`, so it is `toKey`'s lossy conversion at a lone
+surrogate, as every property key is. -/
 def propertyListItem? (v : Value) : EvalM (Option String) := do
   match v with
-  | .prim (.str text) => pure (some text)
+  | .prim (.str text) => pure (some text.toKey)
   | .prim (.num x) => pure (some (Number.toDecimalString x))
   | .obj r =>
     match (← readObj r).kind with
-    | .number _ => do pure (some (← toStringValue v))
+    | .number _ | .string _ => do pure (some (← toStringValue v).toKey)
     | _ => pure none
   | _ => pure none
   partial_fixpoint
@@ -3327,7 +3348,9 @@ def serializeJsonValue (st : JsonState) (stack : List Ref) (indent : String) (va
   match value with
   | .prim .null => pure (some "null")
   | .prim (.bool b) => pure (some (if b then "true" else "false"))
-  | .prim (.str text) => pure (some (quoteJsonString text))
+  -- The JSON text is a Lean `String`, so a lone surrogate in the value is
+  -- U+FFFD here rather than 25.5.2.3's `\ud800` escape (#522).
+  | .prim (.str text) => pure (some (quoteJsonString text.toStringLossy))
   | .prim (.num x) =>
     -- A finite Number is `Number::toString`, which is what makes `-0`
     -- serialize as `0`; NaN and the infinities are `null`.
@@ -3356,13 +3379,14 @@ def jsonToJson (value : Value) (key : String) : EvalM Value := do
   | _ => pure value
   partial_fixpoint
 
-/-- SerializeJSONProperty steps 4–6: a Number or a Boolean wrapper is
-unwrapped. A String wrapper is #391's. -/
+/-- SerializeJSONProperty steps 4–6: a Number, a String, or a Boolean
+wrapper is unwrapped. -/
 def jsonUnwrap (value : Value) : EvalM Value := do
   match value with
   | .obj r =>
     match (← readObj r).kind with
     | .number _ => do pure (Value.prim (.num (← toNumberValue value)))
+    | .string _ => do pure (Value.prim (.str (← toStringValue value)))
     | .boolean b => pure (.prim (.bool b))
     | _ => pure value
   | _ => pure value
@@ -3427,8 +3451,10 @@ def serializeJsonElements (st : JsonState) (stack : List Ref) (indent : String) 
 def callJsonNative (f : NativeFn) (_thisArg : Value) (args : List Value) : EvalM Value :=
   match f with
   | .jsonParse => do
+    -- The grammar reads a Lean `String`, so a lone surrogate in the text
+    -- is U+FFFD before it is parsed (#522).
     let text ← toStringValue (args.headD undefValue)
-    match parseJson text with
+    match parseJson text.toStringLossy with
     | .error e => throwJsError .syntaxError e.message
     | .ok tree => do
       let unfiltered ← jsonToValue tree
@@ -3450,7 +3476,7 @@ def callJsonNative (f : NativeFn) (_thisArg : Value) (args : List Value) : EvalM
         match Number.FloatOps.integerOrInfinity? x with
         | some i => spaces (if i ≤ 0 then 0 else if 10 ≤ i then 10 else i.toNat)
         | none => spaces (if x < 0.0 then 0 else 10)
-      | .prim (.str text) => String.ofList (text.toList.take 10)
+      | .prim (.str text) => (JsString.mk (text.units.take 10)).toStringLossy
       | _ => ""
     let st : JsonState := { replacer, propertyList, gap }
     let wrapper ← newObject
@@ -3459,6 +3485,300 @@ def callJsonNative (f : NativeFn) (_thisArg : Value) (args : List Value) : EvalM
     | some text => pure (.prim (.str text))
     | none => pure undefValue
   | _ => pure undefValue
+  partial_fixpoint
+
+/-- RequireObjectCoercible (7.2.1) and then ToString, which is how every
+`String.prototype` method but `toString` and `valueOf` reads its
+receiver: they are **generic**, so `String.prototype.indexOf.call(123,
+"2")` is `1`. `who` names the method, so the refusal says which one was
+called on `null`. -/
+def requireStringThis (who : String) (v : Value) : EvalM JsString := do
+  match v with
+  | .prim .undef | .prim .null =>
+    throwJsError .typeError s!"String.prototype.{who} called on null or undefined"
+  | _ => toStringValue v
+  partial_fixpoint
+
+/-- ToUint32 (7.1.6) on a value: ToNumber and then the library's. -/
+def toUint32Value (v : Value) : EvalM Nat := do
+  pure (Number.FloatOps.tsToUint32 (← toNumberValue v))
+  partial_fixpoint
+
+/-- ToUint16 (7.1.7) on a value, which is what each argument of
+`String.fromCharCode` goes through. -/
+def toUint16Value (v : Value) : EvalM UInt16 := do
+  pure (Number.FloatOps.tsToUint16 (← toNumberValue v))
+  partial_fixpoint
+
+/-- A whole argument list through ToUint16, left to right. -/
+def toUint16Values : List Value → EvalM (List UInt16)
+  | [] => pure []
+  | v :: rest => do
+    let u ← toUint16Value v
+    let us ← toUint16Values rest
+    pure (u :: us)
+  partial_fixpoint
+
+/-- A relative index argument — `slice`'s and `at`'s — as an absolute
+one. The sign of an infinity is read off the Number itself, the library's
+`integerOrInfinity?` reporting both the same way. -/
+def relativeArg (v : Value) (len : Nat) : EvalM Nat := do
+  let x ← toNumberValue v
+  pure (JsString.relativeIndex len (Number.FloatOps.integerOrInfinity? x) (x < 0.0))
+  partial_fixpoint
+
+/-- A position argument clamped to `[0, len]`, where a negative is 0
+rather than an offset from the end: `indexOf`'s, `substring`'s,
+`startsWith`'s, and `endsWith`'s. -/
+def clampArg (v : Value) (len : Nat) : EvalM Nat := do
+  let x ← toNumberValue v
+  pure (JsString.clampIndex len (Number.FloatOps.integerOrInfinity? x) (x < 0.0))
+  partial_fixpoint
+
+/-- `String.raw`'s walk (22.1.2.4 step 8): each raw segment read through
+`Get`, so a getter runs, with the substitution after it — the
+substitutions being the arguments after the template. It recurses on a
+length the heap named, so it is `rw`'s like `joinElements`. -/
+def rawSegments (raw : Ref) (len i : Nat) (subs : List Value) : EvalM JsString := do
+  if i < len then
+    let seg ← toStringValue (← getProp (.obj raw) (Nat.repr i))
+    if i + 1 == len then pure seg
+    else do
+      let sub ← match subs[i]? with
+        | some v => toStringValue v
+        | none => pure (JsString.ofString "")
+      let rest ← rawSegments raw len (i + 1) subs
+      pure (seg ++ sub ++ rest)
+  else pure (JsString.ofString "")
+  partial_fixpoint
+
+/-- `replaceAll`'s splice over the positions `JsString.matchPositions`
+found: the text between two matches, then the replacement, which is a
+user function's answer when the replacer is callable and
+GetSubstitution's when it is a string. `replace` is this over the one
+position `indexOf` found. -/
+def spliceMatches (s search : JsString) (repl : Value) (functional : Bool)
+    (replStr : JsString) (start : Nat) : List Nat → EvalM JsString
+  | [] => pure ⟨s.units.drop start⟩
+  | p :: rest => do
+    let replacement ←
+      if functional then
+        toStringValue (← callFunction repl undefValue
+          [.prim (.str search), Value.ofNat p, .prim (.str s)])
+      else pure (JsString.getSubstitution search s p replStr)
+    let tail ← spliceMatches s search repl functional replStr (p + search.length) rest
+    pure (⟨(s.units.drop start).take (p - start)⟩ ++ replacement ++ tail)
+  partial_fixpoint
+
+/-- The `String` surface: 22.1.2's three statics and 22.1.3's thirty-one
+prototype methods.
+
+It is a definition of its own, next to `callReflectNative` and for its
+reason: `NativeFn` is already at the ceiling `Tarski/Simp.lean` records,
+and these arms are behind one constructor over `StringFn` so that
+`callNative`'s own `match` does not grow by thirty-four. Like
+`callReflectNative`, it is **not** in `tarski_eval`.
+
+Every arm keeps the specification's step order — the receiver coerced
+first, then the arguments left to right — because the suite's
+`return-abrupt-from-*` tests pin exactly that; what each one then
+computes is one of `Js/String/Ops.lean`'s total functions.
+
+The regex and `Symbol` branches of `split`, `replace`, `replaceAll`,
+`includes`, `startsWith`, and `endsWith` are unreachable: there is no
+`RegExp` (#376) and no `Symbol` (#392), so a non-string search value is
+ToString'd. -/
+def callStringNative (f : StringFn) (thisArg : Value) (args : List Value) : EvalM Value :=
+  match f with
+  | .fromCharCode => do
+    pure (.prim (.str (JsString.fromCharCode (← toUint16Values args))))
+  | .fromCodePoint => do
+    match JsString.fromCodePoints (← toNumberValues args) with
+    | .ok s => pure (.prim (.str s))
+    | .error x =>
+      throwJsError .rangeError s!"Invalid code point {Number.toDecimalString x}"
+  | .raw => do
+    let cooked ← toObjectValue (argAt args 0)
+    let raw ← toObjectValue (← getProp (.obj cooked) "raw")
+    let len ← toLengthValue (← getProp (.obj raw) "length")
+    pure (.prim (.str (← rawSegments raw len 0 (args.drop 1))))
+  | .at => do
+    let s ← requireStringThis "at" thisArg
+    let x ← toNumberValue (argAt args 0)
+    match Number.FloatOps.integerOrInfinity? x with
+    | none => pure undefValue
+    | some n =>
+      let k := if n < 0 then (s.length : Int) + n else n
+      if k < 0 || (s.length : Int) ≤ k then pure undefValue
+      else pure (.prim (.str ((s.unitAt? k.toNat).getD (JsString.ofString ""))))
+  | .charAt => do
+    let s ← requireStringThis "charAt" thisArg
+    let i ← toIntegerOrInfinityValue (argAt args 0)
+    match i.bind (fun n => if 0 ≤ n then s.unitAt? n.toNat else none) with
+    | some u => pure (.prim (.str u))
+    | none => pure (.prim (.str ""))
+  | .charCodeAt => do
+    let s ← requireStringThis "charCodeAt" thisArg
+    let i ← toIntegerOrInfinityValue (argAt args 0)
+    match i.bind (fun n => if 0 ≤ n then s.codeUnitAt? n.toNat else none) with
+    | some u => pure (Value.ofNat u.toNat)
+    | none => pure (.prim (.num Js.floatNaN))
+  | .codePointAt => do
+    let s ← requireStringThis "codePointAt" thisArg
+    let i ← toIntegerOrInfinityValue (argAt args 0)
+    match i.bind (fun n => if 0 ≤ n then s.codePointAt? n.toNat else none) with
+    | some (cp, _) => pure (Value.ofNat cp)
+    | none => pure undefValue
+  | .concat => do
+    let s ← requireStringThis "concat" thisArg
+    let parts ← toStringValues args
+    pure (.prim (.str (parts.foldl (fun acc t => acc ++ t) s)))
+  | .endsWith => do
+    let s ← requireStringThis "endsWith" thisArg
+    let pat ← toStringValue (argAt args 0)
+    let stop ← match argAt args 1 with
+      | .prim .undef => pure s.length
+      | v => clampArg v s.length
+    pure (.prim (.bool (JsString.endsWith s pat stop)))
+  | .includes => do
+    let s ← requireStringThis "includes" thisArg
+    let pat ← toStringValue (argAt args 0)
+    let start ← clampArg (argAt args 1) s.length
+    pure (.prim (.bool (JsString.includes s pat start)))
+  | .indexOf => do
+    let s ← requireStringThis "indexOf" thisArg
+    let pat ← toStringValue (argAt args 0)
+    let start ← clampArg (argAt args 1) s.length
+    match JsString.indexOf s pat start with
+    | some i => pure (Value.ofNat i)
+    | none => pure (.prim (.num (-1.0)))
+  | .isWellFormed => do
+    let s ← requireStringThis "isWellFormed" thisArg
+    pure (.prim (.bool s.isWellFormed))
+  | .lastIndexOf => do
+    let s ← requireStringThis "lastIndexOf" thisArg
+    let pat ← toStringValue (argAt args 0)
+    let x ← toNumberValue (argAt args 1)
+    -- A NaN position is `+∞`, which is what makes the search start at
+    -- the end rather than at 0.
+    let start :=
+      if !(x == x) then s.length
+      else JsString.clampIndex s.length (Number.FloatOps.integerOrInfinity? x) (x < 0.0)
+    match JsString.lastIndexOf s pat start with
+    | some i => pure (Value.ofNat i)
+    | none => pure (.prim (.num (-1.0)))
+  | .localeCompare => do
+    let s ← requireStringThis "localeCompare" thisArg
+    let that ← toStringValue (argAt args 0)
+    pure (.prim (.num (JsString.localeCompareUnits s that)))
+  | .normalize => do
+    let s ← requireStringThis "normalize" thisArg
+    let form ← match argAt args 0 with
+      | .prim .undef => pure (JsString.ofString "NFC")
+      | v => toStringValue v
+    match JsString.normalizeForm? s form with
+    | some t => pure (.prim (.str t))
+    | none =>
+      throwJsError .rangeError
+        "The normalization form should be one of NFC, NFD, NFKC, NFKD."
+  | .padEnd => do pure (.prim (.str (← padWith "padEnd" thisArg args false)))
+  | .padStart => do pure (.prim (.str (← padWith "padStart" thisArg args true)))
+  | .«repeat» => do
+    let s ← requireStringThis "repeat" thisArg
+    let x ← toNumberValue (argAt args 0)
+    match Number.FloatOps.integerOrInfinity? x with
+    | none => throwJsError .rangeError s!"Invalid count value: {Number.toDecimalString x}"
+    | some n =>
+      if n < 0 then
+        throwJsError .rangeError s!"Invalid count value: {Number.toDecimalString x}"
+      -- `n = 0` and an empty receiver both answer `""` before the
+      -- length check, so `"".repeat(2 ** 31 - 1)` is a string rather
+      -- than a `RangeError` and rather than two billion appends.
+      else if n == 0 || s.isEmpty then pure (.prim (.str ""))
+      else if JsString.maxStringLength < n.toNat * s.length then
+        throwJsError .rangeError "Invalid string length"
+      else pure (.prim (.str (s.repeatUnits n.toNat)))
+  | .replace => do
+    let s ← requireStringThis "replace" thisArg
+    let search ← toStringValue (argAt args 0)
+    let repl := argAt args 1
+    let functional ← isCallable repl
+    let replStr ← if functional then pure (JsString.ofString "") else toStringValue repl
+    match JsString.indexOf s search 0 with
+    | none => pure (.prim (.str s))
+    | some p => do
+      pure (.prim (.str (← spliceMatches s search repl functional replStr 0 [p])))
+  | .replaceAll => do
+    let s ← requireStringThis "replaceAll" thisArg
+    let search ← toStringValue (argAt args 0)
+    let repl := argAt args 1
+    let functional ← isCallable repl
+    let replStr ← if functional then pure (JsString.ofString "") else toStringValue repl
+    pure (.prim (.str
+      (← spliceMatches s search repl functional replStr 0 (JsString.matchPositions s search))))
+  | .slice => do
+    let s ← requireStringThis "slice" thisArg
+    let a ← relativeArg (argAt args 0) s.length
+    let b ← match argAt args 1 with
+      | .prim .undef => pure s.length
+      | v => relativeArg v s.length
+    pure (.prim (.str (JsString.slice s a b)))
+  | .split => do
+    let s ← requireStringThis "split" thisArg
+    let limit ← match argAt args 1 with
+      | .prim .undef => pure 4294967295
+      | v => toUint32Value v
+    let sep ← toStringValue (argAt args 0)
+    if limit == 0 then newArray []
+    else
+      match argAt args 0 with
+      | .prim .undef => newArray [.prim (.str s)]
+      | _ => newArray ((JsString.splitOn s sep limit).map (fun t => Value.prim (.str t)))
+  | .startsWith => do
+    let s ← requireStringThis "startsWith" thisArg
+    let pat ← toStringValue (argAt args 0)
+    let start ← clampArg (argAt args 1) s.length
+    pure (.prim (.bool (JsString.startsWith s pat start)))
+  | .substring => do
+    let s ← requireStringThis "substring" thisArg
+    let a ← clampArg (argAt args 0) s.length
+    let b ← match argAt args 1 with
+      | .prim .undef => pure s.length
+      | v => clampArg v s.length
+    pure (.prim (.str (JsString.substring s a b)))
+  | .toLocaleLowerCase => do
+    pure (.prim (.str (← requireStringThis "toLocaleLowerCase" thisArg).lowerAscii))
+  | .toLocaleUpperCase => do
+    pure (.prim (.str (← requireStringThis "toLocaleUpperCase" thisArg).upperAscii))
+  | .toLowerCase => do
+    pure (.prim (.str (← requireStringThis "toLowerCase" thisArg).lowerAscii))
+  | .«toString» => do pure (.prim (.str (← thisStringValue "toString" thisArg)))
+  | .«toUpperCase» => do
+    pure (.prim (.str (← requireStringThis "toUpperCase" thisArg).upperAscii))
+  | .toWellFormed => do
+    pure (.prim (.str (← requireStringThis "toWellFormed" thisArg).toWellFormed))
+  | .trim => do pure (.prim (.str (← requireStringThis "trim" thisArg).trim))
+  | .trimEnd => do pure (.prim (.str (← requireStringThis "trimEnd" thisArg).trimEnd))
+  | .trimStart => do pure (.prim (.str (← requireStringThis "trimStart" thisArg).trimStart))
+  | .valueOf => do pure (.prim (.str (← thisStringValue "valueOf" thisArg)))
+  partial_fixpoint
+
+/-- StringPad (22.1.3.17.1), which `padStart` and `padEnd` differ in one
+Bool by. The early return at step 4 comes **before** the filler is
+coerced, so `"abc".padStart(0, { toString() { throw } })` does not
+throw. -/
+def padWith (who : String) (thisArg : Value) (args : List Value) (atStart : Bool) :
+    EvalM JsString := do
+  let s ← requireStringThis who thisArg
+  let maxLength ← toLengthValue (argAt args 0)
+  if maxLength ≤ s.length then pure s
+  else if JsString.maxStringLength < maxLength then
+    throwJsError .rangeError "Invalid string length"
+  else do
+    let fill ← match argAt args 1 with
+      | .prim .undef => pure (JsString.ofString " ")
+      | v => toStringValue v
+    pure (JsString.pad s maxLength fill atStart)
   partial_fixpoint
 
 /-- GetPrototypeFromConstructor (10.1.13) and OrdinaryObjectCreate on
@@ -4172,18 +4492,7 @@ def evalForInLoop (env : Env) (labels : List String) (left : ForInLeft) (right :
   | .prim .undef => pure (some undefValue)
   | .prim .null => pure (some undefValue)
   | _ => do
-    let r ←
-      match obj with
-      -- Until the wrapper object exists (#391), a string's enumerable own
-      -- keys are its indices and `String.prototype`'s are all
-      -- non-enumerable, so a null-prototyped stand-in enumerates exactly
-      -- what a wrapper would.
-      | .prim (.str str) =>
-        allocObj
-          { properties :=
-              indexProps 0 ((List.range (stringLength str)).map
-                (fun i => Value.prim (.str ((stringIndex? str i).getD "")))) }
-      | _ => toObjectValue obj
+    let r ← toObjectValue obj
     match ← attempt
       (evalForIn env labels left body r (← readObj r).stringKeys [] (some undefValue)) with
     | .ok v => pure v
@@ -4357,7 +4666,7 @@ def thrownSummary (v : Value) : EvalM (Option String) := do
   match v with
   | .obj _ =>
     match ← attempt (toStringValue v) with
-    | .ok s => pure (some s)
+    | .ok s => pure (some s.toStringLossy)
     | .error _ => pure none
   | _ => pure none
 
@@ -4383,7 +4692,7 @@ def Heap.printedLines (h : Heap) : List String :=
     | .array len _ =>
       (List.range len).filterMap fun i =>
         match o.getOwn (Key.str (toString i)) with
-        | some (.prim (.str s)) => some s
+        | some (.prim (.str s)) => some s.toStringLossy
         | _ => none
     | _ => []
 

@@ -260,3 +260,55 @@ private def withSym : Option Obj :=
 #guard withSym.bind (·.getOwn "k") == none
 #guard withSym.map (·.ownKeys) == some [symKey]
 #guard withSym.map (·.stringKeys) == some []
+
+/-! ## A String exotic object's index (10.4.3.5)
+
+An index below the length is synthesized from `[[StringData]]`, so there
+is nothing in the property list to replace: `applyDescriptor` validates
+against it through `Property.accepts` and answers the object unchanged
+when the redefinition is identical, `none` when it is not. An index at or
+past the length, and every non-index key, is ordinary. -/
+
+private def strAB : Obj := Obj.stringWrapper none (Js.JsString.ofString "ab")
+
+private def sameIndex : Descriptor :=
+  { value := some (.prim (.str "a")), writable := some false,
+    enumerable := some true, configurable := some false }
+
+#guard strAB.ownProperty "0"
+  == some { slot := .data (.prim (.str "a")) false, enumerable := true, configurable := false }
+#guard strAB.ownProperty "1"
+  == some { slot := .data (.prim (.str "b")) false, enumerable := true, configurable := false }
+#guard strAB.ownProperty "2" == none
+#guard strAB.ownProperty "length"
+  == some { slot := .data (.prim (.num 2.0)) false, enumerable := false, configurable := false }
+#guard strAB.ownKeys == (["0", "1", "length"] : List String).map Key.str
+#guard strAB.enumerableKeys == ["0", "1"]
+#guard strAB.isString
+#guard strAB.stringData? == some (Js.JsString.ofString "ab")
+
+-- An identical redefinition is the specification's no-op: the object
+-- comes back with nothing added to its property list.
+#guard (strAB.applyDescriptor "0" sameIndex).map (·.properties) == some strAB.properties
+#guard (strAB.applyDescriptor "0" {}).map (·.properties) == some strAB.properties
+
+-- A different value, a different attribute, and an accessor are each
+-- refused.
+#guard (strAB.applyDescriptor "0" (dataOf (.prim (.str "z")))).isNone
+#guard (strAB.applyDescriptor "0" { configurable := some true }).isNone
+#guard (strAB.applyDescriptor "0" { writable := some true }).isNone
+#guard (strAB.applyDescriptor "0" { enumerable := some false }).isNone
+#guard (strAB.applyDescriptor "0" { getter := some g₁ }).isNone
+
+-- An index at or past the length is ordinary, and so is `length` itself:
+-- `length` is a real own property, non-writable and non-configurable, so
+-- a redefinition of it refuses the ordinary way.
+#guard (strAB.applyDescriptor "2" (dataOf (.prim (.str "z")))).bind (·.getOwnProperty "2")
+  == some { slot := .data (.prim (.str "z")) false, enumerable := false, configurable := false }
+#guard (strAB.applyDescriptor "length" (dataOf (.prim (.num 5.0)))).isNone
+#guard (strAB.applyDescriptor "foo" (dataOf (.prim (.num 1.0)))).bind (·.getOwnProperty "foo")
+  == some { slot := .data (.prim (.num 1.0)) false, enumerable := false, configurable := false }
+
+-- Freezing one is a no-op on the indices: they are already non-writable
+-- and non-configurable.
+#guard (strAB.setIntegrity true).testIntegrity true

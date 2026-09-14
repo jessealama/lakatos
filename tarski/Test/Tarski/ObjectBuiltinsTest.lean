@@ -161,8 +161,8 @@ private def keysOf (e : Expr) : Expr := .call (.member (.ident "Object") "keys")
 /-! ## `Object` as a function and as a constructor
 
 Both spellings allocate the same thing, so `new` hands the native no
-receiver at all. A Number or a Boolean argument is wrapped as of #382; a
-string still refuses, its wrapper being #391's. -/
+receiver at all. Every non-nullish argument is ToObject's: a Number, a
+Boolean, or a String is wrapped, and an object is itself. -/
 
 #guard outcome (expr (.unary .typeof (.call (.ident "Object") []))) == "object"
 #guard outcome (expr (.unary .typeof (.call (.ident "Object") [.nullLit]))) == "object"
@@ -194,9 +194,8 @@ string still refuses, its wrapper being #391's. -/
       (.numLit 1.0)))
   == "true"
 
--- `Object("s");` — the String wrapper is #391's, so this still refuses.
-#guard outcome (expr (.call (.ident "Object") [.strLit "s"]))
-  == "uncaught: TypeError: Cannot convert a primitive to an object"
+-- `typeof Object("s");` — ToObject of a string is the String wrapper.
+#guard outcome (expr (.unary .typeof (.call (.ident "Object") [.strLit "s"]))) == "object"
 
 -- `({}) instanceof Object;`
 #guard outcome (expr (.binary .instanceof (.objectLit []) (.ident "Object"))) == "true"
