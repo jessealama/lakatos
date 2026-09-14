@@ -10,7 +10,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Boolean/prototype": {
@@ -23,7 +24,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Boolean/prototype/constructor": {
@@ -36,7 +38,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Boolean/prototype/toString": {
@@ -49,7 +52,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Boolean/prototype/valueOf": {
@@ -62,7 +66,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math": {
@@ -75,7 +80,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/E": {
@@ -88,7 +94,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/LN10": {
@@ -101,7 +108,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/LN2": {
@@ -114,7 +122,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/LOG10E": {
@@ -127,7 +136,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/LOG2E": {
@@ -140,7 +150,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/PI": {
@@ -153,7 +164,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/SQRT1_2": {
@@ -166,7 +178,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/SQRT2": {
@@ -179,7 +192,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/abs": {
@@ -192,7 +206,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/acos": {
@@ -205,7 +220,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/acosh": {
@@ -218,7 +234,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/asin": {
@@ -231,7 +248,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/asinh": {
@@ -244,7 +262,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/atan": {
@@ -257,7 +276,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/atan2": {
@@ -270,7 +290,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/atanh": {
@@ -283,7 +304,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/cbrt": {
@@ -296,7 +318,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/ceil": {
@@ -309,7 +332,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/clz32": {
@@ -322,7 +346,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/cos": {
@@ -335,7 +360,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/cosh": {
@@ -348,7 +374,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/exp": {
@@ -361,7 +388,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/expm1": {
@@ -374,7 +402,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/f16round": {
@@ -387,7 +416,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/floor": {
@@ -400,7 +430,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/fround": {
@@ -413,7 +444,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/hypot": {
@@ -426,7 +458,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/imul": {
@@ -439,7 +472,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/log": {
@@ -452,7 +486,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/log10": {
@@ -465,7 +500,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/log1p": {
@@ -478,7 +514,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/log2": {
@@ -491,7 +528,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/max": {
@@ -504,7 +542,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/min": {
@@ -517,7 +556,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/pow": {
@@ -530,7 +570,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/random": {
@@ -543,7 +584,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/round": {
@@ -556,7 +598,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/sign": {
@@ -569,7 +612,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/sin": {
@@ -582,7 +626,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/sinh": {
@@ -595,7 +640,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/sqrt": {
@@ -608,7 +654,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/sumPrecise": {
@@ -621,7 +668,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/tan": {
@@ -634,7 +682,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/tanh": {
@@ -647,7 +696,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Math/trunc": {
@@ -660,7 +710,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Number": {
@@ -673,7 +724,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Number/MAX_VALUE": {
@@ -686,7 +738,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Number/MIN_VALUE": {
@@ -699,7 +752,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Number/NEGATIVE_INFINITY": {
@@ -712,7 +766,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Number/POSITIVE_INFINITY": {
@@ -725,7 +780,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Number/isFinite": {
@@ -738,7 +794,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Number/isInteger": {
@@ -751,7 +808,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Number/isNaN": {
@@ -764,7 +822,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Number/isSafeInteger": {
@@ -777,7 +836,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Number/parseFloat": {
@@ -790,7 +850,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Number/parseInt": {
@@ -803,7 +864,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Number/prototype": {
@@ -816,7 +878,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Number/prototype/toExponential": {
@@ -829,7 +892,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Number/prototype/toFixed": {
@@ -842,7 +906,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Number/prototype/toLocaleString": {
@@ -855,7 +920,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Number/prototype/toPrecision": {
@@ -868,7 +934,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Number/prototype/toString": {
@@ -881,7 +948,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/built-ins/Number/prototype/valueOf": {
@@ -894,7 +962,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/harness": {
@@ -907,7 +976,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 17,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/language/expressions/addition": {
@@ -920,7 +990,8 @@
         "noStrict": 1,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/language/expressions/assignment": {
@@ -933,7 +1004,8 @@
         "noStrict": 11,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/language/expressions/assignment/destructuring": {
@@ -946,7 +1018,8 @@
         "noStrict": 1,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/language/expressions/assignment/dstr": {
@@ -959,7 +1032,8 @@
         "noStrict": 67,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/language/expressions/conditional": {
@@ -972,7 +1046,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/language/expressions/division": {
@@ -985,7 +1060,8 @@
         "noStrict": 1,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/language/expressions/greater-than": {
@@ -998,7 +1074,8 @@
         "noStrict": 1,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/language/expressions/greater-than-or-equal": {
@@ -1011,7 +1088,8 @@
         "noStrict": 1,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/language/expressions/less-than": {
@@ -1024,7 +1102,8 @@
         "noStrict": 1,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/language/expressions/less-than-or-equal": {
@@ -1037,7 +1116,8 @@
         "noStrict": 1,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/language/expressions/logical-and": {
@@ -1050,7 +1130,8 @@
         "noStrict": 1,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/language/expressions/logical-not": {
@@ -1063,7 +1144,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/language/expressions/logical-or": {
@@ -1076,7 +1158,8 @@
         "noStrict": 1,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/language/expressions/modulus": {
@@ -1089,7 +1172,8 @@
         "noStrict": 1,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/language/expressions/multiplication": {
@@ -1102,7 +1186,8 @@
         "noStrict": 1,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/language/expressions/strict-does-not-equals": {
@@ -1115,7 +1200,8 @@
         "noStrict": 1,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/language/expressions/strict-equals": {
@@ -1128,7 +1214,8 @@
         "noStrict": 1,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/language/expressions/subtraction": {
@@ -1141,7 +1228,8 @@
         "noStrict": 1,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/language/expressions/unary-minus": {
@@ -1154,7 +1242,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/language/expressions/unary-plus": {
@@ -1167,7 +1256,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/language/statements/block": {
@@ -1180,7 +1270,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/language/statements/const": {
@@ -1193,7 +1284,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/language/statements/const/dstr": {
@@ -1206,7 +1298,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/language/statements/const/syntax": {
@@ -1219,7 +1312,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/language/statements/for": {
@@ -1232,7 +1326,8 @@
         "noStrict": 7,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/language/statements/for/dstr": {
@@ -1245,7 +1340,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/language/statements/if": {
@@ -1258,7 +1354,8 @@
         "noStrict": 2,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/language/statements/let": {
@@ -1271,7 +1368,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/language/statements/let/dstr": {
@@ -1284,7 +1382,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/language/statements/let/syntax": {
@@ -1297,7 +1396,8 @@
         "noStrict": 1,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/language/statements/return": {
@@ -1310,7 +1410,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/language/statements/throw": {
@@ -1323,7 +1424,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/language/statements/variable": {
@@ -1336,7 +1438,8 @@
         "noStrict": 7,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/language/statements/variable/dstr": {
@@ -1349,7 +1452,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     },
     "test/language/statements/while": {
@@ -1362,7 +1466,8 @@
         "noStrict": 2,
         "raw": 0,
         "async": 0,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     }
   }
