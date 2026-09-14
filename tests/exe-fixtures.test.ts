@@ -62,14 +62,14 @@ function corpus(): string[] {
  * Measured, not predicted: a row that moves is either a slice that landed
  * or a regression, and either way it belongs in a diff.
  *
- * Forty-two of the corpus's two hundred and seventy-six. The twenty-two `Parameter`
- * rows are parameter defaults (#393) and leave when it merges; the six
+ * Twenty-one of the corpus's two hundred and seventy-six. The six
  * `ImportDeclaration` rows are the multi-file fixtures, which `exe`
- * refuses by design — it resolves no module graph. The rest is syntax
- * outside the evaluated fragment: template literals, BigInt, a regular
- * expression, `&`, `??`, a computed key, a private accessor, an `async`
- * function, and an `export default class` with no name, which is a class
- * declaration with no `id` once the module syntax is off it.
+ * refuses by design — it resolves no module graph; the one `Parameter`
+ * row is a rest parameter (#394). The rest is syntax outside the
+ * evaluated fragment: template literals, BigInt, a regular expression,
+ * `&`, `??`, a computed key, a private accessor, an `async` function, and
+ * an `export default class` with no name, which is a class declaration
+ * with no `id` once the module syntax is off it.
  */
 const UNSUPPORTED: Record<string, string> = {
   "engines/pabst/tests/fixtures/e2e/bounded.ts": "BigIntLiteral",
@@ -82,53 +82,21 @@ const UNSUPPORTED: Record<string, string> = {
     "FunctionDeclaration async",
   "engines/thales/tests/conformance/inappropriate/bare-import/main.ts":
     "ImportDeclaration",
-  "engines/thales/tests/conformance/inappropriate/ctor-default-this.ts":
-    "Parameter",
   "engines/thales/tests/conformance/inappropriate/import-cycle/main.ts":
     "ImportDeclaration",
   "engines/thales/tests/conformance/inappropriate/unmodeled-operator.ts":
     "BinaryExpression &",
-  "engines/thales/tests/conformance/theorem/boolean-classes.ts": "Parameter",
-  "engines/thales/tests/conformance/theorem/boolean-param.ts": "Parameter",
   "engines/thales/tests/conformance/theorem/branch-guarded-throw.ts":
     "TemplateExpression",
-  "engines/thales/tests/conformance/theorem/class-binder-ctor-default.ts":
-    "Parameter",
-  "engines/thales/tests/conformance/theorem/ctor-default-instance.ts":
-    "Parameter",
-  "engines/thales/tests/conformance/theorem/ctor-default-omitted.ts":
-    "Parameter",
-  "engines/thales/tests/conformance/theorem/ctor-default-undefined.ts":
-    "Parameter",
-  "engines/thales/tests/conformance/theorem/fn-default-calls.ts": "Parameter",
-  "engines/thales/tests/conformance/theorem/fn-default-explicit-undefined.ts":
-    "Parameter",
-  "engines/thales/tests/conformance/theorem/fn-default-instance.ts":
-    "Parameter",
-  "engines/thales/tests/conformance/theorem/fn-default-leading.ts": "Parameter",
-  "engines/thales/tests/conformance/theorem/fn-default-omitted.ts": "Parameter",
-  "engines/thales/tests/conformance/theorem/fn-default-outside-slice.ts":
-    "Parameter",
   "engines/thales/tests/conformance/theorem/imported-constants/main.ts":
     "ImportDeclaration",
   "engines/thales/tests/conformance/theorem/imported-scale/main.ts":
     "ImportDeclaration",
-  "engines/thales/tests/conformance/theorem/method-default-instance.ts":
-    "Parameter",
-  "engines/thales/tests/conformance/theorem/method-default-omitted.ts":
-    "Parameter",
-  "engines/thales/tests/conformance/theorem/method-default-this.ts":
-    "Parameter",
-  "engines/thales/tests/fixtures/class-params.ts": "Parameter",
-  "engines/thales/tests/fixtures/ctor-defaults.ts": "Parameter",
-  "engines/thales/tests/fixtures/defaults.ts": "Parameter",
-  "engines/thales/tests/fixtures/instance-defaults.ts": "Parameter",
   "engines/thales/tests/fixtures/statements.ts": "TemplateExpression",
   "engines/thales/tests/fixtures/tracer.ts": "FunctionDeclaration async",
   "spec/fixtures/attach/reject/anonymous-class.ts": "ClassDeclaration",
   "spec/fixtures/attach/reject/computed-name.ts": "ComputedPropertyName",
   "spec/fixtures/attach/reject/private-getter.ts": "MethodDefinition private",
-  "spec/fixtures/binder/accept/ctor-param-default.ts": "Parameter",
   "spec/fixtures/binder/reject/ctor-param-optional.ts": "LogicalExpression ??",
   "spec/fixtures/binder/reject/ctor-param-rest.ts": "Parameter",
   "spec/fixtures/island/accept/reexported-import.ts": "ImportDeclaration",
