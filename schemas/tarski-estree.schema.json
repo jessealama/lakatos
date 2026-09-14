@@ -28,6 +28,7 @@
         { "$ref": "#/definitions/ReturnStatement" },
         { "$ref": "#/definitions/IfStatement" },
         { "$ref": "#/definitions/WhileStatement" },
+        { "$ref": "#/definitions/DoWhileStatement" },
         { "$ref": "#/definitions/ForStatement" },
         { "$ref": "#/definitions/SwitchStatement" },
         { "$ref": "#/definitions/EmptyStatement" },
@@ -115,6 +116,18 @@
         "body": { "$ref": "#/definitions/Statement" }
       },
       "required": ["type", "test", "body"],
+      "additionalProperties": false
+    },
+
+    "DoWhileStatement": {
+      "description": "`do { … } while (…)`. The body runs before the first test, which is the whole of the difference from WhileStatement; `body` is named first here as it is in the source.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "DoWhileStatement" },
+        "body": { "$ref": "#/definitions/Statement" },
+        "test": { "$ref": "#/definitions/Expression" }
+      },
+      "required": ["type", "body", "test"],
       "additionalProperties": false
     },
 
@@ -614,12 +627,25 @@
       "additionalProperties": false
     },
 
+    "AssignmentPattern": {
+      "description": "A parameter with a default: `left` is the parameter's name and `right` the initializer, which runs only when the argument is `undefined`. A binding pattern on the left is outside the slice, so the whole parameter arrives as `Unsupported` instead; an assignment pattern as a destructuring *target* is a later slice's, so this node appears only in a Params list.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "AssignmentPattern" },
+        "left": { "$ref": "#/definitions/Identifier" },
+        "right": { "$ref": "#/definitions/Expression" }
+      },
+      "required": ["type", "left", "right"],
+      "additionalProperties": false
+    },
+
     "Params": {
-      "description": "A parameter list. Only a plain identifier is in the slice: a default or a rest parameter arrives as `Unsupported` with kind `Parameter`, and a binding pattern with the pattern's own kind, so the function node itself survives and only the parameter is refused.",
+      "description": "A parameter list. A plain identifier and an AssignmentPattern over one are in the slice: a rest parameter arrives as `Unsupported` with kind `Parameter`, and a binding pattern — with or without a default — with the pattern's own kind, so the function node itself survives and only the parameter is refused.",
       "type": "array",
       "items": {
         "anyOf": [
           { "$ref": "#/definitions/Identifier" },
+          { "$ref": "#/definitions/AssignmentPattern" },
           { "$ref": "#/definitions/Unsupported" }
         ]
       }

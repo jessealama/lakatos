@@ -16,7 +16,7 @@ open Tarski
 /-! ## The shape -/
 
 #guard Heap.initial.cells.size == 19
-#guard Heap.initial.objects.size == 59
+#guard Heap.initial.objects.size == 60
 
 /-! ## Each kind's prototype
 
@@ -339,7 +339,10 @@ private def nativeAt (r : Ref) (n : NativeFn) : Bool :=
          (numberToFixedRef, .numberToFixed),
          (numberToExponentialRef, .numberToExponential),
          (numberToPrecisionRef, .numberToPrecision),
-         (numberToLocaleStringRef, .numberToLocaleString) ].all fun p => nativeAt p.1 p.2
+         (numberToLocaleStringRef, .numberToLocaleString),
+         -- %ThrowTypeError%: one object per realm, so `arguments.callee`'s
+         -- getter and setter are the same function.
+         (throwTypeErrorRef, .throwTypeError) ].all fun p => nativeAt p.1 p.2
 
 #guard [ (numberCtorRef, NativeFn.numberCtor),
          (numberToStringRef, .numberToString),

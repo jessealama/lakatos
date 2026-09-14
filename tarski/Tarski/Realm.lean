@@ -37,6 +37,7 @@ the literal against the constants so the two cannot drift apart.
 | 50–52     | `Math.max`, `Math.min`, `Math.pow`                       |
 | 53–54     | `parseFloat`, `parseInt`                                  |
 | 55–58     | `Number.prototype.toFixed`, `toExponential`, `toPrecision`, `toLocaleString` |
+| 59        | `%ThrowTypeError%`                                       |
 
 The nineteen global bindings are cells 0–18: the seven `Error`
 constructors, then `Object`, `Array`, `String`, `print`, `$262`,
@@ -258,6 +259,13 @@ def numberToPrecisionRef : Ref := 57
 
 /-- `Number.prototype.toLocaleString`. -/
 def numberToLocaleStringRef : Ref := 58
+
+/-- `%ThrowTypeError%` (10.2.4.1), the getter and the setter of a strict
+`arguments` object's `callee`. One object per realm, as the
+specification has it, which is what makes the two halves of that
+accessor the same function. It has no global binding: nothing in source
+can name it. -/
+def throwTypeErrorRef : Ref := 59
 
 /-- The cell the kind's global binding lives in: 0–6, in the same
 order. -/
@@ -610,6 +618,8 @@ def Heap.initial : Heap where
        -- 57: Number.prototype.toPrecision
        { callable := some (.native .numberToPrecision) },
        -- 58: Number.prototype.toLocaleString
-       { callable := some (.native .numberToLocaleString) } ]
+       { callable := some (.native .numberToLocaleString) },
+       -- 59: %ThrowTypeError%
+       { callable := some (.native .throwTypeError) } ]
 
 end Tarski

@@ -76,7 +76,7 @@ deriving Repr, DecidableEq, Inhabited
 
 /-- A function's code and the scope it closed over. -/
 structure Closure where
-  params : List String
+  params : List Param
   body : List Stmt
   env : Env
   kind : FuncKind
@@ -88,6 +88,16 @@ structure Closure where
   /-- `[[Fields]]`: the instance fields a class constructor initializes,
   in source order. Empty for every other closure. -/
   fields : List ClassField := []
+  /-- Whether a call binds an `arguments` object. ContainsArguments over
+  the parameters and the body, computed once when the function object is
+  made — `makeFunction` and `evalClass` are the only two that set it, and
+  nothing sets it by hand. An arrow has no `arguments` of its own, so it
+  is always `false` for one. Without `eval` and the `Function`
+  constructor, which #376 excludes, a function that never spells the name
+  cannot observe the object, so not allocating one is the specification's
+  behaviour on every program this evaluator accepts. See
+  `mentionsArguments` in `Tarski/Eval.lean`. -/
+  needsArguments : Bool := false
 deriving Repr, Inhabited
 
 /-- The `Error` constructors the language has, in the order
@@ -218,6 +228,12 @@ inductive NativeFn where
   | mathMin
   /-- `Math.pow`, the library's `tsPow` — the same definition `**` is. -/
   | mathPow
+  /-- `%ThrowTypeError%` (10.2.4.1): the one function per realm that does
+  nothing but throw a `TypeError`. It is both halves of a strict
+  `arguments` object's `callee` accessor, which is why it must be a
+  single object rather than a closure made per call. It has no
+  `[[Construct]]`. -/
+  | throwTypeError
 deriving Repr, DecidableEq, Inhabited
 
 /-- `[[Call]]`: user code or a built-in. -/
@@ -237,13 +253,18 @@ way — a field, not a property, so `Object.keys(new Number(1))` is empty
 and no write can forge one. A kind with a `Float` in it still derives
 `DecidableEq`, because propositional equality on `Float` is SameValue
 (`Js/Val.lean` says so), which is the right test for a `[[NumberData]]`.
-Later slices add constructors — a boxed string (#391) and `arguments`
-(#393). -/
+`arguments` is the unmapped arguments object: ordinary in every respect
+but the `[[ParameterMap]]` slot, which is what
+`Object.prototype.toString` reads to answer `[object Arguments]`, so the
+kind *is* that slot and #389's `toString` needs no second visit to the
+call path. `hasOwn`, `ownKeys`, and `truncate` treat it as ordinary.
+A later slice adds a boxed string (#391). -/
 inductive ObjKind where
   | ordinary
   | array (length : Nat)
   | number (value : Float)
   | boolean (value : Bool)
+  | arguments
 deriving Repr, DecidableEq, Inhabited
 
 /-- An accessor property's two functions. Named `getter` and `setter`

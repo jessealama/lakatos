@@ -59,7 +59,12 @@ private def program : Program :=
 attribute [local simp] evalExpr evalExprs evalStmt evalStmts evalDeclarators
   instantiateBlock hoistNames hoistDeclarators initFunctions
   varNames varNamesStmt varNamesCases hoistVars
-  callFunction catchReturn makeFunction bindParams attempt
+  callFunction catchReturn makeFunction instantiateFunction allocParams initParams hoistVarsFrom
+  Param.names hasDefaults expectedArgumentCount Value.ofNat mentionsArguments
+  mentionsArgumentsExpr mentionsArgumentsExprs mentionsArgumentsProps
+  mentionsArgumentsTarget mentionsArgumentsArrow mentionsArgumentsParams
+  mentionsArgumentsClass mentionsArgumentsStmts mentionsArgumentsStmt
+  mentionsArgumentsForInit mentionsArgumentsDecls mentionsArgumentsCases attempt
   evalClass defineMethods initializeInstance initFields initFieldList
   constructClass runConstructor bindPrivateNames privateName
   readPrivate writePrivate addPrivate allocFromConstructor isConstructor

@@ -6,15 +6,16 @@ against one another. A node kind outside this file is not a runtime
 error: `Decode` refuses it as `unsupported`, and that is the only place
 the word appears.
 
-Strict mode only. Parameters are plain identifiers: a default is #393's,
-rest and binding patterns are #394's. `var` is here, so hoisting covers
-two scopes at once: `let`, `const`, and function declarations are
-instantiated per block, while a `var` is hoisted to the enclosing
-function or script and initialized to `undefined` there, with no dead
-zone. `throw` and `try`, labels, `break`/`continue`, `for`, and `switch`
-— the two remaining breakable statements — are here; `do`/`while`,
-`for`-`in`, `arguments`, and parameter defaults are #393's, `for`-`of`
-and binding patterns #394's.
+Strict mode only. A parameter is a `Param`: a name and an optional
+default, which is what `AssignmentPattern` decodes to; rest parameters
+and binding patterns are #394's and arrive as `Unsupported`. `var` is
+here, so hoisting covers two scopes at once: `let`, `const`, and function
+declarations are instantiated per block, while a `var` is hoisted to the
+enclosing function or script and initialized to `undefined` there, with
+no dead zone. `throw` and `try`, labels, `break`/`continue`, `for`,
+`switch`, and `do`/`while` — the three remaining breakable statements —
+are here, and so are parameter defaults and `arguments`; `for`-`in` and
+`new.target` are #485's, `for`-`of` and binding patterns #394's.
 
 **Classes are here**: declarations and expressions, a constructor,
 public and private instance fields, methods, getters and setters,
@@ -221,10 +222,10 @@ inductive Expr where
   /-- ESTree `FunctionExpression`. A name binds only inside the
   function's own scope, which is what lets an anonymous-looking
   expression recurse. -/
-  | funcExpr (name : Option String) (params : List String) (body : List Stmt)
+  | funcExpr (name : Option String) (params : List Param) (body : List Stmt)
   /-- ESTree `ArrowFunctionExpression`. An arrow has no `this` of its
   own, so `this` inside one is an ordinary lexical lookup. -/
-  | arrow (params : List String) (body : ArrowBody)
+  | arrow (params : List Param) (body : ArrowBody)
   /-- ESTree `AssignmentExpression` with `operator: "="`. -/
   | assign (target : Target) (value : Expr)
   /-- ESTree `AssignmentExpression` with one of the five arithmetic
@@ -273,13 +274,18 @@ inductive Stmt where
   /-- ESTree `FunctionDeclaration`. Hoisted to the top of the block that
   contains it, and initialized there, so it may be called before its
   text and two of them may call each other. -/
-  | funcDecl (name : String) (params : List String) (body : List Stmt)
+  | funcDecl (name : String) (params : List Param) (body : List Stmt)
   /-- ESTree `ReturnStatement`; `none` returns `undefined`. -/
   | returnStmt (argument : Option Expr)
   /-- ESTree `IfStatement`; `alternate` is the `else` arm. -/
   | ifStmt (test : Expr) (consequent : Stmt) (alternate : Option Stmt)
   /-- ESTree `WhileStatement`. -/
   | whileStmt (test : Expr) (body : Stmt)
+  /-- ESTree `DoWhileStatement`. The body runs before the first test, a
+  `continue` goes to the test rather than out of the loop, and the whole
+  thing is a breakable statement like `while`. The body is first here
+  because it is first in the source. -/
+  | doWhileStmt (body : Stmt) (test : Expr)
   /-- ESTree `ForStatement`. The head's three parts are each optional,
   so `for (;;)` is three `none`s. A `let` head gets a fresh binding per
   iteration — copied after the body and before the update, so a closure
@@ -371,11 +377,11 @@ inductive ClassElement where
   /-- ESTree `MethodDefinition` with `kind: "constructor"`. At most one
   is meaningful; a second is an early error, which this epic does not
   check, so the first one wins. -/
-  | ctor (params : List String) (body : List Stmt)
+  | ctor (params : List Param) (body : List Stmt)
   /-- ESTree `MethodDefinition` with `kind` `"method"`, `"get"`, or
   `"set"` and an `Identifier` or string `Literal` key. -/
   | method (kind : MethodKind) (isStatic : Bool) (name : String)
-      (params : List String) (body : List Stmt)
+      (params : List Param) (body : List Stmt)
   /-- ESTree `PropertyDefinition`. -/
   | field (isStatic : Bool) (key : ClassKey) (value : Option Expr)
 
@@ -390,6 +396,20 @@ structure ClassDef where
   superClass : Option Expr
   /-- ESTree `body.body`. -/
   elements : List ClassElement
+
+/-- One formal parameter. ESTree gives a plain parameter as an
+`Identifier` in a `params` list and a defaulted one as an
+`AssignmentPattern` whose `left` is one; `default` is that node's
+`right`, and it is evaluated only when the argument is `undefined` —
+which is why `f(1, undefined)` runs the default and `f(1, null)` does
+not. A rest parameter and a binding pattern are #394's and arrive as
+`Unsupported`, so the parameter is refused and the function survives. -/
+structure Param where
+  /-- ESTree `Identifier.name`. -/
+  name : String
+  /-- The `AssignmentPattern`'s `right`, or `none` for a plain
+  parameter. -/
+  default : Option Expr
 
 /-- One declarator of a `VariableDeclaration`. `none` binds `undefined`.
 JS requires an initializer on a `const`, but as an early error, and early
@@ -410,17 +430,40 @@ end
 -- decision procedure on syntax: the tests compare programs by `repr` and
 -- results by `Value`, which stays decidable.
 deriving instance Repr, Inhabited for Expr, ArrowBody, Target, Stmt, ForInit, SwitchCase,
-  CatchClause, Declarator, ClassField, ClassElement, ClassDef
+  CatchClause, Param, Declarator, ClassField, ClassElement, ClassDef
+
+/-- A plain name is a parameter with no default, so a test and a
+literal program may still spell `params := ["x"]`. The coercion is
+`CoeHead`-free and elaborates inside a list literal, which is what keeps
+every program written before defaults existed unchanged. -/
+instance : Coe String Param := ⟨fun name => { name, default := none }⟩
+
+/-- The parameters' names, in order — BoundNames of a formal parameter
+list, restricted to the single-name bindings this AST has. -/
+def Param.names (ps : List Param) : List String := ps.map (·.name)
+
+/-- Whether any parameter has an initializer. FunctionDeclarationInstantiation
+(10.2.11) branches on this: with a default present the `var`s get a scope
+of their own (step 28), without one they share the parameters' cells
+(step 27). -/
+def hasDefaults (ps : List Param) : Bool := ps.any (·.default.isSome)
+
+/-- ExpectedArgumentCount (15.1.5), which is a function's `length`: the
+parameters strictly before the first one with an initializer. A rest
+parameter would stop the count too, but one is outside this AST. -/
+def expectedArgumentCount : List Param → Nat
+  | [] => 0
+  | p :: rest => if p.default.isSome then 0 else expectedArgumentCount rest + 1
 
 /-- The first `ctor` element of a class body. A second is an early
 error, which this epic does not check, so the first one wins. -/
-def firstConstructor : List ClassElement → Option (List String × List Stmt)
+def firstConstructor : List ClassElement → Option (List Param × List Stmt)
   | [] => none
   | .ctor params body :: _ => some (params, body)
   | _ :: rest => firstConstructor rest
 
 /-- The class's constructor, if it wrote one. -/
-def ClassDef.constructor? (d : ClassDef) : Option (List String × List Stmt) :=
+def ClassDef.constructor? (d : ClassDef) : Option (List Param × List Stmt) :=
   firstConstructor d.elements
 
 /-- The fields on one side of the class, in source order. -/
