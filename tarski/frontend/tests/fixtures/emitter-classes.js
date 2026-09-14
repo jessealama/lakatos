@@ -1,9 +1,10 @@
 "use strict";
 // The class fixtures `lakatos prove` proves `Theorem`s over, stripped of
 // their type annotations and their `export`s, with each `@ensures`
-// instantiated at one witness. Two constructor parameter defaults are
-// gone with the types — defaults are #393's — so every probe below
-// passes the argument the default would have supplied.
+// instantiated at one witness. The two constructor parameter defaults
+// are here as they are written there, so this is the text the proofs are
+// about rather than a hand-adjusted copy; each has a probe of its own
+// that calls the constructor without the argument.
 let ok = true;
 
 // engines/thales/tests/fixtures/classes.ts
@@ -51,11 +52,10 @@ ok =
   Object.is(new Doubler(4).double(), 8) &&
   Object.is(new Doubler(4).twice(), 8);
 
-// engines/thales/tests/fixtures/class-params.ts. `Point`'s `x = 0`
-// default is #393's, so every `new Point(...)` here is explicit.
+// engines/thales/tests/fixtures/class-params.ts
 class Point {
   x;
-  constructor(x) {
+  constructor(x = 0) {
     this.x = x;
   }
   gap(other) {
@@ -82,7 +82,8 @@ ok =
   Object.is(new Point(3).gap(new Point(3)), 0) &&
   Object.is(new Point(3).twice(new Point(3)), 0) &&
   Object.is(new Wrap(new Point(5)).v, 5) &&
-  Object.is(readX(new Point(7)), 7);
+  Object.is(readX(new Point(7)), 7) &&
+  Object.is(new Point().x, 0);
 
 // engines/thales/tests/fixtures/nested-class-binder.ts. Its `Point` is a
 // different class from the one above, which is why each block is its own.
@@ -111,8 +112,7 @@ ok =
       new Span(new Point(1), new Point(3)).width();
 }
 
-// engines/thales/tests/conformance/theorem/boolean-classes.ts. `Switch`'s
-// `on = false` default is #393's, so the probe passes it.
+// engines/thales/tests/conformance/theorem/boolean-classes.ts
 class Flag {
   on;
   constructor(on) {
@@ -139,7 +139,7 @@ function read(n, f) {
 }
 class Switch {
   on;
-  constructor(n, on) {
+  constructor(n, on = false) {
     this.on = n > 0 || on;
   }
   level() {
@@ -154,6 +154,7 @@ ok =
   new Flag(true).level() >= 0 &&
   pick(new Flag(false)) >= 0 &&
   read(3, new Flag(true)) >= 0 &&
-  new Switch(1, false).level() >= 0;
+  new Switch(1, false).level() >= 0 &&
+  new Switch(0).level() === 0;
 
 ok;

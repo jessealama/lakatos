@@ -1,0 +1,386 @@
+{
+  "type": "Program",
+  "sourceType": "script",
+  "body": [
+    {
+      "type": "ExpressionStatement",
+      "expression": {
+        "type": "Literal",
+        "value": "use strict",
+        "raw": "\"use strict\""
+      },
+      "directive": "use strict"
+    },
+    {
+      "type": "FunctionDeclaration",
+      "id": {
+        "type": "Identifier",
+        "name": "f"
+      },
+      "params": [],
+      "body": {
+        "type": "BlockStatement",
+        "body": [
+          {
+            "type": "VariableDeclaration",
+            "kind": "const",
+            "declarations": [
+              {
+                "type": "VariableDeclarator",
+                "id": {
+                  "type": "Identifier",
+                  "name": "before"
+                },
+                "init": {
+                  "type": "UnaryExpression",
+                  "operator": "typeof",
+                  "argument": {
+                    "type": "Identifier",
+                    "name": "g"
+                  },
+                  "prefix": true
+                }
+              }
+            ]
+          },
+          {
+            "type": "FunctionDeclaration",
+            "id": {
+              "type": "Identifier",
+              "name": "g"
+            },
+            "params": [],
+            "body": {
+              "type": "BlockStatement",
+              "body": [
+                {
+                  "type": "ReturnStatement",
+                  "argument": {
+                    "type": "MemberExpression",
+                    "object": {
+                      "type": "Identifier",
+                      "name": "arguments"
+                    },
+                    "property": {
+                      "type": "Identifier",
+                      "name": "length"
+                    },
+                    "computed": false
+                  }
+                }
+              ]
+            },
+            "async": false,
+            "generator": false
+          },
+          {
+            "type": "VariableDeclaration",
+            "kind": "let",
+            "declarations": [
+              {
+                "type": "VariableDeclarator",
+                "id": {
+                  "type": "Identifier",
+                  "name": "r"
+                },
+                "init": {
+                  "type": "Literal",
+                  "value": "",
+                  "raw": "\"\""
+                }
+              }
+            ]
+          },
+          {
+            "type": "LabeledStatement",
+            "label": {
+              "type": "Identifier",
+              "name": "outer"
+            },
+            "body": {
+              "type": "ForStatement",
+              "init": {
+                "type": "VariableDeclaration",
+                "kind": "let",
+                "declarations": [
+                  {
+                    "type": "VariableDeclarator",
+                    "id": {
+                      "type": "Identifier",
+                      "name": "i"
+                    },
+                    "init": {
+                      "type": "Literal",
+                      "value": 0,
+                      "raw": "0"
+                    }
+                  }
+                ]
+              },
+              "test": {
+                "type": "BinaryExpression",
+                "operator": "<",
+                "left": {
+                  "type": "Identifier",
+                  "name": "i"
+                },
+                "right": {
+                  "type": "Literal",
+                  "value": 3,
+                  "raw": "3"
+                }
+              },
+              "update": {
+                "type": "UpdateExpression",
+                "operator": "++",
+                "argument": {
+                  "type": "Identifier",
+                  "name": "i"
+                },
+                "prefix": false
+              },
+              "body": {
+                "type": "BlockStatement",
+                "body": [
+                  {
+                    "type": "SwitchStatement",
+                    "discriminant": {
+                      "type": "Identifier",
+                      "name": "i"
+                    },
+                    "cases": [
+                      {
+                        "type": "SwitchCase",
+                        "test": {
+                          "type": "Literal",
+                          "value": 1,
+                          "raw": "1"
+                        },
+                        "consequent": [
+                          {
+                            "type": "ContinueStatement",
+                            "label": {
+                              "type": "Identifier",
+                              "name": "outer"
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "type": "SwitchCase",
+                        "test": null,
+                        "consequent": [
+                          {
+                            "type": "ExpressionStatement",
+                            "expression": {
+                              "type": "AssignmentExpression",
+                              "operator": "=",
+                              "left": {
+                                "type": "Identifier",
+                                "name": "r"
+                              },
+                              "right": {
+                                "type": "BinaryExpression",
+                                "operator": "+",
+                                "left": {
+                                  "type": "Identifier",
+                                  "name": "r"
+                                },
+                                "right": {
+                                  "type": "Identifier",
+                                  "name": "i"
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "type": "ReturnStatement",
+            "argument": {
+              "type": "LogicalExpression",
+              "operator": "&&",
+              "left": {
+                "type": "LogicalExpression",
+                "operator": "&&",
+                "left": {
+                  "type": "BinaryExpression",
+                  "operator": "===",
+                  "left": {
+                    "type": "Identifier",
+                    "name": "before"
+                  },
+                  "right": {
+                    "type": "Literal",
+                    "value": "function",
+                    "raw": "\"function\""
+                  }
+                },
+                "right": {
+                  "type": "BinaryExpression",
+                  "operator": "===",
+                  "left": {
+                    "type": "CallExpression",
+                    "callee": {
+                      "type": "Identifier",
+                      "name": "g"
+                    },
+                    "arguments": [
+                      {
+                        "type": "Literal",
+                        "value": 1,
+                        "raw": "1"
+                      },
+                      {
+                        "type": "Literal",
+                        "value": 2,
+                        "raw": "2"
+                      },
+                      {
+                        "type": "Literal",
+                        "value": 3,
+                        "raw": "3"
+                      }
+                    ]
+                  },
+                  "right": {
+                    "type": "Literal",
+                    "value": 3,
+                    "raw": "3"
+                  }
+                }
+              },
+              "right": {
+                "type": "BinaryExpression",
+                "operator": "===",
+                "left": {
+                  "type": "Identifier",
+                  "name": "r"
+                },
+                "right": {
+                  "type": "Literal",
+                  "value": "02",
+                  "raw": "\"02\""
+                }
+              }
+            }
+          }
+        ]
+      },
+      "async": false,
+      "generator": false
+    },
+    {
+      "type": "VariableDeclaration",
+      "kind": "let",
+      "declarations": [
+        {
+          "type": "VariableDeclarator",
+          "id": {
+            "type": "Identifier",
+            "name": "tdz"
+          },
+          "init": {
+            "type": "Literal",
+            "value": false,
+            "raw": "false"
+          }
+        }
+      ]
+    },
+    {
+      "type": "TryStatement",
+      "block": {
+        "type": "BlockStatement",
+        "body": [
+          {
+            "type": "ExpressionStatement",
+            "expression": {
+              "type": "Identifier",
+              "name": "x"
+            }
+          }
+        ]
+      },
+      "handler": {
+        "type": "CatchClause",
+        "param": {
+          "type": "Identifier",
+          "name": "e"
+        },
+        "body": {
+          "type": "BlockStatement",
+          "body": [
+            {
+              "type": "ExpressionStatement",
+              "expression": {
+                "type": "AssignmentExpression",
+                "operator": "=",
+                "left": {
+                  "type": "Identifier",
+                  "name": "tdz"
+                },
+                "right": {
+                  "type": "BinaryExpression",
+                  "operator": "instanceof",
+                  "left": {
+                    "type": "Identifier",
+                    "name": "e"
+                  },
+                  "right": {
+                    "type": "Identifier",
+                    "name": "ReferenceError"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "finalizer": null
+    },
+    {
+      "type": "VariableDeclaration",
+      "kind": "let",
+      "declarations": [
+        {
+          "type": "VariableDeclarator",
+          "id": {
+            "type": "Identifier",
+            "name": "x"
+          },
+          "init": {
+            "type": "Literal",
+            "value": 1,
+            "raw": "1"
+          }
+        }
+      ]
+    },
+    {
+      "type": "ExpressionStatement",
+      "expression": {
+        "type": "LogicalExpression",
+        "operator": "&&",
+        "left": {
+          "type": "CallExpression",
+          "callee": {
+            "type": "Identifier",
+            "name": "f"
+          },
+          "arguments": []
+        },
+        "right": {
+          "type": "Identifier",
+          "name": "tdz"
+        }
+      }
+    }
+  ]
+}
