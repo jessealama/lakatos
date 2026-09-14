@@ -68,17 +68,22 @@ export default defineConfig({
         // fully covered. Ratcheted 2026-09-14: the test262 runner joined it
         // fully covered — the fallbacks `noUncheckedIndexedAccess` asks for
         // on groups of patterns that always match, and the `setup` path that
-        // would fetch tc39/test262 over the network, carry their own ignores.
+        // would fetch tc39/test262 over the network, carry their own
+        // ignores. Ratcheted again 2026-09-14: the whole-suite mode joined
+        // it fully covered too — the budget arm, the roll-up, the summary,
+        // and the two renderers, each reached by a test, and each writer
+        // now asked for on its own as well as in the pair the scheduled
+        // script asks for.
         //
         // Measure this from a path with no dot-directory in it. The include
         // globs above do not match through one, and a run from, say, a
         // worktree under .claude/ silently reports every loaded file instead
         // — different denominator, different numbers.
         autoUpdate: true,
-        statements: 99.62,
-        branches: 98.77,
+        statements: 99.63,
+        branches: 98.8,
         functions: 100,
-        lines: 99.7,
+        lines: 99.71,
       },
     },
   },
