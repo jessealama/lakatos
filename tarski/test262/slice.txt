@@ -1,0 +1,48 @@
+# The PR-gated slice: what `tarski-test262 --slice-file` runs and what
+# `tarski/test262/expected.json` pins a row of the table for. The tarski
+# workflow reads this file, so growing the slice is a line here rather
+# than an edit to a workflow command.
+#
+# One path per line, relative to the test262 checkout. A line starting
+# with `#` is a comment and a blank line is skipped; everything else is a
+# directory or a file the runner walks, in the order written.
+
+# The harness itself. It is assembled into every other test, so its own
+# row is the first thing a refusal shows up in.
+test/harness
+
+# The operators the thales emitter maps (#383).
+test/language/expressions/addition
+test/language/expressions/subtraction
+test/language/expressions/multiplication
+test/language/expressions/division
+test/language/expressions/modulus
+test/language/expressions/less-than
+test/language/expressions/greater-than
+test/language/expressions/less-than-or-equal
+test/language/expressions/greater-than-or-equal
+test/language/expressions/strict-equals
+test/language/expressions/strict-does-not-equals
+test/language/expressions/logical-and
+test/language/expressions/logical-or
+test/language/expressions/logical-not
+test/language/expressions/conditional
+test/language/expressions/assignment
+test/language/expressions/unary-minus
+test/language/expressions/unary-plus
+
+# The statements it maps (#383).
+test/language/statements/if
+test/language/statements/let
+test/language/statements/const
+test/language/statements/return
+test/language/statements/throw
+test/language/statements/block
+test/language/statements/variable
+test/language/statements/while
+test/language/statements/for
+
+# The built-ins the library dispatches (#382).
+test/built-ins/Number
+test/built-ins/Math
+test/built-ins/Boolean

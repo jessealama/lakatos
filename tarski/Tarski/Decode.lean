@@ -100,12 +100,23 @@ private def decodeParams : List Json → DecodeM (List String)
     | "Unsupported" => .error (.unsupported (← strField p "kind"))
     | other => bad s!"parameter is a {other}"
 
+/-- A `VariableDeclaration`'s keyword. `var` joined the slice with the
+`for` loop that needed it; every other spelling — there is none in ESTree
+— names itself. -/
+private def declKind (s : String) : DecodeM DeclKind :=
+  match s with
+  | "let" => .ok .«let»
+  | "const" => .ok .«const»
+  | "var" => .ok .«var»
+  | _ => .error (.unsupported s!"VariableDeclaration {s}")
+
 private def unaryOp (s : String) : DecodeM UnaryOp :=
   match s with
   | "-" => .ok .neg
   | "+" => .ok .plus
   | "!" => .ok .not
   | "typeof" => .ok .typeof
+  | "void" => .ok .void
   | _ => .error (.unsupported s!"UnaryExpression {s}")
 
 private def logicalOp (s : String) : DecodeM LogicalOp :=
@@ -130,6 +141,27 @@ private def binaryOp (s : String) : DecodeM BinaryOp :=
   | "!==" => .ok .strictNe
   | "instanceof" => .ok .instanceof
   | _ => .error (.unsupported s!"BinaryExpression {s}")
+
+/-- The five compound assignment operators the evaluator takes, as the
+`BinaryOp` each applies. Every other spelling ESTree admits is refused
+under its own name: `**=` is not mapped onto `BinaryOp.exponent` yet,
+the shifts and the bitwise forms need ToInt32, and `&&=`, `||=`, `??=`
+short-circuit rather than apply an operator at all. -/
+private def compoundOp (s : String) : DecodeM BinaryOp :=
+  match s with
+  | "+=" => .ok .add
+  | "-=" => .ok .sub
+  | "*=" => .ok .mul
+  | "/=" => .ok .div
+  | "%=" => .ok .rem
+  | _ => .error (.unsupported s!"AssignmentExpression {s}")
+
+/-- An `UpdateExpression`'s operator. -/
+private def updateOp (s : String) : DecodeM UpdateOp :=
+  match s with
+  | "++" => .ok .inc
+  | "--" => .ok .dec
+  | _ => .error (.unsupported s!"UpdateExpression {s}")
 
 /-- A `Literal`, by the JSON type of its `value`. -/
 private def decodeLiteral (j : Json) : DecodeM Expr := do
@@ -219,14 +251,17 @@ partial def decodeExpr (j : Json) : DecodeM Expr := do
     else
       pure (.arrow params (.block (← decodeStmts (← bodyField j))))
   | "AssignmentExpression" =>
+    -- Decoding the target as an expression first lets an out-of-slice one
+    -- report itself: it arrived as the bridge's placeholder and names the
+    -- kind it stood for, rather than being swallowed here.
     let op ← strField j "operator"
-    if op != "=" then .error (.unsupported s!"AssignmentExpression {op}")
-    else
-      -- Decoding the target as an expression first lets an out-of-slice
-      -- one report itself: it arrived as the bridge's placeholder and
-      -- names the kind it stood for, rather than being swallowed here.
-      let target ← toTarget (← decodeExpr (← field j "left"))
-      pure (.assign target (← decodeExpr (← field j "right")))
+    let target ← toTarget (← decodeExpr (← field j "left"))
+    let value ← decodeExpr (← field j "right")
+    if op == "=" then pure (.assign target value)
+    else pure (.compoundAssign (← compoundOp op) target value)
+  | "UpdateExpression" =>
+    pure (.update (← updateOp (← strField j "operator")) (← boolField j "prefix")
+      (← toTarget (← decodeExpr (← field j "argument"))))
   | "Unsupported" => .error (.unsupported (← strField j "kind"))
   | other => .error (.unsupported other)
 
@@ -257,6 +292,13 @@ partial def decodeMember (j : Json) : DecodeM Expr := do
 partial def decodeExprs : List Json → DecodeM (List Expr)
   | [] => pure []
   | e :: rest => do pure ((← decodeExpr e) :: (← decodeExprs rest))
+
+/-- A field that is an expression or JSON `null`: a `for` head's three
+parts and a `switch` clause's `test`, which is null for `default`. -/
+partial def optExpr (j : Json) (name : String) : DecodeM (Option Expr) := do
+  match ← optField j name with
+  | none => pure none
+  | some e => pure (some (← decodeExpr e))
 
 /-- An object literal's members. A numeric key is admitted by the schema
 and refused here: `{ 1: x }` would need ToPropertyKey at parse time, and
@@ -293,15 +335,7 @@ partial def decodeStmt (j : Json) : DecodeM Stmt := do
   match ← nodeType j with
   | "ExpressionStatement" => pure (.exprStmt (← decodeExpr (← field j "expression")))
   | "VariableDeclaration" =>
-    let kind ← match ← strField j "kind" with
-      | "let" => pure DeclKind.«let»
-      | "const" => pure DeclKind.«const»
-      | other => .error (.unsupported s!"VariableDeclaration {other}")
-    match (← field j "declarations").getArr? with
-    | .error _ => bad "VariableDeclaration declarations is not an array"
-    | .ok ds =>
-      if ds.isEmpty then bad "VariableDeclaration has no declarators"
-      else pure (.varDecl kind (← decodeDeclarators ds.toList))
+    pure (.varDecl (← declKind (← strField j "kind")) (← declaratorList j))
   | "FunctionDeclaration" =>
     checkFunctionFlags j "FunctionDeclaration"
     let name ← strField (← field j "id") "name"
@@ -319,6 +353,21 @@ partial def decodeStmt (j : Json) : DecodeM Stmt := do
     | none => pure (.ifStmt test consequent none)
   | "WhileStatement" =>
     pure (.whileStmt (← decodeExpr (← field j "test")) (← decodeStmt (← field j "body")))
+  | "ForStatement" =>
+    let init ← match ← optField j "init" with
+      | none => pure none
+      | some head =>
+        match ← nodeType head with
+        | "VariableDeclaration" => pure (some (.decl (← declKind (← strField head "kind"))
+            (← declaratorList head)))
+        | _ => pure (some (.expr (← decodeExpr head)))
+    let test ← optExpr j "test"
+    let update ← optExpr j "update"
+    pure (.forStmt init test update (← decodeStmt (← field j "body")))
+  | "SwitchStatement" =>
+    pure (.switchStmt (← decodeExpr (← field j "discriminant"))
+      (← decodeCases (← arrayField j "cases")))
+  | "EmptyStatement" => pure .empty
   | "BlockStatement" => pure (.block (← decodeStmts (← arrayField j "body")))
   | "ThrowStatement" => pure (.throwStmt (← decodeExpr (← field j "argument")))
   | "TryStatement" =>
@@ -359,9 +408,31 @@ partial def decodeCatch (j : Json) : DecodeM CatchClause := do
       | other => bad s!"CatchClause param is a {other}"
   pure { param, body := ← decodeStmts (← blockField j "body") }
 
+/-- A `VariableDeclaration`'s declarators, in a statement or in a `for`
+head. Both spellings refuse an empty list the same way: an engine cannot
+parse one, so a document with one is a broken producer. -/
+partial def declaratorList (j : Json) : DecodeM (List Declarator) := do
+  match (← field j "declarations").getArr? with
+  | .error _ => bad "VariableDeclaration declarations is not an array"
+  | .ok ds =>
+    if ds.isEmpty then bad "VariableDeclaration has no declarators"
+    else decodeDeclarators ds.toList
+
 partial def decodeDeclarators : List Json → DecodeM (List Declarator)
   | [] => pure []
   | d :: rest => do pure ((← decodeDeclarator d) :: (← decodeDeclarators rest))
+
+/-- A `switch`'s clauses. A `default` clause has a null `test`; anything
+in the list that is not a `SwitchCase` is a broken producer, since the
+bridge has no other node to put there. -/
+partial def decodeCases : List Json → DecodeM (List SwitchCase)
+  | [] => pure []
+  | c :: rest => do
+    match ← nodeType c with
+    | "SwitchCase" =>
+      let test ← optExpr c "test"
+      pure ({ test, body := ← decodeStmts (← arrayField c "consequent") } :: (← decodeCases rest))
+    | other => bad s!"switch case is a {other}"
 
 partial def decodeStmts : List Json → DecodeM (List Stmt)
   | [] => pure []

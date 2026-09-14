@@ -37,6 +37,7 @@ const FIXTURES = [
   "compare-array",
   "print",
   "number-math",
+  "for-switch-var",
 ];
 
 describe("parseScript", () => {
@@ -671,11 +672,142 @@ describe("parseScript", () => {
   });
 
   it("leaves a statement outside the slice whole, naming its kind", () => {
-    const program = parseScript('"use strict";\nfor (;;) {}\n', "f.js");
+    const program = parseScript('"use strict";\nwith (o) {}\n', "f.js");
     expect(program.body[1]).toEqual({
       type: "Unsupported",
-      kind: "ForStatement",
+      kind: "WithStatement",
     });
+  });
+
+  // `++` and `--` are the only operators tsc's postfix node carries, and
+  // the prefix node shares them with the ordinary unary operators, so the
+  // two spellings differ only in `prefix`.
+  it.each([
+    ["i++", "++", false],
+    ["i--", "--", false],
+    ["++i", "++", true],
+    ["--i", "--", true],
+  ])("maps %s to an UpdateExpression", (source, operator, prefix) => {
+    const program = parseScript(`"use strict";\n${source};\n`, "u.js");
+    expect(program.body[1]).toEqual({
+      type: "ExpressionStatement",
+      expression: {
+        type: "UpdateExpression",
+        operator,
+        argument: { type: "Identifier", name: "i" },
+        prefix,
+      },
+    });
+    validate(program);
+  });
+
+  // Every other prefix operator is an ordinary UnaryExpression, which is
+  // what keeps `-x` and `--x` apart.
+  it("leaves the other prefix operators a UnaryExpression", () => {
+    const program = parseScript('"use strict";\n-i;\n', "n.js");
+    expect(program.body[1]).toMatchObject({
+      expression: { type: "UnaryExpression", operator: "-", prefix: true },
+    });
+  });
+
+  // tsc gives `void` a node of its own, as it does `typeof`; ESTree
+  // spells both as unary operators.
+  it("maps void to a UnaryExpression", () => {
+    const program = parseScript('"use strict";\nvoid x;\n', "v.js");
+    expect(program.body[1]).toEqual({
+      type: "ExpressionStatement",
+      expression: {
+        type: "UnaryExpression",
+        operator: "void",
+        argument: { type: "Identifier", name: "x" },
+        prefix: true,
+      },
+    });
+    validate(program);
+  });
+
+  it("gives an empty for head three nulls and an EmptyStatement body", () => {
+    const program = parseScript('"use strict";\nfor (;;) ;\n', "e.js");
+    expect(program.body[1]).toEqual({
+      type: "ForStatement",
+      init: null,
+      test: null,
+      update: null,
+      body: { type: "EmptyStatement" },
+    });
+    validate(program);
+  });
+
+  it("keeps every declarator of a for head", () => {
+    const program = parseScript(
+      '"use strict";\nfor (var i = 0, j = 1; i < j; i++) {}\n',
+      "h.js",
+    );
+    expect(program.body[1]).toMatchObject({
+      type: "ForStatement",
+      init: {
+        type: "VariableDeclaration",
+        kind: "var",
+        declarations: [
+          { id: { type: "Identifier", name: "i" } },
+          { id: { type: "Identifier", name: "j" } },
+        ],
+      },
+    });
+    validate(program);
+  });
+
+  // A pattern in the head is refused where it stands, so the loop around
+  // it still reaches the Lean decoder and the refusal names the pattern.
+  it("refuses a destructuring for head in place", () => {
+    const program = parseScript(
+      '"use strict";\nconst xs = [1];\nfor (const [a] = xs; ; ) {}\n',
+      "p.js",
+    );
+    expect(program.body[2]).toMatchObject({
+      type: "ForStatement",
+      init: { type: "Unsupported", kind: "VariableDeclarationList" },
+    });
+    validate(program);
+  });
+
+  // An expression head is not a declaration, and carries no `kind`.
+  it("takes an expression for head as an expression", () => {
+    const program = parseScript('"use strict";\nfor (i = 0; ; ) {}\n', "x.js");
+    expect(program.body[1]).toMatchObject({
+      type: "ForStatement",
+      init: { type: "AssignmentExpression", operator: "=" },
+    });
+    validate(program);
+  });
+
+  it("preserves clause order, default included", () => {
+    const program = parseScript(
+      '"use strict";\nswitch (x) { case 1: a(); default: b(); case 2: break; }\n',
+      "s.js",
+    );
+    expect(program.body[1]).toMatchObject({
+      type: "SwitchStatement",
+      discriminant: { type: "Identifier", name: "x" },
+      cases: [
+        { type: "SwitchCase", test: { type: "Literal", value: 1 } },
+        { type: "SwitchCase", test: null },
+        { type: "SwitchCase", test: { type: "Literal", value: 2 } },
+      ],
+    });
+    validate(program);
+  });
+
+  // The three loop forms that are not in the slice, each named by its own
+  // tsc kind so the runner's histogram says which one to land next.
+  it.each([
+    ["do {} while (x);", "DoStatement"],
+    ["for (k in o) ;", "ForInStatement"],
+    ["for (x of xs) ;", "ForOfStatement"],
+  ])("refuses %s as %s", (source, kind) => {
+    const program = parseScript(`"use strict";\n${source}\n`, "l.js");
+    expect(program.body[1]).toEqual({ type: "Unsupported", kind });
+    validate(program);
   });
 
   // A destructuring binding is not an Identifier, and the schema's `id`

@@ -62,6 +62,13 @@ export interface UnaryExpression {
   prefix: true;
 }
 
+export interface UpdateExpression {
+  type: "UpdateExpression";
+  operator: "++" | "--";
+  argument: Expression;
+  prefix: boolean;
+}
+
 export interface BinaryExpression {
   type: "BinaryExpression";
   operator: string;
@@ -157,6 +164,7 @@ export type Expression =
   | Identifier
   | ThisExpression
   | UnaryExpression
+  | UpdateExpression
   | BinaryExpression
   | LogicalExpression
   | ConditionalExpression
@@ -204,6 +212,30 @@ export interface WhileStatement {
   type: "WhileStatement";
   test: Expression;
   body: Statement;
+}
+
+export interface EmptyStatement {
+  type: "EmptyStatement";
+}
+
+export interface ForStatement {
+  type: "ForStatement";
+  init: VariableDeclaration | Expression | null;
+  test: Expression | null;
+  update: Expression | null;
+  body: Statement;
+}
+
+export interface SwitchCase {
+  type: "SwitchCase";
+  test: Expression | null;
+  consequent: Statement[];
+}
+
+export interface SwitchStatement {
+  type: "SwitchStatement";
+  discriminant: Expression;
+  cases: SwitchCase[];
 }
 
 export interface BlockStatement {
@@ -267,6 +299,9 @@ export type Statement =
   | ReturnStatement
   | IfStatement
   | WhileStatement
+  | ForStatement
+  | SwitchStatement
+  | EmptyStatement
   | BlockStatement
   | ThrowStatement
   | TryStatement
@@ -318,6 +353,14 @@ const ASSIGNMENT_OPERATORS = new Set([
 // do not evaluate both operands. `??` is written out with them and
 // refused on the Lean side.
 const LOGICAL_OPERATORS = new Set(["&&", "||", "??"]);
+
+/** `++` or `--`, for the two nodes that carry them; `undefined` for
+ * every other prefix operator, which is an ordinary UnaryExpression. */
+function updateOperator(kind: ts.SyntaxKind): "++" | "--" | undefined {
+  if (kind === ts.SyntaxKind.PlusPlusToken) return "++";
+  if (kind === ts.SyntaxKind.MinusMinusToken) return "--";
+  return undefined;
+}
 
 /** A call's arguments. A spread is outside the slice and stands in place
  * as `Unsupported`, so the call itself still reaches the Lean decoder. */
@@ -438,11 +481,20 @@ function expression(node: ts.Expression, sf: ts.SourceFile): Expression {
   if (ts.isParenthesizedExpression(node)) {
     return expression(node.expression, sf);
   }
-  // tsc gives `typeof` its own node; ESTree spells it as a unary operator.
+  // tsc gives `typeof` and `void` each a node; ESTree spells both as
+  // unary operators.
   if (ts.isTypeOfExpression(node)) {
     return {
       type: "UnaryExpression",
       operator: "typeof",
+      argument: expression(node.expression, sf),
+      prefix: true,
+    };
+  }
+  if (ts.isVoidExpression(node)) {
+    return {
+      type: "UnaryExpression",
+      operator: "void",
       argument: expression(node.expression, sf),
       prefix: true,
     };
@@ -534,11 +586,30 @@ function expression(node: ts.Expression, sf: ts.SourceFile): Expression {
     };
   }
   if (ts.isPrefixUnaryExpression(node)) {
+    const update = updateOperator(node.operator);
+    if (update) {
+      return {
+        type: "UpdateExpression",
+        operator: update,
+        argument: expression(node.operand, sf),
+        prefix: true,
+      };
+    }
     return {
       type: "UnaryExpression",
       operator: operatorText(node.operator),
       argument: expression(node.operand, sf),
       prefix: true,
+    };
+  }
+  if (ts.isPostfixUnaryExpression(node)) {
+    // `++` and `--` are the only operators a postfix node can carry, so
+    // the lookup never misses here; the prefix form shares it.
+    return {
+      type: "UpdateExpression",
+      operator: node.operator === ts.SyntaxKind.PlusPlusToken ? "++" : "--",
+      argument: expression(node.operand, sf),
+      prefix: false,
     };
   }
   if (ts.isConditionalExpression(node)) {
@@ -630,6 +701,38 @@ function catchClause(node: ts.CatchClause, sf: ts.SourceFile): CatchClause {
   return { type: "CatchClause", param, body: blockStatement(node.block, sf) };
 }
 
+/** A `for` head's first part: a declaration, an expression, or nothing.
+ * A declaration binding a pattern is refused as a whole — the schema's
+ * declarator `id` is an Identifier — and stands in the head's place, so
+ * the loop around it still reaches the Lean decoder. */
+function forInitializer(
+  node: ts.ForInitializer | undefined,
+  sf: ts.SourceFile,
+): VariableDeclaration | Expression | null {
+  if (!node) return null;
+  if (!ts.isVariableDeclarationList(node)) return expression(node, sf);
+  const declarations = declarators(node, sf);
+  if (!declarations) return unsupported(node);
+  return {
+    type: "VariableDeclaration",
+    kind: declarationKind(node),
+    declarations,
+  };
+}
+
+/** One `switch` clause. `default` is the one with no test; a clause is
+ * not a block, so its statements are a bare list. */
+function switchCase(
+  node: ts.CaseOrDefaultClause,
+  sf: ts.SourceFile,
+): SwitchCase {
+  return {
+    type: "SwitchCase",
+    test: ts.isCaseClause(node) ? expression(node.expression, sf) : null,
+    consequent: node.statements.map((s) => statement(s, sf)),
+  };
+}
+
 /** A `break` or `continue`'s target. */
 function jumpLabel(node: ts.BreakOrContinueStatement): Identifier | null {
   return node.label ? { type: "Identifier", name: node.label.text } : null;
@@ -683,6 +786,25 @@ function statement(node: ts.Statement, sf: ts.SourceFile): Statement {
       test: expression(node.expression, sf),
       body: statement(node.statement, sf),
     };
+  }
+  if (ts.isForStatement(node)) {
+    return {
+      type: "ForStatement",
+      init: forInitializer(node.initializer, sf),
+      test: node.condition ? expression(node.condition, sf) : null,
+      update: node.incrementor ? expression(node.incrementor, sf) : null,
+      body: statement(node.statement, sf),
+    };
+  }
+  if (ts.isSwitchStatement(node)) {
+    return {
+      type: "SwitchStatement",
+      discriminant: expression(node.expression, sf),
+      cases: node.caseBlock.clauses.map((c) => switchCase(c, sf)),
+    };
+  }
+  if (ts.isEmptyStatement(node)) {
+    return { type: "EmptyStatement" };
   }
   if (ts.isBlock(node)) {
     return blockStatement(node, sf);

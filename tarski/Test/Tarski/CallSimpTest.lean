@@ -22,9 +22,10 @@ private def program : Program :=
 -- never reads a property, so it is never needed.
 attribute [local simp] evalExpr evalExprs evalStmt evalStmts evalDeclarators
   instantiateBlock hoistNames hoistDeclarators initFunctions
+  varNames varNamesStmt varNamesCases hoistVars
   callFunction catchReturn makeFunction bindParams
-  applyBinary toPrimitive BinaryOp.coerces toNumberPrim toBooleanPrim isStrPrim
-  allocCell getCell readCell writeCell initCell
+  applyBinary toPrimitive BinaryOp.coerces applyCoercing toNumberPrim toBooleanPrim isStrPrim
+  allocCell getCell readCell writeCell initCell putIdent
   allocObj newObject readObj writeObj modifyObj
   Env.lookup Heap.alloc Heap.read Heap.write
   Heap.allocObj Heap.readObj Heap.writeObj

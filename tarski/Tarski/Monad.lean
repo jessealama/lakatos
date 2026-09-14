@@ -186,7 +186,8 @@ def writeCell (r : CellRef) (v : Value) : EvalM Unit := do
 /-- End a binding's temporal dead zone. The same operation as
 `writeCell`, under the name the spec gives it: initializing a cell and
 assigning to one are different events even where the code is one, and
-`#393`'s `var` will initialize without any declarator having run. -/
+`hoistVars` initializes a `var`'s cell without any declarator having
+run. -/
 def initCell (r : CellRef) (v : Value) : EvalM Unit :=
   writeCell r v
 

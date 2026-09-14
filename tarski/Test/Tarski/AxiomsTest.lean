@@ -192,6 +192,73 @@ private def onlyStandard (n : Name) : CoreM Bool := do
 #guard_msgs in
 #eval onlyStandard ``Tarski.Obj.hasOwn
 
+-- #383's statements and operators: the `for` loop and its head, the
+-- `switch`, the `var` pass every script now runs, and the pure helpers
+-- the three of them share.
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.evalForLoop
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.evalFor
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.evalSwitch
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.evalCases
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.selectCase
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.runCases
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.dropUntilDefault
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.varNames
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.varNamesStmt
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.varNamesCases
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.hoistVars
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.copyBindings
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.Env.rebind
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.putIdent
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.applyCoercing
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.UpdateOp.step
+
 -- The realm is a literal, and the report that reads it is a definition
 -- like any other.
 /-- info: true -/
@@ -309,3 +376,8 @@ private def onlyStandard (n : Name) : CoreM Bool := do
 /-- info: true -/
 #guard_msgs in
 #eval onlyStandard ``Tarski.joinElements.eq_def
+
+-- `evalFor` is the fourth, `evalWhile`'s twin.
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.evalFor.eq_def

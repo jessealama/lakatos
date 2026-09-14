@@ -34,12 +34,13 @@ private def program : Program :=
 -- `CallSimpTest`'s set plus what an array and a native call add.
 attribute [local simp] evalExpr evalExprs evalStmt evalStmts evalDeclarators
   instantiateBlock hoistNames hoistDeclarators initFunctions
+  varNames varNamesStmt varNamesCases hoistVars
   callFunction callNative catchReturn makeFunction bindParams pushElements
   newObject newArray newArrayOfLength Obj.array indexProps
   Value.ofNat Obj.truncate Obj.ownKeys Obj.isArray Obj.hasOwn
   NativeFn.constructs setProp
-  applyBinary toPrimitive BinaryOp.coerces toNumberPrim toBooleanPrim isStrPrim
-  allocCell getCell readCell writeCell initCell
+  applyBinary toPrimitive BinaryOp.coerces applyCoercing toNumberPrim toBooleanPrim isStrPrim
+  allocCell getCell readCell writeCell initCell putIdent
   allocObj readObj writeObj modifyObj
   Env.lookup Heap.alloc Heap.read Heap.write
   Heap.allocObj Heap.readObj Heap.writeObj
