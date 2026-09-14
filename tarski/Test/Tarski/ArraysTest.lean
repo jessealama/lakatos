@@ -140,8 +140,8 @@ The acceptance criterion: a write at 5 on an empty array makes `length`
 /-! ## Writing `length`
 
 Shortening drops the elements it passes; growing adds none. Anything
-that is not a uint32 is a `RangeError`, including `"2"` — ToNumber of a
-string is the placeholder until #388. -/
+that is not a uint32 is a `RangeError`; `"2"` is one, ToNumber of a
+string being StringToNumber, so it truncates like the number. -/
 
 /-- `const xs = ["a", "b", "c"]; xs.length = <v>; <then>;` -/
 private def setLength (v : Expr) (thenExpr : Expr) : Program :=
@@ -159,8 +159,7 @@ private def setLength (v : Expr) (thenExpr : Expr) : Program :=
   == "uncaught: RangeError: Invalid array length"
 #guard outcome (setLength (.numLit 2.5) (.numLit 0.0))
   == "uncaught: RangeError: Invalid array length"
-#guard outcome (setLength (.strLit "2") (.numLit 0.0))
-  == "uncaught: RangeError: Invalid array length"
+#guard outcome (setLength (.strLit "2") (callOnXs "join" [])) == "a,b"
 
 /-! ## `push` -/
 

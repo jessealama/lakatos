@@ -35,10 +35,17 @@ the literal against the constants so the two cannot drift apart.
 | 41        | `Math`                                                   |
 | 42–49     | `Math.abs`, `ceil`, `floor`, `fround`, `round`, `sign`, `sqrt`, `trunc` |
 | 50–52     | `Math.max`, `Math.min`, `Math.pow`                       |
+| 53–54     | `parseFloat`, `parseInt`                                  |
+| 55–58     | `Number.prototype.toFixed`, `toExponential`, `toPrecision`, `toLocaleString` |
 
-The seventeen global bindings are cells 0–16: the seven `Error`
+The nineteen global bindings are cells 0–18: the seven `Error`
 constructors, then `Object`, `Array`, `String`, `print`, `$262`,
-`Number`, `Boolean`, `Math`, `NaN`, and `Infinity`.
+`Number`, `Boolean`, `Math`, `NaN`, `Infinity`, `parseFloat`, and
+`parseInt`.
+
+`parseFloat` and `parseInt` are **one function object each**, bound
+globally and read as `Number.parseFloat` and `Number.parseInt`, so
+`Number.parseInt === parseInt` is true, as the specification requires.
 
 `Number`, `Boolean`, and `Math` are writable cells like every other
 global function binding. `NaN` and `Infinity` are **not**: they are the
@@ -232,6 +239,26 @@ def mathMinRef : Ref := 51
 /-- `Math.pow`. -/
 def mathPowRef : Ref := 52
 
+/-- `parseFloat`, the one object both the global binding and
+`Number.parseFloat` name. -/
+def parseFloatRef : Ref := 53
+
+/-- `parseInt`, the one object both the global binding and
+`Number.parseInt` name. -/
+def parseIntRef : Ref := 54
+
+/-- `Number.prototype.toFixed`. -/
+def numberToFixedRef : Ref := 55
+
+/-- `Number.prototype.toExponential`. -/
+def numberToExponentialRef : Ref := 56
+
+/-- `Number.prototype.toPrecision`. -/
+def numberToPrecisionRef : Ref := 57
+
+/-- `Number.prototype.toLocaleString`. -/
+def numberToLocaleStringRef : Ref := 58
+
 /-- The cell the kind's global binding lives in: 0–6, in the same
 order. -/
 def ErrorKind.cellRef : ErrorKind → CellRef
@@ -276,6 +303,13 @@ def nanCellRef : CellRef := 15
 is. -/
 def infinityCellRef : CellRef := 16
 
+/-- The cell `parseFloat` is bound in, writable like every other global
+function binding. -/
+def parseFloatCellRef : CellRef := 17
+
+/-- The cell `parseInt` is bound in. -/
+def parseIntCellRef : CellRef := 18
+
 /-- The scope a script's own declarations are instantiated on top of:
 `ErrorKind.all.map (fun k => (k.name, k.cellRef))`, written out so that
 `simp` sees a literal list. There is no global *object* yet (#389), so a
@@ -297,7 +331,9 @@ def globalEnv : Env :=
     ("Boolean", 13),
     ("Math", 14),
     ("NaN", 15),
-    ("Infinity", 16) ]
+    ("Infinity", 16),
+    ("parseFloat", 17),
+    ("parseInt", 18) ]
 
 /-- The heap a script starts from: the realm, laid out at the references
 above. -/
@@ -325,7 +361,9 @@ def Heap.initial : Heap where
        -- and non-writable ones: immutable cells, so `NaN = 1` throws.
        { mutable := false, value := some (.prim (.num Number.NaN)) },
        { mutable := false,
-         value := some (.prim (.num Number.POSITIVE_INFINITY)) } ]
+         value := some (.prim (.num Number.POSITIVE_INFINITY)) },
+       { mutable := true, value := some (.obj 53) },  -- parseFloat
+       { mutable := true, value := some (.obj 54) } ] -- parseInt
   objects :=
     #[ -- 0: Error.prototype. `toString` is on it because the binary's
        -- uncaught-error report runs that algorithm anyway.
@@ -455,17 +493,20 @@ def Heap.initial : Heap where
        -- `IsHTMLDDA` to read as `undefined`.
        { proto := some 15 },
        -- 29: Number.prototype, itself a Number object of value `+0`, as
-       -- the spec has it: `Number.prototype.valueOf()` is `0`. The
-       -- `toFixed` family and `toLocaleString` are #388's.
+       -- the spec has it: `Number.prototype.valueOf()` is `0`.
        { proto := some 15,
          kind := .number 0.0,
          properties :=
            [ ("constructor", .obj 30),
              ("toString", .obj 31),
-             ("valueOf", .obj 32) ] },
+             ("valueOf", .obj 32),
+             ("toFixed", .obj 55),
+             ("toExponential", .obj 56),
+             ("toPrecision", .obj 57),
+             ("toLocaleString", .obj 58) ] },
        -- 30: Number. Every constant is the library's own definition
-       -- under its source spelling. `parseFloat` and `parseInt` are
-       -- #388's.
+       -- under its source spelling, and `parseFloat` and `parseInt` are
+       -- the same two objects the globals name.
        { properties :=
            [ ("prototype", .obj 29),
              ("isFinite", .obj 33),
@@ -479,7 +520,9 @@ def Heap.initial : Heap where
              ("MIN_VALUE", .prim (.num Number.MIN_VALUE)),
              ("POSITIVE_INFINITY", .prim (.num Number.POSITIVE_INFINITY)),
              ("NEGATIVE_INFINITY", .prim (.num Number.NEGATIVE_INFINITY)),
-             ("NaN", .prim (.num Number.NaN)) ],
+             ("NaN", .prim (.num Number.NaN)),
+             ("parseFloat", .obj 53),
+             ("parseInt", .obj 54) ],
          callable := some (.native .numberCtor) },
        -- 31: Number.prototype.toString
        { callable := some (.native .numberToString) },
@@ -555,6 +598,18 @@ def Heap.initial : Heap where
        -- 51: Math.min
        { callable := some (.native .mathMin) },
        -- 52: Math.pow
-       { callable := some (.native .mathPow) } ]
+       { callable := some (.native .mathPow) },
+       -- 53: parseFloat, the global and `Number.parseFloat`
+       { callable := some (.native .parseFloat) },
+       -- 54: parseInt, the global and `Number.parseInt`
+       { callable := some (.native .parseInt) },
+       -- 55: Number.prototype.toFixed
+       { callable := some (.native .numberToFixed) },
+       -- 56: Number.prototype.toExponential
+       { callable := some (.native .numberToExponential) },
+       -- 57: Number.prototype.toPrecision
+       { callable := some (.native .numberToPrecision) },
+       -- 58: Number.prototype.toLocaleString
+       { callable := some (.native .numberToLocaleString) } ]
 
 end Tarski

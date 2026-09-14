@@ -17,11 +17,12 @@
 # a `Float` operation: `Nat.toFloat` (that is, `Float.ofNat`) turning a
 # length or an index into a Number, spelled once in `Value.ofNat`. It is
 # exact below 2^53, has no `extern`, and so reduces in the kernel. The
-# conversion in the other direction goes through `Tarski/Format.lean`'s
-# provisional formatter rather than a `Float` method, which is why
-# `uint32Of?` parses digits. Neither spelling matches the pattern below,
-# and neither is allow-listed: they are named here so that a third one
-# has to be argued for.
+# conversion in the other direction is the library's — ToIntegerOrInfinity,
+# `Js.Number.FloatOps.integerOrInfinity?`, which `uint32Of?` and `radix?`
+# both go through — so `Tarski/` spells no Number-to-integer conversion of
+# its own at all. Neither spelling matches the pattern below, and neither
+# is allow-listed: they are named here so that a third one has to be
+# argued for.
 #
 # The boundary is about arithmetic the evaluator *performs*, so each file
 # is stripped of its comments and its string-literal text before the
@@ -31,20 +32,14 @@
 # interpolated term inside `s!"…{e}…"` is code and is kept. Line numbers
 # survive the stripping, so a hit still names its line.
 #
-# Two exemptions:
-#
-#   * `Tarski/Format.lean` is provisional `Number::toString`, written
-#     against the runtime's own `Float.toString`. #388 replaces that file
-#     with the ECMA algorithm and this exemption goes with it.
-#   * The optional directory argument (default `Tarski`) lets CI point
-#     the check at `scripts/boundary-fixture`, which plants a violation,
-#     and so check that the check bites.
+# There are no exemptions. The optional directory argument (default
+# `Tarski`) lets CI point the check at `scripts/boundary-fixture`, which
+# plants a violation, and so check that the check bites.
 #
 # Usage: sh scripts/check-boundary.sh [directory]
 set -eu
 
 root="${1:-Tarski}"
-exempt="Tarski/Format.lean"
 
 pattern='(\bFloat\.[A-Za-z]|\.(isNaN|isInf|isFinite|toU[A-Za-z0-9]*|toInt[0-9]*|floor|ceil|round|abs|sqrt|exp|log|pow|toString|toBits|frExp|scaleB)\b)'
 
@@ -86,9 +81,6 @@ trap 'rm -f "$hits"' EXIT
 
 scanned=0
 for file in $(find "$root" -name '*.lean' | sort); do
-  if [ "$file" = "$exempt" ]; then
-    continue
-  fi
   scanned=$((scanned + 1))
   awk "$strip" "$file" | grep -nE "$pattern" | sed "s|^|$file:|" >>"$hits" || true
 done

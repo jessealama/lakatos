@@ -381,3 +381,60 @@ private def onlyStandard (n : Name) : CoreM Bool := do
 /-- info: true -/
 #guard_msgs in
 #eval onlyStandard ``Tarski.evalFor.eq_def
+
+-- The library definitions the evaluator now dispatches to: the formatter,
+-- the parser, and the two integer conversions. They are ordinary
+-- definitions over `Float.Model`, so none of them reaches an `extern`,
+-- and `Number::toString` in particular is not core's opaque
+-- `Float.toString`.
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.toIntegerOrInfinityValue
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Js.Number.toDecimalString
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Js.Number.toRadixString
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Js.Number.toFixedString
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Js.Number.toExponentialString
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Js.Number.toPrecisionString
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Js.Number.stringToNumber
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Js.Number.parseFloat
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Js.Number.parseInt
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Js.Number.Decimal.shortest
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Js.Number.Decimal.ofScientific
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Js.Number.FloatOps.tsToInt32
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Js.Number.FloatOps.integerOrInfinity?

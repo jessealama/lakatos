@@ -11,9 +11,9 @@ UTF-16 on every string this slice can build. `String.prototype`, the
 wrapper object, and the UTF-16 difference are #391's, which is why
 `new String("x")` refuses here and every case below is ASCII.
 
-ToNumber of a string is still the `floatNaN` placeholder (#388), so a
-mixed-type relation like `"a" < 1` is NaN-against-NaN; that is pinned
-rather than hidden. -/
+ToNumber of a string is the library's StringToNumber, so a mixed-type
+relation like `"a" < 1` is a real comparison that answers `false` because
+`"a"` is NaN, and `" 2 " * 3` is `6`. -/
 
 open Tarski
 
@@ -55,8 +55,8 @@ side is ToString'd — through the provisional formatter for a number. -/
 /-! ## Order
 
 Two strings compare by code point, which is not numeric order: `"10"`
-precedes `"9"`. One string and one number go numeric, and the string is
-NaN under the placeholder ToNumber (#388). -/
+precedes `"9"`. One string and one number go numeric, through
+StringToNumber. -/
 
 -- `"a" < "b";`
 #guard outcome (expr (.binary .lt (.strLit "a") (.strLit "b"))) == "true"
@@ -82,9 +82,24 @@ NaN under the placeholder ToNumber (#388). -/
 -- `"a" >= "b";`
 #guard outcome (expr (.binary .ge (.strLit "a") (.strLit "b"))) == "false"
 
--- `"a" < 1;` — mixed operands go numeric, and ToNumber of a string is
--- the placeholder, so this is NaN < 1. #388 makes it a real comparison.
+-- `"a" < 1;` — mixed operands go numeric, and `"a"` is NaN, so this is
+-- false the way every comparison with a NaN is.
 #guard outcome (expr (.binary .lt (.strLit "a") (.numLit 1.0))) == "false"
+
+-- `"10" < 9;` — numeric, not string order: the opposite of `"10" < "9"`.
+#guard outcome (expr (.binary .lt (.strLit "10") (.numLit 9.0))) == "false"
+
+-- `"1" < 2;`
+#guard outcome (expr (.binary .lt (.strLit "1") (.numLit 2.0))) == "true"
+
+-- `"" < 1;` — the empty string is `+0`.
+#guard outcome (expr (.binary .lt (.strLit "") (.numLit 1.0))) == "true"
+
+-- `" 2 " * 3;` — white space at both ends is trimmed.
+#guard outcome (expr (.binary .mul (.strLit " 2 ") (.numLit 3.0))) == "6"
+
+-- `"0x10" - 0;` — the non-decimal forms of the literal grammar.
+#guard outcome (expr (.binary .sub (.strLit "0x10") (.numLit 0.0))) == "16"
 
 /-! ## `length` and indexing
 
@@ -120,8 +135,8 @@ ordinary key is `undefined` until `String.prototype` exists (#391). -/
 /-! ## `String(value)`
 
 ToString and nothing more: the wrapper object is #391's, so `String` has
-no `prototype` and `new String("x")` is not a construction. The number
-arm goes through the provisional formatter (#388). -/
+no `prototype` and `new String("x")` is not a construction. The number arm
+is the library's `Number::toString`. -/
 
 /-- `String(<arg>);` -/
 private def stringOf (args : List Expr) : Program :=
@@ -136,6 +151,7 @@ private def stringOf (args : List Expr) : Program :=
 #guard outcome (stringOf [.undefLit]) == "undefined"
 #guard outcome (stringOf []) == ""
 #guard outcome (stringOf [.strLit "x"]) == "x"
+#guard outcome (stringOf [.binary .div (.numLit 1.0) (.numLit 3.0)]) == "0.3333333333333333"
 
 -- `typeof String(1);`
 #guard outcome (expr (.unary .typeof (.call (.ident "String") [.numLit 1.0]))) == "string"

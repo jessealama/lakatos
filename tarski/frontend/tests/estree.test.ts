@@ -38,6 +38,7 @@ const FIXTURES = [
   "print",
   "number-math",
   "for-switch-var",
+  "number-conversions",
 ];
 
 describe("parseScript", () => {

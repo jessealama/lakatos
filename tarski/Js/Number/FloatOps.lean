@@ -316,4 +316,39 @@ def tsPow (base exponent : Float) : Float :=
       let magnitude := powNat base (natOfIntegral unpackedExponent)
       if exponent < 0.0 then 1.0 / magnitude else magnitude
 
+/-! ## Integer conversions
+
+The two abstract operations that turn a Number into an integer, which every
+built-in taking a count or a width goes through. `Number.prototype.toString`,
+`toFixed`, `toExponential`, and `toPrecision` take their argument through
+ToIntegerOrInfinity; `parseInt`'s radix goes through ToInt32, and so will the
+bitwise operators when they land (GitHub #383).
+
+Both are built on `natOfIntegral` over the truncation, so the magnitude is
+exact at every size — `1e20` is a hundred quintillion, not a rounded double —
+and neither rests on core's `Float.toUInt64`, which saturates.
+-/
+
+/-- ToIntegerOrInfinity, 7.1.5: `some 0` for a NaN and for both zeros, the
+truncated value otherwise. **An infinity is `none`**: every caller here
+treats both infinities as out of range — a digit count, a precision, a radix
+— so the answer carries no sign, and a caller that needs one must say which
+infinity it saw before calling. -/
+def integerOrInfinity? (x : Float) : Option Int :=
+  match (tsTrunc x).toModel.unpack with
+  | .infinity _ => none
+  | .finite s m e h => some (s.apply (natOfIntegral (.finite s m e h)))
+  | _ => some 0
+
+/-- ToInt32, 7.1.6: `+0` for a NaN, an infinity, and both zeros, and
+otherwise the truncated integer modulo `2^32` mapped into `[-2^31, 2^31)`.
+`Int.emod` is the non-negative residue, so the negative side needs no case of
+its own: `ToInt32(-1)` is `-1` and `ToInt32(2^31)` is `-2^31`. -/
+def tsToInt32 (x : Float) : Int :=
+  match integerOrInfinity? x with
+  | none => 0
+  | some i =>
+    let bits := i.emod 4294967296
+    if bits ≥ 2147483648 then bits - 4294967296 else bits
+
 end Js.Number.FloatOps

@@ -4,6 +4,9 @@ import Js.Binders
 import Js.Number.Basic
 import Js.Number.Constants
 import Js.Number.FloatOps
+import Js.Number.Decimal
+import Js.Number.ToString
+import Js.Number.StringToNumber
 import Js.Number.FloatFacts
 import Js.Number.FloatOpsFacts
 import Js.Number.FroundFacts
