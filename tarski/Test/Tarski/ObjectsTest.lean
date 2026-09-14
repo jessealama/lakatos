@@ -134,8 +134,9 @@ private def declareP : List Stmt :=
 -- `null.x;`
 #guard outcome [.exprStmt (.member .nullLit "x")] == "uncaught: TypeError: Cannot read properties of null (reading 'x')"
 
--- `(1).x;` — a number has no wrapper prototype yet, so the read answers
--- `undefined` where an engine would find `Number.prototype` (#382).
+-- `(1).x;` — the read goes through `Number.prototype`, which has no `x`
+-- and whose chain ends at `Object.prototype`, so the answer is
+-- `undefined`; no wrapper is allocated on the way.
 #guard outcome [.exprStmt (.member (.numLit 1.0) "x")] == "undefined"
 
 -- `(1).x = 2;` — but a write to a primitive is a strict-mode TypeError.

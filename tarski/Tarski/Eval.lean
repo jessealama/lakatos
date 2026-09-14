@@ -55,9 +55,14 @@ new refusal is written against a list rather than invented.
 | `Error.prototype.toString` on a primitive          | `TypeError`      | `Error.prototype.toString called on non-object`              |
 | `xs.length = v` with a `v` that is not a uint32    | `RangeError`     | `Invalid array length`                                       |
 | `Object.keys` of `undefined` or `null`             | `TypeError`      | `Cannot convert undefined or null to object`                 |
-| `Object(v)` or `hasOwnProperty` on a primitive     | `TypeError`      | `Cannot convert a primitive to an object`                    |
+| `Object(v)` or `hasOwnProperty` on a string primitive | `TypeError`  | `Cannot convert a primitive to an object`                     |
 | `push` on a non-array                              | `TypeError`      | `Array.prototype.push called on non-array`                   |
 | `join` on a non-array                              | `TypeError`      | `Array.prototype.join called on non-array`                   |
+| `Number.prototype.toString` off a Number           | `TypeError`      | `Number.prototype.toString requires that 'this' be a Number`  |
+| `Number.prototype.valueOf` off a Number            | `TypeError`      | `Number.prototype.valueOf requires that 'this' be a Number`   |
+| `Boolean.prototype.toString` off a Boolean         | `TypeError`      | `Boolean.prototype.toString requires that 'this' be a Boolean` |
+| `Boolean.prototype.valueOf` off a Boolean          | `TypeError`      | `Boolean.prototype.valueOf requires that 'this' be a Boolean`  |
+| `(1).toString(r)` with an `r` outside 2–36         | `RangeError`     | `toString() radix must be between 2 and 36`                   |
 
 `Tarski/Monad.lean` holds two more, for the two arms a reference the
 evaluator handed out cannot reach. -/
@@ -180,12 +185,47 @@ def indexKeys (n : Nat) : List Value :=
   (List.range n).map (fun i => .prim (.str (Nat.repr i)))
 
 /-- Whether a built-in has a `[[Construct]]`. `String` does not: the
-wrapper object is #391's, so `new String("x")` refuses. -/
+wrapper object is #391's, so `new String("x")` refuses. `Math` is not a
+function at all, so it is not here either. -/
 def NativeFn.constructs : NativeFn → Bool
   | .errorCtor _ => true
   | .objectCtor => true
   | .arrayCtor => true
+  | .numberCtor => true
+  | .booleanCtor => true
   | _ => false
+
+/-- `Number.prototype.toString`'s radix: ToIntegerOrInfinity of the
+argument, accepted only in `[2, 36]`. NaN, an infinity, a negative, and 37
+all answer `none`, which the caller reports as the `RangeError` —
+ToIntegerOrInfinity's own zero and infinity are outside the range either
+way, so neither needs a case of its own. -/
+def radix? (x : Float) : Option Nat :=
+  match uint32Of? (Number.FloatOps.tsTrunc x) with
+  | some n => if 2 ≤ n && n ≤ 36 then some n else none
+  | none => none
+
+/-- thisNumberValue: the `[[NumberData]]` of the receiver, which may be
+the primitive itself or a wrapper around one. `who` names the method, so
+the message says which one was called off a Number. -/
+def thisNumberValue (who : String) (v : Value) : EvalM Float := do
+  match v with
+  | .prim (.num x) => pure x
+  | .obj r =>
+    match (← readObj r).kind with
+    | .number x => pure x
+    | _ => throwJsError .typeError s!"Number.prototype.{who} requires that 'this' be a Number"
+  | _ => throwJsError .typeError s!"Number.prototype.{who} requires that 'this' be a Number"
+
+/-- thisBooleanValue, the mirror of `thisNumberValue`. -/
+def thisBooleanValue (who : String) (v : Value) : EvalM Bool := do
+  match v with
+  | .prim (.bool b) => pure b
+  | .obj r =>
+    match (← readObj r).kind with
+    | .boolean b => pure b
+    | _ => throwJsError .typeError s!"Boolean.prototype.{who} requires that 'this' be a Boolean"
+  | _ => throwJsError .typeError s!"Boolean.prototype.{who} requires that 'this' be a Boolean"
 
 /-- The eight spellings `typeof` answers with. The library's
 `TypeofResult` is a closed enum with no string in it, because a proof
@@ -220,7 +260,8 @@ the latter because ToNumber of a string is still the placeholder (#388).
 Lean's `String` order is `List Char` order on the code points, so it is
 UTF-16 code-unit order for every string this slice can build — a lone
 surrogate cannot live in a Lean `String`, and #391 owns the difference.
-`%` is the library's `tsRem` — C `fmod`, not the IEEE remainder — and the
+`%` is the library's `tsRem` — C `fmod`, not the IEEE remainder — `**` is
+its `tsPow`, which is `Math.pow`'s definition too, and the
 numeric relations are Lean's binary64 order, which is the library's model
 of it, so a NaN operand answers `false` on all four. -/
 def applyBinary : BinaryOp → JsVal → JsVal → Value
@@ -231,6 +272,9 @@ def applyBinary : BinaryOp → JsVal → JsVal → Value
   | .mul, l, r => .prim (.num (toNumberPrim l * toNumberPrim r))
   | .div, l, r => .prim (.num (toNumberPrim l / toNumberPrim r))
   | .rem, l, r => .prim (.num (Number.FloatOps.tsRem (toNumberPrim l) (toNumberPrim r)))
+  -- `**` and `Math.pow` are one library definition.
+  | .exponent, l, r =>
+    .prim (.num (Number.FloatOps.tsPow (toNumberPrim l) (toNumberPrim r)))
   | .lt, l, r =>
     if isStrPrim l && isStrPrim r then .prim (.bool (decide (toStringPrim l < toStringPrim r)))
     else .prim (.bool (decide (toNumberPrim l < toNumberPrim r)))
@@ -546,8 +590,13 @@ Two own properties do not live in a property list. A string answers its
 own `length` and its own index properties — the String exotic object's
 `[[GetOwnProperty]]` — and every other key on it is `undefined` until
 `String.prototype` exists (#391). An array answers its own `length` out
-of its kind, which is where the live length lives. Every other primitive
-base answers `undefined`, having no wrapper prototype yet (#382, #391).
+of its kind, which is where the live length lives.
+
+A Number or a Boolean base reads through its wrapper prototype **without
+allocating a wrapper**: the wrapper would have no own properties, so the
+answer is the same, and the receiver a method call then gets is still the
+primitive, which is why `thisNumberValue` accepts both. A bigint base
+still answers `undefined`, that being #392's.
 
 This is inside the fixpoint block for the walk today, and for #389's
 accessors, which will call user code from here. -/
@@ -563,6 +612,8 @@ def getProp (base : Value) (key : String) : EvalM Value :=
       match arrayIndex? key with
       | some i => pure (((stringIndex? s i).map (fun c => Value.prim (.str c))).getD undefValue)
       | none => pure undefValue
+  | .prim (.num _) => getProp (.obj numberProtoRef) key
+  | .prim (.bool _) => getProp (.obj booleanProtoRef) key
   | .prim _ => pure undefValue
   | .obj r => do
     let o ← readObj r
@@ -590,13 +641,15 @@ def setProp (base : Value) (key : String) (v : Value) : EvalM Unit :=
   | .obj r => do
     let o ← readObj r
     match o.kind with
-    | .ordinary => writeObj r (o.setOwn key v)
     | .array len =>
       if key == "length" then setArrayLength r o v
       else
         match arrayIndex? key with
         | some i => writeObj r { o.setOwn key v with kind := .array (max len (i + 1)) }
         | none => writeObj r (o.setOwn key v)
+    -- A wrapper object takes an ordinary write like any other object: its
+    -- `[[NumberData]]` is a field, not a property, so nothing can reach it.
+    | _ => writeObj r (o.setOwn key v)
   | .prim _ =>
     throwJsError .typeError
       s!"Cannot set properties of {formatValue base} (setting '{key}')"
@@ -718,6 +771,57 @@ def callFunction (f : Value) (thisArg : Value) (args : List Value) : EvalM Value
         pure undefValue
   partial_fixpoint
 
+/-- ToNumber on values: ToPrimitive with the number hint, then ToNumber
+on the primitive. The twin of `toStringValue`, and what every coercing
+built-in argument goes through. -/
+def toNumberValue (v : Value) : EvalM Float := do
+  pure (toNumberPrim (← toPrimitive .number v))
+  partial_fixpoint
+
+/-- A whole argument list coerced to Numbers, left to right. `Math.max`
+and `Math.min` need this rather than a fold that coerces lazily: the
+specification coerces *every* argument before comparing any, so a user
+`valueOf` after one that answered NaN still runs. -/
+def toNumberValues : List Value → EvalM (List Float)
+  | [] => pure []
+  | v :: rest => do
+    let x ← toNumberValue v
+    let xs ← toNumberValues rest
+    pure (x :: xs)
+  partial_fixpoint
+
+/-- The shared body of the eight unary `Math` members: ToNumber of the
+first argument through one of the library's operations. A missing
+argument is `undefined`, hence NaN, which is what makes `Math.abs()`
+NaN. -/
+def mathUnary (f : Float → Float) (args : List Value) : EvalM Value := do
+  pure (.prim (.num (f (← toNumberValue (args.headD undefValue)))))
+  partial_fixpoint
+
+/-- `Number`'s argument. A *missing* `value` is `+0`, while a `value` that
+is present and `undefined` is NaN, so the two cannot share one default. -/
+def numberArg : List Value → EvalM Float
+  | [] => pure 0.0
+  | v :: _ => toNumberValue v
+  partial_fixpoint
+
+/-- What `new` does to a native that differs from calling it. Only the two
+wrappers do: `Number(v)` answers the Number and `new Number(v)` a wrapper
+object around it, off one conversion. `Object`, `Array`, and the `Error`
+constructors behave the same either way, so they fall through to
+`callNative`. NewTarget's `prototype` is ignored here as it is there
+(#384). -/
+def constructNative (n : NativeFn) (args : List Value) : EvalM Value :=
+  match n with
+  | .numberCtor => do
+    let x ← numberArg args
+    pure (.obj (← allocObj { proto := some numberProtoRef, kind := .number x }))
+  | .booleanCtor => do
+    let b := toBooleanPrim (args.headD undefValue)
+    pure (.obj (← allocObj { proto := some booleanProtoRef, kind := .boolean b }))
+  | _ => callNative n undefValue args
+  partial_fixpoint
+
 /-- Run a built-in.
 
 `.errorCtor` is the shared body of the seven `Error` constructors: it
@@ -736,12 +840,28 @@ is the reason it is exposed at all.
 The rest are #380's floor. `String(v)` is ToString and nothing else —
 `new String(v)` refuses, the wrapper being #391's. `Object(v)` is an
 ordinary object for a nullish argument, the argument itself for an
-object, and a `TypeError` for any other primitive until the wrappers
-exist (#382, #391). `Object.keys` is OrdinaryOwnPropertyKeys of an
+object, a wrapper for a Number or a Boolean, and a `TypeError` for a
+string until that wrapper exists (#391). `Object.keys` is OrdinaryOwnPropertyKeys of an
 object, the index keys of a string, and empty for any other non-nullish
 primitive. `push` and `join` require an Array exotic receiver: the
 generic array-like forms, and the rest of `Array.prototype`, are
-#390's. A missing argument is `undefined` throughout. -/
+#390's. A missing argument is `undefined` throughout.
+
+`Number` and `Boolean` called as functions are their conversions;
+`constructNative` is what `new` does instead. The four `Number`
+predicates do **not** coerce — `Number.isNaN("NaN")` is `false` — while
+every `Math` member does, through `toNumberValue`. `Math.max` and
+`Math.min` coerce every argument first and then fold the library's binary
+`tsMax`/`tsMin` from the identities its header names, `-∞` and `+∞`, so
+the empty call answers an infinity and a NaN anywhere propagates.
+`Math.pow` is `tsPow`, the same definition `**` is, and carries the same
+limit on a non-integral exponent (#434).
+
+`Number.prototype.toString` validates its radix for real — outside 2–36
+is a `RangeError` — but **prints the placeholder's decimal string for
+every radix**: radix 10 is right and `(255).toString(16)` answers `"255"`
+where an engine answers `"ff"`. `formatNumber` is the one function #388
+replaces, and this is one of its callers. -/
 def callNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Value :=
   match f with
   | .errorCtor _ => do
@@ -774,6 +894,10 @@ def callNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Valu
     | .prim .undef :: _ => do pure (.obj (← newObject))
     | .prim .null :: _ => do pure (.obj (← newObject))
     | .obj r :: _ => pure (.obj r)
+    | .prim (.num x) :: _ => do
+      pure (.obj (← allocObj { proto := some numberProtoRef, kind := .number x }))
+    | .prim (.bool b) :: _ => do
+      pure (.obj (← allocObj { proto := some booleanProtoRef, kind := .boolean b }))
     | .prim _ :: _ => throwJsError .typeError "Cannot convert a primitive to an object"
   | .objectIs =>
     pure (.prim (.bool (sameValueValue (args[0]?.getD undefValue) (args[1]?.getD undefValue))))
@@ -786,6 +910,12 @@ def callNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Valu
     | .prim _ => newArray []
   | .objectHasOwnProperty =>
     match thisArg with
+    -- ToObject of a Number or a Boolean has no own properties, so the
+    -- answer is `false` — but the key is converted first, as the spec
+    -- orders it, so a `toString` on it still runs.
+    | .prim (.num _) | .prim (.bool _) => do
+      let _ ← toPropertyKey (args[0]?.getD undefValue)
+      pure (.prim (.bool false))
     | .prim _ => throwJsError .typeError "Cannot convert a primitive to an object"
     | .obj r => do
       let key ← toPropertyKey (args[0]?.getD undefValue)
@@ -808,22 +938,72 @@ def callNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Valu
     | .prim _ => throwJsError .typeError "Array.prototype.push called on non-array"
     | .obj r => do
       match (← readObj r).kind with
-      | .ordinary => throwJsError .typeError "Array.prototype.push called on non-array"
       | .array len => do
         pushElements thisArg len args
         pure (Value.ofNat (len + args.length))
+      | _ => throwJsError .typeError "Array.prototype.push called on non-array"
   | .arrayJoin =>
     match thisArg with
     | .prim _ => throwJsError .typeError "Array.prototype.join called on non-array"
     | .obj r => do
       match (← readObj r).kind with
-      | .ordinary => throwJsError .typeError "Array.prototype.join called on non-array"
       | .array len => do
         let sep ← match args with
           | [] => pure ","
           | .prim .undef :: _ => pure ","
           | v :: _ => toStringValue v
         pure (.prim (.str (← joinElements thisArg 0 len sep)))
+      | _ => throwJsError .typeError "Array.prototype.join called on non-array"
+  | .numberCtor => do pure (.prim (.num (← numberArg args)))
+  | .numberIsFinite =>
+    match args[0]?.getD undefValue with
+    | .prim (.num x) => pure (.prim (.bool (Number.FloatOps.tsIsFinite x)))
+    | _ => pure (.prim (.bool false))
+  | .numberIsInteger =>
+    match args[0]?.getD undefValue with
+    | .prim (.num x) => pure (.prim (.bool (Number.FloatOps.tsIsInteger x)))
+    | _ => pure (.prim (.bool false))
+  | .numberIsNaN =>
+    match args[0]?.getD undefValue with
+    | .prim (.num x) => pure (.prim (.bool (Number.FloatOps.tsIsNaN x)))
+    | _ => pure (.prim (.bool false))
+  | .numberIsSafeInteger =>
+    match args[0]?.getD undefValue with
+    | .prim (.num x) => pure (.prim (.bool (Number.FloatOps.tsIsSafeInteger x)))
+    | _ => pure (.prim (.bool false))
+  | .numberToString => do
+    let x ← thisNumberValue "toString" thisArg
+    match args with
+    | [] => pure (.prim (.str (formatNumber x)))
+    | .prim .undef :: _ => pure (.prim (.str (formatNumber x)))
+    | r :: _ =>
+      match radix? (← toNumberValue r) with
+      | none => throwJsError .rangeError "toString() radix must be between 2 and 36"
+      | some _ => pure (.prim (.str (formatNumber x)))
+  | .numberValueOf => do pure (.prim (.num (← thisNumberValue "valueOf" thisArg)))
+  | .booleanCtor => pure (.prim (.bool (toBooleanPrim (args.headD undefValue))))
+  | .booleanToString => do
+    let b ← thisBooleanValue "toString" thisArg
+    pure (.prim (.str (if b then "true" else "false")))
+  | .booleanValueOf => do pure (.prim (.bool (← thisBooleanValue "valueOf" thisArg)))
+  | .mathAbs => mathUnary Number.FloatOps.tsAbs args
+  | .mathCeil => mathUnary Number.FloatOps.tsCeil args
+  | .mathFloor => mathUnary Number.FloatOps.tsFloor args
+  | .mathFround => mathUnary Number.FloatOps.tsFround args
+  | .mathRound => mathUnary Number.FloatOps.tsRound args
+  | .mathSign => mathUnary Number.FloatOps.tsSign args
+  | .mathSqrt => mathUnary Number.FloatOps.tsSqrt args
+  | .mathTrunc => mathUnary Number.FloatOps.tsTrunc args
+  | .mathMax => do
+    let xs ← toNumberValues args
+    pure (.prim (.num (xs.foldl Number.FloatOps.tsMax Number.NEGATIVE_INFINITY)))
+  | .mathMin => do
+    let xs ← toNumberValues args
+    pure (.prim (.num (xs.foldl Number.FloatOps.tsMin Number.POSITIVE_INFINITY)))
+  | .mathPow => do
+    let base ← toNumberValue (args.headD undefValue)
+    let exponent ← toNumberValue (args[1]?.getD undefValue)
+    pure (.prim (.num (Number.FloatOps.tsPow base exponent)))
   | .print => do
     -- The host's output binding. There is no IO in `EvalM`, so the line
     -- is appended to `%PrintLog%` and the binary writes the log out once
@@ -873,10 +1053,11 @@ def construct (f : Value) (args : List Value) : EvalM Value :=
       let fresh ← allocFromConstructor f
       callNative (.errorCtor k) (.obj fresh) args
     | some (.native n) =>
-      -- `Object` and `Array` allocate their own instance against the
-      -- intrinsic prototype, so `new` hands them no receiver at all and
-      -- NewTarget's `prototype` is ignored; subclassing is #384's.
-      if n.constructs then callNative n undefValue args
+      -- `Object`, `Array`, and the two wrappers allocate their own
+      -- instance against the intrinsic prototype, so `new` hands them no
+      -- receiver at all and NewTarget's `prototype` is ignored;
+      -- subclassing is #384's.
+      if n.constructs then constructNative n args
       else throwJsError .typeError "not a constructor"
     | some (.closure c) =>
       match c.kind with
@@ -1135,11 +1316,11 @@ def Heap.printedLines (h : Heap) : List String :=
   | none => []
   | some o =>
     match o.kind with
-    | .ordinary => []
     | .array len =>
       (List.range len).filterMap fun i =>
         match o.getOwn (toString i) with
         | some (.prim (.str s)) => some s
         | _ => none
+    | _ => []
 
 end Tarski

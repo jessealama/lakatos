@@ -1,5 +1,902 @@
 {
   "directories": {
+    "test/built-ins/Boolean": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 25,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Boolean/prototype": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 5,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Boolean/prototype/constructor": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 1,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Boolean/prototype/toString": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 10,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Boolean/prototype/valueOf": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 10,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 3,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/E": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 2,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/LN10": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 2,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/LN2": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 2,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/LOG10E": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 2,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/LOG2E": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 2,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/PI": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 2,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/SQRT1_2": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 2,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/SQRT2": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 2,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/abs": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 8,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/acos": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 8,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/acosh": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 7,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/asin": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 9,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/asinh": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 5,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/atan": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 7,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/atan2": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 11,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/atanh": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 5,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/cbrt": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 5,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/ceil": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 11,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/clz32": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 10,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/cos": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 9,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/cosh": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 5,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/exp": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 9,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/expm1": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 5,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/f16round": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 5,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/floor": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 11,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/fround": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 9,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/hypot": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 12,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/imul": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 5,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/log": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 9,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/log10": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 5,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/log1p": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 5,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/log2": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 5,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/max": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 10,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/min": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 10,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/pow": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 28,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/random": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 5,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/round": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 11,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/sign": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 5,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/sin": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 8,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/sinh": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 5,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/sqrt": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 10,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/sumPrecise": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 10,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/tan": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 9,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/tanh": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 5,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Math/trunc": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 12,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Number": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 120,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Number/MAX_VALUE": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 4,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Number/MIN_VALUE": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 4,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Number/NEGATIVE_INFINITY": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 4,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Number/POSITIVE_INFINITY": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 4,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Number/isFinite": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 8,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Number/isInteger": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 9,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Number/isNaN": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 7,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Number/isSafeInteger": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 10,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Number/parseFloat": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 1,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Number/parseInt": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 1,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Number/prototype": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 15,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Number/prototype/toExponential": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 15,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Number/prototype/toFixed": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 16,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Number/prototype/toLocaleString": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 4,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Number/prototype/toPrecision": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 17,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Number/prototype/toString": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 90,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
+    "test/built-ins/Number/prototype/valueOf": {
+      "pass": 0,
+      "fail": 0,
+      "unsupported": 11,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0
+      }
+    },
     "test/harness": {
       "pass": 0,
       "fail": 0,

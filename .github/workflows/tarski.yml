@@ -145,6 +145,15 @@ jobs:
           expected=$(printf 'a\n2\nt\nundefined')
           test "$out" = "$expected" || { echo "expected a/2/t/undefined, got $out"; exit 1; }
 
+      # #382's example: `Math.fround`, `Number.isSafeInteger`,
+      # `Math.round` of `-0.4` read through `Object.is`, `Math.max`
+      # propagating a NaN, and `Number.EPSILON` against `2 ** -52` — every
+      # one of them the library's own definition.
+      - name: Run the number-math script
+        run: |
+          out=$(.lake/build/bin/tarski run Test/Tarski/fixtures/number-math.json)
+          test "$out" = "true" || { echo "expected true, got $out"; exit 1; }
+
       # The suite itself, at the commit in tarski/test262/pin.json. The
       # clone is a build artifact: cached by the pin's hash, fetched at
       # depth 1 by SHA, never a submodule.
@@ -160,9 +169,16 @@ jobs:
 
       # The PR-gated slice. The committed table is the ratchet: a count
       # that moved in either direction fails until it is written down.
-      - name: test262 harness slice
-        timeout-minutes: 10
-        run: node ../dist/tarski/frontend/src/test262/cli.js test/harness --check test262/expected.json
+      # The three built-ins directories are pinned all-unsupported for the
+      # reason `tarski/CLAUDE.md` gives — they load the suite's own
+      # `assert.js`, which opens with a `switch` — and they ratchet with
+      # #393 and #383 rather than with a built-ins slice.
+      - name: test262 slice
+        timeout-minutes: 15
+        run: |
+          node ../dist/tarski/frontend/src/test262/cli.js \
+            test/harness test/built-ins/Number test/built-ins/Math test/built-ins/Boolean \
+            --check test262/expected.json
 
       # What ties the fake binary the unit tests run to the real one.
       - name: Runner end to end

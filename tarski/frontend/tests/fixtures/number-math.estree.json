@@ -1,0 +1,259 @@
+{
+  "type": "Program",
+  "sourceType": "script",
+  "body": [
+    {
+      "type": "ExpressionStatement",
+      "expression": {
+        "type": "Literal",
+        "value": "use strict",
+        "raw": "\"use strict\""
+      },
+      "directive": "use strict"
+    },
+    {
+      "type": "ExpressionStatement",
+      "expression": {
+        "type": "LogicalExpression",
+        "operator": "&&",
+        "left": {
+          "type": "LogicalExpression",
+          "operator": "&&",
+          "left": {
+            "type": "LogicalExpression",
+            "operator": "&&",
+            "left": {
+              "type": "LogicalExpression",
+              "operator": "&&",
+              "left": {
+                "type": "BinaryExpression",
+                "operator": "===",
+                "left": {
+                  "type": "CallExpression",
+                  "callee": {
+                    "type": "MemberExpression",
+                    "object": {
+                      "type": "Identifier",
+                      "name": "Math"
+                    },
+                    "property": {
+                      "type": "Identifier",
+                      "name": "fround"
+                    },
+                    "computed": false
+                  },
+                  "arguments": [
+                    {
+                      "type": "Literal",
+                      "value": 0.1,
+                      "raw": "0.1"
+                    }
+                  ]
+                },
+                "right": {
+                  "type": "Literal",
+                  "value": 0.10000000149011612,
+                  "raw": "0.10000000149011612"
+                }
+              },
+              "right": {
+                "type": "BinaryExpression",
+                "operator": "===",
+                "left": {
+                  "type": "CallExpression",
+                  "callee": {
+                    "type": "MemberExpression",
+                    "object": {
+                      "type": "Identifier",
+                      "name": "Number"
+                    },
+                    "property": {
+                      "type": "Identifier",
+                      "name": "isSafeInteger"
+                    },
+                    "computed": false
+                  },
+                  "arguments": [
+                    {
+                      "type": "BinaryExpression",
+                      "operator": "-",
+                      "left": {
+                        "type": "BinaryExpression",
+                        "operator": "**",
+                        "left": {
+                          "type": "Literal",
+                          "value": 2,
+                          "raw": "2"
+                        },
+                        "right": {
+                          "type": "Literal",
+                          "value": 53,
+                          "raw": "53"
+                        }
+                      },
+                      "right": {
+                        "type": "Literal",
+                        "value": 1,
+                        "raw": "1"
+                      }
+                    }
+                  ]
+                },
+                "right": {
+                  "type": "Literal",
+                  "value": true,
+                  "raw": "true"
+                }
+              }
+            },
+            "right": {
+              "type": "CallExpression",
+              "callee": {
+                "type": "MemberExpression",
+                "object": {
+                  "type": "Identifier",
+                  "name": "Object"
+                },
+                "property": {
+                  "type": "Identifier",
+                  "name": "is"
+                },
+                "computed": false
+              },
+              "arguments": [
+                {
+                  "type": "CallExpression",
+                  "callee": {
+                    "type": "MemberExpression",
+                    "object": {
+                      "type": "Identifier",
+                      "name": "Math"
+                    },
+                    "property": {
+                      "type": "Identifier",
+                      "name": "round"
+                    },
+                    "computed": false
+                  },
+                  "arguments": [
+                    {
+                      "type": "UnaryExpression",
+                      "operator": "-",
+                      "argument": {
+                        "type": "Literal",
+                        "value": 0.4,
+                        "raw": "0.4"
+                      },
+                      "prefix": true
+                    }
+                  ]
+                },
+                {
+                  "type": "UnaryExpression",
+                  "operator": "-",
+                  "argument": {
+                    "type": "Literal",
+                    "value": 0,
+                    "raw": "0"
+                  },
+                  "prefix": true
+                }
+              ]
+            }
+          },
+          "right": {
+            "type": "BinaryExpression",
+            "operator": "!==",
+            "left": {
+              "type": "CallExpression",
+              "callee": {
+                "type": "MemberExpression",
+                "object": {
+                  "type": "Identifier",
+                  "name": "Math"
+                },
+                "property": {
+                  "type": "Identifier",
+                  "name": "max"
+                },
+                "computed": false
+              },
+              "arguments": [
+                {
+                  "type": "Identifier",
+                  "name": "NaN"
+                },
+                {
+                  "type": "Literal",
+                  "value": 1,
+                  "raw": "1"
+                }
+              ]
+            },
+            "right": {
+              "type": "CallExpression",
+              "callee": {
+                "type": "MemberExpression",
+                "object": {
+                  "type": "Identifier",
+                  "name": "Math"
+                },
+                "property": {
+                  "type": "Identifier",
+                  "name": "max"
+                },
+                "computed": false
+              },
+              "arguments": [
+                {
+                  "type": "Identifier",
+                  "name": "NaN"
+                },
+                {
+                  "type": "Literal",
+                  "value": 1,
+                  "raw": "1"
+                }
+              ]
+            }
+          }
+        },
+        "right": {
+          "type": "BinaryExpression",
+          "operator": "===",
+          "left": {
+            "type": "MemberExpression",
+            "object": {
+              "type": "Identifier",
+              "name": "Number"
+            },
+            "property": {
+              "type": "Identifier",
+              "name": "EPSILON"
+            },
+            "computed": false
+          },
+          "right": {
+            "type": "BinaryExpression",
+            "operator": "**",
+            "left": {
+              "type": "Literal",
+              "value": 2,
+              "raw": "2"
+            },
+            "right": {
+              "type": "UnaryExpression",
+              "operator": "-",
+              "argument": {
+                "type": "Literal",
+                "value": 52,
+                "raw": "52"
+              },
+              "prefix": true
+            }
+          }
+        }
+      }
+    }
+  ]
+}

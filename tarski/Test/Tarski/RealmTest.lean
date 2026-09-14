@@ -15,8 +15,8 @@ open Tarski
 
 /-! ## The shape -/
 
-#guard Heap.initial.cells.size == 12
-#guard Heap.initial.objects.size == 29
+#guard Heap.initial.cells.size == 17
+#guard Heap.initial.objects.size == 53
 
 /-! ## Each kind's prototype
 
@@ -68,7 +68,7 @@ constructor object. -/
         | some c => c.value == some (.obj k.ctorRef)
         | none => false)
 
-#guard globalEnv.length == 12
+#guard globalEnv.length == 17
 
 /-! ## `Error.prototype.toString` -/
 
@@ -197,3 +197,177 @@ and an absent `IsHTMLDDA` to read as `undefined`. -/
 
 #guard (Heap.initial.read printCellRef).bind (·.value) == some (.obj printRef)
 #guard (Heap.initial.read hostCellRef).bind (·.value) == some (.obj hostRef)
+
+/-! ## `Number.prototype` and `Number`
+
+`Number.prototype` is itself a Number object whose `[[NumberData]]` is
+`+0`, as the spec has it, which is what makes `Number.prototype.valueOf()`
+answer `0`. Every constant on `Number` is the library's own definition
+under its source spelling, so the realm and a `Theorem` name the same
+double; the list is walked rather than written out twice. -/
+
+#guard match Heap.initial.readObj numberProtoRef with
+  | some o =>
+    o.kind == .number 0.0
+      && o.proto == some objectProtoRef
+      && o.getOwn "constructor" == some (.obj numberCtorRef)
+      && o.getOwn "toString" == some (.obj numberToStringRef)
+      && o.getOwn "valueOf" == some (.obj numberValueOfRef)
+      -- #388's, and absent until then.
+      && o.getOwn "toFixed" == none
+      && o.getOwn "toPrecision" == none
+      && o.getOwn "toExponential" == none
+      && o.getOwn "toLocaleString" == none
+  | none => false
+
+#guard match Heap.initial.readObj numberCtorRef with
+  | some o =>
+    o.getOwn "prototype" == some (.obj numberProtoRef)
+      && o.getOwn "isFinite" == some (.obj numberIsFiniteRef)
+      && o.getOwn "isInteger" == some (.obj numberIsIntegerRef)
+      && o.getOwn "isNaN" == some (.obj numberIsNaNRef)
+      && o.getOwn "isSafeInteger" == some (.obj numberIsSafeIntegerRef)
+      -- #388's.
+      && o.getOwn "parseFloat" == none
+      && o.getOwn "parseInt" == none
+      && (match o.callable with
+          | some (.native .numberCtor) => true
+          | _ => false)
+  | none => false
+
+private def numberConstants : List (String × Float) :=
+  [ ("EPSILON", Js.Number.EPSILON),
+    ("MAX_SAFE_INTEGER", Js.Number.MAX_SAFE_INTEGER),
+    ("MIN_SAFE_INTEGER", Js.Number.MIN_SAFE_INTEGER),
+    ("MAX_VALUE", Js.Number.MAX_VALUE),
+    ("MIN_VALUE", Js.Number.MIN_VALUE),
+    ("POSITIVE_INFINITY", Js.Number.POSITIVE_INFINITY),
+    ("NEGATIVE_INFINITY", Js.Number.NEGATIVE_INFINITY),
+    ("NaN", Js.Number.NaN) ]
+
+#guard match Heap.initial.readObj numberCtorRef with
+  | some o => numberConstants.all fun p => o.getOwn p.1 == some (.prim (.num p.2))
+  | none => false
+
+/-! ## `Boolean.prototype` and `Boolean` -/
+
+#guard match Heap.initial.readObj booleanProtoRef with
+  | some o =>
+    o.kind == .boolean false
+      && o.proto == some objectProtoRef
+      && o.getOwn "constructor" == some (.obj booleanCtorRef)
+      && o.getOwn "toString" == some (.obj booleanToStringRef)
+      && o.getOwn "valueOf" == some (.obj booleanValueOfRef)
+  | none => false
+
+#guard match Heap.initial.readObj booleanCtorRef with
+  | some o =>
+    o.getOwn "prototype" == some (.obj booleanProtoRef)
+      && (match o.callable with
+          | some (.native .booleanCtor) => true
+          | _ => false)
+  | none => false
+
+/-! ## `Math`
+
+No `[[Call]]`: `Math()` is `not a function`. Its members are exactly the
+ones the library expresses — the transcendental family, `random`,
+`clz32`, and `imul` are absent rather than faked. -/
+
+#guard match Heap.initial.readObj mathRef with
+  | some o => o.proto == some objectProtoRef && o.callable.isNone
+  | none => false
+
+private def mathConstants : List (String × Float) :=
+  [ ("E", Js.Math.E),
+    ("LN10", Js.Math.LN10),
+    ("LN2", Js.Math.LN2),
+    ("LOG10E", Js.Math.LOG10E),
+    ("LOG2E", Js.Math.LOG2E),
+    ("PI", Js.Math.PI),
+    ("SQRT1_2", Js.Math.SQRT1_2),
+    ("SQRT2", Js.Math.SQRT2) ]
+
+#guard match Heap.initial.readObj mathRef with
+  | some o => mathConstants.all fun p => o.getOwn p.1 == some (.prim (.num p.2))
+  | none => false
+
+private def mathMembers : List (String × Ref) :=
+  [ ("abs", mathAbsRef),
+    ("ceil", mathCeilRef),
+    ("floor", mathFloorRef),
+    ("fround", mathFroundRef),
+    ("round", mathRoundRef),
+    ("sign", mathSignRef),
+    ("sqrt", mathSqrtRef),
+    ("trunc", mathTruncRef),
+    ("max", mathMaxRef),
+    ("min", mathMinRef),
+    ("pow", mathPowRef) ]
+
+#guard match Heap.initial.readObj mathRef with
+  | some o => mathMembers.all fun p => o.getOwn p.1 == some (.obj p.2)
+  | none => false
+
+#guard match Heap.initial.readObj mathRef with
+  | some o =>
+    ["cbrt", "random", "hypot", "exp", "log", "log2", "log10", "atan2", "sin", "cos",
+      "clz32", "imul", "f16round", "sumPrecise"].all fun k => o.getOwn k == none
+  | none => false
+
+/-! ## Each of the twenty-one new natives is the one its reference names -/
+
+private def nativeAt (r : Ref) (n : NativeFn) : Bool :=
+  match Heap.initial.readObj r with
+  | some { callable := some (.native n'), .. } => n' == n
+  | _ => false
+
+#guard [ (numberCtorRef, NativeFn.numberCtor),
+         (numberToStringRef, .numberToString),
+         (numberValueOfRef, .numberValueOf),
+         (numberIsFiniteRef, .numberIsFinite),
+         (numberIsIntegerRef, .numberIsInteger),
+         (numberIsNaNRef, .numberIsNaN),
+         (numberIsSafeIntegerRef, .numberIsSafeInteger),
+         (booleanCtorRef, .booleanCtor),
+         (booleanToStringRef, .booleanToString),
+         (booleanValueOfRef, .booleanValueOf),
+         (mathAbsRef, .mathAbs),
+         (mathCeilRef, .mathCeil),
+         (mathFloorRef, .mathFloor),
+         (mathFroundRef, .mathFround),
+         (mathRoundRef, .mathRound),
+         (mathSignRef, .mathSign),
+         (mathSqrtRef, .mathSqrt),
+         (mathTruncRef, .mathTrunc),
+         (mathMaxRef, .mathMax),
+         (mathMinRef, .mathMin),
+         (mathPowRef, .mathPow) ].all fun p => nativeAt p.1 p.2
+
+/-! ## The five new global bindings
+
+`Number`, `Boolean`, and `Math` are writable cells like every other
+global function binding. `NaN` and `Infinity` are the global object's
+non-writable value properties, so their cells are immutable and hold the
+library's own constants — which is what makes `NaN = 1` a strict-mode
+`TypeError`. -/
+
+#guard Env.lookup globalEnv "Number" == some numberCellRef
+#guard Env.lookup globalEnv "Boolean" == some booleanCellRef
+#guard Env.lookup globalEnv "Math" == some mathCellRef
+#guard Env.lookup globalEnv "NaN" == some nanCellRef
+#guard Env.lookup globalEnv "Infinity" == some infinityCellRef
+
+#guard (Heap.initial.read numberCellRef).bind (·.value) == some (.obj numberCtorRef)
+#guard (Heap.initial.read booleanCellRef).bind (·.value) == some (.obj booleanCtorRef)
+#guard (Heap.initial.read mathCellRef).bind (·.value) == some (.obj mathRef)
+
+#guard (Heap.initial.read numberCellRef).map (·.mutable) == some true
+#guard (Heap.initial.read booleanCellRef).map (·.mutable) == some true
+#guard (Heap.initial.read mathCellRef).map (·.mutable) == some true
+
+#guard (Heap.initial.read nanCellRef).map (·.mutable) == some false
+#guard (Heap.initial.read infinityCellRef).map (·.mutable) == some false
+#guard (Heap.initial.read nanCellRef).bind (·.value) == some (.prim (.num Js.Number.NaN))
+#guard (Heap.initial.read infinityCellRef).bind (·.value)
+  == some (.prim (.num Js.Number.POSITIVE_INFINITY))
