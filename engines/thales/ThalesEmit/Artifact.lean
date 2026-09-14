@@ -48,7 +48,8 @@ declaration with no AST prints nothing at all, so an emission from before
 this field renders exactly as it did. -/
 def astBlock (base : Ident) : Option DeclAst → CoreM (Option String)
   | none => pure none
-  | some (.unsupported k) => pure (some s!"-- {astIdent base}: unsupported: {k}")
+  | some (.unsupported k) =>
+    pure (some s!"-- {(astIdent base).getId}: unsupported: {k}")
   | some (.program p) => do
     match RenderM.run (astCommand (astIdent base) p) with
     | .error msg => throwError msg
