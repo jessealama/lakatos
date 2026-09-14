@@ -55,3 +55,24 @@ test/built-ins/parseInt
 # The classes (#384).
 test/language/statements/class
 test/language/expressions/class
+
+# Declaration instantiation, jumps, and the arguments object (#393). The
+# issue's subject — hoisting, the dead zone, `switch`, labels,
+# `do`/`while`, and `arguments` — plus `try`, `call`, `function-code`,
+# and `block-scope`, which are where the declaration-instantiation and
+# dead-zone tests live.
+test/language/statements/do-while
+test/language/statements/labeled
+test/language/statements/switch
+test/language/statements/break
+test/language/statements/continue
+test/language/statements/empty
+test/language/statements/expression
+test/language/statements/function
+test/language/statements/try
+test/language/expressions/function
+test/language/expressions/arrow-function
+test/language/expressions/call
+test/language/arguments-object
+test/language/function-code
+test/language/block-scope
