@@ -26,6 +26,9 @@ on:
   # skipped. A docs-only pull request would be unmergeable. The push
   # trigger above stays filtered — nothing gates on it.
   pull_request:
+  # The merge queue builds each candidate on top of main and runs these
+  # same jobs on it; the required checks report from this event too.
+  merge_group:
 
 jobs:
   format:

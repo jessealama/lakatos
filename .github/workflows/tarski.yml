@@ -10,6 +10,9 @@ on:
   # check that never reports reads as pending forever, not as skipped. The
   # push trigger above stays filtered — nothing gates on it.
   pull_request:
+  # The merge queue builds each candidate on top of main and runs these
+  # same jobs on it; the required checks report from this event too.
+  merge_group:
   # The whole-suite run, weekly and on demand. Monday, three hours before
   # `lean-update`'s own cron, so the two never contend for a runner.
   schedule:
@@ -30,7 +33,7 @@ jobs:
     name: Build + Lean tests
     # The PR job and the whole-suite run share a workflow and never each
     # other's triggers.
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    if: github.event_name == 'push' || github.event_name == 'pull_request' || github.event_name == 'merge_group'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
