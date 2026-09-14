@@ -907,7 +907,8 @@
         "noStrict": 0,
         "raw": 0,
         "async": 17,
-        "module": 0
+        "module": 0,
+        "budget": 0
       }
     }
   }

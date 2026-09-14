@@ -9,12 +9,18 @@ import {
   vi,
 } from "vitest";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { main } from "../src/test262/cli.js";
-import type { Expectations } from "../src/test262/report.js";
+import type { Expectations, Summary } from "../src/test262/report.js";
 
 const root = fileURLToPath(new URL("../../..", import.meta.url));
 const TREE = fileURLToPath(new URL("fixtures/test262", import.meta.url));
@@ -149,6 +155,146 @@ describe("tarski-test262", () => {
     const checked = invoke(overPass("--check", file));
     expect(checked.status).toBe(1);
     expect(checked.stderr).toContain("test/pass: pass expected 5, got 6");
+  });
+
+  // The whole-suite mode: no per-test lists, a line of progress per
+  // depth-three group on stderr, and the two committed files.
+  describe("--summary", () => {
+    let summary: { status: number; stdout: string; stderr: string };
+    beforeAll(() => {
+      summary = invoke(overTree("--summary"));
+    });
+
+    it("keeps the table and the counts and drops the three lists", () => {
+      expect(summary.status).toBe(0);
+      expect(summary.stdout.startsWith(TABLE)).toBe(true);
+      expect(summary.stdout).toContain("not run:");
+      expect(summary.stdout).toContain("skipped:");
+      expect(summary.stdout).toContain("unsupported:");
+      expect(summary.stdout).not.toContain("failures:");
+      expect(summary.stdout).not.toContain("harness errors:");
+      expect(summary.stdout).not.toContain("timeouts:");
+    });
+
+    // The fake tree's directories are two components deep, so each is its
+    // own group; the last line has finished every test.
+    it("reports progress once per group, ending at the total", () => {
+      expect(summary.stderr).toBe(
+        [
+          "  4/23  test/fail",
+          "  6/23  test/harness-error",
+          "  7/23  test/intl402",
+          "  11/23  test/not-run",
+          "  17/23  test/pass",
+          "  19/23  test/skipped",
+          "  20/23  test/timeout",
+          "  23/23  test/unsupported",
+        ].join("\n"),
+      );
+    });
+  });
+
+  describe("--budget", () => {
+    // Zero means the budget is spent before the first test, so every
+    // planned run becomes `budget` and nothing is spawned at all. The
+    // `test/timeout` row proving 0 timeouts is that witness: the fake
+    // binary there diverges, and a spawned one would have cost the
+    // whole per-test timeout.
+    it("counts a run past the budget as not run, and spawns nothing", () => {
+      const result = invoke(overTree("--budget", "0"));
+      expect(result.status).toBe(0);
+      expect(
+        result.stdout.startsWith(
+          [
+            "directory           pass  fail  unsupported  timeout  harness-error  not-run",
+            "test/fail              0     0            0        0              0        4",
+            "test/harness-error     0     0            0        0              1        1",
+            "test/not-run           0     0            0        0              0        4",
+            "test/pass              0     0            0        0              0        6",
+            "test/timeout           0     0            0        0              0        1",
+            "test/unsupported       0     0            0        0              0        3",
+          ].join("\n"),
+        ),
+      ).toBe(true);
+      expect(result.stdout).toContain("budget  15");
+    });
+
+    it("refuses a budget that is not a non-negative integer", () => {
+      for (const value of ["-1", "soon"]) {
+        const result = invoke(["test", "--budget", value]);
+        expect(result.status).toBe(2);
+        expect(result.stderr).toContain(
+          "--budget needs a non-negative integer",
+        );
+      }
+    });
+  });
+
+  describe("--markdown and --json", () => {
+    it("writes both files, labelled with what was run", () => {
+      const markdown = path.join(scratch, "results.md");
+      const json = path.join(scratch, "results.json");
+      const result = invoke(overPass("--markdown", markdown, "--json", json));
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain(`wrote ${json}`);
+      expect(result.stdout).toContain(`wrote ${markdown}`);
+      const summary = JSON.parse(readFileSync(json, "utf8")) as Summary;
+      // The fixture tree is not a repository, so there is no commit to
+      // name and nothing to warn about.
+      expect(summary.test262).toEqual({ commit: null });
+      expect(summary.slices).toEqual(["test/pass"]);
+      expect(summary.timeoutMs).toBe(10_000);
+      expect(summary.totals.pass).toBe(6);
+      expect(result.stderr).not.toContain("the pin is");
+      const document = readFileSync(markdown, "utf8");
+      expect(document.startsWith("# test262 results\n")).toBe(true);
+      expect(document).toContain("| test/pass |");
+    });
+
+    it("labels the table with the checkout's HEAD and warns off the pin", () => {
+      const copy = path.join(
+        mkdtempSync(path.join(tmpdir(), "test262-copy-")),
+        "tree",
+      );
+      try {
+        cpSync(TREE, copy, { recursive: true });
+        const git = (...args: string[]): void => {
+          execFileSync("git", args, { cwd: copy, stdio: "pipe" });
+        };
+        git("init", "--quiet");
+        git("config", "user.email", "test@example.com");
+        git("config", "user.name", "Test");
+        git("add", ".");
+        git("commit", "--quiet", "-m", "one");
+        const head = execFileSync("git", ["-C", copy, "rev-parse", "HEAD"], {
+          encoding: "utf8",
+        }).trim();
+        const json = path.join(scratch, "labelled.json");
+        const result = invoke([
+          "test/pass",
+          "--test262",
+          copy,
+          "--binary",
+          FAKE,
+          "--json",
+          json,
+        ]);
+        expect(result.status).toBe(0);
+        const summary = JSON.parse(readFileSync(json, "utf8")) as Summary;
+        expect(summary.test262.commit).toBe(head);
+        const pin = JSON.parse(
+          readFileSync(
+            path.join(root, "tarski", "test262", "pin.json"),
+            "utf8",
+          ),
+        ) as { commit: string };
+        expect(result.stderr).toContain(
+          `test262 checkout is at ${head}, the pin is ${pin.commit}`,
+        );
+      } finally {
+        rmSync(path.dirname(copy), { recursive: true, force: true });
+      }
+    });
   });
 
   describe("usage", () => {
@@ -336,21 +482,20 @@ describe("dist/tarski/frontend/src/test262/cli.js", () => {
 });
 
 describe("the committed files", () => {
+  const read = (name: string): string =>
+    readFileSync(path.join(root, "tarski", "test262", name), "utf8");
+
   it("pins a 40-hex-digit commit", () => {
-    const pin = JSON.parse(
-      readFileSync(path.join(root, "tarski", "test262", "pin.json"), "utf8"),
-    ) as { repository: string; commit: string };
+    const pin = JSON.parse(read("pin.json")) as {
+      repository: string;
+      commit: string;
+    };
     expect(pin.commit).toMatch(/^[0-9a-f]{40}$/);
     expect(pin.repository).toContain("test262");
   });
 
   it("holds the harness slice's counts in the shape --check reads", () => {
-    const expectations = JSON.parse(
-      readFileSync(
-        path.join(root, "tarski", "test262", "expected.json"),
-        "utf8",
-      ),
-    ) as Expectations;
+    const expectations = JSON.parse(read("expected.json")) as Expectations;
     const harness = expectations.directories["test/harness"];
     if (harness === undefined) throw new Error("no test/harness row");
     for (const field of [
@@ -362,7 +507,13 @@ describe("the committed files", () => {
     ] as const) {
       expect(Number.isInteger(harness[field])).toBe(true);
     }
-    for (const reason of ["noStrict", "raw", "async", "module"] as const) {
+    for (const reason of [
+      "noStrict",
+      "raw",
+      "async",
+      "module",
+      "budget",
+    ] as const) {
       expect(Number.isInteger(harness.notRun[reason])).toBe(true);
     }
     // The floor as measured at the pin: `assert.js` opens with a `switch`,
@@ -373,7 +524,39 @@ describe("the committed files", () => {
       unsupported: 99,
       timeout: 0,
       harnessError: 0,
-      notRun: { noStrict: 0, raw: 0, async: 17, module: 0 },
+      notRun: { noStrict: 0, raw: 0, async: 17, module: 0, budget: 0 },
     });
+  });
+
+  // The scheduled run's output, committed from a local run of
+  // `scripts/test262-full.sh`. What holds the table to the pin is this:
+  // the runner itself only warns when a checkout is somewhere else.
+  it("holds a results table run at the pin over the script's slices", () => {
+    const pin = JSON.parse(read("pin.json")) as { commit: string };
+    const summary = JSON.parse(read("results.json")) as Summary;
+    expect(summary.test262).toEqual({ commit: pin.commit });
+    expect(summary.slices).toEqual([
+      "test/language",
+      "test/built-ins",
+      "test/intl402",
+    ]);
+    expect(Object.keys(summary.skipped).sort()).toEqual([
+      "intl402",
+      "parse-negative",
+      "resolution-negative",
+    ]);
+    // `intl402` is run so its count lands among the excluded kinds, and
+    // is skipped, so it has no row of its own.
+    expect(summary.skipped.intl402).toBeGreaterThan(0);
+    expect(Object.keys(summary.directories)).not.toContain("test/intl402");
+    expect(summary.totals.unsupported).toBeGreaterThan(0);
+  });
+
+  it("holds a results document naming that same commit", () => {
+    const pin = JSON.parse(read("pin.json")) as { commit: string };
+    const document = read("results.md");
+    expect(document.startsWith("# test262 results\n")).toBe(true);
+    expect(document).toContain(pin.commit);
+    expect(document).toContain("## Not run and skipped");
   });
 });

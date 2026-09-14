@@ -3,6 +3,7 @@
 //
 //   tarski-test262 setup [--pin <pin.json>]
 //   tarski-test262 test/harness [--check test262/expected.json]
+//   tarski-test262 test/language --summary --markdown results.md
 //
 // A slice is a directory or a file under the checkout. Every test is
 // planned (`plan.ts`), run once against the binary (`run.ts`), and
@@ -10,7 +11,14 @@
 // the table against a committed expectations file and exits 1 on any
 // difference, in either direction: the table is a ratchet, so a count
 // that improved has to be written down before it can be relied on.
+//
+// `--markdown` and `--json` write the committed results files of the
+// scheduled whole-suite run, rolled up to three path components; `--budget`
+// bounds that run's wall clock, the tests past it counted as not run for
+// `budget` rather than dropped; `--summary` trades the per-test lists for
+// a line of progress per directory group on stderr.
 
+import { execFileSync } from "node:child_process";
 import {
   existsSync,
   mkdtempSync,
@@ -31,14 +39,19 @@ import {
 } from "./paths.js";
 import {
   diffExpectations,
+  groupKey,
   renderDetails,
+  renderJson,
+  renderMarkdown,
   renderTable,
+  summarise,
   tabulate,
+  type Disposition,
   type Expectations,
   type Result,
 } from "./report.js";
 import { runOne, type Outcome } from "./run.js";
-import { setupTest262, type Pin } from "./setup.js";
+import { headOf, setupTest262, type Exec, type Pin } from "./setup.js";
 
 /** What the command line asked for. */
 interface Options {
@@ -46,8 +59,12 @@ interface Options {
   test262?: string;
   binary?: string;
   timeout: number;
+  budget: number;
+  summary: boolean;
   check?: string;
   write?: string;
+  markdown?: string;
+  json?: string;
 }
 
 /** A usage error, reported and exited 2 rather than thrown out of `main`. */
@@ -57,17 +74,31 @@ const FLAGS = [
   "--test262",
   "--binary",
   "--timeout",
+  "--budget",
   "--check",
   "--write",
+  "--markdown",
+  "--json",
 ] as const;
 
 function parseArgs(argv: readonly string[]): Options {
-  const options: Options = { slices: [], timeout: 10_000 };
+  const options: Options = {
+    slices: [],
+    timeout: 10_000,
+    // No budget until one is asked for: a slice small enough to name by
+    // hand is one nobody wants truncated.
+    budget: Infinity,
+    summary: false,
+  };
   for (let i = 0; i < argv.length; i++) {
     /* v8 ignore next -- `i` is an index into `argv`. */
     const arg = argv[i] ?? "";
     if (!arg.startsWith("--")) {
       options.slices.push(arg);
+      continue;
+    }
+    if (arg === "--summary") {
+      options.summary = true;
       continue;
     }
     if (!(FLAGS as readonly string[]).includes(arg))
@@ -79,7 +110,16 @@ function parseArgs(argv: readonly string[]): Options {
     else if (arg === "--binary") options.binary = value;
     else if (arg === "--check") options.check = value;
     else if (arg === "--write") options.write = value;
-    else {
+    else if (arg === "--markdown") options.markdown = value;
+    else if (arg === "--json") options.json = value;
+    else if (arg === "--budget") {
+      const ms = Number(value);
+      // Zero is allowed, and means every planned run is `budget`: the one
+      // setting under which the arm can be exercised without a clock.
+      if (!Number.isInteger(ms) || ms < 0)
+        throw new UsageError(`--budget needs a non-negative integer`);
+      options.budget = ms;
+    } else {
       const ms = Number(value);
       if (!Number.isInteger(ms) || ms <= 0)
         throw new UsageError(`--timeout needs a positive integer`);
@@ -91,13 +131,23 @@ function parseArgs(argv: readonly string[]): Options {
   return options;
 }
 
-/** Plan and run every test under the slices, in order. */
+/**
+ * Plan and run every test under the slices, in order. `budgetMs` bounds
+ * the whole loop's wall clock: once it is spent every remaining test is
+ * planned and listed but not spawned, counted as not run for `budget`, so
+ * a truncated run says so in its own table instead of shrinking. `onGroup`
+ * is called once per depth-three directory group, with the tests finished
+ * so far — a job that prints nothing for an hour is one nobody can tell
+ * from a hung one.
+ */
 function runSlices(
   checkout: string,
   binary: string,
   slices: readonly string[],
   timeout: number,
   scratch: string,
+  budgetMs: number,
+  onGroup?: (done: number, total: number, group: string) => void,
 ): Result[] {
   const readHarness = (name: string): string => {
     try {
@@ -106,9 +156,22 @@ function runSlices(
       throw new HarnessError(`no harness file ${name}`);
     }
   };
+  const started = Date.now();
+  const tests = listTests(checkout, slices);
   const results: Result[] = [];
-  for (const relative of listTests(checkout, slices)) {
+  let group: string | undefined;
+  let done = 0;
+  const report = (): void => {
+    if (group !== undefined) onGroup?.(done, tests.length, group);
+  };
+  for (const relative of tests) {
     const directory = path.dirname(relative).split(path.sep).join("/");
+    const next = groupKey(directory);
+    if (next !== group) {
+      report();
+      group = next;
+    }
+    done++;
     let plan: Plan;
     try {
       plan = planTest(
@@ -122,8 +185,23 @@ function runSlices(
       results.push({
         path: relative,
         directory,
-        plan: { kind: "run", source: "" },
+        plan: { kind: "run" },
         outcome: { class: "harness-error", detail: (e as Error).message },
+      });
+      continue;
+    }
+    // A result never holds its source: the whole suite is tens of
+    // thousands of results, and each assembled document is tens of
+    // kilobytes.
+    const disposition: Disposition =
+      plan.kind === "run"
+        ? { kind: "run", ...(plan.negative ? { negative: plan.negative } : {}) }
+        : plan;
+    if (plan.kind === "run" && Date.now() - started >= budgetMs) {
+      results.push({
+        path: relative,
+        directory,
+        plan: { kind: "not-run", reason: "budget" },
       });
       continue;
     }
@@ -132,10 +210,11 @@ function runSlices(
     results.push({
       path: relative,
       directory,
-      plan,
+      plan: disposition,
       ...(outcome === undefined ? {} : { outcome }),
     });
   }
+  report();
   return results;
 }
 
@@ -186,9 +265,9 @@ export function main(argv: readonly string[]): number {
     console.error(
       "usage: tarski-test262 <slice>... [--test262 <dir>] [--binary <path>]",
     );
-    console.error(
-      "       [--timeout <ms>] [--check <expected.json>] [--write <expected.json>]",
-    );
+    console.error("       [--timeout <ms>] [--budget <ms>] [--summary]");
+    console.error("       [--check <expected.json>] [--write <expected.json>]");
+    console.error("       [--markdown <file>] [--json <file>]");
     return 2;
   }
 
@@ -216,6 +295,11 @@ export function main(argv: readonly string[]): number {
       options.slices,
       options.timeout,
       scratch,
+      options.budget,
+      options.summary
+        ? (done, total, group): void =>
+            console.error(`  ${done}/${total}  ${group}`)
+        : undefined,
     );
   } finally {
     rmSync(scratch, { recursive: true, force: true });
@@ -223,8 +307,32 @@ export function main(argv: readonly string[]): number {
 
   const counts = tabulate(results);
   console.log(renderTable(counts));
-  const details = renderDetails(results);
+  const details = renderDetails(results, { lists: !options.summary });
   if (details.length > 0) console.log(details);
+
+  if (options.markdown !== undefined || options.json !== undefined) {
+    // The table is labelled with the commit the checkout is really at, so
+    // a local run against another one is honestly labelled rather than
+    // refused; the mismatch is a warning, and the committed table is held
+    // to the pin by the suite that reads it.
+    const commit = headOf(checkout, execFileSync as Exec) ?? null;
+    const pinned = readPin(pinPath(root)).commit;
+    if (commit !== null && commit !== pinned)
+      console.error(`test262 checkout is at ${commit}, the pin is ${pinned}`);
+    const summary = summarise(results, {
+      commit,
+      slices: options.slices,
+      timeoutMs: options.timeout,
+    });
+    if (options.json !== undefined) {
+      writeFileSync(options.json, renderJson(summary));
+      console.log(`wrote ${options.json}`);
+    }
+    if (options.markdown !== undefined) {
+      writeFileSync(options.markdown, renderMarkdown(summary));
+      console.log(`wrote ${options.markdown}`);
+    }
+  }
 
   if (options.write !== undefined) {
     writeFileSync(options.write, serialise(counts));
