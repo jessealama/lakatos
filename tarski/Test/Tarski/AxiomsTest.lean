@@ -1,5 +1,5 @@
 import Lean
-import Tarski.Eval
+import Tarski.Project
 
 /-! The evaluator is a definition, not an assumption.
 
@@ -585,3 +585,39 @@ private def onlyStandard (n : Name) : CoreM Bool := do
 /-- info: true -/
 #guard_msgs in
 #eval onlyStandard ``Tarski.findAccessorUp.eq_def
+
+-- The correspondence projection is a definition too, like the evaluator
+-- it reads: `project` decides what a run amounts to, it does not assume
+-- it. A `sorry` in a reader would make every obligation built on it
+-- vacuous, and would show up here as a fourth name.
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.project
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.Outcome.ofModel
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.errorKindOf
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.readNumber
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.readBool
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.readPrim
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.readOwnField
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.readPrivateField
