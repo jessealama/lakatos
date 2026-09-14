@@ -19,7 +19,7 @@ private def program : Program :=
 
 @[local simp] private theorem two_plus_one : (2.0 + 1.0 : Float) = 3.0 := by decide
 
--- The realm is eighty-eight objects now, and a function object carries
+-- The realm is eighty-nine objects now, and a function object carries
 -- three properties and a `prototype` object of its own, so the term
 -- `simp` carries — and the kernel then checks — is deeper than the
 -- default limits admit. That whole-program `simp` has a ceiling the

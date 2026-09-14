@@ -1836,7 +1836,9 @@ def callFunction (f : Value) (thisArg : Value) (args : List Value) : EvalM Value
       -- arm does after re-reading the same object — so that
       -- `callFunction` does not mention `construct`, or the two unfold
       -- through each other under `simp` and neither guard can stop it.
+      -- `[[ErrorData]]` is what `Object.prototype.toString` reads.
       let fresh ← allocFromConstructor f k.protoRef
+      modifyObj fresh (fun o => { o with kind := .error })
       callNative (.errorCtor k) (.obj fresh) args
     | some (.native n) => callNative n thisArg args
     | some (.bound b) => callBound b args
@@ -2077,7 +2079,11 @@ def defineArrayLength (r : Ref) (o : Obj) (len : Nat) (lengthWritable : Bool)
       let n ← match uint32Of? (toNumberPrim (← toPrimitive .number v)) with
         | none => throwJsError .rangeError "Invalid array length"
         | some n => pure n
-      if len ≤ n then
+      -- A non-writable `length` refuses a different value and refuses
+      -- `writable: true` (10.1.6.3 step 5.e), whatever the value.
+      if !lengthWritable && d.writable == some true then
+        throwJsError .typeError "Cannot redefine property: length"
+      else if len ≤ n then
         if !lengthWritable && n != len then
           throwJsError .typeError "Cannot redefine property: length"
         else
@@ -2718,17 +2724,23 @@ def callReflectNative (f : NativeFn) (thisArg : Value) (args : List Value) : Eva
         throwJsError .typeError "Bind must be called on a function"
       else do
         let target ← readObj t
-        -- 20.2.3.2 steps 4–7: the bound function's `length` is the
-        -- target's own `length`, when that is a Number, less the bound
-        -- arguments, and never below zero. `Nat` subtraction is the
-        -- clamp.
+        -- 20.2.3.2 steps 4–7: when the target has an own `length`, it is
+        -- read with Get — so an accessor runs — and, when it is a Number,
+        -- `+∞` stays `+∞`, `-∞` is 0, and anything else is
+        -- ToIntegerOrInfinity less the bound arguments and never below
+        -- zero. `Nat` subtraction is the clamp.
         let boundArgs := args.drop 1
-        let targetLen ← match target.getOwn "length" with
-          | some (.prim (.num x)) =>
-            match Number.FloatOps.integerOrInfinity? x with
-            | some i => pure (if i ≤ 0 then 0 else i.toNat)
-            | none => pure 0
-          | _ => pure 0
+        let length ←
+          if target.hasOwn "length" then
+            match ← getProp thisArg "length" with
+            | .prim (.num x) =>
+              match Number.FloatOps.integerOrInfinity? x with
+              | some i => pure (Value.ofNat ((if i ≤ 0 then 0 else i.toNat) - boundArgs.length))
+              | none =>
+                -- `integerOrInfinity?` is `none` for either infinity.
+                pure (if x < 0.0 then Value.ofNat 0 else .prim (.num Number.POSITIVE_INFINITY))
+            | _ => pure (Value.ofNat 0)
+          else pure (Value.ofNat 0)
         let constructs ← isConstructor thisArg
         -- Step 12 is `Get(Target, "name")`, not a read of the property
         -- list: a `name` getter runs, and its throw is `bind`'s. Step 14
@@ -2742,7 +2754,7 @@ def callReflectNative (f : NativeFn) (thisArg : Value) (args : List Value) : Eva
               some (.bound { target := t, boundThis := args.headD undefValue,
                              boundArgs, constructs }),
             properties :=
-              [ ("length", Property.attribute (Value.ofNat (targetLen - boundArgs.length))),
+              [ ("length", Property.attribute length),
                 ("name", Property.attribute (.prim (.str ("bound " ++ name)))) ] }
         pure (.obj f)
   | .functionToString => do

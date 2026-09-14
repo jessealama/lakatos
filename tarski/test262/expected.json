@@ -183,8 +183,8 @@
       }
     },
     "test/built-ins/Function/prototype/bind": {
-      "pass": 77,
-      "fail": 13,
+      "pass": 78,
+      "fail": 12,
       "unsupported": 10,
       "timeout": 0,
       "harnessError": 0,

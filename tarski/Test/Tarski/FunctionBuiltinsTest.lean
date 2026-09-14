@@ -151,6 +151,21 @@ zero, and its `name` is `"bound "` and the target's. -/
   == "2"
 #guard outcome (expr (.member (invoke (.arrow [] (.expr (.numLit 1.0))) "bind" []) "length"))
   == "0"
+
+/-- `function f() {} Object.defineProperty(f, "length", <desc>); f.bind(null, 1).length` —
+step 6 reads the target's own `length` with Get, so an accessor runs, and
+an infinite length stays infinite rather than clamping to zero. -/
+private def boundLengthOf (desc : List (String × Expr)) : Program :=
+  [ .funcDecl "f" [] [],
+    .exprStmt (.call (.member (.ident "Object") "defineProperty")
+      [.ident "f", .strLit "length", .objectLit desc]),
+    .exprStmt (.member (invoke (.ident "f") "bind" [.nullLit, .numLit 1.0]) "length") ]
+
+#guard outcome (boundLengthOf [("value", .ident "Infinity")]) == "Infinity"
+#guard outcome (boundLengthOf [("value", .unary .neg (.ident "Infinity"))]) == "0"
+#guard outcome (boundLengthOf [("value", .numLit 3.5)]) == "2"
+#guard outcome (boundLengthOf [("value", .strLit "3")]) == "0"
+#guard outcome (boundLengthOf [("get", .arrow [] (.expr (.numLit 5.0)))]) == "4"
 #guard outcome (expr (.member (invoke (.funcExpr (some "f") [] []) "bind" []) "name"))
   == "bound f"
 #guard outcome (expr (.member (invoke (invoke (.funcExpr (some "f") [] []) "bind" []) "bind" [])

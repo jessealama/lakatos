@@ -54,7 +54,7 @@ private def program : Program :=
 
 -- A class evaluation allocates a prototype, a constructor object, and a
 -- cell per declared name before the constructor's first statement runs,
--- and the realm the whole thing sits on is eighty-eight objects, so
+-- and the realm the whole thing sits on is eighty-nine objects, so
 -- `simp`'s own recursion and the kernel's check both need more room than
 -- an earlier program's. That whole-program `simp` has a ceiling the
 -- heap's representation sets is #471's.

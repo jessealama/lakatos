@@ -19,7 +19,7 @@ nothing.
 The heap is built by hand rather than run up from `Heap.initial`.
 Whole-program `simp` over the realm is exercised by
 `Test/Tarski/ObjectSimpTest.lean` and its neighbours and is minutes of
-wall time here, the realm being eighty-eight objects and
+wall time here, the realm being eighty-nine objects and
 `Obj.ownKeys` reading every key of every level as a possible array index
 (#471 is the ceiling that sets). What this file is about is the shape of
 the enumeration, which two objects show as well as a realm does.

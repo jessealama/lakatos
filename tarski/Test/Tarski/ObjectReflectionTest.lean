@@ -142,6 +142,27 @@ private def three : Expr := .arrayLit [.numLit 1.0, .numLit 2.0, .numLit 3.0]
       .exprStmt (.call (.member (.ident "xs") "push") [.numLit 2.0]) ]
   == "uncaught: TypeError: Cannot assign to read only property 'length' of object '#<Object>'"
 
+-- Once `length` is non-writable, a descriptor that says `writable: true`
+-- is refused even with the same value (10.1.6.3 step 5.e), while one
+-- that repeats the value and the attribute is an identity.
+#guard outcome
+    [ «let» "xs" (.arrayLit [.numLit 1.0]),
+      .exprStmt (obj "defineProperty"
+        [.ident "xs", .strLit "length", .objectLit [("writable", .boolLit false)]]),
+      .exprStmt (obj "defineProperty"
+        [.ident "xs", .strLit "length",
+         .objectLit [("value", .numLit 1.0), ("writable", .boolLit true)]]) ]
+  == "uncaught: TypeError: Cannot redefine property: length"
+#guard outcome
+    [ «let» "xs" (.arrayLit [.numLit 1.0]),
+      .exprStmt (obj "defineProperty"
+        [.ident "xs", .strLit "length", .objectLit [("writable", .boolLit false)]]),
+      .exprStmt (obj "defineProperty"
+        [.ident "xs", .strLit "length",
+         .objectLit [("value", .numLit 1.0), ("writable", .boolLit false)]]),
+      .exprStmt (.member (.ident "xs") "length") ]
+  == "1"
+
 -- A non-configurable element stops the truncation at its index, and the
 -- length that was actually reached is the one written.
 #guard outcome
@@ -357,6 +378,10 @@ private def protoCall (name : String) (args : List Expr) : Expr :=
 #guard outcome (expr (protoCall "toString" [.arrayLit []])) == "[object Array]"
 #guard outcome (expr (protoCall "toString" [.funcExpr none [] []])) == "[object Function]"
 #guard outcome (expr (protoCall "toString" [.new (.ident "Error") []])) == "[object Error]"
+-- `Error()` without `new` constructs too (20.5.1.1), through
+-- `callFunction`'s own arm rather than `construct`'s, and the object it
+-- makes carries `[[ErrorData]]` all the same.
+#guard outcome (expr (protoCall "toString" [.call (.ident "RangeError") []])) == "[object Error]"
 #guard outcome (expr (protoCall "toString" [.new (.ident "Number") [.numLit 1.0]]))
   == "[object Number]"
 #guard outcome (expr (protoCall "toString" [.boolLit true])) == "[object Boolean]"

@@ -43,24 +43,25 @@ instantiation, a parameter's dead zone, a default's scope, `arguments`, a
 enumerability, a `delete`, an `in`, a `for`-`in`, or an `Object` or
 `Function` member answering the wrong thing**.
 
-The 1,448 rows below are, by weight of owner: 180 what #376 excludes
-(`eval`, `Date`, `RegExp`, `JSON`, `Proxy`, `Reflect`, typed arrays, the
-keyed collections, the `Function` constructor's semantics, and
+The 1,447 failures below, by owner: 667 what #376 excludes (`eval`,
+`Date`, `RegExp`, `JSON`, `Proxy`, `Reflect`, typed arrays, the keyed
+collections, the `Function` constructor's semantics, and
 `nativeFunctionMatcher.js`, which matches source text with a regular
-expression), 52 `Symbol` (#392), 49 the String wrapper (#391), 36 the
-global object (#487), 26 the transcendental `Math` members (#434), 15 the
-rest of `Array.prototype` (#390), 11 the global `isNaN` and `isFinite`
-(#441), and the remainder iterators (#394), `Math.clz32`/`imul` (#440),
-`Math.random` (#445), and the four filed defects.
+expression), 189 the String wrapper (#391), 168 the global object (#487),
+150 the transcendental `Math` members (#434), 118 `Symbol` (#392), 57 the
+global `isNaN` and `isFinite` (#441), 51 the rest of `Array.prototype`
+(#390), 24 iterators (#394), 13 `Math.clz32`/`imul` (#440), 5
+`Math.random` (#445), and 5 the three filed defects (#460, #496, #499).
 
-**The two `Object` and `Function` directories are 2,760 pass and 726
-fail**, against 197 and 2,110 before this slice. Their 726 are the same
-list: 249 `eval`, `Date`, `RegExp`, `JSON`, `Proxy`, `Reflect`, and typed
-arrays (#376); 100 the global object, whose `this` at top level a third
-of `Object`'s older tests reach for (#487); 88 `Symbol` (#392); 84 the
-String wrapper (#391); 74 `Math` members the library does not model, read
-through `getOwnPropertyDescriptor` (#434, #440, #445); and the rest
-`Array.prototype` (#390), iterators (#394), and the two filed defects.
+**The two `Object` and `Function` directories are 2,761 pass and 725
+fail**, against 197 and 2,110 before this slice. Their 725 are the same
+list: 320 `eval`, `Date`, `RegExp`, `JSON`, `Proxy`, `Reflect`, and typed
+arrays (#376); 142 the global object, whose `this` at top level a third
+of `Object`'s older tests reach for (#487); 111 the String wrapper
+(#391); 80 `Symbol` (#392); 40 the rest of `Array.prototype`, which the
+order tests reach through `map` and `indexOf` (#390); 22 iterators
+(#394); and 10 `Math` members the library does not model, read through
+`getOwnPropertyDescriptor` (#434, #445). None is a filed defect.
 **The `propertyHelper.js`-based tests run and pass**: `Math/abs` is 8 and
 0, and `length.js`, `name.js`, and `prop-desc.js` under it are three of
 them.
@@ -118,7 +119,7 @@ against #392.
 | `test/built-ins/Function/prototype/apply`                             | 1     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
 | `test/built-ins/Function/prototype/apply`                             | 1     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
 | `test/built-ins/Function/prototype/apply`                             | 1     | builtin      | `Symbol` is not in the realm                                                      | #392  |
-| `test/built-ins/Function/prototype/bind`                              | 8     | builtin      | `Function.prototype.caller` and `arguments` are the `%ThrowTypeError%` accessors  | #487  |
+| `test/built-ins/Function/prototype/bind`                              | 7     | builtin      | `Function.prototype.caller` and `arguments` are the `%ThrowTypeError%` accessors  | #487  |
 | `test/built-ins/Function/prototype/bind`                              | 2     | out-of-scope | `Date` is excluded by the epic                                                    | #376  |
 | `test/built-ins/Function/prototype/bind`                              | 2     | builtin      | `Symbol` is not in the realm                                                      | #392  |
 | `test/built-ins/Function/prototype/bind`                              | 1     | out-of-scope | `JSON` is excluded by the epic                                                    | #376  |

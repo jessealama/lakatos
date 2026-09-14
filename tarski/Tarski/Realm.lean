@@ -118,7 +118,7 @@ spec has it, which is why `Array.isArray(Array.prototype)` is true.
 
 **Every property here carries its specified attributes.** `Obj.builtin`
 is the shape 17.1 gives every built-in function — a non-writable,
-non-enumerable, non-configurable `length` and `name`, in that order, so
+non-enumerable, configurable `length` and `name`, in that order, so
 `Object.getOwnPropertyNames(Math.abs)` is `["length", "name"]` — and a
 constructor adds its `prototype` (no attribute at all) and its statics
 (writable and configurable, never enumerable) after them. A prototype's

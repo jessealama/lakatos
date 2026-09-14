@@ -195,7 +195,8 @@ subclass constructors link to `Error`, which links to
 /-! ## Property attributes
 
 Every built-in function has a non-writable, non-enumerable,
-non-configurable `length` and `name`, in that order (17.1); a method is
+configurable `length` and `name`, in that order (17.1), `%ThrowTypeError%`'s
+alone being non-configurable (10.2.4.1); a method is
 writable and configurable but never enumerable; a constructor's
 `prototype` and every `Number` and `Math` constant have no attribute at
 all. -/
