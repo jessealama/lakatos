@@ -33,11 +33,7 @@ import {
   moduleQualifier,
   resolveImport,
 } from "./module-graph.js";
-import {
-  attachAsts,
-  bridgeModule,
-  type ModuleScript,
-} from "./emission-ast.js";
+import { attachAsts, bridgeModule, type ModuleScript } from "./emission-ast.js";
 import type { Program } from "../../../../tarski/frontend/src/estree.js";
 
 /** A JS expression in the shapes the plain-Lean emitter renders. The

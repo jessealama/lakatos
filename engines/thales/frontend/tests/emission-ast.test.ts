@@ -3,6 +3,12 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { schemaValidator } from "../../../../tests/helpers/schema-validator.js";
 import { type EmitDecl, emitModule } from "../src/emission.js";
+import {
+  bridgeModule,
+  closureProgram,
+  declaredNames,
+  referencedNames,
+} from "../src/emission-ast.js";
 import { type ModuleReader } from "../src/module-graph.js";
 import {
   parseScript,
@@ -66,7 +72,9 @@ function script(directiveFrom: Program, body: Statement[]): Program {
 
 /** A declaration by name, narrowed out of the union. */
 function decl(declarations: readonly EmitDecl[], name: string): EmitDecl {
-  const found = declarations.find((d) => d.kind !== "residual" && d.name === name);
+  const found = declarations.find(
+    (d) => d.kind !== "residual" && d.name === name,
+  );
   if (found === undefined) throw new Error(`no declaration named '${name}'`);
   return found;
 }
@@ -117,9 +125,12 @@ const TWICE = [
   "",
 ].join("\n");
 
-const HELPER = ["export function double(x: number): number {", "  return x * 2;", "}", ""].join(
-  "\n",
-);
+const HELPER = [
+  "export function double(x: number): number {",
+  "  return x * 2;",
+  "}",
+  "",
+].join("\n");
 
 describe("a closure across modules", () => {
   test("a callee's declaration comes first, from the module that has it", () => {
@@ -137,7 +148,10 @@ describe("a closure across modules", () => {
     );
     // The dependency's own declaration reaches nothing of the entry's.
     expect(astOf(emission.declarations, "double")).toEqual(
-      script(bridged(HELPER, helperFile), picked(HELPER, helperFile, ["double"])),
+      script(
+        bridged(HELPER, helperFile),
+        picked(HELPER, helperFile, ["double"]),
+      ),
     );
   });
 
@@ -166,7 +180,10 @@ describe("a closure across modules", () => {
     ].join("\n");
     const { emission } = emitModule(src, "holder.ts");
     expect(astOf(emission.declarations, "Holder")).toEqual(
-      script(bridged(src, "holder.ts"), picked(src, "holder.ts", ["Other", "Holder"])),
+      script(
+        bridged(src, "holder.ts"),
+        picked(src, "holder.ts", ["Other", "Holder"]),
+      ),
     );
   });
 });
@@ -296,7 +313,10 @@ describe("what the frontend does not refuse", () => {
     ].join("\n");
     const { emission } = emitModule(src, "async.ts");
     const carried = picked(src, "async.ts", ["slow", "wrap"]);
-    expect(carried[0]).toMatchObject({ type: "FunctionDeclaration", async: true });
+    expect(carried[0]).toMatchObject({
+      type: "FunctionDeclaration",
+      async: true,
+    });
     expect(astOf(emission.declarations, "wrap")).toEqual(
       script(bridged(src, "async.ts"), carried),
     );
@@ -365,5 +385,73 @@ describe("every emitted declaration carries its AST", () => {
       .filter((d) => d.kind !== "residual" && d.ast === undefined)
       .map((d) => (d.kind === "residual" ? "" : d.name));
     expect(without).toEqual([]);
+  });
+});
+
+describe("the pieces a closure is built from", () => {
+  test("a module with no script to bridge answers undefined", () => {
+    // `transpileModule` on a declaration file fails outright rather than
+    // answering empty text. Containment is the emitter's rule, so this
+    // degrades one field instead of ending the run.
+    expect(
+      bridgeModule('declare module "@example/units" {\n}\n', "units.d.ts"),
+    ).toBeUndefined();
+    const { emission } = emitModule(
+      'declare module "@example/units" {\n  export function scale(x: number): number;\n}\n',
+      "units.d.ts",
+    );
+    expect(emission.declarations).toEqual([]);
+  });
+
+  test("a statement that binds no top-level name declares nothing", () => {
+    const doc = bridged("const k = 1;\nk;\nclass C {}\n", "names.ts");
+    expect(doc.body.map(declaredNames)).toEqual([[], ["k"], [], ["C"]]);
+  });
+
+  test("a non-computed member name and a key are not references", () => {
+    // `o.e`, the key `a`, the field name `g`, and the method name `m` are
+    // names in their own right, not references. `o[f]` is a reference, and
+    // so are the values. A computed key is an `Unsupported` placeholder
+    // the bridge kept no name inside, so `c` and `i` are not here — and a
+    // closure carrying one is a closure the decoder refuses, so it never
+    // replays. `C` and `o` are their own declarations' ids, which the
+    // over-approximation collects and the lookup then resolves to
+    // themselves.
+    const doc = bridged(
+      [
+        "const o = { a: b, [c]: d };",
+        "o.e;",
+        "o[f];",
+        "class C { g = h; [i] = j; m() {} }",
+        "",
+      ].join("\n"),
+      "refs.ts",
+    );
+    expect([...referencedNames(doc.body)].sort()).toEqual([
+      "C",
+      "b",
+      "f",
+      "h",
+      "o",
+    ]);
+  });
+
+  test("a closure whose home or reach was not bridged has no script", () => {
+    const text =
+      'import { g } from "./g.mjs";\nexport function f() {\n  return g();\n}\n';
+    const program = bridgeModule(text, "main.mts")!;
+    const names = new Map([
+      ["f", { module: "", name: "f" }],
+      ["g", { module: "g.mts", name: "g" }],
+    ]);
+    // The declaration's own module is not among the walked ones.
+    expect(closureProgram({ module: "", name: "f" }, [])).toBeUndefined();
+    // Its module is, but the module it reaches into is not: the bridge
+    // could not read that one, so there is no closed script.
+    expect(
+      closureProgram({ module: "", name: "f" }, [
+        { qualifier: "", program, names },
+      ]),
+    ).toBeUndefined();
   });
 });
