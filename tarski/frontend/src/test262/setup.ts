@@ -32,7 +32,7 @@ const run = (exec: Exec, args: readonly string[], cwd?: string): string =>
   });
 
 /** The commit checked out in `dir`, or `undefined` when there is no repository. */
-function headOf(dir: string, exec: Exec): string | undefined {
+export function headOf(dir: string, exec: Exec): string | undefined {
   if (!existsSync(path.join(dir, ".git"))) return undefined;
   try {
     return run(exec, ["-C", dir, "rev-parse", "HEAD"], undefined).trim();
