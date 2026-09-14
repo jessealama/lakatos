@@ -30,6 +30,9 @@ def call1 (f x : String) : JsExpr := .call f none #[.id x]
 #guard rendersAs (vx (.id "y")) `(y)
 #guard rendersAs (v (.id "pure")) `(pure')
 #guard rendersAs (v (.id "floatNaN")) `(floatNaN')
+-- `Tarski` is reserved because a correspondence obligation spells the
+-- evaluator's package by that name.
+#guard rendersAs (v (.id "Tarski")) `(Tarski')
 #guard renderFails (v (.id ""))
 #guard renderFails (v (.id "a-b"))
 

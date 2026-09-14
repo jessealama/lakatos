@@ -152,9 +152,12 @@ def fnObligation (f : EmitFn) : RenderM Term := do
   let callee ← ctorApp "ident" #[strTerm f.name]
   let call ← ctorApp "call" #[callee, ← `([$args,*])]
   let stmt ← ctorApp "exprStmt" #[call]
+  -- A nullary model is the identifier itself: an application node with no
+  -- arguments prints the same but is not the same tree.
+  let applied : Term ← if xs.isEmpty then pure model else `($model $xs*)
   let body ←
     `(Tarski.project $reader (Tarski.runScript ($ast ++ [$stmt]))
-        = some (Tarski.Outcome.ofModel ($model $xs*)))
+        = some (Tarski.Outcome.ofModel $applied))
   let binders ← paramBinders f.params
   if binders.isEmpty then pure body else `(∀ $binders*, $body)
 
