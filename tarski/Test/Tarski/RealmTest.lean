@@ -15,8 +15,8 @@ open Tarski
 
 /-! ## The shape -/
 
-#guard Heap.initial.cells.size == 17
-#guard Heap.initial.objects.size == 53
+#guard Heap.initial.cells.size == 19
+#guard Heap.initial.objects.size == 59
 
 /-! ## Each kind's prototype
 
@@ -68,7 +68,7 @@ constructor object. -/
         | some c => c.value == some (.obj k.ctorRef)
         | none => false)
 
-#guard globalEnv.length == 17
+#guard globalEnv.length == 19
 
 /-! ## `Error.prototype.toString` -/
 
@@ -213,11 +213,10 @@ double; the list is walked rather than written out twice. -/
       && o.getOwn "constructor" == some (.obj numberCtorRef)
       && o.getOwn "toString" == some (.obj numberToStringRef)
       && o.getOwn "valueOf" == some (.obj numberValueOfRef)
-      -- #388's, and absent until then.
-      && o.getOwn "toFixed" == none
-      && o.getOwn "toPrecision" == none
-      && o.getOwn "toExponential" == none
-      && o.getOwn "toLocaleString" == none
+      && o.getOwn "toFixed" == some (.obj numberToFixedRef)
+      && o.getOwn "toExponential" == some (.obj numberToExponentialRef)
+      && o.getOwn "toPrecision" == some (.obj numberToPrecisionRef)
+      && o.getOwn "toLocaleString" == some (.obj numberToLocaleStringRef)
   | none => false
 
 #guard match Heap.initial.readObj numberCtorRef with
@@ -227,9 +226,10 @@ double; the list is walked rather than written out twice. -/
       && o.getOwn "isInteger" == some (.obj numberIsIntegerRef)
       && o.getOwn "isNaN" == some (.obj numberIsNaNRef)
       && o.getOwn "isSafeInteger" == some (.obj numberIsSafeIntegerRef)
-      -- #388's.
-      && o.getOwn "parseFloat" == none
-      && o.getOwn "parseInt" == none
+      -- The same two objects the globals are bound to, so
+      -- `Number.parseInt === parseInt`.
+      && o.getOwn "parseFloat" == some (.obj parseFloatRef)
+      && o.getOwn "parseInt" == some (.obj parseIntRef)
       && (match o.callable with
           | some (.native .numberCtor) => true
           | _ => false)
@@ -248,6 +248,18 @@ private def numberConstants : List (String × Float) :=
 #guard match Heap.initial.readObj numberCtorRef with
   | some o => numberConstants.all fun p => o.getOwn p.1 == some (.prim (.num p.2))
   | none => false
+
+/-! ## The four `Number.prototype` formatters and the two global parsers
+
+Each is one object with a `[[Call]]` and nothing else, and `parseFloat`
+and `parseInt` are each **one** object: the global cell and the property
+on `Number` name the same reference, which is what
+`Number.parseInt === parseInt` observes. -/
+
+#guard Env.lookup globalEnv "parseFloat" == some parseFloatCellRef
+#guard Env.lookup globalEnv "parseInt" == some parseIntCellRef
+#guard (Heap.initial.read parseFloatCellRef).bind (·.value) == some (.obj parseFloatRef)
+#guard (Heap.initial.read parseIntCellRef).bind (·.value) == some (.obj parseIntRef)
 
 /-! ## `Boolean.prototype` and `Boolean` -/
 
@@ -315,12 +327,19 @@ private def mathMembers : List (String × Ref) :=
       "clz32", "imul", "f16round", "sumPrecise"].all fun k => o.getOwn k == none
   | none => false
 
-/-! ## Each of the twenty-one new natives is the one its reference names -/
+/-! ## Each native is the one its reference names -/
 
 private def nativeAt (r : Ref) (n : NativeFn) : Bool :=
   match Heap.initial.readObj r with
   | some { callable := some (.native n'), .. } => n' == n
   | _ => false
+
+#guard [ (parseFloatRef, NativeFn.parseFloat),
+         (parseIntRef, .parseInt),
+         (numberToFixedRef, .numberToFixed),
+         (numberToExponentialRef, .numberToExponential),
+         (numberToPrecisionRef, .numberToPrecision),
+         (numberToLocaleStringRef, .numberToLocaleString) ].all fun p => nativeAt p.1 p.2
 
 #guard [ (numberCtorRef, NativeFn.numberCtor),
          (numberToStringRef, .numberToString),

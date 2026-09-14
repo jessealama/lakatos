@@ -16,12 +16,12 @@ without a wrapper ever being allocated, and the receiver a method then
 sees is the primitive itself; `thisNumberValue` accepts both, which is
 what makes `(5).toString()` and `new Number(5).toString()` one path.
 
-Two placeholders are pinned here rather than hidden. ToNumber of a string
-is NaN (#388), so `Number("12")` and `2 ** "3"` are NaN; and
-`Number.prototype.toString` prints the placeholder's decimal string for
-*every* radix while still refusing a radix outside 2–36, so
-`(255).toString(16)` is `"255"` where an engine answers `"ff"`. #388
-replaces one function and both rows move. -/
+ToNumber of a string, ToString of a number, and the five formatters are
+the library's definitions (`Js/Number/ToString.lean`,
+`Js/Number/StringToNumber.lean`), so what is checked here is the
+dispatch — the receiver, the argument order, the range checks, and their
+messages — rather than the digits, which `Test/Js/NumberToStringTest.lean`
+pins against an engine. -/
 
 open Tarski
 
@@ -94,7 +94,7 @@ it. -/
 /-! ## `Number` as a conversion
 
 A *missing* argument is `+0`; an argument that is present and `undefined`
-is NaN. ToNumber of a string is still the placeholder (#388). -/
+is NaN. -/
 
 #guard outcome (expr (numberCall [])) == "0"
 #guard outcome (expr (numberCall [.undefLit])) == "NaN"
@@ -103,8 +103,13 @@ is NaN. ToNumber of a string is still the placeholder (#388). -/
 #guard outcome (expr (numberCall [.boolLit false])) == "0"
 #guard outcome (expr (.unary .typeof (numberCall [.numLit 1.0]))) == "number"
 
--- `Number("12");` — the string arm of ToNumber is #388's placeholder.
-#guard outcome (expr (numberCall [.strLit "12"])) == "NaN"
+-- `Number("12");` — the string arm of ToNumber is StringToNumber.
+#guard outcome (expr (numberCall [.strLit "12"])) == "12"
+#guard outcome (expr (numberCall [.strLit ""])) == "0"
+#guard outcome (expr (numberCall [.strLit " "])) == "0"
+#guard outcome (expr (numberCall [.strLit "0x1F"])) == "31"
+-- A numeric separator is not in the literal grammar StringToNumber reads.
+#guard outcome (expr (numberCall [.strLit "1_0"])) == "NaN"
 
 -- `Number({ valueOf: function () { return 7; } });`
 #guard outcome
@@ -162,19 +167,32 @@ than a property, so it is not enumerable and no write can forge one. -/
 
 /-! ## `Number.prototype.toString` and `valueOf`
 
-A primitive receiver and a wrapper receiver take the same path. The radix
-is validated for real; the output is the placeholder's decimal string for
-every radix, radix 10 included — which is the only one it gets right. -/
+A primitive receiver and a wrapper receiver take the same path. Radix 10
+is `Number::toString`; every other radix in 2–36 is the library's
+generalization of it. -/
 
 #guard outcome (expr (.call (.member (.numLit 5.0) "toString") [])) == "5"
 #guard outcome (expr (.call (.member (.numLit 1.0) "toString") [.numLit 10.0])) == "1"
 
--- `(255).toString(16);` — **the placeholder**: JavaScript answers `"ff"`.
--- #388 replaces `formatNumber` and this row moves.
-#guard outcome (expr (.call (.member (.numLit 255.0) "toString") [.numLit 16.0])) == "255"
+-- `(255).toString(16);`
+#guard outcome (expr (.call (.member (.numLit 255.0) "toString") [.numLit 16.0])) == "ff"
+#guard outcome (expr (.call (.member (.numLit 255.0) "toString") [.numLit 2.0])) == "11111111"
+#guard outcome (expr (.call (.member (.unary .neg (.numLit 255.0)) "toString") [.numLit 36.0]))
+  == "-73"
+#guard outcome (expr (.call (.member (.numLit 0.5) "toString") [.numLit 2.0])) == "0.1"
+#guard outcome (expr (.call (.member (.numLit 35.0) "toString") [.numLit 36.0])) == "z"
+#guard outcome (expr (.call (.member (.ident "NaN") "toString") [.numLit 2.0])) == "NaN"
 
--- `(1).toString(2.5);` — the radix is truncated to 2, which is in range,
--- so the placeholder's decimal string comes back rather than a refusal.
+-- `Number.prototype.toString(2);` — the prototype's `[[NumberData]]` is `+0`.
+#guard outcome (expr (.call (.member (numberProp "prototype") "toString") [.numLit 2.0])) == "0"
+
+-- `new Number(-1).toString(2);`
+#guard outcome
+    (expr (.call (.member (.new (.ident "Number") [.unary .neg (.numLit 1.0)]) "toString")
+      [.numLit 2.0]))
+  == "-1"
+
+-- `(1).toString(2.5);` — the radix is truncated to 2, which is in range.
 #guard outcome (expr (.call (.member (.numLit 1.0) "toString") [.numLit 2.5])) == "1"
 
 -- A radix outside 2–36 is a real `RangeError`, from every direction.
@@ -202,17 +220,6 @@ every radix, radix 10 included — which is the only one it gets right. -/
       .exprStmt (.call (.ident "g") []) ]
   == "uncaught: TypeError: Number.prototype.toString requires that 'this' be a Number"
 
-/-! ## What `Number` and `Number.prototype` do not have
-
-The `toFixed` family, `toLocaleString`, `parseFloat`, and `parseInt` are
-#388's. They are absent rather than faked, so each reads `undefined`. -/
-
-#guard outcome (expr (.member (numberProp "prototype") "toFixed")) == "undefined"
-#guard outcome (expr (.member (numberProp "prototype") "toPrecision")) == "undefined"
-#guard outcome (expr (.member (numberProp "prototype") "toExponential")) == "undefined"
-#guard outcome (expr (.member (numberProp "prototype") "toLocaleString")) == "undefined"
-#guard outcome (expr (numberProp "parseFloat")) == "undefined"
-#guard outcome (expr (numberProp "parseInt")) == "undefined"
 
 /-! ## The four predicates, which do not coerce -/
 
@@ -329,8 +336,7 @@ runs. -/
 Right-associativity is the parser's, and is already resolved by the time
 the tree arrives; the AST case below is the right-nested one it produces.
 `**` and `Math.pow` are one library definition, so the placeholder for a
-string operand (#388) and for a non-integral exponent (#434) is the
-same one. -/
+non-integral exponent (#434) is the same one. -/
 
 -- `2 ** 3 ** 2;` is `2 ** (3 ** 2)`, so 512 rather than 64.
 #guard outcome (expr (pow (.numLit 2.0) (pow (.numLit 3.0) (.numLit 2.0)))) == "512"
@@ -338,5 +344,187 @@ same one. -/
 -- `(-2) ** 2;`
 #guard outcome (expr (pow (.unary .neg (.numLit 2.0)) (.numLit 2.0))) == "4"
 
--- `2 ** "3";` — ToNumber of a string is #388's placeholder.
-#guard outcome (expr (pow (.numLit 2.0) (.strLit "3"))) == "NaN"
+-- `2 ** "3";` — ToNumber of a string is StringToNumber.
+#guard outcome (expr (pow (.numLit 2.0) (.strLit "3"))) == "8"
+
+/-! ## The issue's example
+
+GitHub #388's own acceptance case, as one term:
+
+```js
+String(0.1 + 0.2) === "0.30000000000000004" && String(1e21) === "1e+21" &&
+  String(123456789012345680000) === "123456789012345680000" &&
+  (255).toString(16) === "ff" && Number("0x1F") === 31 &&
+  Number("  12e-1 ") === 1.2 && Number.isNaN(Number("1_0")) && Number("") === 0;
+```
+
+`Test/Tarski/fixtures/number-conversions.json` is the same script through
+the bridge, and the binary prints `true` for it. -/
+
+private def and2 (a b : Expr) : Expr := .logical .and a b
+
+#guard outcome (expr (and2
+    (and2
+      (and2
+        (and2 (.binary .strictEq (.call (.ident "String")
+                [.binary .add (.numLit 0.1) (.numLit 0.2)]) (.strLit "0.30000000000000004"))
+              (.binary .strictEq (.call (.ident "String") [.numLit 1e21]) (.strLit "1e+21")))
+        (and2 (.binary .strictEq (.call (.ident "String") [.numLit 123456789012345680000])
+                (.strLit "123456789012345680000"))
+              (.binary .strictEq (.call (.member (.numLit 255.0) "toString") [.numLit 16.0])
+                (.strLit "ff"))))
+      (and2 (.binary .strictEq (numberCall [.strLit "0x1F"]) (.numLit 31.0))
+            (.binary .strictEq (numberCall [.strLit "  12e-1 "]) (.numLit 1.2))))
+    (and2 (numberMember "isNaN" [numberCall [.strLit "1_0"]])
+          (.binary .strictEq (numberCall [.strLit ""]) (.numLit 0.0)))))
+  == "true"
+
+/-! ## `String(x)` is `Number::toString`
+
+The digits are the library's and are pinned there; these rows are the
+seam — that the evaluator's ToString of a Number is that definition and
+not another one. -/
+
+/-- `String(<e>);` -/
+private def stringOf (e : Expr) : Expr := .call (.ident "String") [e]
+
+#guard outcome (expr (stringOf (.binary .add (.numLit 0.1) (.numLit 0.2))))
+  == "0.30000000000000004"
+#guard outcome (expr (stringOf (.numLit 1e21))) == "1e+21"
+#guard outcome (expr (stringOf (.numLit 123456789012345680000))) == "123456789012345680000"
+#guard outcome (expr (stringOf (.binary .div (.numLit 1.0) (.numLit 3.0))))
+  == "0.3333333333333333"
+#guard outcome (expr (stringOf (.unary .neg (.numLit 1e-7)))) == "-1e-7"
+#guard outcome (expr (stringOf (pow (.numLit 2.0) (.numLit 64.0)))) == "18446744073709552000"
+
+-- A property key is ToString of the Number, so an exponent form is the key.
+#guard outcome
+    [ .varDecl .«const» [{ name := "o", init := some (.objectLit []) }],
+      .exprStmt (.assign (.index (.ident "o") (.numLit 1e21)) (.numLit 1.0)),
+      .exprStmt (.call (.member (.call (.member (.ident "Object") "keys") [.ident "o"]) "join") []) ]
+  == "1e+21"
+#guard outcome
+    [ .varDecl .«const» [{ name := "o", init := some (.objectLit []) }],
+      .exprStmt (.assign (.index (.ident "o") (.binary .add (.numLit 0.1) (.numLit 0.2)))
+        (.numLit 7.0)),
+      .exprStmt (.index (.ident "o") (.strLit "0.30000000000000004")) ]
+  == "7"
+
+/-! ## `toFixed`, `toExponential`, `toPrecision`, `toLocaleString`
+
+The **specification's step order** is what these rows check. A poisoned
+argument is coerced, and so throws, before any range check. A non-finite
+`this` short-circuits `toExponential` and `toPrecision` before their range
+check but not `toFixed`, so `Infinity.toExponential(200)` is `Infinity`
+while `NaN.toFixed(Infinity)` throws. -/
+
+/-- `(<recv>).<name>(<args>);` -/
+private def methodOn (recv : Expr) (name : String) (args : List Expr) : Expr :=
+  .call (.member recv name) args
+
+/-- `{ valueOf: function () { throw <e>; } }` -/
+private def poison (e : Expr) : Expr :=
+  .objectLit [("valueOf", .funcExpr none [] [.throwStmt e])]
+
+#guard outcome (expr (methodOn (.numLit 3.0) "toFixed" [.numLit 0.0])) == "3"
+#guard outcome (expr (methodOn (.numLit 1000000000000000128) "toFixed" [.numLit 0.0]))
+  == "1000000000000000128"
+#guard outcome (expr (methodOn (.numLit 1.005) "toFixed" [.numLit 2.0])) == "1.00"
+#guard outcome (expr (methodOn (.numLit 1e21) "toFixed" [.numLit 2.0])) == "1e+21"
+#guard outcome (expr (methodOn (.ident "NaN") "toFixed" [.numLit 1.0])) == "NaN"
+#guard outcome (expr (methodOn (numberProp "prototype") "toFixed" [])) == "0"
+#guard outcome (expr (methodOn (numberProp "prototype") "toFixed" [.strLit "1"])) == "0.0"
+#guard outcome (expr (methodOn (.numLit 3.0) "toFixed" [.unary .neg (.numLit 1.0)]))
+  == "uncaught: RangeError: toFixed() digits argument must be between 0 and 100"
+#guard outcome (expr (methodOn (.numLit 3.0) "toFixed" [.numLit 101.0]))
+  == "uncaught: RangeError: toFixed() digits argument must be between 0 and 100"
+#guard outcome (expr (methodOn (.ident "NaN") "toFixed" [.ident "Infinity"]))
+  == "uncaught: RangeError: toFixed() digits argument must be between 0 and 100"
+
+-- The argument is coerced before the range is checked, so its `valueOf`
+-- throws first.
+#guard outcome
+    (expr (methodOn (.numLit 1.0) "toFixed" [poison (.new (.ident "RangeError") [.strLit "v"])]))
+  == "uncaught: RangeError: v"
+
+#guard outcome (expr (methodOn (.numLit 123.456) "toExponential" [.numLit 3.0])) == "1.235e+2"
+#guard outcome (expr (methodOn (.numLit 25.0) "toExponential" [.numLit 0.0])) == "3e+1"
+#guard outcome (expr (methodOn (.numLit 0.0) "toExponential" [])) == "0e+0"
+#guard outcome (expr (methodOn (.numLit 123456.0) "toExponential" [])) == "1.23456e+5"
+#guard outcome (expr (methodOn (.numLit 123456.0) "toExponential" [.undefLit])) == "1.23456e+5"
+-- A non-finite `this` answers before the range check.
+#guard outcome (expr (methodOn (.ident "Infinity") "toExponential" [.numLit 200.0])) == "Infinity"
+#guard outcome (expr (methodOn (.numLit 1.0) "toExponential" [.numLit 101.0]))
+  == "uncaught: RangeError: toExponential() argument must be between 0 and 100"
+#guard outcome (expr (methodOn (.numLit 1.0) "toExponential" [.ident "Infinity"]))
+  == "uncaught: RangeError: toExponential() argument must be between 0 and 100"
+
+#guard outcome (expr (methodOn (.numLit 7.0) "toPrecision" [.numLit 3.0])) == "7.00"
+#guard outcome (expr (methodOn (.numLit 10.0) "toPrecision" [.numLit 1.0])) == "1e+1"
+#guard outcome (expr (methodOn (.numLit 123.456) "toPrecision" [.numLit 4.0])) == "123.5"
+#guard outcome (expr (methodOn (.numLit 0.0) "toPrecision" [.numLit 3.0])) == "0.00"
+#guard outcome (expr (methodOn (.numLit 1.0) "toPrecision" [])) == "1"
+#guard outcome (expr (methodOn (.numLit 1.0) "toPrecision" [.undefLit])) == "1"
+#guard outcome (expr (methodOn (.ident "Infinity") "toPrecision" [.numLit 200.0])) == "Infinity"
+#guard outcome (expr (methodOn (.numLit 1.0) "toPrecision" [.numLit 0.0]))
+  == "uncaught: RangeError: toPrecision() argument must be between 1 and 100"
+#guard outcome (expr (methodOn (.numLit 1.0) "toPrecision" [.numLit 101.0]))
+  == "uncaught: RangeError: toPrecision() argument must be between 1 and 100"
+
+-- There is no locale here, so `toLocaleString` is `toString()`.
+#guard outcome (expr (methodOn (.numLit 1234.5) "toLocaleString" [])) == "1234.5"
+#guard outcome (expr (methodOn (numberProp "prototype") "toLocaleString" [])) == "0"
+
+-- A poisoned radix throws before anything else: the argument is coerced
+-- first, and `NaN` never reaches the formatter.
+#guard outcome
+    (expr (methodOn (.ident "NaN") "toString" [poison (.new (.ident "Error") [.strLit "p"])]))
+  == "uncaught: Error: p"
+
+-- Detached, so `this` is `undefined` and each method refuses by name.
+#guard ["toFixed", "toExponential", "toPrecision", "toLocaleString"].all fun name =>
+  outcome
+      [ .varDecl .«const» [{ name := "f", init := some (.member (numberProp "prototype") name) }],
+        .exprStmt (.call (.ident "f") []) ]
+    == s!"uncaught: TypeError: Number.prototype.{name} requires that 'this' be a Number"
+
+/-! ## `parseFloat` and `parseInt`
+
+One function object each, bound globally and read off `Number`, as the
+specification has them. `parseInt` converts its **string** before its
+radix, which is what the log below observes. -/
+
+#guard outcome (expr (.binary .strictEq (numberProp "parseFloat") (.ident "parseFloat"))) == "true"
+#guard outcome (expr (.binary .strictEq (numberProp "parseInt") (.ident "parseInt"))) == "true"
+#guard outcome (expr (.unary .typeof (.ident "parseInt"))) == "function"
+-- Function `length` and `name` are #389's, so they read `undefined`.
+#guard outcome (expr (.member (.ident "parseInt") "length")) == "undefined"
+
+#guard outcome (expr (.call (.ident "parseInt") [.strLit "0x1F"])) == "31"
+-- ToInt32 of 2^32 is 0, which means radix 10.
+#guard outcome (expr (.call (.ident "parseInt") [.strLit "11", pow (.numLit 2.0) (.numLit 32.0)]))
+  == "11"
+#guard outcome (expr (.call (.ident "parseInt")
+    [.strLit "11", .binary .add (pow (.numLit 2.0) (.numLit 32.0)) (.numLit 2.0)]))
+  == "3"
+#guard outcome (expr (.call (.ident "parseInt") [.nullLit, .numLit 36.0])) == "1112745"
+#guard outcome (expr (.call (.ident "parseInt") [.strLit "  42abc"])) == "42"
+#guard outcome (expr (.call (.ident "parseInt") [.strLit ""])) == "NaN"
+#guard outcome (expr (objectIs (.call (.ident "parseInt") [.strLit "-0"]) negZero)) == "true"
+#guard outcome (expr (.call (.ident "parseFloat") [.strLit "  1.5x"])) == "1.5"
+#guard outcome (expr (.call (.ident "parseFloat") [.strLit "Infinityx"])) == "Infinity"
+#guard outcome (expr (.call (.ident "parseFloat") [.strLit "0x10"])) == "0"
+#guard outcome (expr (numberMember "parseInt" [.strLit "12", .numLit 10.0])) == "12"
+
+-- `parseInt`'s string is converted first, so the log reads `sr`.
+#guard outcome
+    [ .varDecl .«let» [{ name := "log", init := some (.strLit "") }],
+      .exprStmt (.call (.ident "parseInt")
+        [ .objectLit [("toString", .funcExpr none []
+            [ .exprStmt (.assign (.ident "log") (.binary .add (.ident "log") (.strLit "s"))),
+              .returnStmt (some (.strLit "1")) ])],
+          .objectLit [("valueOf", .funcExpr none []
+            [ .exprStmt (.assign (.ident "log") (.binary .add (.ident "log") (.strLit "r"))),
+              .returnStmt (some (.numLit 10.0)) ])] ]),
+      .exprStmt (.ident "log") ]
+  == "sr"

@@ -144,6 +144,22 @@ inductive NativeFn where
   | numberToString
   /-- `Number.prototype.valueOf`. -/
   | numberValueOf
+  /-- `Number.prototype.toFixed`. -/
+  | numberToFixed
+  /-- `Number.prototype.toExponential`. -/
+  | numberToExponential
+  /-- `Number.prototype.toPrecision`. -/
+  | numberToPrecision
+  /-- `Number.prototype.toLocaleString`, which is `toString()` here:
+  there is no locale, ECMA-402 being outside this epic, and the method
+  exists so that the tests that read its descriptor fail on the
+  descriptor rather than on its absence. -/
+  | numberToLocaleString
+  /-- The global `parseFloat`, which is also `Number.parseFloat` — one
+  function object bound in two places, as the specification has it. -/
+  | parseFloat
+  /-- The global `parseInt`, which is also `Number.parseInt`. -/
+  | parseInt
   /-- `Boolean`, as a converter and as a wrapper constructor. -/
   | booleanCtor
   /-- `Boolean.prototype.toString`. -/

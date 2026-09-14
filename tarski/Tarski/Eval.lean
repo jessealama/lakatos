@@ -67,11 +67,13 @@ new refusal is written against a list rather than invented.
 | `Object(v)` or `hasOwnProperty` on a string primitive | `TypeError`  | `Cannot convert a primitive to an object`                     |
 | `push` on a non-array                              | `TypeError`      | `Array.prototype.push called on non-array`                   |
 | `join` on a non-array                              | `TypeError`      | `Array.prototype.join called on non-array`                   |
-| `Number.prototype.toString` off a Number           | `TypeError`      | `Number.prototype.toString requires that 'this' be a Number`  |
-| `Number.prototype.valueOf` off a Number            | `TypeError`      | `Number.prototype.valueOf requires that 'this' be a Number`   |
+| `Number.prototype.{toString,valueOf,toFixed,toExponential,toPrecision,toLocaleString}` off a Number | `TypeError` | `Number.prototype.<name> requires that 'this' be a Number` |
 | `Boolean.prototype.toString` off a Boolean         | `TypeError`      | `Boolean.prototype.toString requires that 'this' be a Boolean` |
 | `Boolean.prototype.valueOf` off a Boolean          | `TypeError`      | `Boolean.prototype.valueOf requires that 'this' be a Boolean`  |
 | `(1).toString(r)` with an `r` outside 2–36         | `RangeError`     | `toString() radix must be between 2 and 36`                   |
+| `(1).toFixed(f)` with an `f` outside 0–100         | `RangeError`     | `toFixed() digits argument must be between 0 and 100`         |
+| `(1).toExponential(f)` with an `f` outside 0–100   | `RangeError`     | `toExponential() argument must be between 0 and 100`          |
+| `(1).toPrecision(p)` with a `p` outside 1–100      | `RangeError`     | `toPrecision() argument must be between 1 and 100`            |
 
 `Tarski/Monad.lean` holds two more, for the two arms a reference the
 evaluator handed out cannot reach. -/
@@ -96,24 +98,22 @@ def UpdateOp.step : UpdateOp → Float → Float
 /-- ToNumber on primitives. Not `JsVal.toNumber`, whose wrong-tag throw
 is the prover refusing a coercion rather than JS performing one: here the
 coercion is the semantics. An object never reaches this — ToPrimitive
-runs first — and the `str` arm is a placeholder until #388 gives
-StringToNumber its real algorithm, which is why `"a" < 1` and
-`xs.length = "2"` answer as they do. -/
+runs first — and the `str` arm is the library's StringToNumber, so
+`Number("0.1")` and the literal `0.1` are the same term. -/
 def toNumberPrim : JsVal → Float
   | .num x => x
   | .bool b => if b then 1.0 else 0.0
   | .undef => floatNaN
   | .null => 0.0
-  | .str _ => floatNaN
+  | .str s => Number.stringToNumber s
   | .bigint _ => floatNaN
 
 /-- ToString on primitives. An object never reaches this — ToPrimitive
-runs first — and the number arm goes through the provisional
-`formatNumber`, so it is ECMA's `Number::toString` only once #388 lands.
+runs first — and the number arm is the library's `Number::toString`.
 `toPropertyKey` is this, and so is the string arm of `+`. -/
 def toStringPrim : JsVal → String
   | .str s => s
-  | .num x => formatNumber x
+  | .num x => Number.toDecimalString x
   | .bool b => if b then "true" else "false"
   | .undef => "undefined"
   | .null => "null"
@@ -186,15 +186,16 @@ def stringIndex? (s : String) (i : Nat) : Option String :=
 
 /-- ToUint32 restricted to the values that are already one: an array
 `length` and an `Array(n)` argument are integers in `[0, 2^32)` or a
-`RangeError`, so nothing here wraps. The digits are read back out of
-`formatNumber` rather than converted directly, because every Float→Nat
-spelling is behind the arithmetic boundary and the integer digits are
-exactly the part the provisional formatter gets right. `-0` prints `0`,
-so it is `0`. -/
+`RangeError`, so nothing here wraps. The conversion is the library's
+ToIntegerOrInfinity — every `Float`-to-`Nat` spelling is behind the
+arithmetic boundary, and this is the sanctioned route — with integrality
+and the range demanded here, so a fractional value and an infinity are
+both `none`. Both zeros are `0`. -/
 def uint32Of? (x : Float) : Option Nat :=
-  if decide (0.0 ≤ x) && decide (x < 4294967296.0) && Number.FloatOps.tsIsInteger x then
-    (formatNumber x).toNat?
-  else none
+  match Number.FloatOps.integerOrInfinity? x with
+  | some i =>
+    if 0 ≤ i && i < 4294967296 && Number.FloatOps.tsIsInteger x then some i.toNat else none
+  | none => none
 
 /-- The index keys of something `length` long, as string values —
 `Object.keys` of a string, whose own properties are its indices. -/
@@ -218,8 +219,8 @@ all answer `none`, which the caller reports as the `RangeError` —
 ToIntegerOrInfinity's own zero and infinity are outside the range either
 way, so neither needs a case of its own. -/
 def radix? (x : Float) : Option Nat :=
-  match uint32Of? (Number.FloatOps.tsTrunc x) with
-  | some n => if 2 ≤ n && n ≤ 36 then some n else none
+  match Number.FloatOps.integerOrInfinity? x with
+  | some i => if 2 ≤ i && i ≤ 36 then some i.toNat else none
   | none => none
 
 /-- thisNumberValue: the `[[NumberData]]` of the receiver, which may be
@@ -961,6 +962,14 @@ def toNumberValue (v : Value) : EvalM Float := do
   pure (toNumberPrim (← toPrimitive .number v))
   partial_fixpoint
 
+/-- ToIntegerOrInfinity on values, 7.1.5: ToNumber first — so a user
+`valueOf` runs, and runs *before* any range check the caller makes — then
+the library's own truncation. `none` is either infinity, which every
+caller here reports as its own `RangeError`. -/
+def toIntegerOrInfinityValue (v : Value) : EvalM (Option Int) := do
+  pure (Number.FloatOps.integerOrInfinity? (← toNumberValue v))
+  partial_fixpoint
+
 /-- A whole argument list coerced to Numbers, left to right. `Math.max`
 and `Math.min` need this rather than a fold that coerces lazily: the
 specification coerces *every* argument before comparing any, so a user
@@ -1040,11 +1049,14 @@ the empty call answers an infinity and a NaN anywhere propagates.
 `Math.pow` is `tsPow`, the same definition `**` is, and carries the same
 limit on a non-integral exponent (#434).
 
-`Number.prototype.toString` validates its radix for real — outside 2–36
-is a `RangeError` — but **prints the placeholder's decimal string for
-every radix**: radix 10 is right and `(255).toString(16)` answers `"255"`
-where an engine answers `"ff"`. `formatNumber` is the one function #388
-replaces, and this is one of its callers. -/
+`Number.prototype.toString` is the library's `toRadixString`, and the
+`toFixed` family is the library's three formatters. Each arm keeps the
+**specification's step order** where test262 observes it: a poisoned
+argument is coerced, and so throws, before any range check; a non-finite
+`this` short-circuits `toExponential` and `toPrecision` before their range
+check but not `toFixed`, so `Infinity.toExponential(200)` is `Infinity`
+while `NaN.toFixed(Infinity)` throws. `toLocaleString` is `toString()`:
+there is no locale here, ECMA-402 being outside the epic. -/
 def callNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Value :=
   match f with
   | .errorCtor _ => do
@@ -1157,13 +1169,62 @@ def callNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Valu
   | .numberToString => do
     let x ← thisNumberValue "toString" thisArg
     match args with
-    | [] => pure (.prim (.str (formatNumber x)))
-    | .prim .undef :: _ => pure (.prim (.str (formatNumber x)))
+    | [] => pure (.prim (.str (Number.toDecimalString x)))
+    | .prim .undef :: _ => pure (.prim (.str (Number.toDecimalString x)))
     | r :: _ =>
       match radix? (← toNumberValue r) with
       | none => throwJsError .rangeError "toString() radix must be between 2 and 36"
-      | some _ => pure (.prim (.str (formatNumber x)))
+      | some n => pure (.prim (.str (Number.toRadixString x n)))
   | .numberValueOf => do pure (.prim (.num (← thisNumberValue "valueOf" thisArg)))
+  | .numberToFixed => do
+    let x ← thisNumberValue "toFixed" thisArg
+    match ← toIntegerOrInfinityValue (args.headD undefValue) with
+    | none => throwJsError .rangeError "toFixed() digits argument must be between 0 and 100"
+    | some f =>
+      if f < 0 || 100 < f then
+        throwJsError .rangeError "toFixed() digits argument must be between 0 and 100"
+      else if !Number.FloatOps.tsIsFinite x then
+        pure (.prim (.str (Number.toDecimalString x)))
+      else pure (.prim (.str (Number.toFixedString x f.toNat)))
+  | .numberToExponential => do
+    let x ← thisNumberValue "toExponential" thisArg
+    let f? ←
+      match args.headD undefValue with
+      | .prim .undef => pure none
+      | v => do pure (some (← toIntegerOrInfinityValue v))
+    if !Number.FloatOps.tsIsFinite x then pure (.prim (.str (Number.toDecimalString x)))
+    else
+      match f? with
+      | some none => throwJsError .rangeError "toExponential() argument must be between 0 and 100"
+      | some (some f) =>
+        if f < 0 || 100 < f then
+          throwJsError .rangeError "toExponential() argument must be between 0 and 100"
+        else pure (.prim (.str (Number.toExponentialString x (some f.toNat))))
+      | none => pure (.prim (.str (Number.toExponentialString x none)))
+  | .numberToPrecision => do
+    let x ← thisNumberValue "toPrecision" thisArg
+    match args.headD undefValue with
+    | .prim .undef => pure (.prim (.str (Number.toDecimalString x)))
+    | v => do
+      let p? ← toIntegerOrInfinityValue v
+      if !Number.FloatOps.tsIsFinite x then pure (.prim (.str (Number.toDecimalString x)))
+      else
+        match p? with
+        | none => throwJsError .rangeError "toPrecision() argument must be between 1 and 100"
+        | some p =>
+          if p < 1 || 100 < p then
+            throwJsError .rangeError "toPrecision() argument must be between 1 and 100"
+          else pure (.prim (.str (Number.toPrecisionString x p.toNat)))
+  | .numberToLocaleString => do
+    let x ← thisNumberValue "toLocaleString" thisArg
+    pure (.prim (.str (Number.toDecimalString x)))
+  | .parseFloat => do
+    let s ← toStringValue (args.headD undefValue)
+    pure (.prim (.num (Number.parseFloat s)))
+  | .parseInt => do
+    let s ← toStringValue (args.headD undefValue)
+    let r ← toNumberValue (args[1]?.getD undefValue)
+    pure (.prim (.num (Number.parseInt s (Number.FloatOps.tsToInt32 r))))
   | .booleanCtor => pure (.prim (.bool (toBooleanPrim (args.headD undefValue))))
   | .booleanToString => do
     let b ← thisBooleanValue "toString" thisArg

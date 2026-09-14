@@ -1,0 +1,256 @@
+{
+  "type": "Program",
+  "sourceType": "script",
+  "body": [
+    {
+      "type": "ExpressionStatement",
+      "expression": {
+        "type": "Literal",
+        "value": "use strict",
+        "raw": "\"use strict\""
+      },
+      "directive": "use strict"
+    },
+    {
+      "type": "ExpressionStatement",
+      "expression": {
+        "type": "LogicalExpression",
+        "operator": "&&",
+        "left": {
+          "type": "LogicalExpression",
+          "operator": "&&",
+          "left": {
+            "type": "LogicalExpression",
+            "operator": "&&",
+            "left": {
+              "type": "LogicalExpression",
+              "operator": "&&",
+              "left": {
+                "type": "LogicalExpression",
+                "operator": "&&",
+                "left": {
+                  "type": "LogicalExpression",
+                  "operator": "&&",
+                  "left": {
+                    "type": "LogicalExpression",
+                    "operator": "&&",
+                    "left": {
+                      "type": "BinaryExpression",
+                      "operator": "===",
+                      "left": {
+                        "type": "CallExpression",
+                        "callee": {
+                          "type": "Identifier",
+                          "name": "String"
+                        },
+                        "arguments": [
+                          {
+                            "type": "BinaryExpression",
+                            "operator": "+",
+                            "left": {
+                              "type": "Literal",
+                              "value": 0.1,
+                              "raw": "0.1"
+                            },
+                            "right": {
+                              "type": "Literal",
+                              "value": 0.2,
+                              "raw": "0.2"
+                            }
+                          }
+                        ]
+                      },
+                      "right": {
+                        "type": "Literal",
+                        "value": "0.30000000000000004",
+                        "raw": "\"0.30000000000000004\""
+                      }
+                    },
+                    "right": {
+                      "type": "BinaryExpression",
+                      "operator": "===",
+                      "left": {
+                        "type": "CallExpression",
+                        "callee": {
+                          "type": "Identifier",
+                          "name": "String"
+                        },
+                        "arguments": [
+                          {
+                            "type": "Literal",
+                            "value": 1e+21,
+                            "raw": "1e21"
+                          }
+                        ]
+                      },
+                      "right": {
+                        "type": "Literal",
+                        "value": "1e+21",
+                        "raw": "\"1e+21\""
+                      }
+                    }
+                  },
+                  "right": {
+                    "type": "BinaryExpression",
+                    "operator": "===",
+                    "left": {
+                      "type": "CallExpression",
+                      "callee": {
+                        "type": "Identifier",
+                        "name": "String"
+                      },
+                      "arguments": [
+                        {
+                          "type": "Literal",
+                          "value": 123456789012345680000,
+                          "raw": "123456789012345680000"
+                        }
+                      ]
+                    },
+                    "right": {
+                      "type": "Literal",
+                      "value": "123456789012345680000",
+                      "raw": "\"123456789012345680000\""
+                    }
+                  }
+                },
+                "right": {
+                  "type": "BinaryExpression",
+                  "operator": "===",
+                  "left": {
+                    "type": "CallExpression",
+                    "callee": {
+                      "type": "MemberExpression",
+                      "object": {
+                        "type": "Literal",
+                        "value": 255,
+                        "raw": "255"
+                      },
+                      "property": {
+                        "type": "Identifier",
+                        "name": "toString"
+                      },
+                      "computed": false
+                    },
+                    "arguments": [
+                      {
+                        "type": "Literal",
+                        "value": 16,
+                        "raw": "16"
+                      }
+                    ]
+                  },
+                  "right": {
+                    "type": "Literal",
+                    "value": "ff",
+                    "raw": "\"ff\""
+                  }
+                }
+              },
+              "right": {
+                "type": "BinaryExpression",
+                "operator": "===",
+                "left": {
+                  "type": "CallExpression",
+                  "callee": {
+                    "type": "Identifier",
+                    "name": "Number"
+                  },
+                  "arguments": [
+                    {
+                      "type": "Literal",
+                      "value": "0x1F",
+                      "raw": "\"0x1F\""
+                    }
+                  ]
+                },
+                "right": {
+                  "type": "Literal",
+                  "value": 31,
+                  "raw": "31"
+                }
+              }
+            },
+            "right": {
+              "type": "BinaryExpression",
+              "operator": "===",
+              "left": {
+                "type": "CallExpression",
+                "callee": {
+                  "type": "Identifier",
+                  "name": "Number"
+                },
+                "arguments": [
+                  {
+                    "type": "Literal",
+                    "value": "  12e-1 ",
+                    "raw": "\"  12e-1 \""
+                  }
+                ]
+              },
+              "right": {
+                "type": "Literal",
+                "value": 1.2,
+                "raw": "1.2"
+              }
+            }
+          },
+          "right": {
+            "type": "CallExpression",
+            "callee": {
+              "type": "MemberExpression",
+              "object": {
+                "type": "Identifier",
+                "name": "Number"
+              },
+              "property": {
+                "type": "Identifier",
+                "name": "isNaN"
+              },
+              "computed": false
+            },
+            "arguments": [
+              {
+                "type": "CallExpression",
+                "callee": {
+                  "type": "Identifier",
+                  "name": "Number"
+                },
+                "arguments": [
+                  {
+                    "type": "Literal",
+                    "value": "1_0",
+                    "raw": "\"1_0\""
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "right": {
+          "type": "BinaryExpression",
+          "operator": "===",
+          "left": {
+            "type": "CallExpression",
+            "callee": {
+              "type": "Identifier",
+              "name": "Number"
+            },
+            "arguments": [
+              {
+                "type": "Literal",
+                "value": "",
+                "raw": "\"\""
+              }
+            ]
+          },
+          "right": {
+            "type": "Literal",
+            "value": 0,
+            "raw": "0"
+          }
+        }
+      }
+    }
+  ]
+}
