@@ -38,11 +38,13 @@ the literal against the constants so the two cannot drift apart.
 | 53–54     | `parseFloat`, `parseInt`                                  |
 | 55–58     | `Number.prototype.toFixed`, `toExponential`, `toPrecision`, `toLocaleString` |
 | 59        | `%ThrowTypeError%`                                       |
+| 60        | `console`                                                 |
+| 61        | `console.log`                                             |
 
-The nineteen global bindings are cells 0–18: the seven `Error`
+The twenty global bindings are cells 0–19: the seven `Error`
 constructors, then `Object`, `Array`, `String`, `print`, `$262`,
-`Number`, `Boolean`, `Math`, `NaN`, `Infinity`, `parseFloat`, and
-`parseInt`.
+`Number`, `Boolean`, `Math`, `NaN`, `Infinity`, `parseFloat`,
+`parseInt`, and `console`.
 
 `parseFloat` and `parseInt` are **one function object each**, bound
 globally and read as `Number.parseFloat` and `Number.parseInt`, so
@@ -79,6 +81,12 @@ than failed; the object itself exists, empty, so that `typeof $262` is
 suite asks of a host that does not provide it. There is still no global
 *object* — `globalThis`, a top-level `this`, and `$262.global` wait for
 #389 with the rest of the intrinsics' surface.
+
+`console` is not test262's; it is `lakatos exe`'s, the binding an
+ordinary program writes its output through. Its `log` appends to the
+*same* `%PrintLog%` `print` does, so a run's stdout is one sequence in
+program order however the two were mixed, and it holds no other member:
+`console.error`, `console.warn`, and the rest are outside #386.
 
 `Object.prototype` exists as of #380, and it carries `hasOwnProperty`
 and nothing else: `toString`, `valueOf`, and the rest of its surface are
@@ -267,6 +275,12 @@ accessor the same function. It has no global binding: nothing in source
 can name it. -/
 def throwTypeErrorRef : Ref := 59
 
+/-- `console`, the host object `lakatos exe` writes through. -/
+def consoleRef : Ref := 60
+
+/-- `console.log`. -/
+def consoleLogRef : Ref := 61
+
 /-- The cell the kind's global binding lives in: 0–6, in the same
 order. -/
 def ErrorKind.cellRef : ErrorKind → CellRef
@@ -318,6 +332,10 @@ def parseFloatCellRef : CellRef := 17
 /-- The cell `parseInt` is bound in. -/
 def parseIntCellRef : CellRef := 18
 
+/-- The cell `console` is bound in, writable like every other global
+object binding. -/
+def consoleCellRef : CellRef := 19
+
 /-- The scope a script's own declarations are instantiated on top of:
 `ErrorKind.all.map (fun k => (k.name, k.cellRef))`, written out so that
 `simp` sees a literal list. There is no global *object* yet (#389), so a
@@ -341,7 +359,8 @@ def globalEnv : Env :=
     ("NaN", 15),
     ("Infinity", 16),
     ("parseFloat", 17),
-    ("parseInt", 18) ]
+    ("parseInt", 18),
+    ("console", 19) ]
 
 /-- The heap a script starts from: the realm, laid out at the references
 above. -/
@@ -371,7 +390,8 @@ def Heap.initial : Heap where
        { mutable := false,
          value := some (.prim (.num Number.POSITIVE_INFINITY)) },
        { mutable := true, value := some (.obj 53) },  -- parseFloat
-       { mutable := true, value := some (.obj 54) } ] -- parseInt
+       { mutable := true, value := some (.obj 54) },  -- parseInt
+       { mutable := true, value := some (.obj 60) } ] -- console
   objects :=
     #[ -- 0: Error.prototype. `toString` is on it because the binary's
        -- uncaught-error report runs that algorithm anyway.
@@ -620,6 +640,11 @@ def Heap.initial : Heap where
        -- 58: Number.prototype.toLocaleString
        { callable := some (.native .numberToLocaleString) },
        -- 59: %ThrowTypeError%
-       { callable := some (.native .throwTypeError) } ]
+       { callable := some (.native .throwTypeError) },
+       -- 60: console, `lakatos exe`'s host binding. `log` and nothing
+       -- else.
+       { proto := some 15, properties := [("log", .obj 61)] },
+       -- 61: console.log
+       { callable := some (.native .consoleLog) } ]
 
 end Tarski

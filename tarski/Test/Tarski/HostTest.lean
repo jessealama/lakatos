@@ -7,7 +7,9 @@ of a name that is not bound, and what an uncaught throw is reported as.
 `print` has no IO to do. It appends ToString of its argument to
 `%PrintLog%`, an intrinsic array, and `Tarski/Main.lean` writes the log
 out once the run is over; `printed` below is what the binary would put on
-stdout. `$262` exists and is empty: every hook the epic puts out of scope
+stdout. `console.log` is the second output binding, `lakatos exe`'s
+rather than test262's, and it writes to the same log — which is why a
+program mixing the two still has one stdout in program order. `$262` exists and is empty: every hook the epic puts out of scope
 is refused by the decoder (`DecodeTest`), so what is left is an object
 for `typeof` to see and an absent `IsHTMLDDA` to read as `undefined`.
 
@@ -41,6 +43,10 @@ private def stmt (e : Expr) : List Stmt := [.exprStmt e]
 /-- `print(<e>);` -/
 private def printStmt (e : Expr) : Stmt := .exprStmt (.call (.ident "print") [e])
 
+/-- `console.log(<args>);` -/
+private def consoleLogStmt (args : List Expr) : Stmt :=
+  .exprStmt (.call (.member (.ident "console") "log") args)
+
 /-! ## `print`
 
 Each call is ToString of its first argument, in order. A call's own
@@ -67,6 +73,56 @@ completion value is `undefined`, which is what `print` answers. -/
 
 /-! Nothing binds `%PrintLog%`, so an empty run has an empty log. -/
 #guard printed [.exprStmt (.numLit 1.0)] == []
+
+/-! ## `console.log`
+
+`lakatos exe`'s output binding (#386), and `print`'s twin: it writes to
+the *same* log, so a program that mixes the two gets one sequence in
+program order. Unlike `print` it takes **every** argument through
+ToString and joins the parts with one space.
+
+`console.log("a", 1);` -/
+#guard printed [consoleLogStmt [.strLit "a", .numLit 1.0]] == ["a 1"]
+
+/-! No argument at all is one empty line, as it is under Node.
+
+`console.log();` -/
+#guard printed [consoleLogStmt []] == [""]
+
+/-! One log, in program order.
+
+`console.log(1, 2); print("x");` -/
+#guard printed [consoleLogStmt [.numLit 1.0, .numLit 2.0], printStmt (.strLit "x")]
+  == ["1 2", "x"]
+
+/-! ToString, not Node's inspection: `-0` prints as `0` where Node prints
+`-0`. The README names this as a limit of `exe`.
+
+`console.log(-0);` -/
+#guard printed [consoleLogStmt [.unary .neg (.numLit 0.0)]] == ["0"]
+
+/-! A user `toString` runs, as it does for `print`.
+
+`console.log({ toString() { return "t"; } });` -/
+#guard printed
+    [consoleLogStmt [.objectLit [("toString", .funcExpr none [] [.returnStmt (some (.strLit "t"))])]]]
+  == ["t"]
+
+/-! And a plain object throws for the same reason `print({})` does, until
+`Object.prototype` grows a `toString` (#389).
+
+`console.log({});` -/
+#guard outcome [consoleLogStmt [.objectLit []]]
+  == "uncaught: TypeError: Cannot convert object to primitive value"
+
+/-! The call answers `undefined`, as `print` does.
+
+`console.log("a");` -/
+#guard outcome [consoleLogStmt [.strLit "a"]] == "undefined"
+
+/-! `console` is an object and `console.log` a function. -/
+#guard outcome (stmt (.unary .typeof (.ident "console"))) == "object"
+#guard outcome (stmt (.unary .typeof (.member (.ident "console") "log"))) == "function"
 
 /-! ## `typeof` of the host bindings -/
 

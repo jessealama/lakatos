@@ -1611,6 +1611,18 @@ def toNumberValues : List Value → EvalM (List Float)
     pure (x :: xs)
   partial_fixpoint
 
+/-- A whole argument list coerced to Strings, left to right:
+`toNumberValues`'s twin, and what `console.log` joins with a space. The
+recursion is explicit for the reason its twin's is — a `mapM` inside the
+fixpoint block would need its own monotonicity lemma. -/
+def toStringValues : List Value → EvalM (List String)
+  | [] => pure []
+  | v :: rest => do
+    let x ← toStringValue v
+    let xs ← toStringValues rest
+    pure (x :: xs)
+  partial_fixpoint
+
 /-- The shared body of the eight unary `Math` members: ToNumber of the
 first argument through one of the library's operations. A missing
 argument is `undefined`, hence NaN, which is what makes `Math.abs()`
@@ -1919,6 +1931,16 @@ def callNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Valu
     throwJsError .typeError
       ("'caller', 'callee', and 'arguments' properties may not be accessed on " ++
         "strict mode functions or the arguments objects for calls to them")
+  | .consoleLog => do
+    -- `lakatos exe`'s output binding, and `print`'s twin: it writes to
+    -- the same log, so a program that mixes the two gets one sequence in
+    -- program order. Every argument goes through ToString and the parts
+    -- are joined by one space; no argument at all is one empty line,
+    -- which is what `console.log()` prints under Node.
+    let parts ← toStringValues args
+    let _ ← callNative .arrayPush (.obj printLogRef)
+      [.prim (.str (String.intercalate " " parts))]
+    pure undefValue
   partial_fixpoint
 
 /-- GetPrototypeFromConstructor (10.1.13) and OrdinaryObjectCreate on
