@@ -27,7 +27,12 @@ artifact per file under the run directory, runs it through the Lean engine
 (`lake env lean`), and assembles the same per-annotation envelope from the
 prover's verdicts; it requires the Lean toolchain (elan/lake) on PATH and,
 for now, a lakatos checkout — the npm package does not yet ship the Lean
-engine. `lakatos check` is a stub: it scrapes the same annotations,
+engine. `lakatos exe <file.ts>` strips one file's types with tsc, runs it
+on the tarski evaluator — the same Lean semantics the proofs are stated
+over — forwards `console.log` to stdout, and reports an uncaught throw as
+`Uncaught <class>: <message>` on stderr with exit 1; it accepts exactly
+the programs `prove` accepts and needs the same Lean toolchain and
+checkout. `lakatos check` is a stub: it scrapes the same annotations,
 reports each one `NotTried`, and exits 1. The rest of this README
 describes the committed design.
 
@@ -118,8 +123,9 @@ carries the diagnostic, and the run exits 2. Subjects without a proper
 name still get entries under best-effort labels (`<anonymous>#m`,
 `Box#<computed>`), with the diagnostic saying what is unsupported.
 
-Commands: `lakatos refute` and `lakatos prove` (work today),
-`lakatos check` (stub). All take `[files-or-globs...]`; with no files,
+Commands: `lakatos refute`, `lakatos prove`, and `lakatos exe` (work
+today), `lakatos check` (stub). All but `exe` take
+`[files-or-globs...]`; with no files,
 sources are the files `tsconfig.json` would compile. Every run type checks
 the whole project first, under the project's own `tsconfig.json` with
 lakatos's required strict options forced on top; a program that does not
@@ -127,11 +133,15 @@ compile is refused (every annotation reports `InputError`, exit 2). A run
 without a `tsconfig.json` is refused the same way, as is any named file the
 tsconfig's program leaves out: lakatos never analyzes code tsc has not
 accepted. `--seed <n>` applies to refute only: passing a report's `seed`
-back reproduces its run.
+back reproduces its run. `exe` takes exactly one file and runs it: no
+program arguments, no module graph, no report.
 
 Exit codes: `0` — clean run; `1` — counterexamples found, or a stubbed
 command; `2` — usage or user error, or an engine failure, including an unhealthy or
-interrupted run.
+interrupted run. For `exe` they read as a runtime's: `0` the program ran,
+`1` it ended in an uncaught throw, `2` it was refused — by the typecheck
+gate, by the evaluator naming a syntax node it does not know, or because
+the Lean toolchain is not here.
 
 ## Layout
 
@@ -192,6 +202,18 @@ stated in the spec's
 - `lakatos refute <file>` — refutation engine only. Note the semantics:
   the command names the _attempt_; finding no counterexample is success
   (exit 0), like any test run.
+- `lakatos exe <file>` — run one file on the evaluator the proofs share
+  their primitives with, so you can watch a program the prover reasons
+  about actually run. Two limits are worth stating in place, and both are
+  the ones
+  [What a Theorem rests on](spec/semantics.md#what-a-theorem-rests-on)
+  spells out: only the _primitives_ are shared between the evaluator and
+  the model a proof is stated over, until translation validation lands;
+  and `refute` runs on Node, not on this evaluator, so `exe` and `refute`
+  can disagree exactly where the model and V8 do. The evaluator's own
+  output formatting is its own third limit: `console.log` prints ToString
+  of each argument, so an object is `[object Object]` rather than Node's
+  inspection and `-0` prints as `0`.
 
 ## Verdicts
 

@@ -176,6 +176,25 @@ describe("executeSource", () => {
     expect(r).toEqual({ kind: "refused", stderr: "Error: boom\n" });
   });
 
+  // A spawn that never started — a binary that is not where it was said to
+  // be — answers with both streams null, not empty.
+  it("survives a spawn that produced no streams at all", () => {
+    expect(
+      run(
+        "const x = 1;",
+        deps({
+          status: null,
+          stdout: null,
+          stderr: null,
+          error: new Error("spawnSync /bin/tarski ENOENT"),
+        }),
+      ),
+    ).toEqual({
+      kind: "refused",
+      stderr: "Error: spawnSync /bin/tarski ENOENT\n",
+    });
+  });
+
   it("passes a missing project through", () => {
     expect(
       run("const x = 1;", {

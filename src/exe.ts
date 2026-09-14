@@ -153,6 +153,8 @@ const REAL: ExeDeps = {
  * it. Without the marker the whole first line is the best report there
  * is, which is what the test262 runner does with the same stream. */
 function unsupportedNode(stderr: string): string {
+  /* v8 ignore next 2 -- `split` always yields at least one element; the
+     fallback is `noUncheckedIndexedAccess` asking. */
   const line = stderr.split("\n")[0] ?? "";
   const marker = "unsupported: ";
   const at = line.indexOf(marker);
@@ -192,6 +194,8 @@ export function executeSource(
     };
 
   const run = deps.runDocument(binary.binary, documentPath);
+  // A spawn that never started — a binary that is not there — answers
+  // with both streams null and an error, so neither is assumed.
   const stdout = run.stdout ?? "";
   const stderr =
     (run.stderr ?? "") + (run.error ? `${String(run.error)}\n` : "");

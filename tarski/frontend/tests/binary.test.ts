@@ -78,6 +78,16 @@ describe("ensureBinary", () => {
     expect(r.kind === "failed" && r.stderr).toBe("partial\nError: boom\n");
   });
 
+  // A build that never started answers with both streams null, not empty.
+  it("survives a build that produced no streams at all", () => {
+    const { spawn } = recording({ status: 1, stdout: null, stderr: null });
+    expect(ensureBinary("/somewhere/tarski", spawn)).toEqual({
+      kind: "failed",
+      stdout: "",
+      stderr: "",
+    });
+  });
+
   it("builds the binary target in the package and answers where it landed", () => {
     const { spawn, calls } = recording({ status: 0 });
     expect(ensureBinary("/somewhere/tarski", spawn)).toEqual({

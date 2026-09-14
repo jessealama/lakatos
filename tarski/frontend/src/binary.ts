@@ -82,6 +82,8 @@ export function ensureBinary(
   if (build.error !== undefined || build.status !== 0) {
     return {
       kind: "failed",
+      // A spawn that never started answers with both streams null, so
+      // neither is assumed.
       stdout: build.stdout ?? "",
       stderr:
         (build.stderr ?? "") + (build.error ? `${String(build.error)}\n` : ""),
