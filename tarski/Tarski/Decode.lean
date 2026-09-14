@@ -10,7 +10,14 @@ things to a caller — the first says "tarski does not evaluate this
 program yet", the second says "whatever produced this JSON is broken".
 
 `Lean.Data.Json` is imported here and nowhere else in the evaluator, so
-`Tarski.Eval`'s import footprint stays `Js` plus its own AST. -/
+`Tarski.Eval`'s import footprint stays `Js` plus its own AST.
+
+Classes arrive whole. What a class may spell and the AST may not is
+refused here by name: a private method or accessor (a non-writable
+element, not a property), a numeric or computed key, an `async` or
+generator member, a static block, an `accessor` field, a decorator, and
+`super.x = v`. `new.target` and `#x in o` never reach this file — the
+bridge has no node for either, so each arrives as a placeholder. -/
 
 namespace Tarski
 
@@ -194,6 +201,11 @@ private def toTarget : Expr → DecodeM Target
   | .ident name => pure (.ident name)
   | .member object name => pure (.member object name)
   | .index object key => pure (.index object key)
+  | .privateMember object name => pure (.privateMember object name)
+  -- `super.x = v` is real syntax with semantics of its own — the write
+  -- goes to the *receiver*, not through the home object — so it is
+  -- refused by name rather than decoded as a member write.
+  | .superMember _ | .superIndex _ => .error (.unsupported "AssignmentExpression super target")
   | _ => .error (.unsupported "AssignmentExpression target")
 
 /-- The `$262` hooks the epic puts out of scope. Each is refused here, by
@@ -225,8 +237,15 @@ partial def decodeExpr (j : Json) : DecodeM Expr := do
       (← decodeExpr (← field j "alternate")))
   | "ThisExpression" => pure .this
   | "MemberExpression" => decodeMember j
+  | "ClassExpression" => pure (.classExpr (← decodeClass j))
   | "CallExpression" =>
-    pure (.call (← decodeExpr (← field j "callee")) (← decodeExprs (← arrayField j "arguments")))
+    let callee ← field j "callee"
+    match ← nodeType callee with
+    | "Super" => pure (.superCall (← decodeExprs (← arrayField j "arguments")))
+    | _ => pure (.call (← decodeExpr callee) (← decodeExprs (← arrayField j "arguments")))
+  -- `Super` is not an expression: it reaches here only as a call
+  -- argument or some other position the schema does not allow it in.
+  | "Super" => bad "Super outside a call or member access"
   | "NewExpression" =>
     pure (.new (← decodeExpr (← field j "callee")) (← decodeExprs (← arrayField j "arguments")))
   | "ArrayExpression" =>
@@ -273,19 +292,27 @@ computed spelling `$262["evalScript"]` and any alias of the object
 escape that and read an absent property instead: a documented limit of
 refusing syntactically, not a hole to plug here. -/
 partial def decodeMember (j : Json) : DecodeM Expr := do
-  let object ← decodeExpr (← field j "object")
+  let objectNode ← field j "object"
+  let isSuper := (← nodeType objectNode) == "Super"
   let property ← field j "property"
   if ← boolField j "computed" then
-    pure (.index object (← decodeExpr property))
+    let key ← decodeExpr property
+    if isSuper then pure (.superIndex key)
+    else pure (.index (← decodeExpr objectNode) key)
   else
     match ← nodeType property with
     | "Identifier" =>
       let name ← strField property "name"
-      match object with
-      | .ident "$262" =>
-        if hostHooks.contains name then .error (.unsupported s!"$262.{name}")
-        else pure (.member object name)
-      | _ => pure (.member object name)
+      if isSuper then pure (.superMember name)
+      else
+        let object ← decodeExpr objectNode
+        match object with
+        | .ident "$262" =>
+          if hostHooks.contains name then .error (.unsupported s!"$262.{name}")
+          else pure (.member object name)
+        | _ => pure (.member object name)
+    | "PrivateIdentifier" =>
+      pure (.privateMember (← decodeExpr objectNode) (← strField property "name"))
     | "Unsupported" => .error (.unsupported (← strField property "kind"))
     | other => bad s!"MemberExpression property is a {other}"
 
@@ -321,6 +348,81 @@ partial def decodeProps : List Json → DecodeM (List (String × Expr))
     | "Unsupported" => .error (.unsupported (← strField p "kind"))
     | other => .error (.unsupported other)
 
+/-- A class element's key, and which side of the class it names. A
+private method or accessor and a numeric key are refused: the first has
+semantics of its own — a non-writable element rather than a property —
+and the second would need ToPropertyKey at parse time, as an object
+literal's numeric key would. A computed key arrived as the bridge's
+placeholder and names itself. -/
+partial def memberKey (j : Json) (label : String) : DecodeM String := do
+  let key ← field j "key"
+  match ← nodeType key with
+  | "Identifier" => strField key "name"
+  | "PrivateIdentifier" => .error (.unsupported s!"{label} private")
+  | "Literal" =>
+    match ← field key "value" with
+    | .str s => pure s
+    | .num _ => .error (.unsupported s!"{label} numeric key")
+    | _ => bad s!"{label} key literal is neither a string nor a number"
+  | "Unsupported" => .error (.unsupported (← strField key "kind"))
+  | other => bad s!"{label} key is a {other}"
+
+/-- A `PropertyDefinition`'s key, which may be private. -/
+partial def fieldKey (j : Json) : DecodeM ClassKey := do
+  let key ← field j "key"
+  match ← nodeType key with
+  | "PrivateIdentifier" => pure (.«private» (← strField key "name"))
+  | _ => pure (.«public» (← memberKey j "PropertyDefinition"))
+
+/-- A `ClassBody`'s members, in source order. Anything the bridge could
+not put here arrived as its placeholder — a static block, a computed
+key, an `accessor` field, a decorator, a TS-only modifier — and names
+the kind it stood for. -/
+partial def decodeElements : List Json → DecodeM (List ClassElement)
+  | [] => pure []
+  | m :: rest => do
+    match ← nodeType m with
+    | "MethodDefinition" =>
+      let value ← field m "value"
+      match ← nodeType value with
+      | "FunctionExpression" => pure ()
+      | other => bad s!"MethodDefinition value is a {other}"
+      checkFunctionFlags value "MethodDefinition"
+      let params ← decodeParams (← arrayField value "params")
+      let body ← decodeStmts (← bodyField value)
+      let isStatic ← boolField m "static"
+      let element ← match ← strField m "kind" with
+        -- A `static constructor` is an ordinary static method of that
+        -- name; the bridge emits it as one, so only the instance side
+        -- reaches this arm.
+        | "constructor" => pure (ClassElement.ctor params body)
+        | "method" =>
+          pure (.method .method isStatic (← memberKey m "MethodDefinition") params body)
+        | "get" =>
+          pure (.method .getter isStatic (← memberKey m "MethodDefinition") params body)
+        | "set" =>
+          pure (.method .setter isStatic (← memberKey m "MethodDefinition") params body)
+        | other => .error (.unsupported s!"MethodDefinition {other}")
+      pure (element :: (← decodeElements rest))
+    | "PropertyDefinition" =>
+      let key ← fieldKey m
+      let value ← optExpr m "value"
+      pure (.field (← boolField m "static") key value :: (← decodeElements rest))
+    | "Unsupported" => .error (.unsupported (← strField m "kind"))
+    | other => .error (.unsupported other)
+
+/-- A `ClassDeclaration` or `ClassExpression`'s shared shape. -/
+partial def decodeClass (j : Json) : DecodeM ClassDef := do
+  let name ← match ← optField j "id" with
+    | some id => pure (some (← strField id "name"))
+    | none => pure none
+  let superClass ← optExpr j "superClass"
+  let body ← field j "body"
+  match ← nodeType body with
+  | "ClassBody" => pure ()
+  | other => bad s!"class body is a {other}"
+  pure { name, superClass, elements := ← decodeElements (← arrayField body "body") }
+
 partial def decodeDeclarator (j : Json) : DecodeM Declarator := do
   match ← nodeType j with
   | "VariableDeclarator" =>
@@ -341,6 +443,8 @@ partial def decodeStmt (j : Json) : DecodeM Stmt := do
     let name ← strField (← field j "id") "name"
     pure (.funcDecl name (← decodeParams (← arrayField j "params"))
       (← decodeStmts (← bodyField j)))
+  | "ClassDeclaration" =>
+    pure (.classDecl (← strField (← field j "id") "name") (← decodeClass j))
   | "ReturnStatement" =>
     match ← optField j "argument" with
     | some e => pure (.returnStmt (some (← decodeExpr e)))

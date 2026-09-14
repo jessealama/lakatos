@@ -1,0 +1,300 @@
+{
+  "type": "Program",
+  "sourceType": "script",
+  "body": [
+    {
+      "type": "ExpressionStatement",
+      "expression": {
+        "type": "Literal",
+        "value": "use strict",
+        "raw": "\"use strict\""
+      },
+      "directive": "use strict"
+    },
+    {
+      "type": "ClassDeclaration",
+      "id": {
+        "type": "Identifier",
+        "name": "Box"
+      },
+      "superClass": null,
+      "body": {
+        "type": "ClassBody",
+        "body": [
+          {
+            "type": "PropertyDefinition",
+            "key": {
+              "type": "PrivateIdentifier",
+              "name": "v"
+            },
+            "value": null,
+            "computed": false,
+            "static": false
+          },
+          {
+            "type": "MethodDefinition",
+            "key": {
+              "type": "Identifier",
+              "name": "constructor"
+            },
+            "value": {
+              "type": "FunctionExpression",
+              "id": null,
+              "params": [
+                {
+                  "type": "Identifier",
+                  "name": "v"
+                }
+              ],
+              "body": {
+                "type": "BlockStatement",
+                "body": [
+                  {
+                    "type": "IfStatement",
+                    "test": {
+                      "type": "BinaryExpression",
+                      "operator": "<",
+                      "left": {
+                        "type": "Identifier",
+                        "name": "v"
+                      },
+                      "right": {
+                        "type": "Literal",
+                        "value": 0,
+                        "raw": "0"
+                      }
+                    },
+                    "consequent": {
+                      "type": "ThrowStatement",
+                      "argument": {
+                        "type": "NewExpression",
+                        "callee": {
+                          "type": "Identifier",
+                          "name": "RangeError"
+                        },
+                        "arguments": [
+                          {
+                            "type": "Literal",
+                            "value": "neg",
+                            "raw": "\"neg\""
+                          }
+                        ]
+                      }
+                    },
+                    "alternate": null
+                  },
+                  {
+                    "type": "ExpressionStatement",
+                    "expression": {
+                      "type": "AssignmentExpression",
+                      "operator": "=",
+                      "left": {
+                        "type": "MemberExpression",
+                        "object": {
+                          "type": "ThisExpression"
+                        },
+                        "property": {
+                          "type": "PrivateIdentifier",
+                          "name": "v"
+                        },
+                        "computed": false
+                      },
+                      "right": {
+                        "type": "Identifier",
+                        "name": "v"
+                      }
+                    }
+                  }
+                ]
+              },
+              "async": false,
+              "generator": false
+            },
+            "kind": "constructor",
+            "computed": false,
+            "static": false
+          },
+          {
+            "type": "MethodDefinition",
+            "key": {
+              "type": "Identifier",
+              "name": "v"
+            },
+            "value": {
+              "type": "FunctionExpression",
+              "id": null,
+              "params": [],
+              "body": {
+                "type": "BlockStatement",
+                "body": [
+                  {
+                    "type": "ReturnStatement",
+                    "argument": {
+                      "type": "MemberExpression",
+                      "object": {
+                        "type": "ThisExpression"
+                      },
+                      "property": {
+                        "type": "PrivateIdentifier",
+                        "name": "v"
+                      },
+                      "computed": false
+                    }
+                  }
+                ]
+              },
+              "async": false,
+              "generator": false
+            },
+            "kind": "get",
+            "computed": false,
+            "static": false
+          },
+          {
+            "type": "MethodDefinition",
+            "key": {
+              "type": "Identifier",
+              "name": "scale"
+            },
+            "value": {
+              "type": "FunctionExpression",
+              "id": null,
+              "params": [
+                {
+                  "type": "Identifier",
+                  "name": "k"
+                }
+              ],
+              "body": {
+                "type": "BlockStatement",
+                "body": [
+                  {
+                    "type": "ReturnStatement",
+                    "argument": {
+                      "type": "NewExpression",
+                      "callee": {
+                        "type": "Identifier",
+                        "name": "Box"
+                      },
+                      "arguments": [
+                        {
+                          "type": "BinaryExpression",
+                          "operator": "*",
+                          "left": {
+                            "type": "MemberExpression",
+                            "object": {
+                              "type": "ThisExpression"
+                            },
+                            "property": {
+                              "type": "PrivateIdentifier",
+                              "name": "v"
+                            },
+                            "computed": false
+                          },
+                          "right": {
+                            "type": "Identifier",
+                            "name": "k"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              "async": false,
+              "generator": false
+            },
+            "kind": "method",
+            "computed": false,
+            "static": false
+          }
+        ]
+      }
+    },
+    {
+      "type": "VariableDeclaration",
+      "kind": "const",
+      "declarations": [
+        {
+          "type": "VariableDeclarator",
+          "id": {
+            "type": "Identifier",
+            "name": "b"
+          },
+          "init": {
+            "type": "CallExpression",
+            "callee": {
+              "type": "MemberExpression",
+              "object": {
+                "type": "NewExpression",
+                "callee": {
+                  "type": "Identifier",
+                  "name": "Box"
+                },
+                "arguments": [
+                  {
+                    "type": "Literal",
+                    "value": 2,
+                    "raw": "2"
+                  }
+                ]
+              },
+              "property": {
+                "type": "Identifier",
+                "name": "scale"
+              },
+              "computed": false
+            },
+            "arguments": [
+              {
+                "type": "Literal",
+                "value": 3,
+                "raw": "3"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "type": "ExpressionStatement",
+      "expression": {
+        "type": "LogicalExpression",
+        "operator": "&&",
+        "left": {
+          "type": "BinaryExpression",
+          "operator": "===",
+          "left": {
+            "type": "MemberExpression",
+            "object": {
+              "type": "Identifier",
+              "name": "b"
+            },
+            "property": {
+              "type": "Identifier",
+              "name": "v"
+            },
+            "computed": false
+          },
+          "right": {
+            "type": "Literal",
+            "value": 6,
+            "raw": "6"
+          }
+        },
+        "right": {
+          "type": "BinaryExpression",
+          "operator": "instanceof",
+          "left": {
+            "type": "Identifier",
+            "name": "b"
+          },
+          "right": {
+            "type": "Identifier",
+            "name": "Box"
+          }
+        }
+      }
+    }
+  ]
+}

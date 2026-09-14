@@ -29,7 +29,7 @@ attribute [local simp] evalExpr evalExprs evalStmt evalStmts evalDeclarators
   allocObj newObject readObj writeObj modifyObj
   Env.lookup Heap.alloc Heap.read Heap.write
   Heap.allocObj Heap.readObj Heap.writeObj
-  Obj.getOwn Obj.setOwn propGet propSet
+  Obj.getOwn Obj.setOwn propGet propSet Obj.getOwnAccessor accessorGet
   undefValue thisName DeclKind.isMutable
   Heap.initial globalEnv runScript runProgram evalProgram
   ExceptT.run_bind Except.map throwJsError throwCompletion

@@ -30,6 +30,15 @@ abbrev Ref := Nat
 /-- A variable binding's identity. -/
 abbrev CellRef := Nat
 
+/-- A Private Name's identity. A class evaluation allocates one cell per
+`#name` its body declares and binds it under the spelling `"#name"` in
+the class's scope, so `this.#v` resolves through `Env.lookup` exactly as
+`this` does. The *cell* is the name: two evaluations of one class text
+allocate two cells and so declare two different private names, which is
+what the specification requires and what a counter in the heap could not
+give. -/
+abbrev PrivateName := CellRef
+
 /-- A JS value: a primitive from the library's tagged domain, or a
 reference into the heap's object table. Every primitive operation the
 evaluator performs is the library's, so the primitive case carries
@@ -44,12 +53,25 @@ block's binding shadows an outer one of the same name without any
 deletion. -/
 abbrev Env := List (String × CellRef)
 
-/-- Whether a function has a `this` of its own. An arrow does not: it
-pushes no `this` binding, so `this` inside it resolves up the scope chain
-like any other name, which is the spec's own mechanism. -/
+/-- What kind of function a closure is: whether it has a `this` of its
+own, whether it may be constructed, and whether it carries a
+`prototype`. An arrow pushes no `this` binding, so `this` inside one
+resolves up the scope chain like any other name, which is the spec's own
+mechanism; a method has a `this` but no `prototype` and no
+`[[Construct]]`; a class constructor has all three and refuses to be
+called without `new`. -/
 inductive FuncKind where
+  /-- A function declaration or expression. -/
   | ordinary
+  /-- An arrow function. -/
   | arrow
+  /-- A class method, getter, or setter. -/
+  | method
+  /-- A class constructor. `derived` is `[[ConstructorKind]]`: a derived
+  constructor's `this` starts uninitialized and `super()` fills it in.
+  `implicit` marks the default constructor a class without one gets,
+  whose derived form forwards its arguments to the parent. -/
+  | classCtor (derived : Bool) (implicit : Bool)
 deriving Repr, DecidableEq, Inhabited
 
 /-- A function's code and the scope it closed over. -/
@@ -58,6 +80,14 @@ structure Closure where
   body : List Stmt
   env : Env
   kind : FuncKind
+  /-- `[[HomeObject]]`: the object `super.x` reads through, which is the
+  prototype for an instance method and the constructor for a static one.
+  `none` for every function that is not a class element, and that is what
+  makes `super` outside a method a refusal. -/
+  homeObject : Option Ref := none
+  /-- `[[Fields]]`: the instance fields a class constructor initializes,
+  in source order. Empty for every other closure. -/
+  fields : List ClassField := []
 deriving Repr, Inhabited
 
 /-- The `Error` constructors the language has, in the order
@@ -216,10 +246,25 @@ inductive ObjKind where
   | boolean (value : Bool)
 deriving Repr, DecidableEq, Inhabited
 
+/-- An accessor property's two functions. Named `getter` and `setter`
+rather than `get` and `set` because those two spellings are the state
+monad's, and a field projection of either name would shadow one wherever
+an `Obj` was open. Both are `Option`: a property may have only a getter,
+only a setter, or — after a `get x` and a `set x` on one name — both. -/
+structure Accessor where
+  /-- `[[Get]]`. A read of a getter-less accessor property is
+  `undefined`. -/
+  getter : Option Value := none
+  /-- `[[Set]]`. A write to a setter-less accessor property is a
+  `TypeError` in strict mode. -/
+  setter : Option Value := none
+deriving Repr, Inhabited
+
 /-- An ordinary object: a prototype link, own data properties in
-insertion order, and — for a function — what calling it does. There are
-no property descriptors and no accessors; writability, enumerability,
-and getters are #389's. -/
+insertion order, own accessor properties beside them, and — for a
+function — what calling it does. There are still no property
+descriptors: writability and enumerability are #389's, which is also
+what folds these two lists into one. -/
 structure Obj where
   /-- `[[Prototype]]`. `none` is the null prototype; a function object's
   is one until `Function.prototype` exists (#389). -/
@@ -232,6 +277,17 @@ structure Obj where
   /-- The exotic-object classification. Defaulted, so an ordinary
   object's literal says nothing about it. -/
   kind : ObjKind := .ordinary
+  /-- Own accessor properties, in insertion order. **A key is in at most
+  one of the two lists**: `Obj.defineData` and `Obj.defineAccessor` are
+  the only ways in, and each drops the key from the other list first, so
+  redefining a getter as a data property and back is the spec's
+  replacement rather than two properties of one name. -/
+  accessors : List (String × Accessor) := []
+  /-- `[[PrivateElements]]`, restricted to fields — a private method or
+  accessor is a decoder refusal, so no other kind can arrive. These are
+  not properties: no key names them, `Object.keys` cannot see them, and
+  a prototype walk never reaches them. -/
+  privates : List (PrivateName × Value) := []
 deriving Repr, Inhabited
 
 /-- A variable binding. `mutable` is `false` for `const`, which is what
@@ -324,6 +380,78 @@ def Obj.getOwn (o : Obj) (key : String) : Option Value :=
 def Obj.setOwn (o : Obj) (key : String) (v : Value) : Obj :=
   { o with properties := propSet o.properties key v }
 
+/-- Drop a key from a property list, keeping the rest in order. -/
+def propDrop : List (String × Value) → String → List (String × Value)
+  | [], _ => []
+  | (k, v) :: rest, key => if k == key then rest else (k, v) :: propDrop rest key
+
+/-- Find a key in an accessor list. -/
+def accessorGet : List (String × Accessor) → String → Option Accessor
+  | [], _ => none
+  | (k, a) :: rest, key => if k == key then some a else accessorGet rest key
+
+/-- Drop a key from an accessor list. -/
+def accessorDrop : List (String × Accessor) → String → List (String × Accessor)
+  | [], _ => []
+  | (k, a) :: rest, key => if k == key then rest else (k, a) :: accessorDrop rest key
+
+/-- Create or extend an accessor entry. An absent half leaves whatever is
+already there standing, which is ValidateAndApplyPropertyDescriptor's own
+rule: a descriptor without a `[[Set]]` field does not erase one. -/
+def accessorSet : List (String × Accessor) → String → Option Value → Option Value →
+    List (String × Accessor)
+  | [], key, g, s => [(key, { getter := g, setter := s })]
+  | (k, a) :: rest, key, g, s =>
+    if k == key then
+      (key, { getter := match g with | some _ => g | none => a.getter,
+              setter := match s with | some _ => s | none => a.setter }) :: rest
+    else (k, a) :: accessorSet rest key g s
+
+/-- An own accessor property, or `none` if the object does not have one
+under that key. -/
+def Obj.getOwnAccessor (o : Obj) (key : String) : Option Accessor :=
+  accessorGet o.accessors key
+
+/-- Define an own data property. A *definition*, not a write: an accessor
+of the same name is replaced rather than called, which is what makes a
+class field ignore a prototype setter. -/
+def Obj.defineData (o : Obj) (key : String) (v : Value) : Obj :=
+  { o with accessors := accessorDrop o.accessors key,
+           properties := propSet o.properties key v }
+
+/-- Define an own accessor property, replacing a data property of the
+same name and merging into an accessor already there, so that a `get x`
+and a `set x` make one property with two halves. -/
+def Obj.defineAccessor (o : Obj) (key : String) (getter setter : Option Value) : Obj :=
+  { o with properties := propDrop o.properties key,
+           accessors := accessorSet o.accessors key getter setter }
+
+/-- Find a private element. -/
+def privateGet : List (PrivateName × Value) → PrivateName → Option Value
+  | [], _ => none
+  | (k, v) :: rest, key => if k == key then some v else privateGet rest key
+
+/-- Overwrite a private element that is already there. -/
+def privateSet : List (PrivateName × Value) → PrivateName → Value → List (PrivateName × Value)
+  | [], _, _ => []
+  | (k, w) :: rest, key, v =>
+    if k == key then (key, v) :: rest else (k, w) :: privateSet rest key v
+
+/-- A private element's value, or `none` when the object's class did not
+declare it — which is the whole of a private read's type check. -/
+def Obj.getPrivate (o : Obj) (k : PrivateName) : Option Value :=
+  privateGet o.privates k
+
+/-- Write a private element that is already there. A private field is
+never created by a write: only field initialization adds one. -/
+def Obj.setPrivate (o : Obj) (k : PrivateName) (v : Value) : Obj :=
+  { o with privates := privateSet o.privates k v }
+
+/-- PrivateFieldAdd's half that cannot fail: append the element. The
+already-present check is `Eval`'s, which has the `TypeError` to throw. -/
+def Obj.addPrivate (o : Obj) (k : PrivateName) (v : Value) : Obj :=
+  { o with privates := o.privates ++ [(k, v)] }
+
 /-- Resolve a name in a scope chain: the innermost binding wins. -/
 def Env.lookup : Env → String → Option CellRef
   | [], _ => none
@@ -370,11 +498,12 @@ def Obj.isArray (o : Obj) : Bool :=
 /-- `[[GetOwnProperty]]` reduced to a yes or no, which is all
 `Object.prototype.hasOwnProperty` asks. An array's `length` is an own
 property that lives in the kind rather than the property list, so it is
-answered here by hand. -/
+answered here by hand; an accessor property is one too, so the second
+list is consulted beside the first. -/
 def Obj.hasOwn (o : Obj) (key : String) : Bool :=
   match o.kind with
-  | .array _ => key == "length" || (o.getOwn key).isSome
-  | _ => (o.getOwn key).isSome
+  | .array _ => key == "length" || (o.getOwn key).isSome || (o.getOwnAccessor key).isSome
+  | _ => (o.getOwn key).isSome || (o.getOwnAccessor key).isSome
 
 /-- ArraySetLength's shortening half: drop every element at an index at
 or past the new length, keep the rest in order, and record the length.
@@ -391,12 +520,16 @@ def Obj.truncate (o : Obj) (n : Nat) : Obj :=
 then every other key in insertion order. Symbols are #392's, and an
 array's `length` is not here because it is not in the property list —
 `Object.keys([7, 8])` is `["0", "1"]`. Enumerability arrives with
-descriptors (#389), so until then every own key is listed. -/
+descriptors (#389), so until then every own key is listed, accessor keys
+included; they come after the data keys rather than interleaved with
+them, which is an ordering limit #389 removes along with the second
+list. -/
 def Obj.ownKeys (o : Obj) : List String :=
   let keys := o.properties.map (·.1)
   let indexed := keys.filterMap (fun k => (arrayIndex? k).map (fun i => (i, k)))
   (indexed.mergeSort (fun a b => decide (a.1 ≤ b.1))).map (·.2)
     ++ keys.filter (fun k => (arrayIndex? k).isNone)
+    ++ o.accessors.map (·.1)
 
 /-- A list of values as index-keyed properties, numbered from `start`. -/
 def indexProps (start : Nat) : List Value → List (String × Value)

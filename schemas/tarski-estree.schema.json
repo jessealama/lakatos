@@ -37,6 +37,7 @@
         { "$ref": "#/definitions/LabeledStatement" },
         { "$ref": "#/definitions/BreakStatement" },
         { "$ref": "#/definitions/ContinueStatement" },
+        { "$ref": "#/definitions/ClassDeclaration" },
         { "$ref": "#/definitions/Unsupported" }
       ]
     },
@@ -300,6 +301,7 @@
         { "$ref": "#/definitions/FunctionExpression" },
         { "$ref": "#/definitions/ArrowFunctionExpression" },
         { "$ref": "#/definitions/AssignmentExpression" },
+        { "$ref": "#/definitions/ClassExpression" },
         { "$ref": "#/definitions/Unsupported" }
       ]
     },
@@ -493,12 +495,22 @@
     },
 
     "MemberExpression": {
-      "description": "`computed` says which spelling was used: `o.x` has an Identifier property and `computed: false`, `o[e]` has an arbitrary expression and `computed: true`. An optional chain (`o?.x`) is not this node — the whole access arrives as `Unsupported`.",
+      "description": "`computed` says which spelling was used: `o.x` has an Identifier property and `computed: false`, `o[e]` has an arbitrary expression and `computed: true`. An optional chain (`o?.x`) is not this node — the whole access arrives as `Unsupported`. The object is `Super` for `super.x`, and the property is a `PrivateIdentifier` for `o.#x` — which is not a property key at all, but a name the class's scope resolves.",
       "type": "object",
       "properties": {
         "type": { "const": "MemberExpression" },
-        "object": { "$ref": "#/definitions/Expression" },
-        "property": { "$ref": "#/definitions/Expression" },
+        "object": {
+          "anyOf": [
+            { "$ref": "#/definitions/Expression" },
+            { "$ref": "#/definitions/Super" }
+          ]
+        },
+        "property": {
+          "anyOf": [
+            { "$ref": "#/definitions/Expression" },
+            { "$ref": "#/definitions/PrivateIdentifier" }
+          ]
+        },
         "computed": { "type": "boolean" }
       },
       "required": ["type", "object", "property", "computed"],
@@ -506,11 +518,16 @@
     },
 
     "CallExpression": {
-      "description": "A spread argument is outside the slice and arrives as an `Unsupported` element in `arguments`; an optional call (`f?.()`) makes the whole call `Unsupported`.",
+      "description": "A spread argument is outside the slice and arrives as an `Unsupported` element in `arguments`; an optional call (`f?.()`) makes the whole call `Unsupported`. A `Super` callee is `super(...)`, which runs the parent constructor rather than calling a value.",
       "type": "object",
       "properties": {
         "type": { "const": "CallExpression" },
-        "callee": { "$ref": "#/definitions/Expression" },
+        "callee": {
+          "anyOf": [
+            { "$ref": "#/definitions/Expression" },
+            { "$ref": "#/definitions/Super" }
+          ]
+        },
         "arguments": {
           "type": "array",
           "items": { "$ref": "#/definitions/Expression" }
@@ -677,6 +694,119 @@
         }
       },
       "required": ["type", "argument"],
+      "additionalProperties": false
+    },
+
+    "Super": {
+      "description": "`super`. Deliberately not an `Expression`: it may only be a member access's object or a call's callee, which are the two places above that admit it, and a `super` anywhere else does not parse.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "Super" }
+      },
+      "required": ["type"],
+      "additionalProperties": false
+    },
+
+    "PrivateIdentifier": {
+      "description": "A `#name`, with the `#` stripped as ESTree has it. Not an `Expression` either: a bare private name is legal only as the left operand of `in`, which is outside the slice, so the bridge emits `Unsupported` there and this node appears only as a member access's property.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "PrivateIdentifier" },
+        "name": { "type": "string" }
+      },
+      "required": ["type", "name"],
+      "additionalProperties": false
+    },
+
+    "ClassMemberKey": {
+      "anyOf": [
+        { "$ref": "#/definitions/Identifier" },
+        { "$ref": "#/definitions/StringLiteral" },
+        { "$ref": "#/definitions/NumericLiteral" },
+        { "$ref": "#/definitions/PrivateIdentifier" }
+      ]
+    },
+
+    "MethodDefinition": {
+      "description": "A class body's constructor, method, getter, or setter. The Lean decoder refuses a private key — a private method is a non-writable element rather than a property — and a numeric key, and an `async` or generator member; the bridge emits all three so that the refusal names them rather than the class. `computed` is always false, a computed key arriving as `Unsupported` in the member's place. A `static constructor` is an ordinary static method of that name, so it arrives with `kind: \"method\"`.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "MethodDefinition" },
+        "key": { "$ref": "#/definitions/ClassMemberKey" },
+        "value": { "$ref": "#/definitions/FunctionExpression" },
+        "kind": { "enum": ["constructor", "method", "get", "set"] },
+        "computed": { "const": false },
+        "static": { "type": "boolean" }
+      },
+      "required": ["type", "key", "value", "kind", "computed", "static"],
+      "additionalProperties": false
+    },
+
+    "PropertyDefinition": {
+      "description": "A class field. `value` is null for a field declared without an initializer, which still defines the property, holding `undefined`. A private key is in the slice here, unlike on a method.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "PropertyDefinition" },
+        "key": { "$ref": "#/definitions/ClassMemberKey" },
+        "value": {
+          "anyOf": [{ "$ref": "#/definitions/Expression" }, { "type": "null" }]
+        },
+        "computed": { "const": false },
+        "static": { "type": "boolean" }
+      },
+      "required": ["type", "key", "value", "computed", "static"],
+      "additionalProperties": false
+    },
+
+    "ClassBody": {
+      "description": "A class body's members, in source order. A static block, a computed key, an `accessor` field, a decorator, and every TypeScript-only modifier or annotation arrive as `Unsupported` in the member's place, so the class around them still reaches the decoder. A bare `;` between members carries no meaning and is dropped.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "ClassBody" },
+        "body": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              { "$ref": "#/definitions/MethodDefinition" },
+              { "$ref": "#/definitions/PropertyDefinition" },
+              { "$ref": "#/definitions/Unsupported" }
+            ]
+          }
+        }
+      },
+      "required": ["type", "body"],
+      "additionalProperties": false
+    },
+
+    "ClassDeclaration": {
+      "description": "A class declaration, hoisted like a `let`: the binding exists from the top of its block and is in its dead zone until the declaration runs. An `implements` clause, a type parameter list, and a decorator each refuse the whole class rather than one member, because each says something about the class itself the slice cannot represent.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "ClassDeclaration" },
+        "id": { "$ref": "#/definitions/Identifier" },
+        "superClass": {
+          "anyOf": [{ "$ref": "#/definitions/Expression" }, { "type": "null" }]
+        },
+        "body": { "$ref": "#/definitions/ClassBody" }
+      },
+      "required": ["type", "id", "superClass", "body"],
+      "additionalProperties": false
+    },
+
+    "ClassExpression": {
+      "description": "A class expression. Its `id`, when it has one, binds the class immutably inside the class's own body and nowhere else.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "ClassExpression" },
+        "id": {
+          "anyOf": [{ "$ref": "#/definitions/Identifier" }, { "type": "null" }]
+        },
+        "superClass": {
+          "anyOf": [{ "$ref": "#/definitions/Expression" }, { "type": "null" }]
+        },
+        "body": { "$ref": "#/definitions/ClassBody" }
+      },
+      "required": ["type", "id", "superClass", "body"],
       "additionalProperties": false
     },
 

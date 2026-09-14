@@ -12,26 +12,43 @@ defined by `partial_fixpoint`, so the equations are theorems and a
 non-terminating program is `none`, not an axiom.
 
 The non-recursive helpers live outside the `mutual` block on purpose:
-their equations are ordinary and `simp` may use them freely. Four of the
+their equations are ordinary and `simp` may use them freely. Five of the
 recursive ones are never added to a simp set and are unfolded one step at
-a time with `rw`: `evalWhile`, `evalFor`, `getProp`, and `joinElements`.
-The rule is not "recursive" but "recursive on something other than
-syntax" — `evalExpr` and its neighbours recurse on a concrete AST, which
-runs out, while a loop recurses until a heap value says stop, a prototype
-walk until a heap link does, and a join until an array's length does, and
-`simp` unfolds all three under a binder it has not resolved, forever.
-What decides membership in the block is whether a definition can reach
-user code: `getProp`, `toPrimitive`, and `setProp` can (a prototype chain
-is unbounded, ToPrimitive calls `valueOf`, and ArraySetLength coerces its
-value with ToNumber, which is ToPrimitive on an object), so they are
-inside; `instantiateBlock` and `makeFunction` only touch the heap, so
-they are outside.
+a time with `rw`: `evalWhile`, `evalFor`, `getFromUp`, `findAccessorUp`,
+and `joinElements`. The rule is not "recursive" but "recursive on something
+other than syntax" — `evalExpr` and its neighbours recurse on a concrete
+AST, which runs out, while a loop recurses until a heap value says stop,
+a prototype walk until a heap link does, and a join until an array's
+length does, and `simp` unfolds all three under a binder it has not
+resolved, forever. `getProp` and `getFrom` are not on the list: the
+first is the dispatch onto the second, and the second answers an own
+property without recursing — the two prototype *steps* are what recurse,
+and they are the two definitions above. What decides membership in the block is
+whether a definition can reach user code: `getProp`, `toPrimitive`, and
+`setProp` can (a getter or a setter is user code, ToPrimitive calls
+`valueOf`, and ArraySetLength coerces its value with ToNumber, which is
+ToPrimitive on an object), so they are inside; `instantiateBlock` and
+`makeFunction` only touch the heap, so they are outside.
 
 A block's declarations are instantiated before its first statement runs.
 That is one mechanism answering three needs: the temporal dead zone (a
 cell exists but holds nothing until its declarator runs), a function
 declaration callable above its own text, and two declarations that call
 each other.
+
+Four bindings in the scope chain are the evaluator's own rather than any
+source name's: `thisName`, `homeName`, `newTargetName`, and
+`activeFunctionName`. `this` is a keyword and the other three are
+spelled with a `%` or a `.`, so no identifier collides with one; putting
+them in the chain rather than in a frame is what lets an arrow see all
+four lexically, and what makes a derived constructor's "before
+`super()`" the ordinary temporal dead zone with a message of its own.
+
+A class declaration is hoisted like a `let` and is in that same dead zone
+until its declaration runs. `evalClass` is ClassDefinitionEvaluation,
+`constructClass` a class constructor's `[[Construct]]`, and a field is a
+*definition* — never a write — evaluated per instance after `super()`
+has returned.
 
 A `var` is instantiated somewhere else and at another time. `varNames`
 collects VarDeclaredNames over a whole function body or script — through
@@ -74,6 +91,23 @@ new refusal is written against a list rather than invented.
 | `(1).toFixed(f)` with an `f` outside 0–100         | `RangeError`     | `toFixed() digits argument must be between 0 and 100`         |
 | `(1).toExponential(f)` with an `f` outside 0–100   | `RangeError`     | `toExponential() argument must be between 0 and 100`          |
 | `(1).toPrecision(p)` with a `p` outside 1–100      | `RangeError`     | `toPrecision() argument must be between 1 and 100`            |
+| a write through an accessor with no setter         | `TypeError`      | `Cannot set property {key} of #<Object> which has only a getter` |
+| a class constructor called without `new`           | `TypeError`      | `Class constructor cannot be invoked without 'new'`           |
+| `extends` something that is neither a constructor nor `null` | `TypeError` | `Class extends value {v} is not a constructor or null`   |
+| a parent whose `prototype` is neither an object nor `null` | `TypeError` | `Class extends value does not have valid prototype property {p}` |
+| `this` read, or a derived constructor finishing, before `super()` | `ReferenceError` | `Must call super constructor in derived class before accessing 'this' or returning from derived constructor` |
+| `super()` a second time                            | `ReferenceError` | `Super constructor may only be called once`                   |
+| a derived constructor returning a non-`undefined` primitive | `TypeError` | `Derived constructors may only return object or undefined`   |
+| `super` where no method is active                  | `SyntaxError`    | `'super' keyword unexpected here`                             |
+| the parent of a derived class not a constructor    | `TypeError`      | `Super constructor null of anonymous class is not a constructor` |
+| a private name not in scope                        | `SyntaxError`    | `Private field '#{name}' must be declared in an enclosing class` |
+| a private read on an object without the element    | `TypeError`      | `Cannot read private member #{name} from an object whose class did not declare it` |
+| a private write on an object without the element   | `TypeError`      | `Cannot write private member #{name} to an object whose class did not declare it` |
+| a private field initialized twice                  | `TypeError`      | `Cannot initialize #{name} twice on the same object`          |
+
+The two `SyntaxError`s stand in for early errors the epic does not
+check: they are raised where the construct is *used* rather than where
+the script is parsed.
 
 `Tarski/Monad.lean` holds two more, for the two arms a reference the
 evaluator handed out cannot reach. -/
@@ -354,14 +388,49 @@ def undefValue : Value := .prim .undef
 keyword, so no identifier can collide with it, and a binding in the scope
 chain is exactly what the spec means by an environment record's
 `[[ThisBindingStatus]]`. An arrow pushes no such binding, so `this`
-inside one resolves outward like any other name. -/
+inside one resolves outward like any other name.
+
+It is one of **four reserved bindings**, the other three below. `%` and
+`.` are not identifier characters and `this` is a keyword, so no source
+name collides with any of them; an arrow sees all four lexically for
+free, which is the whole of why an arrow in a constructor may call
+`super()`. -/
 def thisName : String := "this"
+
+/-- `[[HomeObject]]`'s binding: the object `super.x` reads through,
+pushed by a call to a function that has one. -/
+def homeName : String := "%home"
+
+/-- NewTarget's binding, spelled as the meta-property itself so that
+#393's `MetaProperty` node reads the cell as it stands. -/
+def newTargetName : String := "new.target"
+
+/-- The running class constructor's own function object, which is what
+`super()` reads the parent constructor off. -/
+def activeFunctionName : String := "%function"
 
 /-- Whether a value is a function: an object with a `[[Call]]`. -/
 def isCallable (v : Value) : EvalM Bool := do
   match v with
   | .prim _ => pure false
   | .obj r => pure (← readObj r).callable.isSome
+
+/-- IsConstructor: whether `new` may be applied to a value. An ordinary
+function and a class constructor may; an arrow and a method may not, and
+neither may a built-in without a `[[Construct]]` of its own. `extends`
+asks this of its heritage. -/
+def isConstructor (v : Value) : EvalM Bool := do
+  match v with
+  | .prim _ => pure false
+  | .obj r =>
+    match (← readObj r).callable with
+    | none => pure false
+    | some (.native n) => pure n.constructs
+    | some (.closure c) =>
+      match c.kind with
+      | .ordinary => pure true
+      | .classCtor _ _ => pure true
+      | .arrow | .method => pure false
 
 /-- `typeof`'s answer. The object case is the only one needing the heap,
 which is why this is not `applyUnary`'s job. -/
@@ -379,7 +448,10 @@ against `Object.prototype` like any other; the function object's own
 def makeFunction (c : Closure) : EvalM Value := do
   let f ← allocObj { callable := some (.closure c) }
   match c.kind with
-  | .arrow => pure (.obj f)
+  -- A method has no `prototype` because it cannot be constructed, and a
+  -- class constructor's is built by `evalClass`, which needs the object
+  -- before the closure that names it exists.
+  | .arrow | .method | .classCtor _ _ => pure (.obj f)
   | .ordinary => do
     let proto ← newObject
     modifyObj proto (fun o => o.setOwn "constructor" (.obj f))
@@ -501,6 +573,11 @@ def hoistNames (env : Env) : List Stmt → EvalM Env
       | .funcDecl name _ _ => do
         let r ← allocCell { mutable := true }
         pure ((name, r) :: env)
+      -- A class declaration hoists like a `let`: the cell exists from
+      -- here and holds nothing until the declaration runs.
+      | .classDecl name _ => do
+        let r ← allocCell { mutable := true }
+        pure ((name, r) :: env)
       | _ => pure env
     hoistNames env' rest
 
@@ -545,6 +622,91 @@ def putIdent (env : Env) (name : String) (v : Value) : EvalM Unit :=
       else throwJsError .typeError "Assignment to constant variable."
   | none => throwJsError .referenceError s!"{name} is not defined"
 
+/-- Resolve a private name's spelling to the cell that *is* the name.
+The cell is bound under `"#" ++ name` in the class's scope, so an
+unbound spelling is a use outside every class that declares it — an
+early error in the specification, reported here as a `SyntaxError` at
+the point of use, early errors being outside this epic. -/
+def privateName (env : Env) (name : String) : EvalM PrivateName :=
+  match Env.lookup env ("#" ++ name) with
+  | some r => pure r
+  | none =>
+    throwJsError .syntaxError
+      s!"Private field '#{name}' must be declared in an enclosing class"
+
+/-- PrivateGet, restricted to fields: the element on the object itself.
+There is no prototype walk — a private element is not a property — so a
+base whose class did not declare the name is a `TypeError`, and so is a
+primitive base. -/
+def readPrivate (env : Env) (base : Value) (name : String) : EvalM Value := do
+  let k ← privateName env name
+  match base with
+  | .obj r =>
+    match (← readObj r).getPrivate k with
+    | some v => pure v
+    | none =>
+      throwJsError .typeError
+        s!"Cannot read private member #{name} from an object whose class did not declare it"
+  | .prim _ =>
+    throwJsError .typeError
+      s!"Cannot read private member #{name} from an object whose class did not declare it"
+
+/-- PrivateSet, restricted to fields. A write never creates an element:
+only field initialization does, which is why a write to an object the
+class did not build is a `TypeError` rather than a new field. -/
+def writePrivate (env : Env) (base : Value) (name : String) (v : Value) : EvalM Unit := do
+  let k ← privateName env name
+  match base with
+  | .obj r =>
+    match (← readObj r).getPrivate k with
+    | some _ => modifyObj r (fun o => o.setPrivate k v)
+    | none =>
+      throwJsError .typeError
+        s!"Cannot write private member #{name} to an object whose class did not declare it"
+  | .prim _ =>
+    throwJsError .typeError
+      s!"Cannot write private member #{name} to an object whose class did not declare it"
+
+/-- PrivateFieldAdd. The element must not already be there: it can be,
+through the return-override trick, and the specification makes that a
+`TypeError` rather than a second element of one name. -/
+def addPrivate (target : Ref) (name : String) (k : PrivateName) (v : Value) : EvalM Unit := do
+  match (← readObj target).getPrivate k with
+  | some _ => throwJsError .typeError s!"Cannot initialize #{name} twice on the same object"
+  | none => modifyObj target (fun o => o.addPrivate k v)
+
+/-- One immutable cell per `#name` the class declares, pushed under the
+spelling `"#name"`. The cell's *reference* is the Private Name; its
+contents are never read, so it holds `undefined`. -/
+def bindPrivateNames (env : Env) : List String → EvalM Env
+  | [] => pure env
+  | n :: rest => do
+    let r ← allocCell { mutable := false, value := some undefValue }
+    bindPrivateNames (("#" ++ n, r) :: env) rest
+
+/-- MethodDefinitionEvaluation over a class body: every method, getter,
+and setter on its home object — the prototype for an instance element,
+the constructor for a `static` one. A getter and a setter of one name
+merge into one accessor property, which is `Obj.defineAccessor`'s
+business. Constructors and fields are not here: the first is the
+closure `evalClass` built, the second runs per instance.
+
+Outside the fixpoint block, like `instantiateBlock` and `initFunctions`
+and for the same reason: a method's body is closed over here, never run,
+so nothing this does can reach user code. -/
+def defineMethods (env : Env) (F proto : Ref) : List ClassElement → EvalM Unit
+  | [] => pure ()
+  | .method kind isStatic name params body :: rest => do
+    let target := if isStatic then F else proto
+    let f ← makeFunction { params, body, env, kind := .method, homeObject := some target }
+    modifyObj target (fun o =>
+      match kind with
+      | .method => o.defineData name f
+      | .getter => o.defineAccessor name (some f) none
+      | .setter => o.defineAccessor name none (some f))
+    defineMethods env F proto rest
+  | _ :: rest => defineMethods env F proto rest
+
 mutual
 
 /-- Evaluate an expression. -/
@@ -560,9 +722,18 @@ def evalExpr (env : Env) : Expr → EvalM Value
     | none => throwJsError .referenceError s!"{name} is not defined"
   | .this =>
     -- No global object yet, so an unbound `this` is `undefined` rather
-    -- than a `ReferenceError`: #389 gives the top level a receiver.
+    -- than a `ReferenceError`: #389 gives the top level a receiver. A
+    -- *bound but uninitialized* one is a derived constructor before its
+    -- `super()`, and that has a message of its own rather than the
+    -- dead zone's.
     match Env.lookup env thisName with
-    | some r => readCell thisName r
+    | some r => do
+      match (← getCell r).value with
+      | some v => pure v
+      | none =>
+        throwJsError .referenceError
+          ("Must call super constructor in derived class before accessing 'this' " ++
+            "or returning from derived constructor")
     | none => pure undefValue
   | .unary op operand =>
     match op with
@@ -618,6 +789,18 @@ def evalExpr (env : Env) : Expr → EvalM Value
     let o ← evalExpr env object
     let k ← evalExpr env key
     getProp o (← toPropertyKey k)
+  | .privateMember object name => do
+    let o ← evalExpr env object
+    readPrivate env o name
+  | .superMember name => do
+    let (parent, receiver) ← superBase env
+    superRead parent receiver name
+  | .superIndex key => do
+    let (parent, receiver) ← superBase env
+    let k ← evalExpr env key
+    superRead parent receiver (← toPropertyKey k)
+  | .superCall args => evalSuperCall env args
+  | .classExpr cls => evalClass env cls
   | .call callee args =>
     -- A property call passes its base as the receiver, and evaluates
     -- that base once: `o.f()` and `o[k]()` are the only shapes with a
@@ -632,12 +815,27 @@ def evalExpr (env : Env) : Expr → EvalM Value
       let k ← evalExpr env key
       let f ← getProp base (← toPropertyKey k)
       callFunction f base (← evalExprs env args)
+    | .privateMember object name => do
+      let base ← evalExpr env object
+      let f ← readPrivate env base name
+      callFunction f base (← evalExprs env args)
+    -- `super.m()` is a method call on the *current* receiver: the
+    -- function comes off the parent, the `this` it is handed does not.
+    | .superMember name => do
+      let (parent, receiver) ← superBase env
+      let f ← superRead parent receiver name
+      callFunction f receiver (← evalExprs env args)
+    | .superIndex key => do
+      let (parent, receiver) ← superBase env
+      let k ← evalExpr env key
+      let f ← superRead parent receiver (← toPropertyKey k)
+      callFunction f receiver (← evalExprs env args)
     | _ => do
       let f ← evalExpr env callee
       callFunction f undefValue (← evalExprs env args)
   | .new callee args => do
     let f ← evalExpr env callee
-    construct f (← evalExprs env args)
+    construct f f (← evalExprs env args)
   | .objectLit props => do
     let r ← newObject
     evalProps env props r
@@ -678,6 +876,11 @@ def evalExpr (env : Env) : Expr → EvalM Value
       let v ← evalExpr env value
       setProp base (← toPropertyKey k) v
       pure v
+    | .privateMember object name => do
+      let base ← evalExpr env object
+      let v ← evalExpr env value
+      writePrivate env base name v
+      pure v
   | .compoundAssign op target value =>
     -- 13.15.2 in its own order: the target's *reference* is evaluated
     -- once and read, then the right operand, then the operator, then the
@@ -706,6 +909,13 @@ def evalExpr (env : Env) : Expr → EvalM Value
       let result ← applyCoercing op l r
       setProp base k result
       pure result
+    | .privateMember object name => do
+      let base ← evalExpr env object
+      let l ← readPrivate env base name
+      let r ← evalExpr env value
+      let result ← applyCoercing op l r
+      writePrivate env base name result
+      pure result
   | .update op isPrefix target =>
     -- 13.4.2–13.4.5: read the reference, ToNumeric it, step it, write it
     -- back, and answer the new number for the prefix form and the old one
@@ -730,6 +940,50 @@ def evalExpr (env : Env) : Expr → EvalM Value
       let stepped := op.step old
       setProp base k (.prim (.num stepped))
       pure (.prim (.num (if isPrefix then stepped else old)))
+    | .privateMember object name => do
+      let base ← evalExpr env object
+      let old := toNumberPrim (← toPrimitive .number (← readPrivate env base name))
+      let stepped := op.step old
+      writePrivate env base name (.prim (.num stepped))
+      pure (.prim (.num (if isPrefix then stepped else old)))
+  partial_fixpoint
+
+/-- SuperCall (13.3.7.1). The parent is the *active function object's*
+prototype rather than anything lexical, which is what makes
+`Object.setPrototypeOf` on a class change what `super()` reaches; the
+NewTarget passed on is the one this constructor was entered with, so a
+grandchild's `super()` chain still allocates against the grandchild.
+
+Binding the answer to `this` is BindThisValue: the cell is immutable and
+uninitialized, so a second `super()` finds it full and refuses. The
+fields run only after the parent has returned, which is why a parent
+constructor cannot see a child's field. -/
+def evalSuperCall (env : Env) (args : List Expr) : EvalM Value := do
+  match Env.lookup env activeFunctionName with
+  | none => throwJsError .syntaxError "'super' keyword unexpected here"
+  | some fr => do
+    match ← readCell activeFunctionName fr with
+    | .prim _ => throwJsError .syntaxError "'super' keyword unexpected here"
+    | .obj r =>
+      match (← readObj r).proto with
+      | none =>
+        throwJsError .typeError
+          "Super constructor null of anonymous class is not a constructor"
+      | some parent => do
+        let newTarget ←
+          match Env.lookup env newTargetName with
+          | some ntr => readCell newTargetName ntr
+          | none => pure undefValue
+        let argv ← evalExprs env args
+        let result ← construct (.obj parent) newTarget argv
+        match Env.lookup env thisName with
+        | none => throwJsError .syntaxError "'super' keyword unexpected here"
+        | some tr =>
+          match (← getCell tr).value with
+          | some _ => throwJsError .referenceError "Super constructor may only be called once"
+          | none => initCell tr result
+        initializeInstance r result
+        pure result
   partial_fixpoint
 
 /-- ApplyStringOrNumericBinaryOperator: ToPrimitive on each operand with
@@ -777,8 +1031,11 @@ answer is the same, and the receiver a method call then gets is still the
 primitive, which is why `thisNumberValue` accepts both. A bigint base
 still answers `undefined`, that being #392's.
 
-This is inside the fixpoint block for the walk today, and for #389's
-accessors, which will call user code from here. -/
+This is inside the fixpoint block because a getter is user code called
+from here. It is no longer the walk itself, though: `getFrom` is, and
+this is the dispatch onto it, so this one may join a simp set while
+`getFrom` is unfolded a step at a time like every other heap
+recursion. -/
 def getProp (base : Value) (key : String) : EvalM Value :=
   match base with
   | .prim .undef =>
@@ -791,20 +1048,76 @@ def getProp (base : Value) (key : String) : EvalM Value :=
       match arrayIndex? key with
       | some i => pure (((stringIndex? s i).map (fun c => Value.prim (.str c))).getD undefValue)
       | none => pure undefValue
-  | .prim (.num _) => getProp (.obj numberProtoRef) key
-  | .prim (.bool _) => getProp (.obj booleanProtoRef) key
+  | .prim (.num _) => getFrom numberProtoRef key base
+  | .prim (.bool _) => getFrom booleanProtoRef key base
   | .prim _ => pure undefValue
-  | .obj r => do
-    let o ← readObj r
-    match o.kind, key == "length" with
-    | .array len, true => pure (Value.ofNat len)
-    | _, _ =>
+  | .obj r => getFrom r key base
+  partial_fixpoint
+
+/-- OrdinaryGet (10.1.8.1): the prototype walk itself, carrying the
+*receiver* the read started from. An own accessor property's getter is
+called on that receiver rather than on the object the property was found
+on, which is what makes an inherited getter see the instance; a getter-
+less accessor reads `undefined`. A Number or a Boolean base starts the
+walk at its wrapper prototype with the primitive as the receiver, which
+is why `thisNumberValue` accepts one.
+
+The walk is `getFromUp`'s, not this one's: what recurses on the heap
+rather than on syntax may never join a simp set, so the step is a
+definition of its own and `getFrom` is free to be in one. -/
+def getFrom (r : Ref) (key : String) (receiver : Value) : EvalM Value := do
+  let o ← readObj r
+  match o.kind, key == "length" with
+  | .array len, true => pure (Value.ofNat len)
+  | _, _ =>
+    match o.getOwnAccessor key with
+    | some a =>
+      match a.getter with
+      | some g => callFunction g receiver []
+      | none => pure undefValue
+    | none =>
       match o.getOwn key with
       | some v => pure v
       | none =>
         match o.proto with
-        | some p => getProp (.obj p) key
+        | some p => getFromUp p key receiver
         | none => pure undefValue
+  partial_fixpoint
+
+/-- OrdinaryGet's last step, taken on the parent an object named. It is
+the *only* recursive part of the read, which is why it is split out:
+`getFrom` answers an own property without calling itself, so it may join
+a simp set, and a read then costs one `rw [getFromUp]` per prototype link
+it has to climb and nothing at all when it finds what it wants where it
+started. -/
+def getFromUp (parent : Ref) (key : String) (receiver : Value) : EvalM Value :=
+  getFrom parent key receiver
+  partial_fixpoint
+
+/-- OrdinarySet's search (10.1.9.2) for the accessor a write goes
+through: the first own accessor property on the chain, `none` as soon as
+an own *data* property — or an array's own `length` — shadows everything
+above it, and `none` at the top. Writability is not here, having no
+descriptors to read (#389); what is here is the one thing a write cannot
+do without, which is finding an inherited setter.
+
+The step up is `findAccessorUp`'s, for the reason `getFrom` gives. -/
+def findAccessor (r : Ref) (key : String) : EvalM (Option Accessor) := do
+  let o ← readObj r
+  match o.getOwnAccessor key with
+  | some a => pure (some a)
+  | none =>
+    if (o.getOwn key).isSome || (o.isArray && key == "length") then pure none
+    else
+      match o.proto with
+      | some p => findAccessorUp p key
+      | none => pure none
+  partial_fixpoint
+
+/-- `findAccessor`'s prototype step, split out for the reason
+`getFromUp` is. -/
+def findAccessorUp (parent : Ref) (key : String) : EvalM (Option Accessor) :=
+  findAccessor parent key
   partial_fixpoint
 
 /-- Set a property. Strict mode throughout, so a primitive base is a
@@ -813,22 +1126,36 @@ one key whose write is not a property write: assigning to it truncates
 or grows, and assigning to an index at or past the end grows the length
 to hold it, which is the whole of the Array exotic object's
 `[[DefineOwnProperty]]` at this slice's fidelity. Inside the fixpoint
-block because that coercion can reach user code; writability checks and
-prototype-chain setters arrive with descriptors (#389). -/
+block because that coercion can reach user code, and because a setter
+anywhere on the chain is user code too; writability checks arrive with
+descriptors (#389). -/
 def setProp (base : Value) (key : String) (v : Value) : EvalM Unit :=
   match base with
   | .obj r => do
-    let o ← readObj r
-    match o.kind with
-    | .array len =>
-      if key == "length" then setArrayLength r o v
-      else
-        match arrayIndex? key with
-        | some i => writeObj r { o.setOwn key v with kind := .array (max len (i + 1)) }
-        | none => writeObj r (o.setOwn key v)
-    -- A wrapper object takes an ordinary write like any other object: its
-    -- `[[NumberData]]` is a field, not a property, so nothing can reach it.
-    | _ => writeObj r (o.setOwn key v)
+    -- OrdinarySet: an accessor anywhere on the chain answers the write,
+    -- and only a chain with none of them reaches the own-property write
+    -- below. A setter-less accessor is a strict-mode `TypeError`.
+    match ← findAccessor r key with
+    | some a =>
+      match a.setter with
+      | some s => do
+        let _ ← callFunction s base [v]
+        pure ()
+      | none =>
+        throwJsError .typeError
+          s!"Cannot set property {key} of #<Object> which has only a getter"
+    | none => do
+      let o ← readObj r
+      match o.kind with
+      | .array len =>
+        if key == "length" then setArrayLength r o v
+        else
+          match arrayIndex? key with
+          | some i => writeObj r { o.setOwn key v with kind := .array (max len (i + 1)) }
+          | none => writeObj r (o.setOwn key v)
+      -- A wrapper object takes an ordinary write like any other object: its
+      -- `[[NumberData]]` is a field, not a property, so nothing can reach it.
+      | _ => writeObj r (o.setOwn key v)
   | .prim _ =>
     throwJsError .typeError
       s!"Cannot set properties of {formatValue base} (setting '{key}')"
@@ -919,9 +1246,10 @@ def toPropertyKey (v : Value) : EvalM String :=
   partial_fixpoint
 
 /-- Call a function. The callee's environment is its closure's, plus a
-`this` binding for an ordinary function (an arrow pushes none, so `this`
-stays lexical), plus the parameters, and then the body's own
-declarations. A `return` is an abrupt completion `catchReturn` turns back
+`this` binding for an ordinary function or a method (an arrow pushes
+none, so `this` stays lexical), plus its home object when it has one,
+plus the parameters, and then the body's own declarations. A class
+constructor refuses to be called at all: `new` is its only entry. A `return` is an abrupt completion `catchReturn` turns back
 into a value; a body that falls off the end answers `undefined`. -/
 def callFunction (f : Value) (thisArg : Value) (args : List Value) : EvalM Value :=
   match f with
@@ -934,16 +1262,26 @@ def callFunction (f : Value) (thisArg : Value) (args : List Value) : EvalM Value
       -- `Error("x")` is `new Error("x")`: an Error constructor called as
       -- a function constructs (20.5.1.1), because with no `new.target` it
       -- falls back to itself.
-      construct f args
+      construct f f args
     | some (.native n) => callNative n thisArg args
     | some (.closure c) => do
       let withThis ←
         match c.kind with
         | .arrow => pure c.env
-        | .ordinary => do
+        | .ordinary | .method => do
           let tr ← allocCell { mutable := false, value := some thisArg }
           pure ((thisName, tr) :: c.env)
-      let bound ← bindParams withThis c.params args
+        | .classCtor _ _ =>
+          throwJsError .typeError "Class constructor cannot be invoked without 'new'"
+      -- A class element carries its home object, which is what `super.x`
+      -- reads through; nothing else has one.
+      let withHome ←
+        match c.homeObject with
+        | none => pure withThis
+        | some h => do
+          let hr ← allocCell { mutable := false, value := some (.obj h) }
+          pure ((homeName, hr) :: withThis)
+      let bound ← bindParams withHome c.params args
       -- FunctionDeclarationInstantiation 10.2.11 steps 27–28: the `var`s
       -- first, skipping the parameters, so `function f(a) { var a; }`
       -- keeps the argument; then the block's own declarations, whose
@@ -1000,18 +1338,45 @@ def numberArg : List Value → EvalM Float
 
 /-- What `new` does to a native that differs from calling it. Only the two
 wrappers do: `Number(v)` answers the Number and `new Number(v)` a wrapper
-object around it, off one conversion. `Object`, `Array`, and the `Error`
-constructors behave the same either way, so they fall through to
-`callNative`. NewTarget's `prototype` is ignored here as it is there
-(#384). -/
-def constructNative (n : NativeFn) (args : List Value) : EvalM Value :=
+object around it, off one conversion. The `Error` constructors are
+answered by `construct` itself, which allocates the receiver they fill
+in; `Object` and `Array` allocate here.
+
+**Each allocation honours NewTarget**, so `class A extends Array {}`
+gives its instances `A.prototype` and `class N extends Number {}` gives
+them `N.prototype`; the intrinsic prototype is only the fallback. -/
+def constructNative (n : NativeFn) (newTarget : Value) (args : List Value) : EvalM Value :=
   match n with
   | .numberCtor => do
     let x ← numberArg args
-    pure (.obj (← allocObj { proto := some numberProtoRef, kind := .number x }))
+    let proto ← allocFromConstructor newTarget numberProtoRef
+    modifyObj proto (fun o => { o with kind := .number x })
+    pure (.obj proto)
   | .booleanCtor => do
     let b := toBooleanPrim (args.headD undefValue)
-    pure (.obj (← allocObj { proto := some booleanProtoRef, kind := .boolean b }))
+    let proto ← allocFromConstructor newTarget booleanProtoRef
+    modifyObj proto (fun o => { o with kind := .boolean b })
+    pure (.obj proto)
+  | .objectCtor =>
+    -- `new Object(v)` with a non-nullish `v` answers `v` itself, exactly
+    -- as `Object(v)` does, and NewTarget does not enter.
+    match args with
+    | [] => do pure (.obj (← allocFromConstructor newTarget objectProtoRef))
+    | .prim .undef :: _ => do pure (.obj (← allocFromConstructor newTarget objectProtoRef))
+    | .prim .null :: _ => do pure (.obj (← allocFromConstructor newTarget objectProtoRef))
+    | _ => callNative .objectCtor undefValue args
+  | .arrayCtor => do
+    -- ArrayCreate is the native's; only the prototype link is NewTarget's,
+    -- so the array is re-pointed rather than copied into a second one.
+    let arr ← callNative .arrayCtor undefValue args
+    match arr with
+    | .obj a => do
+      match ← getProp newTarget "prototype" with
+      | .obj p => do
+        modifyObj a (fun o => { o with proto := some p })
+        pure arr
+      | .prim _ => pure arr
+    | v => pure v
   | _ => callNative n undefValue args
   partial_fixpoint
 
@@ -1259,17 +1624,27 @@ def callNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Valu
     pure undefValue
   partial_fixpoint
 
-/-- OrdinaryCreateFromConstructor: the instance `new` builds, linked to
-the constructor's `prototype` property when that is an object and to null
-otherwise. Shared by the two `construct` arms, which differ only in what
-runs afterwards. -/
-def allocFromConstructor (f : Value) : EvalM Ref := do
-  let protoVal ← getProp f "prototype"
+/-- GetPrototypeFromConstructor (10.1.13) and OrdinaryObjectCreate on
+its answer: the instance is linked to **NewTarget's** `prototype`
+property when that is an object, and to the intrinsic `fallback`
+otherwise. Reading NewTarget rather than the function being run is what
+makes `class B extends A {}` produce a `B` — `A`'s body allocates, but
+`B` is the NewTarget the allocation sees.
+
+The fallback is the specification's: the intrinsic prototype of the
+constructor doing the work, so `Error.prototype` for an `Error` and
+`Object.prototype` for an ordinary function. That is a change from the
+null this used to link to, and it is observable exactly once, as
+`Test/Tarski/ObjectsTest.lean` pins it: after `F.prototype = 1`, a
+`new F()` is still an `Object`. -/
+def allocFromConstructor (newTarget : Value) (fallback : Ref) : EvalM Ref := do
+  let protoVal ← getProp newTarget "prototype"
   let proto := match protoVal with
     | .obj p => some p
-    | .prim _ => none
+    | .prim _ => some fallback
   allocObj { proto }
   partial_fixpoint
+
 
 /-- Whether `p` is on `o`'s prototype chain, `o` itself not counted —
 `[[HasInstance]]`'s walk. No fuel, as `getProp` has none: a cycle is a
@@ -1281,11 +1656,13 @@ def protoChainHas (o p : Ref) : EvalM Bool := do
   | some q => if q == p then pure true else protoChainHas q p
   partial_fixpoint
 
-/-- `new`. The instance's prototype is the function's `prototype`
-property when that is an object, and null otherwise; a constructor that
-returns an object returns that object, and one that returns anything else
-returns the instance. An arrow has no `[[Construct]]`. -/
-def construct (f : Value) (args : List Value) : EvalM Value :=
+/-- `[[Construct]]`. `newTarget` is the spec's NewTarget: the same
+function for a plain `new f()`, and the *derived* class for a `super()`
+call, which is what gives a subclass's instances the subclass's
+prototype. A constructor that returns an object returns that object, and
+one that returns anything else returns the instance. An arrow has no
+`[[Construct]]`. -/
+def construct (f : Value) (newTarget : Value) (args : List Value) : EvalM Value :=
   match f with
   | .prim _ => throwJsError .typeError "not a constructor"
   | .obj r => do
@@ -1295,23 +1672,252 @@ def construct (f : Value) (args : List Value) : EvalM Value :=
     | some (.native (.errorCtor k)) => do
       -- The native answers the object it was handed, so the
       -- return-object rule below holds trivially and is not written out.
-      let fresh ← allocFromConstructor f
+      let fresh ← allocFromConstructor newTarget k.protoRef
       callNative (.errorCtor k) (.obj fresh) args
     | some (.native n) =>
-      -- `Object`, `Array`, and the two wrappers allocate their own
-      -- instance against the intrinsic prototype, so `new` hands them no
-      -- receiver at all and NewTarget's `prototype` is ignored;
-      -- subclassing is #384's.
-      if n.constructs then constructNative n args
+      if n.constructs then constructNative n newTarget args
       else throwJsError .typeError "not a constructor"
     | some (.closure c) =>
       match c.kind with
-      | .arrow => throwJsError .typeError "not a constructor"
+      | .arrow | .method => throwJsError .typeError "not a constructor"
+      | .classCtor derived implicit => constructClass r c derived implicit newTarget args
       | .ordinary => do
-        let fresh ← allocFromConstructor f
+        let fresh ← allocFromConstructor newTarget objectProtoRef
         match ← callFunction f (.obj fresh) args with
         | .obj result => pure (.obj result)
         | .prim _ => pure (.obj fresh)
+  partial_fixpoint
+
+/-- A class constructor's `[[Construct]]` (15.7.15). The three shapes
+are the specification's three: a **base** class allocates the instance
+against NewTarget, initializes its fields, and runs the body with `this`
+already bound; a **derived** class with a constructor of its own runs the
+body with `this` *unbound* and lets `super()` bind it, which is what
+makes reading `this` before `super()` the dead zone rather than a special
+check; a **derived implicit** constructor — the one a class without a
+constructor gets — forwards its arguments to the parent and initializes
+the fields on whatever came back.
+
+A base constructor may return anything: an object replaces the instance
+and a primitive is ignored. A derived one may not — `undefined` answers
+the bound `this` and any other primitive is a `TypeError` — because the
+instance it would be discarding is the parent's. -/
+def constructClass (r : Ref) (c : Closure) (derived implicit : Bool)
+    (newTarget : Value) (args : List Value) : EvalM Value := do
+  if derived then
+    if implicit then
+      match (← readObj r).proto with
+      | none =>
+        throwJsError .typeError
+          "Super constructor null of anonymous class is not a constructor"
+      | some parent => do
+        let result ← construct (.obj parent) newTarget args
+        initializeInstance r result
+        pure result
+    else do
+      let (returned, bound) ← runConstructor r c none newTarget args
+      match returned with
+      | .obj _ => pure returned
+      | .prim .undef =>
+        match bound with
+        | some t => pure t
+        | none =>
+          throwJsError .referenceError
+            ("Must call super constructor in derived class before accessing 'this' " ++
+              "or returning from derived constructor")
+      | .prim _ =>
+        throwJsError .typeError "Derived constructors may only return object or undefined"
+  else do
+    let fresh ← allocFromConstructor newTarget objectProtoRef
+    initializeInstance r (.obj fresh)
+    if implicit then pure (.obj fresh)
+    else
+      match ← runConstructor r c (some (.obj fresh)) newTarget args with
+      | (.obj result, _) => pure (.obj result)
+      | (.prim _, _) => pure (.obj fresh)
+  partial_fixpoint
+
+/-- A class constructor's body, run in a scope carrying the four
+reserved bindings. The `this` cell is **immutable and possibly
+uninitialized**: a base constructor gets it filled in, a derived one
+gets it empty and `super()` initializes it, so the dead zone the
+evaluator already has is the mechanism.
+
+Both the body's answer and the `this` cell's final contents come out,
+because a derived constructor's answer depends on the second: the cell
+is read once, after the body, since `super()` may have run anywhere
+inside it. -/
+def runConstructor (r : Ref) (c : Closure) (thisValue : Option Value)
+    (newTarget : Value) (args : List Value) : EvalM (Value × Option Value) := do
+  let tr ← allocCell { mutable := false, value := thisValue }
+  let withThis := (thisName, tr) :: c.env
+  let withHome ←
+    match c.homeObject with
+    | none => pure withThis
+    | some h => do
+      let hr ← allocCell { mutable := false, value := some (.obj h) }
+      pure ((homeName, hr) :: withThis)
+  let ntr ← allocCell { mutable := false, value := some newTarget }
+  let afr ← allocCell { mutable := false, value := some (.obj r) }
+  let env := (activeFunctionName, afr) :: (newTargetName, ntr) :: withHome
+  let bound ← bindParams env c.params args
+  let hoisted ← hoistVars bound c.params (varNames c.body)
+  let inner ← instantiateBlock hoisted c.body
+  let returned ←
+    match ← attempt (evalStmts inner c.body none) with
+    | .ok _ => pure undefValue
+    | .error (.«return» v) => pure v
+    | .error e => throwCompletion e
+  pure (returned, (← getCell tr).value)
+  partial_fixpoint
+
+/-- InitializeInstanceElements: the fields the constructor object
+carries, put on the target. The class's own scope and home object come
+off the closure, so a field initializer sees the class's private names
+and may say `super.x`. -/
+def initializeInstance (r : Ref) (target : Value) : EvalM Unit := do
+  match (← readObj r).callable with
+  | some (.closure c) => initFields c.env c.homeObject target c.fields
+  | _ => pure ()
+  partial_fixpoint
+
+/-- DefineField over a list, in source order, with `this` and the home
+object bound once for the whole run. A field is a **definition**: a
+public one goes through `Obj.defineData`, so an inherited setter of the
+same name is not called, and a private one is added to the object's
+private elements, where a second initialization of one name is a
+`TypeError`. -/
+def initFields (env : Env) (home : Option Ref) (target : Value)
+    (fields : List ClassField) : EvalM Unit := do
+  match fields with
+  | [] => pure ()
+  | _ => do
+    let tr ← allocCell { mutable := false, value := some target }
+    let withThis := (thisName, tr) :: env
+    let inner ←
+      match home with
+      | none => pure withThis
+      | some h => do
+        let hr ← allocCell { mutable := false, value := some (.obj h) }
+        pure ((homeName, hr) :: withThis)
+    initFieldList inner target fields
+  partial_fixpoint
+
+/-- `initFields`'s loop, once its scope is built. -/
+def initFieldList (env : Env) (target : Value) : List ClassField → EvalM Unit
+  | [] => pure ()
+  | f :: rest => do
+    let v ←
+      match f.value with
+      | some e => evalExpr env e
+      | none => pure undefValue
+    match target, f.key with
+    | .obj t, .«public» name => modifyObj t (fun o => o.defineData name v)
+    | .obj t, .«private» name => do
+      let k ← privateName env name
+      addPrivate t name k v
+    -- The target is always the object being built, so this arm is
+    -- unreachable; `Value` is not a subtype.
+    | .prim _, _ => pure ()
+    initFieldList env target rest
+  partial_fixpoint
+
+/-- ClassDefinitionEvaluation (15.7.14), in the specification's order.
+
+The class's own name is an immutable binding in a scope of its own, so
+the body can name the class and no outer binding is shadowed for anyone
+else; the private names are cells in that same scope. The heritage is
+evaluated there, which is why `class A extends A {}` sees its own dead
+zone.
+
+`extends` gives two different parents: the *prototype* parent, read off
+the superclass's `prototype` property, and the *constructor* parent, the
+superclass itself — which is what makes a static method inherited. A
+class with no heritage gets `Object.prototype` and no constructor
+parent; `extends null` gets neither, so `new` on it can only succeed
+through the return-override trick. -/
+def evalClass (env : Env) (d : ClassDef) : EvalM Value := do
+  let classEnv ←
+    match d.name with
+    | none => pure env
+    | some n => do
+      let r ← allocCell { mutable := false }
+      pure ((n, r) :: env)
+  let inner ← bindPrivateNames classEnv d.privateNames
+  let heritage : Option Ref × Option Ref × Bool ←
+    match d.superClass with
+    | none => pure (some objectProtoRef, none, false)
+    | some e => do
+      let v ← evalExpr inner e
+      match v with
+      | .prim .null => pure (none, none, true)
+      | _ =>
+        if ← isConstructor v then
+          let ctorParent := match v with
+            | .obj r => some r
+            | .prim _ => none
+          match ← getProp v "prototype" with
+          | .obj p => pure (some p, ctorParent, true)
+          | .prim .null => pure (none, ctorParent, true)
+          | pv =>
+            throwJsError .typeError
+              s!"Class extends value does not have valid prototype property {formatValue pv}"
+        else
+          throwJsError .typeError
+            s!"Class extends value {formatValue v} is not a constructor or null"
+  let (protoParent, ctorParent, derived) := heritage
+  let proto ← allocObj { proto := protoParent }
+  let (params, body, implicit) :=
+    match d.constructor? with
+    | some (ps, b) => (ps, b, false)
+    | none => (([] : List String), ([] : List Stmt), true)
+  let ctor : Closure :=
+    { params, body, env := inner, kind := .classCtor derived implicit,
+      homeObject := some proto, fields := d.instanceFields }
+  let F ← allocObj
+    { proto := ctorParent, callable := some (.closure ctor),
+      properties := [("prototype", .obj proto)] }
+  modifyObj proto (fun o => o.defineData "constructor" (.obj F))
+  defineMethods inner F proto d.elements
+  match d.name with
+  | none => pure ()
+  | some n =>
+    match Env.lookup inner n with
+    | some r => initCell r (.obj F)
+    | none => pure ()
+  initFields inner (some F) (.obj F) d.staticFields
+  pure (.obj F)
+  partial_fixpoint
+
+/-- MakeSuperPropertyReference's first two steps (13.3.7.2): the object
+the read will go through — the home object's *prototype* — and the
+current `this`, which is the receiver a getter found there will see.
+
+**Both are taken before the property expression runs.** The
+specification reads the `this` binding at step 2 and evaluates the key
+at step 3, so `super[super()]` inside a derived constructor is the dead
+zone's `ReferenceError` and not a read through whatever that `super()`
+would have bound. `super` where no home object is bound is a
+`SyntaxError` — an early error in the specification, which tsc leaves to
+its checker and this epic reports at the point of use. -/
+def superBase (env : Env) : EvalM (Option Ref × Value) := do
+  match Env.lookup env homeName with
+  | none => throwJsError .syntaxError "'super' keyword unexpected here"
+  | some hr => do
+    let home ← readCell homeName hr
+    let receiver ← evalExpr env .this
+    match home with
+    | .obj h => pure ((← readObj h).proto, receiver)
+    | .prim _ => pure (none, receiver)
+  partial_fixpoint
+
+/-- The read itself, once `superBase` has the two halves of the
+reference. A home object with no prototype reads through null, which is
+`getProp`'s own `TypeError` rather than a message of its own. -/
+def superRead (parent : Option Ref) (receiver : Value) (key : String) : EvalM Value :=
+  match parent with
+  | some p => getFrom p key receiver
+  | none => getProp (.prim .null) key
   partial_fixpoint
 
 /-- Evaluate a statement against the running completion value, and
@@ -1390,6 +1996,14 @@ def evalStmt (env : Env) : Stmt → Option Value → EvalM (Option Value)
     evalLabeled env [] (.labeled l body) acc
   | .breakStmt label, acc => throwCompletion (.«break» label acc)
   | .continueStmt label, acc => throwCompletion (.«continue» label acc)
+  | .classDecl name cls, acc => do
+    -- The cell instantiation allocated ends its dead zone here; the
+    -- statement itself completes empty, as a function declaration does.
+    let v ← evalClass env cls
+    match Env.lookup env name with
+    | some r => initCell r v
+    | none => pure ()
+    pure acc
   partial_fixpoint
 
 /-- A statement list with its own scope: instantiated, then run from the

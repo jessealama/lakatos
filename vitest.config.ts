@@ -77,14 +77,20 @@ export default defineConfig({
         // Ratcheted 2026-09-14: the bridge grew the `for`, `switch`, and
         // empty statements and the update operators, and the runner grew
         // `--slice-file`, every arm of all of them reached by a test.
+        // Ratcheted again 2026-09-14: the bridge grew the class nodes —
+        // the member kinds, the two key forms, `super`, a private name,
+        // and every TypeScript-only form each refuses in place — with an
+        // arm reached by a test for all of them. The one ignore added
+        // with them is a dot access's name, which tsc types as an
+        // identifier or a private name and nothing else.
         //
         // Measure this from a path with no dot-directory in it. The include
         // globs above do not match through one, and a run from, say, a
         // worktree under .claude/ silently reports every loaded file instead
         // — different denominator, different numbers.
         autoUpdate: true,
-        statements: 99.63,
-        branches: 98.81,
+        statements: 99.64,
+        branches: 98.84,
         functions: 100,
         lines: 99.72,
       },

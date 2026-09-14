@@ -128,6 +128,44 @@ private def wholeSlice : Program :=
 
 #guard decode wholeSliceJson == toString (repr wholeSlice)
 
+/-! ## Classes
+
+A class body's members in one document, beside the two shapes the class
+nodes take: a declaration with a heritage clause whose constructor calls
+`super` and whose method reads through it, and a named class
+expression. -/
+
+private def classSliceJson : String := script <|
+  r#"{"type":"ClassDeclaration","id":{"type":"Identifier","name":"A"},"superClass":null,"body":{"type":"ClassBody","body":[{"type":"PropertyDefinition","key":{"type":"Identifier","name":"x"},"value":{"type":"Literal","value":1,"raw":"1"},"computed":false,"static":false},{"type":"PropertyDefinition","key":{"type":"Identifier","name":"y"},"value":null,"computed":false,"static":false},{"type":"PropertyDefinition","key":{"type":"PrivateIdentifier","name":"v"},"value":{"type":"Literal","value":2,"raw":"2"},"computed":false,"static":false},{"type":"PropertyDefinition","key":{"type":"Identifier","name":"s"},"value":{"type":"Literal","value":3,"raw":"3"},"computed":false,"static":true},{"type":"MethodDefinition","key":{"type":"Identifier","name":"constructor"},"value":{"type":"FunctionExpression","id":null,"params":[{"type":"Identifier","name":"v"}],"body":{"type":"BlockStatement","body":[{"type":"ExpressionStatement","expression":{"type":"AssignmentExpression","operator":"=","left":{"type":"MemberExpression","object":{"type":"ThisExpression"},"property":{"type":"PrivateIdentifier","name":"v"},"computed":false},"right":{"type":"Identifier","name":"v"}}}]},"async":false,"generator":false},"kind":"constructor","computed":false,"static":false},{"type":"MethodDefinition","key":{"type":"Identifier","name":"g"},"value":{"type":"FunctionExpression","id":null,"params":[],"body":{"type":"BlockStatement","body":[{"type":"ReturnStatement","argument":{"type":"MemberExpression","object":{"type":"ThisExpression"},"property":{"type":"PrivateIdentifier","name":"v"},"computed":false}}]},"async":false,"generator":false},"kind":"get","computed":false,"static":false},{"type":"MethodDefinition","key":{"type":"Identifier","name":"g"},"value":{"type":"FunctionExpression","id":null,"params":[{"type":"Identifier","name":"w"}],"body":{"type":"BlockStatement","body":[{"type":"ExpressionStatement","expression":{"type":"AssignmentExpression","operator":"=","left":{"type":"MemberExpression","object":{"type":"ThisExpression"},"property":{"type":"PrivateIdentifier","name":"v"},"computed":false},"right":{"type":"Identifier","name":"w"}}}]},"async":false,"generator":false},"kind":"set","computed":false,"static":false},{"type":"MethodDefinition","key":{"type":"Identifier","name":"m"},"value":{"type":"FunctionExpression","id":null,"params":[],"body":{"type":"BlockStatement","body":[{"type":"ReturnStatement","argument":{"type":"MemberExpression","object":{"type":"ThisExpression"},"property":{"type":"PrivateIdentifier","name":"v"},"computed":false}}]},"async":false,"generator":false},"kind":"method","computed":false,"static":false},{"type":"MethodDefinition","key":{"type":"Identifier","name":"sm"},"value":{"type":"FunctionExpression","id":null,"params":[],"body":{"type":"BlockStatement","body":[{"type":"ReturnStatement","argument":{"type":"Literal","value":4,"raw":"4"}}]},"async":false,"generator":false},"kind":"method","computed":false,"static":true}]}},{"type":"ClassDeclaration","id":{"type":"Identifier","name":"B"},"superClass":{"type":"Identifier","name":"A"},"body":{"type":"ClassBody","body":[{"type":"MethodDefinition","key":{"type":"Identifier","name":"constructor"},"value":{"type":"FunctionExpression","id":null,"params":[{"type":"Identifier","name":"v"}],"body":{"type":"BlockStatement","body":[{"type":"ExpressionStatement","expression":{"type":"CallExpression","callee":{"type":"Super"},"arguments":[{"type":"Identifier","name":"v"}]}}]},"async":false,"generator":false},"kind":"constructor","computed":false,"static":false},{"type":"MethodDefinition","key":{"type":"Identifier","name":"m"},"value":{"type":"FunctionExpression","id":null,"params":[],"body":{"type":"BlockStatement","body":[{"type":"ReturnStatement","argument":{"type":"CallExpression","callee":{"type":"MemberExpression","object":{"type":"Super"},"property":{"type":"Identifier","name":"m"},"computed":false},"arguments":[]}}]},"async":false,"generator":false},"kind":"method","computed":false,"static":false}]}},{"type":"VariableDeclaration","kind":"const","declarations":[{"type":"VariableDeclarator","id":{"type":"Identifier","name":"C"},"init":{"type":"ClassExpression","id":{"type":"Identifier","name":"N"},"superClass":null,"body":{"type":"ClassBody","body":[]}}}]}"#
+
+/-- The program `classSliceJson` decodes to. -/
+private def classSlice : Program :=
+  [ .classDecl "A"
+      { name := some "A", superClass := none,
+        elements :=
+          [ .field false (.«public» "x") (some (.numLit 1.0)),
+            .field false (.«public» "y") none,
+            .field false (.«private» "v") (some (.numLit 2.0)),
+            .field true (.«public» "s") (some (.numLit 3.0)),
+            .ctor ["v"] [.exprStmt (.assign (.privateMember .this "v") (.ident "v"))],
+            .method .getter false "g" [] [.returnStmt (some (.privateMember .this "v"))],
+            .method .setter false "g" ["w"]
+              [.exprStmt (.assign (.privateMember .this "v") (.ident "w"))],
+            .method .method false "m" [] [.returnStmt (some (.privateMember .this "v"))],
+            .method .method true "sm" [] [.returnStmt (some (.numLit 4.0))] ] },
+    .classDecl "B"
+      { name := some "B", superClass := some (.ident "A"),
+        elements :=
+          [ .ctor ["v"] [.exprStmt (.superCall [.ident "v"])],
+            .method .method false "m" []
+              [.returnStmt (some (.call (.superMember "m") []))] ] },
+    .varDecl .«const»
+      [{ name := "C",
+         init := some (.classExpr { name := some "N", superClass := none, elements := [] }) }] ]
+
+#guard decode classSliceJson == toString (repr classSlice)
+
+
 -- A `let` declarator with no initializer binds `undefined`.
 #guard decode (script
     r#"{"type":"VariableDeclaration","kind":"let","declarations":[
@@ -478,13 +516,121 @@ private def objectSlice : Program :=
           {"type":"Unsupported","kind":"ShorthandPropertyAssignment"}]}}"#)
   == "unsupported: ShorthandPropertyAssignment"
 
--- A private name is a property the slice does not read.
+-- A private name is a name the class's scope resolves, not a property
+-- key, so it decodes to a member form of its own.
 #guard decode (script
     r#"{"type":"ExpressionStatement","expression":{
         "type":"MemberExpression","computed":false,
         "object":{"type":"Identifier","name":"o"},
-        "property":{"type":"Unsupported","kind":"PrivateIdentifier"}}}"#)
-  == "unsupported: PrivateIdentifier"
+        "property":{"type":"PrivateIdentifier","name":"x"}}}"#)
+  == toString (repr [Stmt.exprStmt (.privateMember (.ident "o") "x")])
+
+-- `#x in o` leaves the slice twice over: `in` is not an operator here,
+-- and the bridge already refused the bare `#x` in place, since a private
+-- name is not an expression.
+#guard decode (script
+    r#"{"type":"ExpressionStatement","expression":{
+        "type":"BinaryExpression","operator":"in",
+        "left":{"type":"Unsupported","kind":"PrivateIdentifier"},
+        "right":{"type":"Identifier","name":"o"}}}"#)
+  == "unsupported: BinaryExpression in"
+
+-- `new.target` likewise; #393 owns the syntax.
+#guard decode (script
+    r#"{"type":"ExpressionStatement","expression":{
+        "type":"Unsupported","kind":"MetaProperty"}}"#)
+  == "unsupported: MetaProperty"
+
+/-! ## What a class may spell and this slice may not -/
+
+/-- A class declaration around one member, for the refusals below. -/
+private def classWith (member : String) : String :=
+  script <|
+    r#"{"type":"ClassDeclaration","id":{"type":"Identifier","name":"A"},
+        "superClass":null,
+        "body":{"type":"ClassBody","body":["# ++ member ++ r#"]}}"#
+
+/-- A `FunctionExpression` value for a member, with the two flags set as
+given. -/
+private def methodValue (isAsync isGenerator : String) : String :=
+  r#"{"type":"FunctionExpression","id":null,"params":[],
+      "body":{"type":"BlockStatement","body":[]},
+      "async":"# ++ isAsync ++ r#","generator":"# ++ isGenerator ++ "}"
+
+-- A private method is a non-writable element rather than a property, so
+-- it has semantics of its own and is refused by name.
+#guard decode (classWith
+    (r#"{"type":"MethodDefinition","kind":"method","computed":false,"static":false,
+         "key":{"type":"PrivateIdentifier","name":"m"},
+         "value":"# ++ methodValue "false" "false" ++ "}"))
+  == "unsupported: MethodDefinition private"
+
+#guard decode (classWith
+    (r#"{"type":"MethodDefinition","kind":"method","computed":false,"static":false,
+         "key":{"type":"Identifier","name":"m"},
+         "value":"# ++ methodValue "true" "false" ++ "}"))
+  == "unsupported: MethodDefinition async"
+
+#guard decode (classWith
+    (r#"{"type":"MethodDefinition","kind":"method","computed":false,"static":false,
+         "key":{"type":"Identifier","name":"m"},
+         "value":"# ++ methodValue "false" "true" ++ "}"))
+  == "unsupported: MethodDefinition generator"
+
+-- A numeric key would need ToPropertyKey at parse time, as an object
+-- literal's would.
+#guard decode (classWith
+    (r#"{"type":"MethodDefinition","kind":"method","computed":false,"static":false,
+         "key":{"type":"Literal","value":1,"raw":"1"},
+         "value":"# ++ methodValue "false" "false" ++ "}"))
+  == "unsupported: MethodDefinition numeric key"
+
+#guard decode (classWith
+    r#"{"type":"PropertyDefinition","computed":false,"static":false,
+        "key":{"type":"Literal","value":1,"raw":"1"},"value":null}"#)
+  == "unsupported: PropertyDefinition numeric key"
+
+-- A static block is a scope with a `this` of its own; a computed key and
+-- an `accessor` field each stand in the member's place.
+#guard decode (classWith r#"{"type":"Unsupported","kind":"ClassStaticBlockDeclaration"}"#)
+  == "unsupported: ClassStaticBlockDeclaration"
+
+#guard decode (classWith r#"{"type":"Unsupported","kind":"ComputedPropertyName"}"#)
+  == "unsupported: ComputedPropertyName"
+
+#guard decode (classWith r#"{"type":"Unsupported","kind":"AccessorKeyword"}"#)
+  == "unsupported: AccessorKeyword"
+
+-- `super.x = v` writes to the receiver rather than through the home
+-- object, which is a target form of its own.
+#guard decode (script
+    r#"{"type":"ExpressionStatement","expression":{
+        "type":"AssignmentExpression","operator":"=",
+        "left":{"type":"MemberExpression","computed":false,
+                "object":{"type":"Super"},
+                "property":{"type":"Identifier","name":"x"}},
+        "right":{"type":"Literal","value":1,"raw":"1"}}}"#)
+  == "unsupported: AssignmentExpression super target"
+
+-- A member whose `value` is not a function, a body that is not a
+-- `ClassBody`, and a `Super` where no rule admits one are all producer
+-- errors rather than refusals.
+#guard decode (classWith
+    r#"{"type":"MethodDefinition","kind":"method","computed":false,"static":false,
+        "key":{"type":"Identifier","name":"m"},
+        "value":{"type":"Identifier","name":"f"}}"#)
+  == "malformed: MethodDefinition value is a Identifier"
+
+#guard decode (script
+    r#"{"type":"ClassDeclaration","id":{"type":"Identifier","name":"A"},
+        "superClass":null,"body":{"type":"BlockStatement","body":[]}}"#)
+  == "malformed: class body is a BlockStatement"
+
+#guard decode (script
+    r#"{"type":"ExpressionStatement","expression":{
+        "type":"CallExpression","callee":{"type":"Identifier","name":"f"},
+        "arguments":[{"type":"Super"}]}}"#)
+  == "malformed: Super outside a call or member access"
 
 -- A spread argument is refused where it stands, not as the whole call.
 #guard decode (script

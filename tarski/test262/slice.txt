@@ -51,3 +51,7 @@ test/built-ins/Boolean
 # `Number` members are (#388).
 test/built-ins/parseFloat
 test/built-ins/parseInt
+
+# The classes (#384).
+test/language/statements/class
+test/language/expressions/class

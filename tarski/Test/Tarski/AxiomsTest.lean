@@ -336,6 +336,99 @@ private def onlyStandard (n : Name) : CoreM Bool := do
 #guard_msgs in
 #eval onlyStandard ``Tarski.radix?
 
+-- The accessor split and everything a class is made of.
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.getFrom
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.findAccessor
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.getFromUp
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.findAccessorUp
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.isConstructor
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.evalClass
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.defineMethods
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.initializeInstance
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.initFields
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.initFieldList
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.constructClass
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.runConstructor
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.evalSuperCall
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.superBase
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.superRead
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.privateName
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.readPrivate
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.writePrivate
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.addPrivate
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.bindPrivateNames
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.Obj.defineData
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.Obj.defineAccessor
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.ClassDef.privateNames
+
 -- And the library definitions the `Math` members and `**` delegate to:
 -- `tsPow` is built from `Float.Model`, never from an `extern`, which is
 -- what makes the kernel able to reduce it.
@@ -438,3 +531,13 @@ private def onlyStandard (n : Name) : CoreM Bool := do
 /-- info: true -/
 #guard_msgs in
 #eval onlyStandard ``Js.Number.FloatOps.integerOrInfinity?
+
+-- And the two prototype steps, which took `getProp`'s place on the
+-- rw-only list when the walk was split from the dispatch.
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.getFromUp.eq_def
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.findAccessorUp.eq_def
