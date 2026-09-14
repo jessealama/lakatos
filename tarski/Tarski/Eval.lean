@@ -416,7 +416,7 @@ pushed by a call to a function that has one. -/
 def homeName : String := "%home"
 
 /-- NewTarget's binding, spelled as the meta-property itself so that
-#393's `MetaProperty` node reads the cell as it stands. -/
+#486's `MetaProperty` node reads the cell as it stands. -/
 def newTargetName : String := "new.target"
 
 /-- The running class constructor's own function object, which is what

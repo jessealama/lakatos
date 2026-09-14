@@ -15,7 +15,7 @@ enclosing function or script and initialized to `undefined` there, with
 no dead zone. `throw` and `try`, labels, `break`/`continue`, `for`,
 `switch`, and `do`/`while` — the three remaining breakable statements —
 are here, and so are parameter defaults and `arguments`; `for`-`in` and
-`new.target` are #485's, `for`-`of` and binding patterns #394's.
+`new.target` are #486's, `for`-`of` and binding patterns #394's.
 
 **Classes are here**: declarations and expressions, a constructor,
 public and private instance fields, methods, getters and setters,

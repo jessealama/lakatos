@@ -95,6 +95,21 @@ private def wholeSliceJson : String := script <|
        {"type":"VariableDeclarator","id":{"type":"Identifier","name":"hoisted"},
         "init":{"type":"UnaryExpression","operator":"void","prefix":true,
                 "argument":{"type":"Literal","value":0,"raw":"0"}}}]},
+     {"type":"DoWhileStatement",
+      "body":{"type":"BlockStatement","body":[
+        {"type":"ExpressionStatement","expression":{
+          "type":"AssignmentExpression","operator":"+=",
+          "left":{"type":"Identifier","name":"n"},
+          "right":{"type":"Literal","value":1,"raw":"1"}}}]},
+      "test":{"type":"Literal","value":false,"raw":"false"}},
+     {"type":"FunctionDeclaration","id":{"type":"Identifier","name":"withDefault"},
+      "params":[{"type":"Identifier","name":"a"},
+                {"type":"AssignmentPattern",
+                 "left":{"type":"Identifier","name":"b"},
+                 "right":{"type":"Literal","value":1,"raw":"1"}}],
+      "body":{"type":"BlockStatement","body":[
+        {"type":"ReturnStatement","argument":{"type":"Identifier","name":"b"}}]},
+      "async":false,"generator":false},
      {"type":"ExpressionStatement","expression":{"type":"Identifier","name":"undefined"}}"#
 
 /-- The same program as an AST term. `undefined` is an ESTree
@@ -124,6 +139,13 @@ private def wholeSlice : Program :=
             [ { test := some (.numLit 0.0), body := [.breakStmt none] },
               { test := none, body := [.empty] } ] ]),
     .varDecl .«var» [{ name := "hoisted", init := some (.unary .void (.numLit 0.0)) }],
+    -- `do`/`while` names its body first, as the source does.
+    .doWhileStmt (.block [.exprStmt (.compoundAssign .add (.ident "n") (.numLit 1.0))])
+      (.boolLit false),
+    -- An `AssignmentPattern` parameter is a `Param` with a default; a
+    -- plain `Identifier` is one without.
+    .funcDecl "withDefault" ["a", { name := "b", default := some (.numLit 1.0) }]
+      [.returnStmt (some (.ident "b"))],
     .exprStmt .undefLit ]
 
 #guard decode wholeSliceJson == toString (repr wholeSlice)
@@ -484,13 +506,29 @@ private def objectSlice : Program :=
         "body":{"type":"BlockStatement","body":[]},"async":false,"generator":true}}"#)
   == "unsupported: FunctionExpression generator"
 
--- A default or rest parameter arrives as the `Parameter` it is, so the
--- function survives and only the parameter is refused.
+-- A rest parameter arrives as the `Parameter` it is, so the function
+-- survives and only the parameter is refused. A *default* is in the
+-- slice now and arrives as an `AssignmentPattern`; this kind therefore
+-- means a rest parameter, which is #394's.
 #guard decode (script
     r#"{"type":"FunctionDeclaration","id":{"type":"Identifier","name":"f"},
         "params":[{"type":"Unsupported","kind":"Parameter"}],
         "body":{"type":"BlockStatement","body":[]},"async":false,"generator":false}"#)
   == "unsupported: Parameter"
+
+-- An `AssignmentPattern` whose `left` is not an identifier is a binding
+-- pattern with a default, which the bridge refuses whole; one reaching
+-- the decoder is a broken producer, not a program outside the slice.
+#guard decode (script
+    r#"{"type":"FunctionDeclaration","id":{"type":"Identifier","name":"f"},
+        "params":[{"type":"AssignmentPattern",
+                   "left":{"type":"MemberExpression",
+                           "object":{"type":"Identifier","name":"o"},
+                           "property":{"type":"Identifier","name":"x"},
+                           "computed":false},
+                   "right":{"type":"Literal","value":1,"raw":"1"}}],
+        "body":{"type":"BlockStatement","body":[]},"async":false,"generator":false}"#)
+  == "malformed: AssignmentPattern left is a MemberExpression"
 
 -- A destructured parameter names its pattern.
 #guard decode (script
@@ -535,7 +573,7 @@ private def objectSlice : Program :=
         "right":{"type":"Identifier","name":"o"}}}"#)
   == "unsupported: BinaryExpression in"
 
--- `new.target` likewise; #393 owns the syntax.
+-- `new.target` likewise; #486 owns the syntax.
 #guard decode (script
     r#"{"type":"ExpressionStatement","expression":{
         "type":"Unsupported","kind":"MetaProperty"}}"#)

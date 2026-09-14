@@ -48,6 +48,44 @@ private def onlyStandard (n : Name) : CoreM Bool := do
 
 /-- info: true -/
 #guard_msgs in
+#eval onlyStandard ``Tarski.evalDoWhile
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.evalDoLoop
+
+-- FunctionDeclarationInstantiation and its four helpers: a call's scope
+-- is built out of definitions like everything else.
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.instantiateFunction
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.initParams
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.allocParams
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.hoistVarsFrom
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.makeArguments
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.mentionsArguments
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.expectedArgumentCount
+
+/-- info: true -/
+#guard_msgs in
 #eval onlyStandard ``Tarski.evalBlock
 
 /-- info: true -/
@@ -474,6 +512,12 @@ private def onlyStandard (n : Name) : CoreM Bool := do
 /-- info: true -/
 #guard_msgs in
 #eval onlyStandard ``Tarski.evalFor.eq_def
+
+-- `evalDoWhile` is the fifth, `evalWhile`'s other twin: the body ahead
+-- of the test, so its equation is a different one.
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.evalDoWhile.eq_def
 
 -- The library definitions the evaluator now dispatches to: the formatter,
 -- the parser, and the two integer conversions. They are ordinary
