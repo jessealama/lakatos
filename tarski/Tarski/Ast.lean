@@ -14,8 +14,17 @@ function or script and initialized to `undefined` there, with no dead
 zone. `throw` and `try`, labels, `break`/`continue`, `for`, and `switch`
 — the two remaining breakable statements — are here; `do`/`while`,
 `for`-`in`, `arguments`, and parameter defaults are #393's, `for`-`of`
-and binding patterns #394's, classes #384's. Later slices add
-constructors; they do not reshape the ones here. -/
+and binding patterns #394's.
+
+**Classes are here**: declarations and expressions, a constructor,
+public and private instance fields, methods, getters and setters,
+`static` members, `extends`, and `super`. What a class may spell and this
+AST may not is refused by name in `Tarski/Decode.lean` — a computed key,
+a private method or accessor, a static block, an `accessor` field, a
+decorator, `new.target`, `#x in o`, and `super.x = v` — because each is
+real syntax with semantics of its own rather than a shorthand for
+something here. Later slices add constructors; they do not reshape the
+ones here. -/
 
 namespace Tarski
 
@@ -117,6 +126,30 @@ inductive LogicalOp where
   | or
 deriving Repr, DecidableEq, Inhabited
 
+/-- What a class element's key is written with. A private name is not a
+property key at all: it is resolved through the scope chain like an
+identifier, and the element it names lives in a list of its own on the
+object. -/
+inductive ClassKey where
+  /-- An `Identifier` or a string `Literal` key: an ordinary property. -/
+  | «public» (name : String)
+  /-- A `PrivateIdentifier` key; `name` is ESTree's, without the `#`. -/
+  | «private» (name : String)
+deriving Repr, DecidableEq, Inhabited
+
+/-- Which of the three things a `MethodDefinition` defines. A `method`
+is a data property on the home object; a `getter` and a `setter` are the
+two halves of an accessor property, and two elements of one name make one
+property with both. -/
+inductive MethodKind where
+  /-- ESTree `MethodDefinition` with `kind: "method"`. -/
+  | method
+  /-- ESTree `MethodDefinition` with `kind: "get"`. -/
+  | getter
+  /-- ESTree `MethodDefinition` with `kind: "set"`. -/
+  | setter
+deriving Repr, DecidableEq, Inhabited
+
 /-- Whether an operator coerces its operands before comparing them. The
 two strict-equality tests do not: they answer on the values themselves,
 so an object operand is not run through ToPrimitive. Neither does
@@ -159,6 +192,18 @@ inductive Expr where
   /-- ESTree `MemberExpression` with `computed: true`. The key is an
   expression, converted with ToPropertyKey when the access runs. -/
   | index (object : Expr) (key : Expr)
+  /-- ESTree `MemberExpression` whose `property` is a `PrivateIdentifier`
+  and whose `computed` is false; `name` is ESTree's, without the `#`. -/
+  | privateMember (object : Expr) (name : String)
+  /-- ESTree `MemberExpression` whose `object` is `Super`, with
+  `computed: false`. The property is read off the home object's
+  prototype with the current `this` as the receiver. -/
+  | superMember (name : String)
+  /-- ESTree `MemberExpression` whose `object` is `Super`, with
+  `computed: true`. -/
+  | superIndex (key : Expr)
+  /-- ESTree `CallExpression` whose `callee` is `Super`. -/
+  | superCall (args : List Expr)
   /-- ESTree `CallExpression`. A `member` or `index` callee passes its
   object as the receiver; any other callee passes `undefined`. -/
   | call (callee : Expr) (args : List Expr)
@@ -193,6 +238,8 @@ inductive Expr where
   prefix form answers the new number, the postfix form the old one, and
   both coerce the target's value with ToNumber before stepping it. -/
   | update (op : UpdateOp) (isPrefix : Bool) (target : Target)
+  /-- ESTree `ClassExpression`. -/
+  | classExpr (cls : ClassDef)
 
 /-- An arrow function's body: `expression: true` in ESTree means the
 concise form, whose value is the expression's. -/
@@ -212,6 +259,10 @@ inductive Target where
   | member (object : Expr) (name : String)
   /-- ESTree `MemberExpression` with `computed: true`. -/
   | index (object : Expr) (key : Expr)
+  /-- ESTree `MemberExpression` with a `PrivateIdentifier` property. A
+  write to a private element is not a property write: the element must
+  already be on the object, or the write is a `TypeError`. -/
+  | privateMember (object : Expr) (name : String)
 
 /-- Statements. -/
 inductive Stmt where
@@ -264,6 +315,11 @@ inductive Stmt where
   | breakStmt (label : Option String)
   /-- ESTree `ContinueStatement`; `none` is the unlabelled form. -/
   | continueStmt (label : Option String)
+  /-- ESTree `ClassDeclaration`. Hoisted like a `let`: the cell exists
+  from the block's first statement and is in its temporal dead zone until
+  the declaration runs, so `new A(); class A {}` is a `ReferenceError`.
+  The binding is writable, unlike the class's own inner name. -/
+  | classDecl (name : String) (cls : ClassDef)
 
 /-- ESTree `ForStatement.init`: a declaration, an expression evaluated
 for its effect, or nothing. A declaration head is its own scope — the
@@ -296,6 +352,45 @@ structure CatchClause where
   /-- ESTree `CatchClause.body`, a `BlockStatement`'s statements. -/
   body : List Stmt
 
+/-- One field of a class body, in source order: what
+InitializeInstanceElements walks for an instance and
+ClassDefinitionEvaluation walks for the constructor object. A `value` of
+`none` is a field declared without an initializer, which binds
+`undefined` — and, being a *definition*, still shadows an inherited
+property of the same name. -/
+structure ClassField where
+  /-- ESTree `PropertyDefinition.key`. -/
+  key : ClassKey
+  /-- ESTree `PropertyDefinition.value`. -/
+  value : Option Expr
+
+/-- One element of a `ClassBody`. A private *method* or accessor is not
+here: the decoder refuses it, so the AST cannot spell one, and a private
+key therefore only ever reaches a field. -/
+inductive ClassElement where
+  /-- ESTree `MethodDefinition` with `kind: "constructor"`. At most one
+  is meaningful; a second is an early error, which this epic does not
+  check, so the first one wins. -/
+  | ctor (params : List String) (body : List Stmt)
+  /-- ESTree `MethodDefinition` with `kind` `"method"`, `"get"`, or
+  `"set"` and an `Identifier` or string `Literal` key. -/
+  | method (kind : MethodKind) (isStatic : Bool) (name : String)
+      (params : List String) (body : List Stmt)
+  /-- ESTree `PropertyDefinition`. -/
+  | field (isStatic : Bool) (key : ClassKey) (value : Option Expr)
+
+/-- ESTree `ClassDeclaration` or `ClassExpression` with `body.body`
+flattened. `name` is the class's *own* binding — the immutable one its
+body can see — which a `ClassDeclaration` always has and an anonymous
+`ClassExpression` does not. -/
+structure ClassDef where
+  /-- ESTree `id`, an `Identifier` or nothing. -/
+  name : Option String
+  /-- ESTree `superClass`. -/
+  superClass : Option Expr
+  /-- ESTree `body.body`. -/
+  elements : List ClassElement
+
 /-- One declarator of a `VariableDeclaration`. `none` binds `undefined`.
 JS requires an initializer on a `const`, but as an early error, and early
 errors are outside this epic — so `const x;` binds `undefined` here where
@@ -315,7 +410,51 @@ end
 -- decision procedure on syntax: the tests compare programs by `repr` and
 -- results by `Value`, which stays decidable.
 deriving instance Repr, Inhabited for Expr, ArrowBody, Target, Stmt, ForInit, SwitchCase,
-  CatchClause, Declarator
+  CatchClause, Declarator, ClassField, ClassElement, ClassDef
+
+/-- The class's constructor, if it wrote one. The first `ctor` element
+wins; a second is an early error this epic does not check. -/
+def ClassDef.constructor? (d : ClassDef) : Option (List String × List Stmt) :=
+  let rec go : List ClassElement → Option (List String × List Stmt)
+    | [] => none
+    | .ctor params body :: _ => some (params, body)
+    | _ :: rest => go rest
+  go d.elements
+
+/-- The fields on one side of the class, in source order. -/
+def classFields (wanted : Bool) : List ClassElement → List ClassField
+  | [] => []
+  | .field isStatic key value :: rest =>
+    if isStatic == wanted then { key, value } :: classFields wanted rest
+    else classFields wanted rest
+  | _ :: rest => classFields wanted rest
+
+/-- `[[Fields]]`: what InitializeInstanceElements puts on each instance. -/
+def ClassDef.instanceFields (d : ClassDef) : List ClassField :=
+  classFields false d.elements
+
+/-- The `static` fields, which ClassDefinitionEvaluation puts on the
+constructor object once the class is built. -/
+def ClassDef.staticFields (d : ClassDef) : List ClassField :=
+  classFields true d.elements
+
+/-- Drop repeats, keeping the first occurrence. `seen` is what has
+already been kept, which is what makes this structural on the list. -/
+def dedupNames (seen : List String) : List String → List String
+  | [] => []
+  | n :: rest =>
+    if seen.contains n then dedupNames seen rest else n :: dedupNames (n :: seen) rest
+
+/-- Every `#name` the class body declares, deduplicated and in source
+order. One cell per name is allocated when the class is evaluated, and
+that cell *is* the Private Name — two evaluations of one class text
+therefore declare different names, as the specification requires. -/
+def ClassDef.privateNames (d : ClassDef) : List String :=
+  let rec go : List ClassElement → List String
+    | [] => []
+    | .field _ (.«private» n) _ :: rest => n :: go rest
+    | _ :: rest => go rest
+  dedupNames [] (go d.elements)
 
 /-- ESTree `Program` with `sourceType: "script"`, its `"use strict"`
 directive already consumed by the decoder. -/
