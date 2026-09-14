@@ -276,7 +276,12 @@ jobs:
       # maintainer ever adds a bypass actor for the Actions app the push
       # simply starts working; until then the table arrives as a pull
       # request which, like `lean-update`'s, needs a close-and-reopen
-      # before its checks will run.
+      # before its checks will run. Opening that pull request needs the
+      # repository setting "Allow GitHub Actions to create and approve
+      # pull requests" (Settings > Actions > General), which was off on
+      # 2026-09-14: until it is on, the branch `test262-results` still
+      # carries the table, the step fails naming the setting, and the
+      # pull request is opened by hand from that branch.
       - name: Commit the table
         working-directory: .
         env:
@@ -313,7 +318,11 @@ jobs:
           if [ -z "$number" ]; then
             gh pr create --base main --head test262-results \
               --title "test262 results at $pin" \
-              --body-file /tmp/test262-results-body.md
+              --body-file /tmp/test262-results-body.md || {
+              echo "the table is on branch test262-results but no pull request could be opened:"
+              echo "enable 'Allow GitHub Actions to create and approve pull requests' under Settings > Actions > General, or open it by hand"
+              exit 1
+            }
           else
             gh pr edit "$number" --body-file /tmp/test262-results-body.md
           fi
