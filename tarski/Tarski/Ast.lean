@@ -185,7 +185,7 @@ inductive Expr where
   /-- ESTree `AssignmentExpression` with one of the five arithmetic
   compound operators, `+= -= *= /= %=`, carried here as the `BinaryOp`
   they apply. The decoder refuses every other compound spelling by name:
-  `**=` needs an exponent the library does not model, and the shifts and
+  `**=` is not mapped onto `BinaryOp.exponent` yet, and the shifts and
   the bitwise and logical assignments need ToInt32 or short-circuiting,
   which are later slices. -/
   | compoundAssign (op : BinaryOp) (target : Target) (value : Expr)

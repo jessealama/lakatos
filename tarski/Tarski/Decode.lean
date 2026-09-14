@@ -144,8 +144,8 @@ private def binaryOp (s : String) : DecodeM BinaryOp :=
 
 /-- The five compound assignment operators the evaluator takes, as the
 `BinaryOp` each applies. Every other spelling ESTree admits is refused
-under its own name: `**=` would need an exponent the library does not
-model, the shifts and the bitwise forms ToInt32, and `&&=`, `||=`, `??=`
+under its own name: `**=` is not mapped onto `BinaryOp.exponent` yet,
+the shifts and the bitwise forms need ToInt32, and `&&=`, `||=`, `??=`
 short-circuit rather than apply an operator at all. -/
 private def compoundOp (s : String) : DecodeM BinaryOp :=
   match s with

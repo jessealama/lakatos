@@ -29,6 +29,7 @@ private def program : Program :=
 -- `ArraySimpTest`'s set plus what a coercing unary built-in adds.
 attribute [local simp] evalExpr evalExprs evalStmt evalStmts evalDeclarators
   instantiateBlock hoistNames hoistDeclarators initFunctions
+  varNames varNamesStmt varNamesCases hoistVars putIdent applyCoercing
   callFunction callNative catchReturn makeFunction bindParams pushElements
   newObject newArray newArrayOfLength Obj.array indexProps
   Value.ofNat Obj.truncate Obj.ownKeys Obj.isArray Obj.hasOwn
