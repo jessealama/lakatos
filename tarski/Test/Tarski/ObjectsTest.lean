@@ -169,12 +169,10 @@ private def declareP : List Stmt :=
 
 /-! ## ToPrimitive -/
 
--- `({}) + 1;` — OrdinaryToPrimitive finds neither `valueOf` nor
--- `toString`. `Object.prototype` exists as of #380, but it holds
--- `hasOwnProperty` alone: #389 puts the two conversion methods on it and
--- makes this `"[object Object]1"`. Until then it throws, and that is
--- recorded here rather than left to be discovered.
-#guard outcome [.exprStmt (.binary .add (.objectLit []) (.numLit 1.0))] == "uncaught: TypeError: Cannot convert object to primitive value"
+-- `({}) + 1;` — OrdinaryToPrimitive finds `valueOf` on
+-- `Object.prototype`, which answers the object itself, and then
+-- `toString`, which answers the tag.
+#guard outcome [.exprStmt (.binary .add (.objectLit []) (.numLit 1.0))] == "[object Object]1"
 
 -- `const o = { valueOf: function () { return 3; } }; o + 1;` — a
 -- user-defined `valueOf` already works.

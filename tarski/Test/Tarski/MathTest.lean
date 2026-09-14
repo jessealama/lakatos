@@ -204,12 +204,13 @@ NaN. A fold that coerced lazily would print `a`. -/
 `Math` is an ordinary object with neither `[[Call]]` nor `[[Construct]]`.
 The members below are absent rather than faked: `cbrt` and `random` have
 no model in the library (#434 is the transcendental one), and a missing
-member reads `undefined`, which is honest. `length` on a built-in is
-pre-#389 — there are no descriptors, so no function carries one. -/
+member reads `undefined`, which is honest. Every built-in carries the
+`length` 17.1 gives it; `Test/Tarski/FunctionBuiltinsTest.lean` pins the
+attributes it carries it with. -/
 
 #guard outcome (expr (.unary .typeof (.ident "Math"))) == "object"
 #guard outcome (expr (.member (.ident "Math") "cbrt")) == "undefined"
 #guard outcome (expr (.member (.ident "Math") "random")) == "undefined"
 #guard outcome (expr (.call (.ident "Math") [])) == "uncaught: TypeError: not a function"
 #guard outcome (expr (.new (.ident "Math") [])) == "uncaught: TypeError: not a constructor"
-#guard outcome (expr (.member (.member (.ident "Math") "abs") "length")) == "undefined"
+#guard outcome (expr (.member (.member (.ident "Math") "abs") "length")) == "1"

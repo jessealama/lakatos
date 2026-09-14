@@ -14,8 +14,11 @@ declarations are instantiated per block, while a `var` is hoisted to the
 enclosing function or script and initialized to `undefined` there, with
 no dead zone. `throw` and `try`, labels, `break`/`continue`, `for`,
 `switch`, and `do`/`while` — the three remaining breakable statements —
-are here, and so are parameter defaults and `arguments`; `for`-`in` and
-`new.target` are #486's, `for`-`of` and binding patterns #394's.
+are here, and so are parameter defaults and `arguments`, and so are
+`delete`, `in`, and `for`-`in`, which are `[[Delete]]`,
+`[[HasProperty]]`, and EnumerateObjectProperties and so belong with the
+property protocol #389 defines rather than with the loops; `new.target`
+is #486's, `for`-`of` and binding patterns #394's.
 
 **Classes are here**: declarations and expressions, a constructor,
 public and private instance fields, methods, getters and setters,
@@ -58,9 +61,9 @@ inductive UnaryOp where
   | typeof
   /-- ESTree `UnaryExpression` with `operator: "void"`. It evaluates its
   operand — for the effects — and answers `undefined`; the value is never
-  coerced, so `void {}` does not run ToPrimitive. `delete` and `~` are
-  the other two spellings ESTree puts here, and neither is in the
-  slice. -/
+  coerced, so `void {}` does not run ToPrimitive. `~` is the other
+  spelling ESTree puts here and is not in the slice; `delete` is
+  `Expr.delete`, because it takes a *reference* rather than a value. -/
   | void
 deriving Repr, DecidableEq, Inhabited
 
@@ -111,9 +114,12 @@ inductive BinaryOp where
   | strictNe
   /-- `instanceof`. Neither operand is coerced: the left is compared
   against a prototype chain by identity, and the right must be a
-  function. `in` is the other relational operator ESTree spells as a
-  `BinaryExpression`, and it is not here. -/
+  function. -/
   | instanceof
+  /-- `in`. HasProperty over ToPropertyKey of the left operand, so the
+  right must be an object. Like `instanceof` it does not coerce, and for
+  the same reason: it is a question about a reference. -/
+  | «in»
 deriving Repr, DecidableEq, Inhabited
 
 /-- The short-circuiting infix operators. They are not `BinaryOp`
@@ -156,7 +162,7 @@ two strict-equality tests do not: they answer on the values themselves,
 so an object operand is not run through ToPrimitive. Neither does
 `instanceof`, which is about references and has a dispatch of its own. -/
 def BinaryOp.coerces : BinaryOp → Bool
-  | .strictEq | .strictNe | .instanceof => false
+  | .strictEq | .strictNe | .instanceof | .«in» => false
   | _ => true
 
 mutual
@@ -241,6 +247,13 @@ inductive Expr where
   | update (op : UpdateOp) (isPrefix : Bool) (target : Target)
   /-- ESTree `ClassExpression`. -/
   | classExpr (cls : ClassDef)
+  /-- ESTree `UnaryExpression` with `operator: "delete"`. It is an
+  expression of its own rather than a `UnaryOp` because it takes a
+  *reference*: a `member` or `index` operand is `[[Delete]]` on the base,
+  a bare identifier is the strict-mode early error reported at the point
+  of use, and anything else is evaluated for its effects and answers
+  `true`. A `super` member operand is a decoder refusal. -/
+  | delete (operand : Expr)
 
 /-- An arrow function's body: `expression: true` in ESTree means the
 concise form, whose value is the expression's. -/
@@ -321,11 +334,27 @@ inductive Stmt where
   | breakStmt (label : Option String)
   /-- ESTree `ContinueStatement`; `none` is the unlabelled form. -/
   | continueStmt (label : Option String)
+  /-- ESTree `ForInStatement`. EnumerateObjectProperties over the right
+  operand's own and inherited enumerable string keys; a `let` or `const`
+  head gets a fresh binding per iteration, so two closures the body makes
+  see two cells. A nullish right operand runs the body not at all. -/
+  | forInStmt (left : ForInLeft) (right : Expr) (body : Stmt)
   /-- ESTree `ClassDeclaration`. Hoisted like a `let`: the cell exists
   from the block's first statement and is in its temporal dead zone until
   the declaration runs, so `new A(); class A {}` is a `ReferenceError`.
   The binding is writable, unlike the class's own inner name. -/
   | classDecl (name : String) (cls : ClassDef)
+
+/-- ESTree `ForInStatement.left`: what each key is bound to. A
+declaration head is exactly one declarator with no initializer — the
+sloppy `for (var x = 1 in o)` form is a decoder refusal — and an
+assignment target is any of the three `Target` shapes, written to once
+per key. -/
+inductive ForInLeft where
+  /-- A `VariableDeclaration` in the head, one declarator, no `init`. -/
+  | decl (kind : DeclKind) (name : String)
+  /-- An assignment target in the head: `for (k in o)`, `for (o.p in q)`. -/
+  | target (t : Target)
 
 /-- ESTree `ForStatement.init`: a declaration, an expression evaluated
 for its effect, or nothing. A declaration head is its own scope — the
@@ -429,8 +458,8 @@ end
 -- not among them — no handler accepts the nesting, and nothing needs a
 -- decision procedure on syntax: the tests compare programs by `repr` and
 -- results by `Value`, which stays decidable.
-deriving instance Repr, Inhabited for Expr, ArrowBody, Target, Stmt, ForInit, SwitchCase,
-  CatchClause, Param, Declarator, ClassField, ClassElement, ClassDef
+deriving instance Repr, Inhabited for Expr, ArrowBody, Target, Stmt, ForInit, ForInLeft,
+  SwitchCase, CatchClause, Param, Declarator, ClassField, ClassElement, ClassDef
 
 /-- A plain name is a parameter with no default, so a test and a
 literal program may still spell `params := ["x"]`. The coercion is

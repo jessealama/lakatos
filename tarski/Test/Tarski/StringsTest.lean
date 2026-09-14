@@ -165,10 +165,9 @@ private def stringOf (args : List Expr) : Program :=
       .exprStmt (.call (.ident "String") [.ident "o"]) ]
   == "t"
 
--- `String({});` — `Object.prototype` has neither `toString` nor
--- `valueOf` until #389, so ToPrimitive has nothing to give.
-#guard outcome (stringOf [.objectLit []])
-  == "uncaught: TypeError: Cannot convert object to primitive value"
+-- `String({});` — `Object.prototype.toString` is what the string hint
+-- reaches first.
+#guard outcome (stringOf [.objectLit []]) == "[object Object]"
 
 -- `new String("x");` — pinned as pre-#391.
 #guard outcome (expr (.new (.ident "String") [.strLit "x"]))

@@ -17,7 +17,14 @@ refused here by name: a private method or accessor (a non-writable
 element, not a property), a numeric or computed key, an `async` or
 generator member, a static block, an `accessor` field, a decorator, and
 `super.x = v`. `new.target` and `#x in o` never reach this file — the
-bridge has no node for either, so each arrives as a placeholder. -/
+bridge has no node for either, so each arrives as a placeholder.
+
+`Function(...)` and `new Function(...)` are refused here by name, as the
+`$262` hooks are and for the same reason: the constructor's *semantics*
+are `eval` by another spelling and outside the epic, while the intrinsic
+itself must exist for `Function.prototype` to be reachable at all. An
+alias — `const F = Function; F("x")` — escapes the refusal and meets a
+`TypeError` instead, a documented limit of refusing syntactically. -/
 
 namespace Tarski
 
@@ -135,6 +142,7 @@ private def binaryOp (s : String) : DecodeM BinaryOp :=
   | "===" => .ok .strictEq
   | "!==" => .ok .strictNe
   | "instanceof" => .ok .instanceof
+  | "in" => .ok .«in»
   | _ => .error (.unsupported s!"BinaryExpression {s}")
 
 /-- The five compound assignment operators the evaluator takes, as the
@@ -213,7 +221,17 @@ partial def decodeExpr (j : Json) : DecodeM Expr := do
   | "Literal" => decodeLiteral j
   | "Identifier" => pure (identExpr (← strField j "name"))
   | "UnaryExpression" =>
-    pure (.unary (← unaryOp (← strField j "operator")) (← decodeExpr (← field j "argument")))
+    -- `delete` is not a `UnaryOp`: it takes a reference rather than a
+    -- value, so it is an `Expr` of its own. A `super` member operand is
+    -- refused by name — `delete super.x` is a `ReferenceError` at
+    -- runtime in the specification, which is semantics this AST does not
+    -- carry.
+    if (← strField j "operator") == "delete" then
+      match ← decodeExpr (← field j "argument") with
+      | .superMember _ | .superIndex _ => .error (.unsupported "UnaryExpression delete super")
+      | operand => pure (.delete operand)
+    else
+      pure (.unary (← unaryOp (← strField j "operator")) (← decodeExpr (← field j "argument")))
   | "BinaryExpression" =>
     pure (.binary (← binaryOp (← strField j "operator"))
       (← decodeExpr (← field j "left")) (← decodeExpr (← field j "right")))
@@ -230,12 +248,17 @@ partial def decodeExpr (j : Json) : DecodeM Expr := do
     let callee ← field j "callee"
     match ← nodeType callee with
     | "Super" => pure (.superCall (← decodeExprs (← arrayField j "arguments")))
-    | _ => pure (.call (← decodeExpr callee) (← decodeExprs (← arrayField j "arguments")))
+    | _ =>
+      match ← decodeExpr callee with
+      | .ident "Function" => .error (.unsupported "Function constructor")
+      | f => pure (.call f (← decodeExprs (← arrayField j "arguments")))
   -- `Super` is not an expression: it reaches here only as a call
   -- argument or some other position the schema does not allow it in.
   | "Super" => bad "Super outside a call or member access"
   | "NewExpression" =>
-    pure (.new (← decodeExpr (← field j "callee")) (← decodeExprs (← arrayField j "arguments")))
+    match ← decodeExpr (← field j "callee") with
+    | .ident "Function" => .error (.unsupported "Function constructor")
+    | f => pure (.new f (← decodeExprs (← arrayField j "arguments")))
   | "ArrayExpression" =>
     -- A hole and a spread arrived as `Unsupported` elements in place, so
     -- `decodeExpr` refuses the element and names the kind it stood for;
@@ -484,6 +507,24 @@ partial def decodeStmt (j : Json) : DecodeM Stmt := do
     let test ← optExpr j "test"
     let update ← optExpr j "update"
     pure (.forStmt init test update (← decodeStmt (← field j "body")))
+  | "ForInStatement" =>
+    -- A declaration head is exactly one declarator with no initializer;
+    -- `for (var x = 1 in o)` is the sloppy-mode-only form B.3.5 keeps
+    -- alive and this epic does not have, and two declarators do not
+    -- parse at all.
+    let head ← field j "left"
+    let left ← match ← nodeType head with
+      | "VariableDeclaration" => do
+        let kind ← declKind (← strField head "kind")
+        match ← declaratorList head with
+        | [d] =>
+          match d.init with
+          | none => pure (ForInLeft.decl kind d.name)
+          | some _ => .error (.unsupported "ForInStatement initializer")
+        | _ => .error (.unsupported "ForInStatement initializer")
+      | _ => pure (ForInLeft.target (← toTarget (← decodeExpr head)))
+    pure (.forInStmt left (← decodeExpr (← field j "right"))
+      (← decodeStmt (← field j "body")))
   | "SwitchStatement" =>
     pure (.switchStmt (← decodeExpr (← field j "discriminant"))
       (← decodeCases (← arrayField j "cases")))

@@ -18,8 +18,8 @@ property of the object the literal built. `getProp` and `getFrom` are
 ordinary members: the first dispatches, the second answers an own
 property, and neither calls itself.
 
-The literal's object lands at reference 62, just past the realm's
-sixty-two intrinsics: a script starts from `Heap.initial`, not from an
+The literal's object lands at reference 91, just past the realm's
+ninety-one intrinsics: a script starts from `Heap.initial`, not from an
 empty heap. -/
 
 open Tarski

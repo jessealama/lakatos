@@ -137,20 +137,24 @@ def newArray (elements : List Value) : EvalM Value := do
 array of `n` holes, every index of which reads `undefined` off the empty
 property list. -/
 def newArrayOfLength (n : Nat) : EvalM Value := do
-  pure (.obj (← allocObj { proto := some arrayProtoRef, kind := .array n }))
+  pure (.obj (← allocObj { proto := some arrayProtoRef, kind := .array n true }))
 
 /-- Throw one of the evaluator's own runtime errors: a fresh object whose
 prototype is the kind's, carrying the message as an own property. The
 `name` it will report comes from that prototype, so the object is exactly
 what `new TypeError(message)` builds, which is what makes the evaluator's
-refusals catchable and testable with `instanceof`.
+refusals catchable and testable with `instanceof`. It carries
+`[[ErrorData]]` for the same reason, so `Object.prototype.toString` on
+one answers `[object Error]`; `message` is non-enumerable, as 20.5.8.1
+has it.
 
 Every message the evaluator raises is in one table in `Tarski/Eval.lean`'s
 header. test262 never inspects them; the table exists so the tests can
 pin what the binary prints. -/
 def throwJsError {α : Type} (kind : ErrorKind) (message : String) : EvalM α := do
   let r ← allocObj
-    { proto := some kind.protoRef, properties := [("message", .prim (.str message))] }
+    { proto := some kind.protoRef, kind := .error,
+      properties := [("message", Property.method (.prim (.str message)))] }
   throwCompletion (.throw (.obj r))
 
 /-- Allocate a binding and answer its reference. -/

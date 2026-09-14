@@ -10,8 +10,9 @@ node ../dist/tarski/frontend/src/test262/cli.js --slice-file test262/slice.txt
 Every failing test in `tarski/test262/slice.txt` is classified here — the
 harness, the 27 language directories the thales emitter maps (#383), the
 three built-ins directories #382 added, the two global parsers #388
-added, the two class directories #384 added, and the fifteen declaration
-instantiation, jump, and `arguments` directories #393 added — and
+added, the two class directories #384 added, the fifteen declaration
+instantiation, jump, and `arguments` directories #393 added, and the two
+`Object` and `Function` directories #389 added — and
 `tarski/frontend/tests/test262-failures.test.ts` holds this file and
 `tarski/test262/expected.json` together: each directory named here is a key
 of that file, every directory with a positive `fail` count appears, and the
@@ -31,53 +32,60 @@ The four classes:
 - **bug** — a real defect, filed as its own issue. `owner` is that issue.
 
 `owner` is the issue the row waits on. Nothing here waits on #383, on
-#382, on #388, on #384, or on #393: no failure in the slice is caused by the
-statements and operators #383 added, none is a `Math`, `Number`, or
-`Boolean` member answering the wrong number, **not one row is a
-conversion between a Number and a String answering the wrong thing** —
-`Number/prototype/toString` is 84 pass and 2 fail, `toFixed` 10 and 2,
-`toExponential` 9 and 3, `toPrecision` 10 and 4, `parseFloat` 49 and 2,
-`parseInt` 48 and 4, and every one of those failures is a row below — and
-**none is a class evaluating wrongly**. The 243 the class directories
-bring are a missing `Object` reflection member, a missing
-`Function.prototype`, a function or class without a `name` or a `length`,
-an absent global, or `eval`; the class rows' own subject — element order,
-field timing, the `super` bindings, accessor dispatch, private-name
-scoping, NewTarget, the dead zone — is exercised by
-`tarski/Test/Tarski/ClassesTest.lean` and passes here.
+#382, on #388, on #384, on #393, or on #389: no failure in the slice is
+caused by the statements and operators #383 added, none is a `Math`,
+`Number`, or `Boolean` member answering the wrong number, **not one row
+is a conversion between a Number and a String answering the wrong
+thing**, **none is a class evaluating wrongly**, **none is declaration
+instantiation, a parameter's dead zone, a default's scope, `arguments`, a
+`switch`, a label, a jump, or `do`/`while` answering wrongly**, and
+**not one row is a property descriptor, an own-key order, an
+enumerability, a `delete`, an `in`, a `for`-`in`, or an `Object` or
+`Function` member answering the wrong thing**.
 
-The 162 failures in #393's fifteen directories are all of one shape:
-something the test reaches for is not in the realm. 88 are `eval` or the
-`Function` constructor, which #376 excludes; 65 are a `Function.prototype`
-that does not exist yet (`call`, `apply`, `bind`, `hasOwnProperty`, the
-poisoned `caller` and `arguments` accessors, a function's `constructor`),
-`Object`'s reflection members, `Object.prototype.isPrototypeOf`, or a
-top-level `this`, all #389's; 4 are
-`String.prototype` methods (#391), 2 an `Array.prototype` method (#390), 2
-a transcendental `Math` member (#434), and 1 the global `isNaN` (#441).
-**Not one is declaration instantiation, a parameter's dead zone, a
-default's scope, `arguments`, a `switch`, a label, a `break` or a
-`continue`, or `do`/`while` answering wrongly**; that is what
-`Test/Tarski/ArgumentsTest.lean`, `ParamsTest.lean`, `DoWhileTest.lean`,
-`SwitchTest.lean`, `TdzTest.lean`, and `VarTest.lean` are for.
-`test/language/block-scope` is 40 pass and 0 fail.
+The 1,448 rows below are, by weight of owner: 180 what #376 excludes
+(`eval`, `Date`, `RegExp`, `JSON`, `Proxy`, `Reflect`, typed arrays, the
+keyed collections, the `Function` constructor's semantics, and
+`nativeFunctionMatcher.js`, which matches source text with a regular
+expression), 52 `Symbol` (#392), 49 the String wrapper (#391), 36 the
+global object (#487), 26 the transcendental `Math` members (#434), 15 the
+rest of `Array.prototype` (#390), 11 the global `isNaN` and `isFinite`
+(#441), and the remainder iterators (#394), `Math.clz32`/`imul` (#440),
+`Math.random` (#445), and the four filed defects.
 
-The slice's other rows moved with this one. `statements/class/arguments`
-was 0 pass and 2 fail waiting on #393 and is now 2 and 0;
-`statements/class/subclass` lost its one `arguments` failure; the four
-`class/method` and `class/method-static` rows and
-`statements/class/strict-mode` are gone, because a class's `length` now
-exists; and the two `class/elements` rows that read "no `name` and no
-`length`" read "no `name`".
+**The two `Object` and `Function` directories are 2,760 pass and 726
+fail**, against 197 and 2,110 before this slice. Their 726 are the same
+list: 249 `eval`, `Date`, `RegExp`, `JSON`, `Proxy`, `Reflect`, and typed
+arrays (#376); 100 the global object, whose `this` at top level a third
+of `Object`'s older tests reach for (#487); 88 `Symbol` (#392); 84 the
+String wrapper (#391); 74 `Math` members the library does not model, read
+through `getOwnPropertyDescriptor` (#434, #440, #445); and the rest
+`Array.prototype` (#390), iterators (#394), and the two filed defects.
+**The `propertyHelper.js`-based tests run and pass**: `Math/abs` is 8 and
+0, and `length.js`, `name.js`, and `prop-desc.js` under it are three of
+them.
 
-Two class evaluations were wrong when the directories were first scored
-and are not wrong now. `super[super()]` read the key before the `this`
-binding, where 13.3.7.2 reads the binding first, so the derived
-constructor's dead zone was not reached; that is `superBase` in
+`test/harness` is 49 pass and 23 fail, against 27 and 18: its
+`verifyProperty` tests reach the property protocol now, and what is left
+of them is `Symbol`, the global object, and `Array.prototype`.
+
+**Two class evaluations were wrong** when the class directories were
+first scored and are not wrong now. `super[super()]` read the key before
+the `this` binding, where 13.3.7.2 reads the binding first, so the
+derived constructor's dead zone was not reached; that is `superBase` in
 `Tarski/Eval.lean`, and `ClassesTest` pins it. The other was a bridge
 limit rather than an evaluator one: tsc refuses `a?.b.#c`, which is valid
 JavaScript, so four tests under `class/elements` are **harness errors**
 rather than failures and appear in no row below. #472 owns them.
+
+**Three defects this slice found are filed rather than fixed.**
+`estree.ts` gives a `static constructor() {}` the ESTree kind of a class
+constructor and drops its `static` flag (#496), which two
+`grammar-static-ctor-meth-valid.js` tests reach now that a function has a
+`hasOwnProperty` to call; and the bridge drops the parentheses that keep
+NamedEvaluation from naming `(fn) = function () {}` (#499). The third is
+older: a numeric literal that overflows to `Infinity` reaches Lean as
+JSON `null` (#460).
 
 One divergence found while classifying is not the proximate cause of any
 row and so has none: `applyCoercing` runs ToPrimitive on both operands
@@ -89,241 +97,390 @@ against #392.
 
 ## The table
 
-| directory                                                             | fails | class        | why                                                                                                                | owner |
-| --------------------------------------------------------------------- | ----- | ------------ | ------------------------------------------------------------------------------------------------------------------ | ----- |
-| `test/built-ins/Boolean`                                              | 2     | builtin      | `new String` needs the String wrapper object                                                                       | #391  |
-| `test/built-ins/Boolean`                                              | 2     | builtin      | a function has no `hasOwnProperty`: there is no `Function.prototype`                                               | #389  |
-| `test/built-ins/Boolean`                                              | 2     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
-| `test/built-ins/Boolean`                                              | 1     | builtin      | `Object.getPrototypeOf` and `isPrototypeOf` are absent                                                             | #389  |
-| `test/built-ins/Boolean`                                              | 1     | builtin      | `isConstructor.js` needs `Reflect.construct`                                                                       | #389  |
-| `test/built-ins/Boolean`                                              | 1     | builtin      | `Symbol` is not in the realm                                                                                       | #392  |
-| `test/built-ins/Boolean/prototype`                                    | 1     | builtin      | `Object.getPrototypeOf` and `isPrototypeOf` are absent                                                             | #389  |
-| `test/built-ins/Boolean/prototype/toString`                           | 1     | out-of-scope | typed arrays, `Date`, and the other library objects are excluded by the epic                                       | #376  |
-| `test/built-ins/Boolean/prototype/valueOf`                            | 1     | out-of-scope | typed arrays, `Date`, and the other library objects are excluded by the epic                                       | #376  |
-| `test/built-ins/Math`                                                 | 1     | builtin      | `Object.getPrototypeOf` and `isPrototypeOf` are absent                                                             | #389  |
-| `test/built-ins/Math/acos`                                            | 5     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent                                         | #434  |
-| `test/built-ins/Math/acosh`                                           | 4     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent                                         | #434  |
-| `test/built-ins/Math/asin`                                            | 6     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent                                         | #434  |
-| `test/built-ins/Math/asinh`                                           | 2     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent                                         | #434  |
-| `test/built-ins/Math/atan`                                            | 4     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent                                         | #434  |
-| `test/built-ins/Math/atan2`                                           | 8     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent                                         | #434  |
-| `test/built-ins/Math/atanh`                                           | 2     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent                                         | #434  |
-| `test/built-ins/Math/cbrt`                                            | 2     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent                                         | #434  |
-| `test/built-ins/Math/clz32`                                           | 7     | builtin      | `Math.clz32` and `Math.imul` need ToInt32 and ToUint32                                                             | #440  |
-| `test/built-ins/Math/cos`                                             | 6     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent                                         | #434  |
-| `test/built-ins/Math/cosh`                                            | 2     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent                                         | #434  |
-| `test/built-ins/Math/exp`                                             | 6     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent                                         | #434  |
-| `test/built-ins/Math/expm1`                                           | 2     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent                                         | #434  |
-| `test/built-ins/Math/f16round`                                        | 2     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent                                         | #434  |
-| `test/built-ins/Math/hypot`                                           | 9     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent                                         | #434  |
-| `test/built-ins/Math/imul`                                            | 2     | builtin      | `Math.clz32` and `Math.imul` need ToInt32 and ToUint32                                                             | #440  |
-| `test/built-ins/Math/log`                                             | 6     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent                                         | #434  |
-| `test/built-ins/Math/log10`                                           | 2     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent                                         | #434  |
-| `test/built-ins/Math/log1p`                                           | 2     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent                                         | #434  |
-| `test/built-ins/Math/log2`                                            | 2     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent                                         | #434  |
-| `test/built-ins/Math/max`                                             | 1     | builtin      | `Object.prototype.toString` and `valueOf` are not on the prototype yet                                             | #389  |
-| `test/built-ins/Math/max`                                             | 1     | builtin      | a function has no `length`                                                                                         | #389  |
-| `test/built-ins/Math/min`                                             | 1     | builtin      | `Object.prototype.toString` and `valueOf` are not on the prototype yet                                             | #389  |
-| `test/built-ins/Math/min`                                             | 1     | builtin      | a function has no `length`                                                                                         | #389  |
-| `test/built-ins/Math/random`                                          | 2     | builtin      | `Math.random` is absent                                                                                            | #445  |
-| `test/built-ins/Math/sin`                                             | 5     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent                                         | #434  |
-| `test/built-ins/Math/sinh`                                            | 2     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent                                         | #434  |
-| `test/built-ins/Math/sumPrecise`                                      | 5     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent                                         | #434  |
-| `test/built-ins/Math/tan`                                             | 6     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent                                         | #434  |
-| `test/built-ins/Math/tanh`                                            | 2     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent                                         | #434  |
-| `test/built-ins/Number`                                               | 7     | builtin      | a function has no `hasOwnProperty`: there is no `Function.prototype`                                               | #389  |
-| `test/built-ins/Number`                                               | 3     | builtin      | `Object.getPrototypeOf` and `isPrototypeOf` are absent                                                             | #389  |
-| `test/built-ins/Number`                                               | 2     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
-| `test/built-ins/Number`                                               | 2     | bug          | a numeric literal that overflows to `Infinity` reaches Lean as JSON `null`                                         | #460  |
-| `test/built-ins/Number`                                               | 1     | builtin      | `new String` needs the String wrapper object                                                                       | #391  |
-| `test/built-ins/Number`                                               | 1     | builtin      | `Object.prototype.toString` and `valueOf` are not on the prototype yet                                             | #389  |
-| `test/built-ins/Number`                                               | 1     | builtin      | `isConstructor.js` needs `Reflect.construct`                                                                       | #389  |
-| `test/built-ins/Number`                                               | 1     | builtin      | `Symbol` is not in the realm                                                                                       | #392  |
-| `test/built-ins/Number/NEGATIVE_INFINITY`                             | 1     | builtin      | the global `isNaN` and `isFinite` are not in the realm                                                             | #441  |
-| `test/built-ins/Number/POSITIVE_INFINITY`                             | 1     | builtin      | the global `isNaN` and `isFinite` are not in the realm                                                             | #441  |
-| `test/built-ins/Number/isFinite`                                      | 1     | builtin      | `Symbol` is not in the realm                                                                                       | #392  |
-| `test/built-ins/Number/isInteger`                                     | 1     | builtin      | `Symbol` is not in the realm                                                                                       | #392  |
-| `test/built-ins/Number/isNaN`                                         | 1     | builtin      | `Symbol` is not in the realm                                                                                       | #392  |
-| `test/built-ins/Number/isSafeInteger`                                 | 1     | builtin      | `Symbol` is not in the realm                                                                                       | #392  |
-| `test/built-ins/Number/prototype`                                     | 2     | builtin      | `Object.getPrototypeOf` and `isPrototypeOf` are absent                                                             | #389  |
-| `test/built-ins/Number/prototype`                                     | 1     | builtin      | `Object.prototype.toString` and `valueOf` are not on the prototype yet                                             | #389  |
-| `test/built-ins/Number/prototype/toExponential`                       | 2     | builtin      | `Symbol` is not in the realm                                                                                       | #392  |
-| `test/built-ins/Number/prototype/toExponential`                       | 1     | builtin      | `Object.prototype.toString` and `valueOf` are not on the prototype yet                                             | #389  |
-| `test/built-ins/Number/prototype/toFixed`                             | 1     | builtin      | a function has no `length`                                                                                         | #389  |
-| `test/built-ins/Number/prototype/toFixed`                             | 1     | builtin      | `Symbol` is not in the realm                                                                                       | #392  |
-| `test/built-ins/Number/prototype/toPrecision`                         | 2     | builtin      | `Symbol` is not in the realm                                                                                       | #392  |
-| `test/built-ins/Number/prototype/toPrecision`                         | 2     | builtin      | `Object.prototype.toString` and `valueOf` are not on the prototype yet                                             | #389  |
-| `test/built-ins/Number/prototype/toString`                            | 1     | builtin      | `String.fromCharCode` and `String.prototype.indexOf` are absent                                                    | #391  |
-| `test/built-ins/Number/prototype/toString`                            | 1     | out-of-scope | typed arrays, `Date`, and the other library objects are excluded by the epic                                       | #376  |
-| `test/built-ins/Number/prototype/valueOf`                             | 1     | out-of-scope | typed arrays, `Date`, and the other library objects are excluded by the epic                                       | #376  |
-| `test/built-ins/parseFloat`                                           | 1     | builtin      | `new String` needs the String wrapper object                                                                       | #391  |
-| `test/built-ins/parseFloat`                                           | 1     | builtin      | `Object.prototype.toString` and `valueOf` are not on the prototype yet                                             | #389  |
-| `test/built-ins/parseInt`                                             | 2     | builtin      | `new String` needs the String wrapper object                                                                       | #391  |
-| `test/built-ins/parseInt`                                             | 1     | builtin      | `Object.prototype.toString` and `valueOf` are not on the prototype yet                                             | #389  |
-| `test/built-ins/parseInt`                                             | 1     | builtin      | a function has no `hasOwnProperty`: there is no `Function.prototype`                                               | #389  |
-| `test/harness`                                                        | 5     | out-of-scope | typed arrays, `Date`, and the other library objects are excluded by the epic                                       | #376  |
-| `test/harness`                                                        | 4     | builtin      | the harness's `compareArray.format` calls `Array.prototype.map`                                                    | #390  |
-| `test/harness`                                                        | 3     | builtin      | there is no global object, so `globalThis` and a top-level `this` are unbound                                      | #389  |
-| `test/harness`                                                        | 2     | builtin      | `String({})` needs `Object.prototype.toString`, and so does the harness's fallback                                 | #389  |
-| `test/harness`                                                        | 1     | builtin      | `String.fromCharCode` and `String.prototype.indexOf` are absent                                                    | #391  |
-| `test/harness`                                                        | 1     | builtin      | `Array.prototype.map` is absent, so the harness's `compareArray.format` reads `.call` off `undefined`              | #390  |
-| `test/harness`                                                        | 1     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
-| `test/harness`                                                        | 1     | out-of-scope | `getWellKnownIntrinsicObject` reaches the intrinsics through `Function`                                            | #376  |
-| `test/language/arguments-object`                                      | 5     | builtin      | `Object.defineProperty`, `getOwnPropertyDescriptor`, and the rest of `Object`'s reflection are absent              | #389  |
-| `test/language/arguments-object`                                      | 2     | out-of-scope | `eval` is excluded by the epic                                                                                     | #376  |
-| `test/language/expressions/addition`                                  | 6     | builtin      | `Symbol` is not in the realm                                                                                       | #392  |
-| `test/language/expressions/addition`                                  | 5     | builtin      | the global `isNaN` and `isFinite` are not in the realm                                                             | #441  |
-| `test/language/expressions/addition`                                  | 5     | builtin      | `new String` needs the String wrapper object                                                                       | #391  |
-| `test/language/expressions/addition`                                  | 2     | builtin      | `Object.prototype.toString` and `valueOf` are not on the prototype yet                                             | #389  |
-| `test/language/expressions/addition`                                  | 1     | builtin      | the ToNumeric step it pins needs `Symbol`; the order divergence behind it is #436                                  | #392  |
-| `test/language/expressions/addition`                                  | 1     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
-| `test/language/expressions/addition`                                  | 1     | out-of-scope | typed arrays, `Date`, and the other library objects are excluded by the epic                                       | #376  |
-| `test/language/expressions/arrow-function`                            | 1     | builtin      | a function has no `hasOwnProperty`: there is no `Function.prototype`                                               | #389  |
-| `test/language/expressions/arrow-function`                            | 1     | builtin      | the `Array.prototype` methods beyond `push` and `join` are absent                                                  | #390  |
-| `test/language/expressions/arrow-function`                            | 1     | builtin      | `Object.defineProperty`, `getOwnPropertyDescriptor`, and the rest of `Object`'s reflection are absent              | #389  |
-| `test/language/expressions/arrow-function`                            | 1     | builtin      | a function has no `call`, `apply`, or `bind`: there is no `Function.prototype`                                     | #389  |
-| `test/language/expressions/arrow-function/arrow`                      | 4     | out-of-scope | `eval` is excluded by the epic                                                                                     | #376  |
-| `test/language/expressions/assignment`                                | 7     | builtin      | `Object.defineProperty`, `preventExtensions`, and property attributes are absent, so `Math.PI = 20` does not throw | #389  |
-| `test/language/expressions/assignment`                                | 1     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
-| `test/language/expressions/call`                                      | 5     | out-of-scope | `eval` is excluded by the epic                                                                                     | #376  |
-| `test/language/expressions/call`                                      | 3     | builtin      | `Object.defineProperty`, `getOwnPropertyDescriptor`, and the rest of `Object`'s reflection are absent              | #389  |
-| `test/language/expressions/class`                                     | 1     | builtin      | `Object.getPrototypeOf`, `Object.getOwnPropertyDescriptor`, and `Object.defineProperty` are absent                 | #389  |
-| `test/language/expressions/class`                                     | 1     | builtin      | a function has no `hasOwnProperty` or `call`: there is no `Function.prototype`                                     | #389  |
-| `test/language/expressions/class/elements`                            | 19    | out-of-scope | `eval` is excluded by the epic                                                                                     | #376  |
-| `test/language/expressions/class/elements`                            | 24    | builtin      | `assert.throws` compares constructors, and a function object has no `name`                                         | #389  |
-| `test/language/expressions/class/elements`                            | 4     | builtin      | a function and a class have no `name`                                                                              | #389  |
-| `test/language/expressions/class/elements`                            | 5     | builtin      | a function has no `hasOwnProperty` or `call`: there is no `Function.prototype`                                     | #389  |
-| `test/language/expressions/class/elements`                            | 2     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                     | #376  |
-| `test/language/expressions/class/elements/syntax/valid`               | 2     | builtin      | a function has no `hasOwnProperty` or `call`: there is no `Function.prototype`                                     | #389  |
-| `test/language/expressions/class/subclass-builtins`                   | 23    | out-of-scope | typed arrays, `Date`, and the other library objects are excluded by the epic                                       | #376  |
-| `test/language/expressions/class/subclass-builtins`                   | 1     | out-of-scope | the `Function` constructor is excluded by the epic                                                                 | #376  |
-| `test/language/expressions/class/subclass-builtins`                   | 1     | builtin      | `String` has no `[[Construct]]` until the wrapper object exists                                                    | #391  |
-| `test/language/expressions/conditional`                               | 2     | builtin      | `new String` needs the String wrapper object                                                                       | #391  |
-| `test/language/expressions/conditional`                               | 1     | builtin      | `Symbol` is not in the realm                                                                                       | #392  |
-| `test/language/expressions/conditional`                               | 1     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
-| `test/language/expressions/division`                                  | 9     | builtin      | the global `isNaN` and `isFinite` are not in the realm                                                             | #441  |
-| `test/language/expressions/division`                                  | 4     | builtin      | `new String` needs the String wrapper object                                                                       | #391  |
-| `test/language/expressions/division`                                  | 2     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
-| `test/language/expressions/division`                                  | 1     | builtin      | the ToNumeric step it pins needs `Symbol`; the order divergence behind it is #436                                  | #392  |
-| `test/language/expressions/function`                                  | 1     | out-of-scope | `eval` is excluded by the epic                                                                                     | #376  |
-| `test/language/expressions/greater-than`                              | 5     | builtin      | `new String` needs the String wrapper object                                                                       | #391  |
-| `test/language/expressions/greater-than`                              | 1     | bug          | a Lean `String` is code points, so the relational order is not UTF-16 code-unit order                              | #391  |
-| `test/language/expressions/greater-than`                              | 1     | builtin      | `Object.prototype.toString` and `valueOf` are not on the prototype yet                                             | #389  |
-| `test/language/expressions/greater-than`                              | 1     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
-| `test/language/expressions/greater-than-or-equal`                     | 5     | builtin      | `new String` needs the String wrapper object                                                                       | #391  |
-| `test/language/expressions/greater-than-or-equal`                     | 1     | bug          | a Lean `String` is code points, so the relational order is not UTF-16 code-unit order                              | #391  |
-| `test/language/expressions/greater-than-or-equal`                     | 1     | builtin      | `Object.prototype.toString` and `valueOf` are not on the prototype yet                                             | #389  |
-| `test/language/expressions/greater-than-or-equal`                     | 1     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
-| `test/language/expressions/less-than`                                 | 5     | builtin      | `new String` needs the String wrapper object                                                                       | #391  |
-| `test/language/expressions/less-than`                                 | 1     | bug          | a Lean `String` is code points, so the relational order is not UTF-16 code-unit order                              | #391  |
-| `test/language/expressions/less-than`                                 | 1     | builtin      | `Object.prototype.toString` and `valueOf` are not on the prototype yet                                             | #389  |
-| `test/language/expressions/less-than`                                 | 1     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
-| `test/language/expressions/less-than-or-equal`                        | 5     | builtin      | `new String` needs the String wrapper object                                                                       | #391  |
-| `test/language/expressions/less-than-or-equal`                        | 1     | bug          | a Lean `String` is code points, so the relational order is not UTF-16 code-unit order                              | #391  |
-| `test/language/expressions/less-than-or-equal`                        | 1     | builtin      | `Object.prototype.toString` and `valueOf` are not on the prototype yet                                             | #389  |
-| `test/language/expressions/less-than-or-equal`                        | 1     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
-| `test/language/expressions/logical-and`                               | 2     | builtin      | the global `isNaN` and `isFinite` are not in the realm                                                             | #441  |
-| `test/language/expressions/logical-and`                               | 1     | builtin      | `new String` needs the String wrapper object                                                                       | #391  |
-| `test/language/expressions/logical-and`                               | 1     | builtin      | `Symbol` is not in the realm                                                                                       | #392  |
-| `test/language/expressions/logical-and`                               | 1     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
-| `test/language/expressions/logical-not`                               | 2     | builtin      | `new String` needs the String wrapper object                                                                       | #391  |
-| `test/language/expressions/logical-not`                               | 2     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
-| `test/language/expressions/logical-not`                               | 1     | builtin      | `Symbol` is not in the realm                                                                                       | #392  |
-| `test/language/expressions/logical-or`                                | 2     | builtin      | `new String` needs the String wrapper object                                                                       | #391  |
-| `test/language/expressions/logical-or`                                | 1     | builtin      | `Symbol` is not in the realm                                                                                       | #392  |
-| `test/language/expressions/logical-or`                                | 1     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
-| `test/language/expressions/modulus`                                   | 12    | builtin      | the global `isNaN` and `isFinite` are not in the realm                                                             | #441  |
-| `test/language/expressions/modulus`                                   | 3     | builtin      | `new String` needs the String wrapper object                                                                       | #391  |
-| `test/language/expressions/modulus`                                   | 1     | builtin      | the ToNumeric step it pins needs `Symbol`; the order divergence behind it is #436                                  | #392  |
-| `test/language/expressions/modulus`                                   | 1     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
-| `test/language/expressions/multiplication`                            | 8     | builtin      | the global `isNaN` and `isFinite` are not in the realm                                                             | #441  |
-| `test/language/expressions/multiplication`                            | 4     | builtin      | `new String` needs the String wrapper object                                                                       | #391  |
-| `test/language/expressions/multiplication`                            | 1     | builtin      | the ToNumeric step it pins needs `Symbol`; the order divergence behind it is #436                                  | #392  |
-| `test/language/expressions/multiplication`                            | 1     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
-| `test/language/expressions/strict-does-not-equals`                    | 3     | builtin      | `new String` needs the String wrapper object                                                                       | #391  |
-| `test/language/expressions/strict-does-not-equals`                    | 2     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
-| `test/language/expressions/strict-does-not-equals`                    | 1     | builtin      | `Object(v)` on a primitive needs a wrapper object                                                                  | #391  |
-| `test/language/expressions/strict-equals`                             | 3     | builtin      | `new String` needs the String wrapper object                                                                       | #391  |
-| `test/language/expressions/strict-equals`                             | 2     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
-| `test/language/expressions/strict-equals`                             | 1     | builtin      | `Object(v)` on a primitive needs a wrapper object                                                                  | #391  |
-| `test/language/expressions/subtraction`                               | 7     | builtin      | the global `isNaN` and `isFinite` are not in the realm                                                             | #441  |
-| `test/language/expressions/subtraction`                               | 4     | builtin      | `new String` needs the String wrapper object                                                                       | #391  |
-| `test/language/expressions/subtraction`                               | 1     | builtin      | the ToNumeric step it pins needs `Symbol`; the order divergence behind it is #436                                  | #392  |
-| `test/language/expressions/subtraction`                               | 1     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
-| `test/language/expressions/unary-minus`                               | 3     | builtin      | the global `isNaN` and `isFinite` are not in the realm                                                             | #441  |
-| `test/language/expressions/unary-minus`                               | 1     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
-| `test/language/expressions/unary-plus`                                | 6     | builtin      | the global `isNaN` and `isFinite` are not in the realm                                                             | #441  |
-| `test/language/expressions/unary-plus`                                | 1     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
-| `test/language/function-code`                                         | 29    | builtin      | a function has no `call`, `apply`, or `bind`: there is no `Function.prototype`                                     | #389  |
-| `test/language/function-code`                                         | 10    | builtin      | `Object.defineProperty`, `getOwnPropertyDescriptor`, and the rest of `Object`'s reflection are absent              | #389  |
-| `test/language/function-code`                                         | 6     | out-of-scope | the `Function` constructor is excluded by the epic                                                                 | #376  |
-| `test/language/function-code`                                         | 6     | out-of-scope | `eval` is excluded by the epic                                                                                     | #376  |
-| `test/language/function-code`                                         | 4     | builtin      | the `String.prototype` methods are absent                                                                          | #391  |
-| `test/language/function-code`                                         | 2     | builtin      | there is no global object, so `globalThis` and a top-level `this` are unbound                                      | #389  |
-| `test/language/function-code`                                         | 1     | builtin      | there is no `Function.prototype`, so a function has no `constructor`                                               | #389  |
-| `test/language/statements/break`                                      | 1     | out-of-scope | `eval` is excluded by the epic                                                                                     | #376  |
-| `test/language/statements/class`                                      | 1     | out-of-scope | `eval` is excluded by the epic                                                                                     | #376  |
-| `test/language/statements/class`                                      | 1     | builtin      | `Object.getPrototypeOf`, `Object.getOwnPropertyDescriptor`, and `Object.defineProperty` are absent                 | #389  |
-| `test/language/statements/class`                                      | 1     | builtin      | a function has no `hasOwnProperty` or `call`: there is no `Function.prototype`                                     | #389  |
-| `test/language/statements/class/definition`                           | 9     | builtin      | `Object.getPrototypeOf`, `Object.getOwnPropertyDescriptor`, and `Object.defineProperty` are absent                 | #389  |
-| `test/language/statements/class/definition`                           | 1     | builtin      | a function has no `hasOwnProperty` or `call`: there is no `Function.prototype`                                     | #389  |
-| `test/language/statements/class/elements`                             | 22    | out-of-scope | `eval` is excluded by the epic                                                                                     | #376  |
-| `test/language/statements/class/elements`                             | 33    | builtin      | `assert.throws` compares constructors, and a function object has no `name`                                         | #389  |
-| `test/language/statements/class/elements`                             | 3     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                     | #376  |
-| `test/language/statements/class/elements`                             | 6     | builtin      | a function has no `hasOwnProperty` or `call`: there is no `Function.prototype`                                     | #389  |
-| `test/language/statements/class/elements`                             | 1     | builtin      | a function and a class have no `name`                                                                              | #389  |
-| `test/language/statements/class/elements/syntax/valid`                | 2     | builtin      | a function has no `hasOwnProperty` or `call`: there is no `Function.prototype`                                     | #389  |
-| `test/language/statements/class/subclass`                             | 7     | builtin      | `Object.getPrototypeOf`, `Object.getOwnPropertyDescriptor`, and `Object.defineProperty` are absent                 | #389  |
-| `test/language/statements/class/subclass`                             | 1     | out-of-scope | typed arrays, `Date`, and the other library objects are excluded by the epic                                       | #376  |
-| `test/language/statements/class/subclass`                             | 1     | builtin      | `Symbol` is not in the realm                                                                                       | #392  |
-| `test/language/statements/class/subclass`                             | 1     | builtin      | `assert.throws` compares constructors, and a function object has no `name`                                         | #389  |
-| `test/language/statements/class/subclass-builtins`                    | 23    | out-of-scope | typed arrays, `Date`, and the other library objects are excluded by the epic                                       | #376  |
-| `test/language/statements/class/subclass-builtins`                    | 1     | out-of-scope | the `Function` constructor is excluded by the epic                                                                 | #376  |
-| `test/language/statements/class/subclass-builtins`                    | 1     | builtin      | `String` has no `[[Construct]]` until the wrapper object exists                                                    | #391  |
-| `test/language/statements/class/subclass/builtin-objects/Array`       | 1     | builtin      | `Object.getPrototypeOf`, `Object.getOwnPropertyDescriptor`, and `Object.defineProperty` are absent                 | #389  |
-| `test/language/statements/class/subclass/builtin-objects/ArrayBuffer` | 2     | out-of-scope | typed arrays, `Date`, and the other library objects are excluded by the epic                                       | #376  |
-| `test/language/statements/class/subclass/builtin-objects/DataView`    | 2     | out-of-scope | typed arrays, `Date`, and the other library objects are excluded by the epic                                       | #376  |
-| `test/language/statements/class/subclass/builtin-objects/Date`        | 2     | out-of-scope | typed arrays, `Date`, and the other library objects are excluded by the epic                                       | #376  |
-| `test/language/statements/class/subclass/builtin-objects/Function`    | 2     | out-of-scope | the `Function` constructor is excluded by the epic                                                                 | #376  |
-| `test/language/statements/class/subclass/builtin-objects/Map`         | 2     | out-of-scope | typed arrays, `Date`, and the other library objects are excluded by the epic                                       | #376  |
-| `test/language/statements/class/subclass/builtin-objects/Object`      | 1     | builtin      | `Object.getPrototypeOf`, `Object.getOwnPropertyDescriptor`, and `Object.defineProperty` are absent                 | #389  |
-| `test/language/statements/class/subclass/builtin-objects/Promise`     | 2     | out-of-scope | typed arrays, `Date`, and the other library objects are excluded by the epic                                       | #376  |
-| `test/language/statements/class/subclass/builtin-objects/Proxy`       | 1     | builtin      | `assert.throws` compares constructors, and a function object has no `name`                                         | #389  |
-| `test/language/statements/class/subclass/builtin-objects/RegExp`      | 2     | out-of-scope | typed arrays, `Date`, and the other library objects are excluded by the epic                                       | #376  |
-| `test/language/statements/class/subclass/builtin-objects/Set`         | 2     | out-of-scope | typed arrays, `Date`, and the other library objects are excluded by the epic                                       | #376  |
-| `test/language/statements/class/subclass/builtin-objects/String`      | 2     | builtin      | `String` has no `[[Construct]]` until the wrapper object exists                                                    | #391  |
-| `test/language/statements/class/subclass/builtin-objects/Symbol`      | 2     | builtin      | `Symbol` is not in the realm                                                                                       | #392  |
-| `test/language/statements/class/subclass/builtin-objects/TypedArray`  | 2     | out-of-scope | typed arrays, `Date`, and the other library objects are excluded by the epic                                       | #376  |
-| `test/language/statements/class/subclass/builtin-objects/WeakMap`     | 2     | out-of-scope | typed arrays, `Date`, and the other library objects are excluded by the epic                                       | #376  |
-| `test/language/statements/class/subclass/builtin-objects/WeakSet`     | 2     | out-of-scope | typed arrays, `Date`, and the other library objects are excluded by the epic                                       | #376  |
-| `test/language/statements/const`                                      | 1     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
-| `test/language/statements/continue`                                   | 1     | out-of-scope | `eval` is excluded by the epic                                                                                     | #376  |
-| `test/language/statements/do-while`                                   | 6     | out-of-scope | `eval` is excluded by the epic                                                                                     | #376  |
-| `test/language/statements/empty`                                      | 1     | out-of-scope | `eval` is excluded by the epic                                                                                     | #376  |
-| `test/language/statements/expression`                                 | 2     | out-of-scope | `eval` is excluded by the epic                                                                                     | #376  |
-| `test/language/statements/for`                                        | 7     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
-| `test/language/statements/for`                                        | 4     | builtin      | `new String` needs the String wrapper object                                                                       | #391  |
-| `test/language/statements/function`                                   | 11    | out-of-scope | the `Function` constructor is excluded by the epic                                                                 | #376  |
-| `test/language/statements/function`                                   | 5     | out-of-scope | `eval` is excluded by the epic                                                                                     | #376  |
-| `test/language/statements/function`                                   | 4     | builtin      | `Object.prototype.isPrototypeOf` and `Object.getPrototypeOf` are absent                                            | #389  |
-| `test/language/statements/function`                                   | 3     | builtin      | `Function.prototype`'s poisoned `caller` and `arguments` accessors are absent                                      | #389  |
-| `test/language/statements/function`                                   | 2     | builtin      | the transcendental `Math` members are absent                                                                       | #434  |
-| `test/language/statements/function`                                   | 2     | builtin      | `Object.defineProperty`, `getOwnPropertyDescriptor`, and the rest of `Object`'s reflection are absent              | #389  |
-| `test/language/statements/function`                                   | 2     | builtin      | a function has no `hasOwnProperty`: there is no `Function.prototype`                                               | #389  |
-| `test/language/statements/function`                                   | 1     | builtin      | a function has no `call`, `apply`, or `bind`: there is no `Function.prototype`                                     | #389  |
-| `test/language/statements/if`                                         | 9     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
-| `test/language/statements/if`                                         | 1     | builtin      | `new String` needs the String wrapper object                                                                       | #391  |
-| `test/language/statements/labeled`                                    | 2     | out-of-scope | `eval` is excluded by the epic                                                                                     | #376  |
-| `test/language/statements/let`                                        | 1     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
-| `test/language/statements/return`                                     | 1     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent                                         | #434  |
-| `test/language/statements/switch`                                     | 21    | out-of-scope | `eval` is excluded by the epic                                                                                     | #376  |
-| `test/language/statements/switch`                                     | 1     | builtin      | the global `isNaN` and `isFinite` are not in the realm                                                             | #441  |
-| `test/language/statements/throw`                                      | 1     | builtin      | `Array.prototype.concat` is absent                                                                                 | #390  |
-| `test/language/statements/try`                                        | 14    | out-of-scope | `eval` is excluded by the epic                                                                                     | #376  |
-| `test/language/statements/try`                                        | 1     | builtin      | `Array.prototype.concat` is absent                                                                                 | #390  |
-| `test/language/statements/variable`                                   | 17    | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
-| `test/language/statements/variable`                                   | 1     | builtin      | there is no global object, so `globalThis` and a top-level `this` are unbound                                      | #389  |
-| `test/language/statements/while`                                      | 7     | out-of-scope | `eval` and the `Function` constructor are excluded by the epic                                                     | #376  |
+| directory                                                             | fails | class        | why                                                                               | owner |
+| --------------------------------------------------------------------- | ----- | ------------ | --------------------------------------------------------------------------------- | ----- |
+| `test/built-ins/Boolean`                                              | 1     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/built-ins/Boolean`                                              | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                      | #376  |
+| `test/built-ins/Boolean`                                              | 1     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/built-ins/Boolean`                                              | 1     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Boolean`                                              | 1     | builtin      | there is no global object                                                         | #487  |
+| `test/built-ins/Boolean/prototype/toString`                           | 1     | out-of-scope | `Date` is excluded by the epic                                                    | #376  |
+| `test/built-ins/Boolean/prototype/valueOf`                            | 1     | builtin      | there is no global object                                                         | #487  |
+| `test/built-ins/Function`                                             | 19    | builtin      | `Function.prototype.caller` and `arguments` are the `%ThrowTypeError%` accessors  | #487  |
+| `test/built-ins/Function`                                             | 5     | out-of-scope | the `Function` constructor is excluded by the epic                                | #376  |
+| `test/built-ins/Function`                                             | 5     | builtin      | there is no global object                                                         | #487  |
+| `test/built-ins/Function`                                             | 2     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/built-ins/Function`                                             | 1     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                      | #390  |
+| `test/built-ins/Function/internals/Construct`                         | 1     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                    | #376  |
+| `test/built-ins/Function/prototype`                                   | 1     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                      | #390  |
+| `test/built-ins/Function/prototype/Symbol.hasInstance`                | 9     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Function/prototype/Symbol.hasInstance`                | 1     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                    | #376  |
+| `test/built-ins/Function/prototype/apply`                             | 1     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/built-ins/Function/prototype/apply`                             | 1     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/built-ins/Function/prototype/apply`                             | 1     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Function/prototype/bind`                              | 8     | builtin      | `Function.prototype.caller` and `arguments` are the `%ThrowTypeError%` accessors  | #487  |
+| `test/built-ins/Function/prototype/bind`                              | 2     | out-of-scope | `Date` is excluded by the epic                                                    | #376  |
+| `test/built-ins/Function/prototype/bind`                              | 2     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Function/prototype/bind`                              | 1     | out-of-scope | `JSON` is excluded by the epic                                                    | #376  |
+| `test/built-ins/Function/prototype/call`                              | 1     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/built-ins/Function/prototype/call`                              | 1     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/built-ins/Function/prototype/caller-arguments`                  | 1     | builtin      | `Function.prototype.caller` and `arguments` are the `%ThrowTypeError%` accessors  | #487  |
+| `test/built-ins/Function/prototype/toString`                          | 2     | out-of-scope | `nativeFunctionMatcher.js` matches source text with a regular expression          | #376  |
+| `test/built-ins/Function/prototype/toString`                          | 1     | out-of-scope | the bridge keeps no source text, and the matcher is a regular expression          | #376  |
+| `test/built-ins/Math`                                                 | 1     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Math`                                                 | 1     | builtin      | there is no global object                                                         | #487  |
+| `test/built-ins/Math/acos`                                            | 7     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent        | #434  |
+| `test/built-ins/Math/acos`                                            | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                      | #376  |
+| `test/built-ins/Math/acosh`                                           | 6     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent        | #434  |
+| `test/built-ins/Math/acosh`                                           | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                      | #376  |
+| `test/built-ins/Math/asin`                                            | 8     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent        | #434  |
+| `test/built-ins/Math/asin`                                            | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                      | #376  |
+| `test/built-ins/Math/asinh`                                           | 4     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent        | #434  |
+| `test/built-ins/Math/asinh`                                           | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                      | #376  |
+| `test/built-ins/Math/atan`                                            | 6     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent        | #434  |
+| `test/built-ins/Math/atan`                                            | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                      | #376  |
+| `test/built-ins/Math/atan2`                                           | 10    | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent        | #434  |
+| `test/built-ins/Math/atan2`                                           | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                      | #376  |
+| `test/built-ins/Math/atanh`                                           | 4     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent        | #434  |
+| `test/built-ins/Math/atanh`                                           | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                      | #376  |
+| `test/built-ins/Math/cbrt`                                            | 4     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent        | #434  |
+| `test/built-ins/Math/cbrt`                                            | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                      | #376  |
+| `test/built-ins/Math/clz32`                                           | 9     | builtin      | `Math.clz32` and `Math.imul` need ToInt32 and ToUint32                            | #440  |
+| `test/built-ins/Math/clz32`                                           | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                      | #376  |
+| `test/built-ins/Math/cos`                                             | 8     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent        | #434  |
+| `test/built-ins/Math/cos`                                             | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                      | #376  |
+| `test/built-ins/Math/cosh`                                            | 4     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent        | #434  |
+| `test/built-ins/Math/cosh`                                            | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                      | #376  |
+| `test/built-ins/Math/exp`                                             | 8     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent        | #434  |
+| `test/built-ins/Math/exp`                                             | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                      | #376  |
+| `test/built-ins/Math/expm1`                                           | 4     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent        | #434  |
+| `test/built-ins/Math/expm1`                                           | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                      | #376  |
+| `test/built-ins/Math/f16round`                                        | 4     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent        | #434  |
+| `test/built-ins/Math/f16round`                                        | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                      | #376  |
+| `test/built-ins/Math/hypot`                                           | 11    | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent        | #434  |
+| `test/built-ins/Math/hypot`                                           | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                      | #376  |
+| `test/built-ins/Math/imul`                                            | 4     | builtin      | `Math.clz32` and `Math.imul` need ToInt32 and ToUint32                            | #440  |
+| `test/built-ins/Math/imul`                                            | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                      | #376  |
+| `test/built-ins/Math/log`                                             | 8     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent        | #434  |
+| `test/built-ins/Math/log`                                             | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                      | #376  |
+| `test/built-ins/Math/log10`                                           | 4     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent        | #434  |
+| `test/built-ins/Math/log10`                                           | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                      | #376  |
+| `test/built-ins/Math/log1p`                                           | 4     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent        | #434  |
+| `test/built-ins/Math/log1p`                                           | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                      | #376  |
+| `test/built-ins/Math/log2`                                            | 4     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent        | #434  |
+| `test/built-ins/Math/log2`                                            | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                      | #376  |
+| `test/built-ins/Math/random`                                          | 4     | builtin      | `Math.random` is absent                                                           | #445  |
+| `test/built-ins/Math/random`                                          | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                      | #376  |
+| `test/built-ins/Math/sin`                                             | 7     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent        | #434  |
+| `test/built-ins/Math/sin`                                             | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                      | #376  |
+| `test/built-ins/Math/sinh`                                            | 4     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent        | #434  |
+| `test/built-ins/Math/sinh`                                            | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                      | #376  |
+| `test/built-ins/Math/sumPrecise`                                      | 7     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent        | #434  |
+| `test/built-ins/Math/sumPrecise`                                      | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                      | #376  |
+| `test/built-ins/Math/tan`                                             | 8     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent        | #434  |
+| `test/built-ins/Math/tan`                                             | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                      | #376  |
+| `test/built-ins/Math/tanh`                                            | 4     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent        | #434  |
+| `test/built-ins/Math/tanh`                                            | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                      | #376  |
+| `test/built-ins/Number`                                               | 2     | bug          | a numeric literal that overflows to `Infinity` reaches Lean as JSON `null`        | #460  |
+| `test/built-ins/Number`                                               | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                      | #376  |
+| `test/built-ins/Number`                                               | 1     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/built-ins/Number`                                               | 1     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Number`                                               | 1     | builtin      | there is no global object                                                         | #487  |
+| `test/built-ins/Number/NEGATIVE_INFINITY`                             | 2     | builtin      | the global `isNaN` and `isFinite` are not in the realm                            | #441  |
+| `test/built-ins/Number/POSITIVE_INFINITY`                             | 2     | builtin      | the global `isNaN` and `isFinite` are not in the realm                            | #441  |
+| `test/built-ins/Number/isFinite`                                      | 1     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Number/isInteger`                                     | 1     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Number/isNaN`                                         | 1     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Number/isSafeInteger`                                 | 1     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Number/prototype/toExponential`                       | 2     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Number/prototype/toExponential`                       | 1     | builtin      | there is no global object                                                         | #487  |
+| `test/built-ins/Number/prototype/toFixed`                             | 1     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Number/prototype/toPrecision`                         | 2     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Number/prototype/toPrecision`                         | 1     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                      | #390  |
+| `test/built-ins/Number/prototype/toString`                            | 1     | out-of-scope | `Date` is excluded by the epic                                                    | #376  |
+| `test/built-ins/Number/prototype/toString`                            | 1     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/built-ins/Number/prototype/valueOf`                             | 1     | out-of-scope | `Date` is excluded by the epic                                                    | #376  |
+| `test/built-ins/Object`                                               | 5     | builtin      | `Function.prototype.caller` and `arguments` are the `%ThrowTypeError%` accessors  | #487  |
+| `test/built-ins/Object`                                               | 2     | builtin      | there is no global object                                                         | #487  |
+| `test/built-ins/Object`                                               | 1     | out-of-scope | `Date` is excluded by the epic                                                    | #376  |
+| `test/built-ins/Object`                                               | 1     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                    | #376  |
+| `test/built-ins/Object`                                               | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                      | #376  |
+| `test/built-ins/Object`                                               | 1     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                      | #390  |
+| `test/built-ins/Object`                                               | 1     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/built-ins/Object`                                               | 1     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Object/assign`                                        | 5     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/built-ins/Object/assign`                                        | 4     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Object/assign`                                        | 3     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                    | #376  |
+| `test/built-ins/Object/create`                                        | 12    | out-of-scope | `Date` is excluded by the epic                                                    | #376  |
+| `test/built-ins/Object/create`                                        | 11    | out-of-scope | `JSON` is excluded by the epic                                                    | #376  |
+| `test/built-ins/Object/create`                                        | 11    | out-of-scope | regular expressions are excluded by the epic                                      | #376  |
+| `test/built-ins/Object/create`                                        | 11    | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/built-ins/Object/create`                                        | 10    | builtin      | there is no global object                                                         | #487  |
+| `test/built-ins/Object/create`                                        | 2     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                      | #390  |
+| `test/built-ins/Object/create`                                        | 1     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Object/defineProperties`                              | 13    | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/built-ins/Object/defineProperties`                              | 12    | out-of-scope | `Date` is excluded by the epic                                                    | #376  |
+| `test/built-ins/Object/defineProperties`                              | 12    | out-of-scope | `JSON` is excluded by the epic                                                    | #376  |
+| `test/built-ins/Object/defineProperties`                              | 12    | out-of-scope | regular expressions are excluded by the epic                                      | #376  |
+| `test/built-ins/Object/defineProperties`                              | 10    | builtin      | there is no global object                                                         | #487  |
+| `test/built-ins/Object/defineProperties`                              | 2     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Object/defineProperty`                                | 26    | out-of-scope | `Date` is excluded by the epic                                                    | #376  |
+| `test/built-ins/Object/defineProperty`                                | 21    | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/built-ins/Object/defineProperty`                                | 19    | out-of-scope | regular expressions are excluded by the epic                                      | #376  |
+| `test/built-ins/Object/defineProperty`                                | 18    | out-of-scope | `JSON` is excluded by the epic                                                    | #376  |
+| `test/built-ins/Object/defineProperty`                                | 11    | builtin      | there is no global object                                                         | #487  |
+| `test/built-ins/Object/defineProperty`                                | 10    | builtin      | the rest of `Array.prototype` is absent, `toString` among it                      | #390  |
+| `test/built-ins/Object/defineProperty`                                | 4     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Object/entries`                                       | 3     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                      | #390  |
+| `test/built-ins/Object/entries`                                       | 2     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Object/entries`                                       | 1     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                    | #376  |
+| `test/built-ins/Object/entries`                                       | 1     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/built-ins/Object/freeze`                                        | 3     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/built-ins/Object/freeze`                                        | 2     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Object/freeze`                                        | 1     | out-of-scope | `Date` is excluded by the epic                                                    | #376  |
+| `test/built-ins/Object/freeze`                                        | 1     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                    | #376  |
+| `test/built-ins/Object/freeze`                                        | 1     | out-of-scope | regular expressions are excluded by the epic                                      | #376  |
+| `test/built-ins/Object/fromEntries`                                   | 11    | builtin      | `Object.fromEntries` and `groupBy` take an iterable                               | #394  |
+| `test/built-ins/Object/fromEntries`                                   | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                      | #376  |
+| `test/built-ins/Object/fromEntries`                                   | 1     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Object/getOwnPropertyDescriptor`                      | 47    | out-of-scope | `Date` is excluded by the epic                                                    | #376  |
+| `test/built-ins/Object/getOwnPropertyDescriptor`                      | 26    | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/built-ins/Object/getOwnPropertyDescriptor`                      | 20    | builtin      | the rest of `Array.prototype` is absent, `toString` among it                      | #390  |
+| `test/built-ins/Object/getOwnPropertyDescriptor`                      | 11    | builtin      | there is no global object                                                         | #487  |
+| `test/built-ins/Object/getOwnPropertyDescriptor`                      | 9     | out-of-scope | regular expressions are excluded by the epic                                      | #376  |
+| `test/built-ins/Object/getOwnPropertyDescriptor`                      | 9     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent        | #434  |
+| `test/built-ins/Object/getOwnPropertyDescriptor`                      | 2     | out-of-scope | `JSON` is excluded by the epic                                                    | #376  |
+| `test/built-ins/Object/getOwnPropertyDescriptor`                      | 1     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Object/getOwnPropertyDescriptor`                      | 1     | builtin      | `Math.random` is absent                                                           | #445  |
+| `test/built-ins/Object/getOwnPropertyDescriptors`                     | 3     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Object/getOwnPropertyDescriptors`                     | 2     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                    | #376  |
+| `test/built-ins/Object/getOwnPropertyDescriptors`                     | 1     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/built-ins/Object/getOwnPropertyDescriptors`                     | 1     | builtin      | there is no global object                                                         | #487  |
+| `test/built-ins/Object/getOwnPropertyNames`                           | 7     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/built-ins/Object/getOwnPropertyNames`                           | 4     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Object/getOwnPropertyNames`                           | 1     | out-of-scope | `JSON` is excluded by the epic                                                    | #376  |
+| `test/built-ins/Object/getOwnPropertyNames`                           | 1     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                      | #390  |
+| `test/built-ins/Object/getOwnPropertySymbols`                         | 6     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Object/getOwnPropertySymbols`                         | 4     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                    | #376  |
+| `test/built-ins/Object/getOwnPropertySymbols`                         | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                      | #376  |
+| `test/built-ins/Object/getPrototypeOf`                                | 2     | out-of-scope | `Date` is excluded by the epic                                                    | #376  |
+| `test/built-ins/Object/getPrototypeOf`                                | 2     | out-of-scope | regular expressions are excluded by the epic                                      | #376  |
+| `test/built-ins/Object/getPrototypeOf`                                | 2     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/built-ins/Object/getPrototypeOf`                                | 1     | out-of-scope | `JSON` is excluded by the epic                                                    | #376  |
+| `test/built-ins/Object/getPrototypeOf`                                | 1     | builtin      | there is no global object                                                         | #487  |
+| `test/built-ins/Object/groupBy`                                       | 10    | builtin      | `Object.fromEntries` and `groupBy` take an iterable                               | #394  |
+| `test/built-ins/Object/groupBy`                                       | 1     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Object/hasOwn`                                        | 4     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Object/internals/DefineOwnProperty`                   | 3     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                    | #376  |
+| `test/built-ins/Object/is`                                            | 3     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Object/is`                                            | 2     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/built-ins/Object/isExtensible`                                  | 2     | out-of-scope | `Date` is excluded by the epic                                                    | #376  |
+| `test/built-ins/Object/isExtensible`                                  | 2     | out-of-scope | regular expressions are excluded by the epic                                      | #376  |
+| `test/built-ins/Object/isExtensible`                                  | 2     | builtin      | there is no global object                                                         | #487  |
+| `test/built-ins/Object/isExtensible`                                  | 1     | out-of-scope | `JSON` is excluded by the epic                                                    | #376  |
+| `test/built-ins/Object/isExtensible`                                  | 1     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/built-ins/Object/isFrozen`                                      | 2     | out-of-scope | `Date` is excluded by the epic                                                    | #376  |
+| `test/built-ins/Object/isFrozen`                                      | 2     | out-of-scope | regular expressions are excluded by the epic                                      | #376  |
+| `test/built-ins/Object/isFrozen`                                      | 2     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/built-ins/Object/isFrozen`                                      | 1     | out-of-scope | `JSON` is excluded by the epic                                                    | #376  |
+| `test/built-ins/Object/isFrozen`                                      | 1     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Object/isFrozen`                                      | 1     | builtin      | there is no global object                                                         | #487  |
+| `test/built-ins/Object/isSealed`                                      | 2     | out-of-scope | `Date` is excluded by the epic                                                    | #376  |
+| `test/built-ins/Object/isSealed`                                      | 2     | out-of-scope | regular expressions are excluded by the epic                                      | #376  |
+| `test/built-ins/Object/isSealed`                                      | 1     | out-of-scope | `JSON` is excluded by the epic                                                    | #376  |
+| `test/built-ins/Object/isSealed`                                      | 1     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/built-ins/Object/isSealed`                                      | 1     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Object/isSealed`                                      | 1     | builtin      | there is no global object                                                         | #487  |
+| `test/built-ins/Object/keys`                                          | 3     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                    | #376  |
+| `test/built-ins/Object/keys`                                          | 3     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/built-ins/Object/keys`                                          | 1     | out-of-scope | `Date` is excluded by the epic                                                    | #376  |
+| `test/built-ins/Object/preventExtensions`                             | 3     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/built-ins/Object/preventExtensions`                             | 2     | out-of-scope | `Date` is excluded by the epic                                                    | #376  |
+| `test/built-ins/Object/preventExtensions`                             | 2     | out-of-scope | regular expressions are excluded by the epic                                      | #376  |
+| `test/built-ins/Object/preventExtensions`                             | 1     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                    | #376  |
+| `test/built-ins/Object/preventExtensions`                             | 1     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Object/prototype`                                     | 4     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                    | #376  |
+| `test/built-ins/Object/prototype/__defineGetter__`                    | 9     | builtin      | the Annex B accessors on `Object.prototype` come with the global object           | #487  |
+| `test/built-ins/Object/prototype/__defineGetter__`                    | 1     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                    | #376  |
+| `test/built-ins/Object/prototype/__defineGetter__`                    | 1     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Object/prototype/__defineSetter__`                    | 9     | builtin      | the Annex B accessors on `Object.prototype` come with the global object           | #487  |
+| `test/built-ins/Object/prototype/__defineSetter__`                    | 1     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                    | #376  |
+| `test/built-ins/Object/prototype/__defineSetter__`                    | 1     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Object/prototype/__lookupGetter__`                    | 12    | builtin      | the Annex B accessors on `Object.prototype` come with the global object           | #487  |
+| `test/built-ins/Object/prototype/__lookupGetter__`                    | 4     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                    | #376  |
+| `test/built-ins/Object/prototype/__lookupSetter__`                    | 12    | builtin      | the Annex B accessors on `Object.prototype` come with the global object           | #487  |
+| `test/built-ins/Object/prototype/__lookupSetter__`                    | 4     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                    | #376  |
+| `test/built-ins/Object/prototype/__proto__`                           | 13    | builtin      | the Annex B accessors on `Object.prototype` come with the global object           | #487  |
+| `test/built-ins/Object/prototype/__proto__`                           | 2     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                    | #376  |
+| `test/built-ins/Object/prototype/hasOwnProperty`                      | 4     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Object/prototype/isPrototypeOf`                       | 2     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Object/prototype/isPrototypeOf`                       | 1     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                    | #376  |
+| `test/built-ins/Object/prototype/propertyIsEnumerable`                | 4     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Object/prototype/propertyIsEnumerable`                | 1     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                      | #390  |
+| `test/built-ins/Object/prototype/toString`                            | 7     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Object/prototype/toString`                            | 5     | out-of-scope | the keyed collections and promises are excluded by the epic                       | #376  |
+| `test/built-ins/Object/prototype/toString`                            | 3     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                    | #376  |
+| `test/built-ins/Object/prototype/toString`                            | 2     | out-of-scope | BigInt is excluded by the epic                                                    | #376  |
+| `test/built-ins/Object/prototype/toString`                            | 1     | out-of-scope | `Date` is excluded by the epic                                                    | #376  |
+| `test/built-ins/Object/prototype/toString`                            | 1     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/built-ins/Object/prototype/valueOf`                             | 1     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/built-ins/Object/seal`                                          | 14    | out-of-scope | typed arrays and their buffers are excluded by the epic                           | #376  |
+| `test/built-ins/Object/seal`                                          | 7     | out-of-scope | the keyed collections and promises are excluded by the epic                       | #376  |
+| `test/built-ins/Object/seal`                                          | 3     | out-of-scope | `Date` is excluded by the epic                                                    | #376  |
+| `test/built-ins/Object/seal`                                          | 3     | out-of-scope | regular expressions are excluded by the epic                                      | #376  |
+| `test/built-ins/Object/seal`                                          | 3     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/built-ins/Object/seal`                                          | 3     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Object/seal`                                          | 2     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                    | #376  |
+| `test/built-ins/Object/seal`                                          | 1     | out-of-scope | the `Function` constructor is excluded by the epic                                | #376  |
+| `test/built-ins/Object/seal`                                          | 1     | builtin      | `AggregateError` takes an iterable and is not in the realm                        | #394  |
+| `test/built-ins/Object/setPrototypeOf`                                | 2     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Object/setPrototypeOf`                                | 1     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                    | #376  |
+| `test/built-ins/Object/values`                                        | 2     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                    | #376  |
+| `test/built-ins/Object/values`                                        | 2     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/built-ins/Object/values`                                        | 1     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/built-ins/parseFloat`                                           | 2     | builtin      | there is no global object                                                         | #487  |
+| `test/built-ins/parseFloat`                                           | 1     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/built-ins/parseInt`                                             | 2     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/built-ins/parseInt`                                             | 2     | builtin      | there is no global object                                                         | #487  |
+| `test/harness`                                                        | 7     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/harness`                                                        | 6     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                      | #390  |
+| `test/harness`                                                        | 5     | builtin      | there is no global object                                                         | #487  |
+| `test/harness`                                                        | 4     | out-of-scope | typed arrays and their buffers are excluded by the epic                           | #376  |
+| `test/harness`                                                        | 1     | out-of-scope | `Date` is excluded by the epic                                                    | #376  |
+| `test/language/arguments-object`                                      | 2     | out-of-scope | an early-error test that reaches for `eval`                                       | #376  |
+| `test/language/expressions/addition`                                  | 7     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/language/expressions/addition`                                  | 5     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/language/expressions/addition`                                  | 5     | builtin      | the global `isNaN` and `isFinite` are not in the realm                            | #441  |
+| `test/language/expressions/addition`                                  | 1     | out-of-scope | `Date` is excluded by the epic                                                    | #376  |
+| `test/language/expressions/addition`                                  | 1     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/language/expressions/arrow-function`                            | 1     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                      | #390  |
+| `test/language/expressions/arrow-function`                            | 1     | builtin      | `Function.prototype.caller` and `arguments` are the `%ThrowTypeError%` accessors  | #487  |
+| `test/language/expressions/arrow-function/arrow`                      | 4     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/language/expressions/assignment`                                | 1     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                      | #390  |
+| `test/language/expressions/assignment`                                | 1     | protocol     | the bridge drops the parentheses that keep NamedEvaluation from naming a function | #499  |
+| `test/language/expressions/call`                                      | 4     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/language/expressions/call`                                      | 1     | out-of-scope | an early-error test that reaches for `eval`                                       | #376  |
+| `test/language/expressions/class`                                     | 1     | builtin      | `Function.prototype.caller` and `arguments` are the `%ThrowTypeError%` accessors  | #487  |
+| `test/language/expressions/class/elements`                            | 24    | out-of-scope | an early-error test that reaches for `eval`                                       | #376  |
+| `test/language/expressions/class/elements`                            | 19    | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/language/expressions/class/elements`                            | 2     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                    | #376  |
+| `test/language/expressions/class/elements/syntax/valid`               | 1     | bug          | a static method named `constructor` is emitted as the class constructor           | #496  |
+| `test/language/expressions/class/subclass-builtins`                   | 14    | out-of-scope | typed arrays and their buffers are excluded by the epic                           | #376  |
+| `test/language/expressions/class/subclass-builtins`                   | 6     | out-of-scope | the keyed collections and promises are excluded by the epic                       | #376  |
+| `test/language/expressions/class/subclass-builtins`                   | 1     | out-of-scope | `Date` is excluded by the epic                                                    | #376  |
+| `test/language/expressions/class/subclass-builtins`                   | 1     | out-of-scope | regular expressions are excluded by the epic                                      | #376  |
+| `test/language/expressions/class/subclass-builtins`                   | 1     | out-of-scope | the `Function` constructor is excluded by the epic                                | #376  |
+| `test/language/expressions/class/subclass-builtins`                   | 1     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/language/expressions/class/subclass-builtins`                   | 1     | builtin      | `AggregateError` takes an iterable and is not in the realm                        | #394  |
+| `test/language/expressions/conditional`                               | 2     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/language/expressions/conditional`                               | 1     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/language/expressions/conditional`                               | 1     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/language/expressions/division`                                  | 9     | builtin      | the global `isNaN` and `isFinite` are not in the realm                            | #441  |
+| `test/language/expressions/division`                                  | 4     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/language/expressions/division`                                  | 2     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/language/expressions/division`                                  | 1     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/language/expressions/function`                                  | 1     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/language/expressions/greater-than`                              | 6     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/language/expressions/greater-than`                              | 1     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/language/expressions/greater-than-or-equal`                     | 6     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/language/expressions/greater-than-or-equal`                     | 1     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/language/expressions/less-than`                                 | 6     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/language/expressions/less-than`                                 | 1     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/language/expressions/less-than-or-equal`                        | 6     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/language/expressions/less-than-or-equal`                        | 1     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/language/expressions/logical-and`                               | 2     | builtin      | the global `isNaN` and `isFinite` are not in the realm                            | #441  |
+| `test/language/expressions/logical-and`                               | 1     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/language/expressions/logical-and`                               | 1     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/language/expressions/logical-and`                               | 1     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/language/expressions/logical-not`                               | 2     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/language/expressions/logical-not`                               | 1     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/language/expressions/logical-not`                               | 1     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/language/expressions/logical-or`                                | 2     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/language/expressions/logical-or`                                | 1     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/language/expressions/logical-or`                                | 1     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/language/expressions/modulus`                                   | 12    | builtin      | the global `isNaN` and `isFinite` are not in the realm                            | #441  |
+| `test/language/expressions/modulus`                                   | 3     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/language/expressions/modulus`                                   | 1     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/language/expressions/modulus`                                   | 1     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/language/expressions/multiplication`                            | 8     | builtin      | the global `isNaN` and `isFinite` are not in the realm                            | #441  |
+| `test/language/expressions/multiplication`                            | 4     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/language/expressions/multiplication`                            | 1     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/language/expressions/multiplication`                            | 1     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/language/expressions/strict-does-not-equals`                    | 4     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/language/expressions/strict-does-not-equals`                    | 2     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/language/expressions/strict-equals`                             | 4     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/language/expressions/strict-equals`                             | 2     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/language/expressions/subtraction`                               | 7     | builtin      | the global `isNaN` and `isFinite` are not in the realm                            | #441  |
+| `test/language/expressions/subtraction`                               | 4     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/language/expressions/subtraction`                               | 1     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/language/expressions/subtraction`                               | 1     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/language/expressions/unary-minus`                               | 3     | builtin      | the global `isNaN` and `isFinite` are not in the realm                            | #441  |
+| `test/language/expressions/unary-minus`                               | 1     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/language/expressions/unary-plus`                                | 6     | builtin      | the global `isNaN` and `isFinite` are not in the realm                            | #441  |
+| `test/language/expressions/unary-plus`                                | 1     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/language/function-code`                                         | 6     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/language/function-code`                                         | 4     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/language/statements/break`                                      | 1     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/language/statements/class`                                      | 1     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/language/statements/class`                                      | 1     | builtin      | `Function.prototype.caller` and `arguments` are the `%ThrowTypeError%` accessors  | #487  |
+| `test/language/statements/class/definition`                           | 1     | builtin      | `Function.prototype.caller` and `arguments` are the `%ThrowTypeError%` accessors  | #487  |
+| `test/language/statements/class/elements`                             | 32    | out-of-scope | an early-error test that reaches for `eval`                                       | #376  |
+| `test/language/statements/class/elements`                             | 22    | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/language/statements/class/elements`                             | 4     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                    | #376  |
+| `test/language/statements/class/elements`                             | 1     | builtin      | there is no global object                                                         | #487  |
+| `test/language/statements/class/elements/syntax/valid`                | 1     | bug          | a static method named `constructor` is emitted as the class constructor           | #496  |
+| `test/language/statements/class/strict-mode`                          | 1     | builtin      | `Function.prototype.caller` and `arguments` are the `%ThrowTypeError%` accessors  | #487  |
+| `test/language/statements/class/subclass`                             | 2     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/language/statements/class/subclass`                             | 1     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                    | #376  |
+| `test/language/statements/class/subclass`                             | 1     | out-of-scope | typed arrays and their buffers are excluded by the epic                           | #376  |
+| `test/language/statements/class/subclass-builtins`                    | 14    | out-of-scope | typed arrays and their buffers are excluded by the epic                           | #376  |
+| `test/language/statements/class/subclass-builtins`                    | 6     | out-of-scope | the keyed collections and promises are excluded by the epic                       | #376  |
+| `test/language/statements/class/subclass-builtins`                    | 1     | out-of-scope | `Date` is excluded by the epic                                                    | #376  |
+| `test/language/statements/class/subclass-builtins`                    | 1     | out-of-scope | regular expressions are excluded by the epic                                      | #376  |
+| `test/language/statements/class/subclass-builtins`                    | 1     | out-of-scope | the `Function` constructor is excluded by the epic                                | #376  |
+| `test/language/statements/class/subclass-builtins`                    | 1     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/language/statements/class/subclass-builtins`                    | 1     | builtin      | `AggregateError` takes an iterable and is not in the realm                        | #394  |
+| `test/language/statements/class/subclass/builtin-objects/ArrayBuffer` | 2     | out-of-scope | typed arrays and their buffers are excluded by the epic                           | #376  |
+| `test/language/statements/class/subclass/builtin-objects/DataView`    | 2     | out-of-scope | typed arrays and their buffers are excluded by the epic                           | #376  |
+| `test/language/statements/class/subclass/builtin-objects/Date`        | 2     | out-of-scope | `Date` is excluded by the epic                                                    | #376  |
+| `test/language/statements/class/subclass/builtin-objects/Function`    | 4     | out-of-scope | the `Function` constructor is excluded by the epic                                | #376  |
+| `test/language/statements/class/subclass/builtin-objects/Map`         | 2     | out-of-scope | the keyed collections and promises are excluded by the epic                       | #376  |
+| `test/language/statements/class/subclass/builtin-objects/Promise`     | 2     | out-of-scope | the keyed collections and promises are excluded by the epic                       | #376  |
+| `test/language/statements/class/subclass/builtin-objects/Proxy`       | 1     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                    | #376  |
+| `test/language/statements/class/subclass/builtin-objects/RegExp`      | 3     | out-of-scope | regular expressions are excluded by the epic                                      | #376  |
+| `test/language/statements/class/subclass/builtin-objects/Set`         | 2     | out-of-scope | the keyed collections and promises are excluded by the epic                       | #376  |
+| `test/language/statements/class/subclass/builtin-objects/String`      | 3     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/language/statements/class/subclass/builtin-objects/Symbol`      | 2     | builtin      | `Symbol` is not in the realm                                                      | #392  |
+| `test/language/statements/class/subclass/builtin-objects/TypedArray`  | 2     | out-of-scope | typed arrays and their buffers are excluded by the epic                           | #376  |
+| `test/language/statements/class/subclass/builtin-objects/WeakMap`     | 2     | out-of-scope | the keyed collections and promises are excluded by the epic                       | #376  |
+| `test/language/statements/class/subclass/builtin-objects/WeakSet`     | 2     | out-of-scope | the keyed collections and promises are excluded by the epic                       | #376  |
+| `test/language/statements/const`                                      | 1     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/language/statements/continue`                                   | 1     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/language/statements/do-while`                                   | 6     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/language/statements/empty`                                      | 1     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/language/statements/expression`                                 | 2     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/language/statements/for`                                        | 7     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/language/statements/for`                                        | 4     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/language/statements/function`                                   | 4     | builtin      | `Function.prototype.caller` and `arguments` are the `%ThrowTypeError%` accessors  | #487  |
+| `test/language/statements/function`                                   | 3     | out-of-scope | an early-error test that reaches for `eval`                                       | #376  |
+| `test/language/statements/function`                                   | 2     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/language/statements/function`                                   | 2     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent        | #434  |
+| `test/language/statements/function`                                   | 1     | out-of-scope | the `Function` constructor is excluded by the epic                                | #376  |
+| `test/language/statements/if`                                         | 9     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/language/statements/if`                                         | 1     | builtin      | the String wrapper object and `String.prototype` are absent                       | #391  |
+| `test/language/statements/labeled`                                    | 2     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/language/statements/let`                                        | 1     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/language/statements/return`                                     | 1     | builtin      | the transcendental `Math` members, `sumPrecise`, and `f16round` are absent        | #434  |
+| `test/language/statements/switch`                                     | 21    | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/language/statements/switch`                                     | 1     | builtin      | the global `isNaN` and `isFinite` are not in the realm                            | #441  |
+| `test/language/statements/throw`                                      | 1     | builtin      | the rest of `Array.prototype` is absent                                           | #390  |
+| `test/language/statements/try`                                        | 12    | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/language/statements/try`                                        | 2     | out-of-scope | an early-error test that reaches for `eval`                                       | #376  |
+| `test/language/statements/try`                                        | 1     | builtin      | the rest of `Array.prototype` is absent                                           | #390  |
+| `test/language/statements/variable`                                   | 7     | out-of-scope | an early-error test that reaches for `eval`                                       | #376  |
+| `test/language/statements/variable`                                   | 6     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
+| `test/language/statements/variable`                                   | 2     | builtin      | there is no global object                                                         | #487  |
+| `test/language/statements/while`                                      | 7     | out-of-scope | `eval` is excluded by the epic                                                    | #376  |
 
 ## The unsupported column
 
@@ -335,7 +492,7 @@ owns them:
 | kind                                                                                                                                                     | owner                                                                         |
 | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | `VariableDeclarationList`, `VariableStatement`, `OmittedExpression`, `SpreadElement`, `SpreadAssignment`                                                 | #394 — binding and assignment patterns, holes, and spread                     |
-| `DeleteExpression`, `BinaryExpression ,`, `BinaryExpression in`, the shifts and the bitwise forms, `AssignmentExpression >>>=`                           | #376 — operators the epic does not model                                      |
+| `BinaryExpression ,`, the shifts and the bitwise forms, `AssignmentExpression >>>=`                                                                      | #376 — operators the epic does not model                                      |
 | `BigIntLiteral`                                                                                                                                          | #376 — BigInt is out of scope                                                 |
 | `FunctionExpression generator`, `FunctionDeclaration generator`, `FunctionExpression async`, `ArrowFunctionExpression async`, `RegularExpressionLiteral` | #376 — generators, async, and regular expressions are out of scope            |
 | `GetAccessor`, `SetAccessor`, `MethodDeclaration`, `ComputedPropertyName`, `Property numeric key`, `TemplateExpression`, `ShorthandPropertyAssignment`   | #395 — template literals, computed keys, shorthand, and method definitions    |
@@ -345,7 +502,8 @@ owns them:
 | `Parameter`                                                                                                                                              | #394 — rest parameters, and a binding pattern with a default                  |
 | `ArrayBindingPattern`, `ObjectBindingPattern`                                                                                                            | #394 — binding patterns                                                       |
 | `NoSubstitutionTemplateLiteral`                                                                                                                          | #395 — template literals                                                      |
-| `ForInStatement`, `ForOfStatement`                                                                                                                       | #486, #394 — the two loop forms left                                          |
+| `ForOfStatement`                                                                                                                                         | #394 — the one loop form left                                                 |
+| `Function constructor`                                                                                                                                   | #376 — the constructor's semantics are `eval` by another spelling             |
 | `AssignmentExpression target`, `LogicalExpression ??`, `BinaryExpression ==`, `BinaryExpression !=`                                                      | #376 — loose equality, nullish coalescing, and targets with no reference form |
 | `MetaProperty`                                                                                                                                           | #486 — `new.target` as syntax                                                 |
 | `WithStatement`                                                                                                                                          | #376 — `with` is not strict-mode syntax and the epic is strict mode only      |
@@ -355,51 +513,50 @@ The counts, from the same run. They are not tested — only the table above
 is — but they are what names the next slice to land.
 
 ```
-  DeleteExpression  1342
-  MethodDefinition generator  1107
-  Parameter  697
-  ArrayBindingPattern  458
-  FunctionExpression generator  364
-  ObjectBindingPattern  309
-  MethodDefinition private  289
-  ComputedPropertyName  273
+  MethodDefinition generator  1436
+  Parameter  737
+  MethodDefinition private  497
+  ArrayBindingPattern  466
+  FunctionExpression generator  377
+  ComputedPropertyName  360
+  ObjectBindingPattern  344
+  VariableDeclarationList  226
+  VariableStatement  226
   FunctionDeclaration generator  219
-  VariableDeclarationList  214
-  VariableStatement  213
-  MethodDefinition async  205
-  BinaryExpression ,  170
-  BigIntLiteral  77
+  MethodDefinition async  217
+  BinaryExpression ,  181
+  Function constructor  163
+  BigIntLiteral  82
+  RegularExpressionLiteral  74
+  GetAccessor  53
   SpreadElement  47
-  AssignmentExpression target  30
-  MethodDefinition numeric key  28
+  AssignmentExpression target  38
+  BinaryExpression ==  32
+  MethodDefinition numeric key  29
   ClassStaticBlockDeclaration  26
-  ForInStatement  26
-  GetAccessor  22
-  MethodDeclaration  19
-  ShorthandPropertyAssignment  18
-  SpreadAssignment  17
-  OmittedExpression  13
-  BinaryExpression ==  12
-  SetAccessor  12
-  BinaryExpression in  11
-  TemplateExpression  11
+  MethodDeclaration  26
+  ShorthandPropertyAssignment  24
+  SpreadAssignment  23
+  OmittedExpression  20
+  SetAccessor  20
+  $262.createRealm  17
+  TemplateExpression  13
   NoSubstitutionTemplateLiteral  10
   Decorator  9
+  Property numeric key  8
   BinaryExpression !=  7
   AssignmentExpression super target  6
+  FunctionExpression async  6
+  MetaProperty  6
   BinaryExpression &  4
   FunctionDeclaration async  4
-  $262.createRealm  3
+  PropertyDefinition numeric key  4
+  ArrowFunctionExpression async  3
   AssignmentExpression >>>=  3
   ForOfStatement  3
-  FunctionExpression async  3
   AccessorKeyword  2
-  ArrowFunctionExpression async  2
-  MetaProperty  2
   $262.detachArrayBuffer  1
   BinaryExpression >>  1
   LogicalExpression ??  1
-  Property numeric key  1
-  RegularExpressionLiteral  1
   WithStatement  1
 ```

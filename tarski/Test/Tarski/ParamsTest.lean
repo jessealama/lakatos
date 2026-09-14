@@ -218,11 +218,10 @@ private def classA (elements : List ClassElement) : Stmt :=
       .exprStmt (.member (.member (.member (.ident "A") "prototype") "m") "length") ]
   == "1"
 
--- `class A { m(a) {} } Object.keys(A.prototype.m).join();` — and it is
--- the function's *own* property, its only one: a method has no
--- `prototype`. The question `m.hasOwnProperty("length")` would ask
--- directly cannot be put to a function yet, because a function object's
--- `[[Prototype]]` is null until `Function.prototype` exists (#389).
+-- `class A { m(a) {} } Object.keys(A.prototype.m).join();` — nothing,
+-- a function's `length` and `name` being non-enumerable. That they are
+-- *own* properties is what `m.hasOwnProperty` answers, now that a
+-- function reaches `Object.prototype` through `Function.prototype`.
 #guard outcome
     [ classA [.method .method false "m" ["a"] []],
       .exprStmt (.call
@@ -231,4 +230,12 @@ private def classA (elements : List ClassElement) : Stmt :=
             [.member (.member (.ident "A") "prototype") "m"])
           "join")
         []) ]
-  == "length"
+  == ""
+
+-- `class A { m(a) {} } A.prototype.m.hasOwnProperty("length");`
+#guard outcome
+    [ classA [.method .method false "m" ["a"] []],
+      .exprStmt (.call
+        (.member (.member (.member (.ident "A") "prototype") "m") "hasOwnProperty")
+        [.strLit "length"]) ]
+  == "true"

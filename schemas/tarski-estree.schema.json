@@ -30,6 +30,7 @@
         { "$ref": "#/definitions/WhileStatement" },
         { "$ref": "#/definitions/DoWhileStatement" },
         { "$ref": "#/definitions/ForStatement" },
+        { "$ref": "#/definitions/ForInStatement" },
         { "$ref": "#/definitions/SwitchStatement" },
         { "$ref": "#/definitions/EmptyStatement" },
         { "$ref": "#/definitions/BlockStatement" },
@@ -132,7 +133,7 @@
     },
 
     "ForStatement": {
-      "description": "Each of the head's three parts is null when it is absent, so `for (;;)` has three. `init` is a VariableDeclaration for a declaration head and an Expression for an expression one; a head declaring a binding pattern is outside the slice and arrives as `Unsupported` in the head's place, so the loop around it still reaches the Lean decoder. `for`-`in` and `for`-`of` are not this node — the whole statement arrives as `Unsupported`.",
+      "description": "Each of the head's three parts is null when it is absent, so `for (;;)` has three. `init` is a VariableDeclaration for a declaration head and an Expression for an expression one; a head declaring a binding pattern is outside the slice and arrives as `Unsupported` in the head's place, so the loop around it still reaches the Lean decoder. `for`-`in` is ForInStatement; `for`-`of` is not this node and the whole statement arrives as `Unsupported`.",
       "type": "object",
       "properties": {
         "type": { "const": "ForStatement" },
@@ -152,6 +153,24 @@
         "body": { "$ref": "#/definitions/Statement" }
       },
       "required": ["type", "init", "test", "update", "body"],
+      "additionalProperties": false
+    },
+
+    "ForInStatement": {
+      "description": "`left` is a VariableDeclaration for a declaration head and an Expression for an assignment-target one. The Lean decoder requires a declaration head to have exactly one declarator with no initializer: `for (var x = 1 in o)` is the sloppy-only form B.3.5 keeps alive, and it is refused by name. `for`-`of` is not this node and arrives as `Unsupported`.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "ForInStatement" },
+        "left": {
+          "oneOf": [
+            { "$ref": "#/definitions/VariableDeclaration" },
+            { "$ref": "#/definitions/Expression" }
+          ]
+        },
+        "right": { "$ref": "#/definitions/Expression" },
+        "body": { "$ref": "#/definitions/Statement" }
+      },
+      "required": ["type", "left", "right", "body"],
       "additionalProperties": false
     },
 
@@ -376,7 +395,7 @@
     },
 
     "UnaryExpression": {
-      "description": "`-`, `+`, `!`, `typeof`, and `void` are in the slice; `~` and `delete` are admitted here and refused by the Lean decoder. `++` and `--` are not here — ESTree makes them an UpdateExpression, and so does this schema.",
+      "description": "`-`, `+`, `!`, `typeof`, `void`, and `delete` are in the slice; `~` is admitted here and refused by the Lean decoder. `delete` is not a UnaryOp in the AST — it takes a reference rather than a value — but it is a UnaryExpression here, because that is what ESTree calls it. `++` and `--` are not here — ESTree makes them an UpdateExpression, and so does this schema.",
       "type": "object",
       "properties": {
         "type": { "const": "UnaryExpression" },
@@ -404,7 +423,7 @@
     },
 
     "BinaryExpression": {
-      "description": "Every ESTree binary operator, not only the slice's: the bridge writes what it saw, and the Lean decoder names the one it will not evaluate. `instanceof` is evaluated; `in` is not. `&&`, `||`, and `??` are not here — ESTree makes them a LogicalExpression, and so does this schema.",
+      "description": "Every ESTree binary operator, not only the slice's: the bridge writes what it saw, and the Lean decoder names the one it will not evaluate. `instanceof` and `in` are evaluated. `&&`, `||`, and `??` are not here — ESTree makes them a LogicalExpression, and so does this schema.",
       "type": "object",
       "properties": {
         "type": { "const": "BinaryExpression" },

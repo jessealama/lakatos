@@ -65,11 +65,8 @@ completion value is `undefined`, which is what `print` answers. -/
     [printStmt (.objectLit [("toString", .funcExpr none [] [.returnStmt (some (.strLit "t"))])])]
   == ["t"]
 
-/-! A plain object has no `toString` until `Object.prototype` grows one
-(#389), so printing one throws where an engine prints
-`[object Object]`. -/
-#guard outcome [printStmt (.objectLit [])]
-  == "uncaught: TypeError: Cannot convert object to primitive value"
+/-! A plain object's `toString` is `Object.prototype`'s. -/
+#guard printed [printStmt (.objectLit [])] == ["[object Object]"]
 
 /-! Nothing binds `%PrintLog%`, so an empty run has an empty log. -/
 #guard printed [.exprStmt (.numLit 1.0)] == []

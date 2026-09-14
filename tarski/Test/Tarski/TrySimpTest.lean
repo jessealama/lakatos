@@ -22,6 +22,11 @@ private def program : Program :=
         (some [.returnStmt (some (.numLit 2.0))])],
     .exprStmt (.call (.ident "f") []) ]
 
+-- The realm is eighty-eight objects now, so the term `simp` carries and
+-- the kernel then checks is deeper than the default limits admit; see
+-- `Test/Tarski/CallSimpTest.lean` and #471.
+set_option maxRecDepth 4000 in
+set_option maxHeartbeats 1000000 in
 example : runProgram program = some (.ok (some (.prim (.num 2.0)))) := by
   simp [tarski_eval, program]
 

@@ -30,7 +30,7 @@ private def program : Program :=
 -- `var` pass every script now runs, the head's scope and its copies, and
 -- the update operator. `evalForLoop` is in it and `evalFor` is not —
 -- the first runs once, the second is the loop.
-attribute [local simp] evalExpr evalStmt evalStmts evalDeclarators
+attribute [local simp] evalExpr evalStmt evalStmts evalDeclarators evalNamed
   instantiateBlock hoistNames hoistDeclarators initFunctions
   varNames varNamesStmt varNamesCases hoistVars
   evalForLoop copyBindings Env.rebind UpdateOp.step

@@ -16,7 +16,7 @@ Nothing is unfolded by hand any more. `construct` and the prototype
 as the guarded simprocs `Tarski/Simp.lean` declares: each fires on a
 literal reference and declines on one the heap has not resolved, which is
 the same condition the three `rw` lines this proof used to carry were
-waiting for. `getFrom` and `findAccessor` are ordinary members — they
+waiting for. `getFrom` and `findProperty` are ordinary members — they
 answer an own property without recursing — so the read at the end costs
 nothing either way.
 
@@ -54,8 +54,12 @@ private def program : Program :=
 
 -- A class evaluation allocates a prototype, a constructor object, and a
 -- cell per declared name before the constructor's first statement runs,
--- so `simp`'s own recursion needs more room than an earlier program's.
-set_option maxRecDepth 4000 in
+-- and the realm the whole thing sits on is eighty-eight objects, so
+-- `simp`'s own recursion and the kernel's check both need more room than
+-- an earlier program's. That whole-program `simp` has a ceiling the
+-- heap's representation sets is #471's.
+set_option maxRecDepth 8000 in
+set_option maxHeartbeats 2000000 in
 example : runProgram plain = some (.ok (some (.prim (.num 3.0)))) := by
   simp [tarski_eval, plain]
 

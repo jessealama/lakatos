@@ -41,21 +41,23 @@ private def simprocIn (n : Name) : CoreM Bool := do
 /-- info: true -/
 #guard_msgs in
 #eval (#[``Tarski.evalExpr, ``Tarski.evalStmt, ``Tarski.callFunction, ``Tarski.getFrom,
-  ``Tarski.findAccessor, ``Tarski.getProp, ``Tarski.project,
+  ``Tarski.findProperty, ``Tarski.getProp, ``Tarski.project,
   ``Tarski.readNumber].allM unfoldsIn)
 
--- Recursion on a loop (`evalWhile`, `evalDoWhile`, `evalFor`, `joinElements`) or on the
--- heap (the three prototype walks and `construct`): never a plain
--- unfolding. The first four are `rw`'s, and the `*UnfoldTest` files are
--- where that happens; the last four are the guarded simprocs below.
+-- Recursion on a loop (`evalWhile`, `evalDoWhile`, `evalFor`, `joinElements`,
+-- `listFromArrayLike`, `forInNext`, and the three bound-function steps)
+-- or on the heap (the three prototype walks and `construct`): never a
+-- plain unfolding. The first nine are `rw`'s, and the `*UnfoldTest` files
+-- are where that happens; the last four are the guarded simprocs below.
 /-- info: false -/
 #guard_msgs in
 #eval (#[``Tarski.evalWhile, ``Tarski.evalDoWhile, ``Tarski.evalFor, ``Tarski.joinElements,
-  ``Tarski.getFromUp, ``Tarski.findAccessorUp, ``Tarski.protoChainHas,
-  ``Tarski.construct].anyM unfoldsIn)
+  ``Tarski.getFromUp, ``Tarski.findPropertyUp, ``Tarski.protoChainHas,
+  ``Tarski.construct, ``Tarski.listFromArrayLike, ``Tarski.forInNext,
+  ``Tarski.callBound, ``Tarski.constructBound, ``Tarski.instanceOfBound].anyM unfoldsIn)
 
 -- The four heap recursions are in the set, as simprocs.
 /-- info: true -/
 #guard_msgs in
-#eval (#[``Tarski.unfoldGetFromUp, ``Tarski.unfoldFindAccessorUp,
+#eval (#[``Tarski.unfoldGetFromUp, ``Tarski.unfoldFindPropertyUp,
   ``Tarski.unfoldProtoChainHas, ``Tarski.unfoldConstruct].allM simprocIn)

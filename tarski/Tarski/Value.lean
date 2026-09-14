@@ -242,12 +242,95 @@ inductive NativeFn where
   single object rather than a closure made per call. It has no
   `[[Construct]]`. -/
   | throwTypeError
+  /-- `Object.prototype.toString`. -/
+  | objectProtoToString
+  /-- `Object.prototype.valueOf`. -/
+  | objectProtoValueOf
+  /-- `Object.prototype.toLocaleString`, which Invokes `this.toString()`
+  as 20.1.3.5 has it. -/
+  | objectProtoToLocaleString
+  /-- `Object.prototype.isPrototypeOf`. -/
+  | objectProtoIsPrototypeOf
+  /-- `Object.prototype.propertyIsEnumerable`. -/
+  | objectProtoPropertyIsEnumerable
+  /-- `Object.assign`. -/
+  | objectAssign
+  /-- `Object.create`. -/
+  | objectCreate
+  /-- `Object.defineProperties`. -/
+  | objectDefineProperties
+  /-- `Object.defineProperty`. -/
+  | objectDefineProperty
+  /-- `Object.entries`. -/
+  | objectEntries
+  /-- `Object.freeze`. -/
+  | objectFreeze
+  /-- `Object.getOwnPropertyDescriptor`. -/
+  | objectGetOwnPropertyDescriptor
+  /-- `Object.getOwnPropertyDescriptors`. -/
+  | objectGetOwnPropertyDescriptors
+  /-- `Object.getOwnPropertyNames`. -/
+  | objectGetOwnPropertyNames
+  /-- `Object.getPrototypeOf`. -/
+  | objectGetPrototypeOf
+  /-- `Object.hasOwn`. -/
+  | objectHasOwn
+  /-- `Object.isExtensible`. -/
+  | objectIsExtensible
+  /-- `Object.isFrozen`. -/
+  | objectIsFrozen
+  /-- `Object.isSealed`. -/
+  | objectIsSealed
+  /-- `Object.preventExtensions`. -/
+  | objectPreventExtensions
+  /-- `Object.seal`. -/
+  | objectSeal
+  /-- `Object.setPrototypeOf`. -/
+  | objectSetPrototypeOf
+  /-- `Object.values`. -/
+  | objectValues
+  /-- `%Function.prototype%` itself, which is callable and answers
+  `undefined` whatever it is given (20.2.3). -/
+  | functionProto
+  /-- The `Function` constructor. The *object* exists, because every
+  `call`/`apply`/`bind` spelling and every test that reads a function's
+  prototype chain goes through it; calling it is out of the epic's scope
+  (`eval` by another name), so the decoder refuses `Function(...)` by
+  name and an alias meets this arm's `TypeError`. -/
+  | functionCtor
+  /-- `Function.prototype.call`. -/
+  | functionCall
+  /-- `Function.prototype.apply`. -/
+  | functionApply
+  /-- `Function.prototype.bind`. -/
+  | functionBind
+  /-- `Function.prototype.toString`. -/
+  | functionToString
 deriving Repr, DecidableEq, Inhabited
 
-/-- `[[Call]]`: user code or a built-in. -/
+/-- A bound function exotic object's three internal slots plus the one
+fact about its target a walk would otherwise have to recompute.
+BoundFunctionCreate (10.4.1.3) decides `[[Construct]]`'s presence once,
+from a target whose constructibility never changes, so it is data here
+rather than a read of the heap. -/
+structure BoundFunction where
+  /-- `[[BoundTargetFunction]]`. -/
+  target : Ref
+  /-- `[[BoundThis]]`. -/
+  boundThis : Value
+  /-- `[[BoundArguments]]`, prepended to every call's arguments. -/
+  boundArgs : List Value
+  /-- Whether the target had a `[[Construct]]` when `bind` ran. -/
+  constructs : Bool
+deriving Repr, Inhabited
+
+/-- `[[Call]]`: user code, a built-in, or a bound function. -/
 inductive Callable where
   | closure (c : Closure)
   | native (f : NativeFn)
+  /-- A bound function exotic object (10.4.1): calling it calls the
+  target with the bound `this` and the bound arguments in front. -/
+  | bound (b : BoundFunction)
 deriving Repr, Inhabited
 
 /-- How exotic an object is. `ordinary` is every object with no
@@ -255,24 +338,30 @@ internal behaviour of its own; `array` is the Array exotic object, and
 its `length` lives here rather than among the properties for three
 reasons: it is then never enumerated by `Object.keys`, never shadowed by
 an ordinary write, and truncation is one field write rather than a scan
-plus a property update. `number` and `boolean` are the Number and Boolean
+plus a property update. **`length`'s one variable attribute lives beside
+its value** for that same reason: `[[Writable]]` is the only attribute a
+`length` can change, `Object.defineProperty(xs, "length", …)` is the only
+thing that changes it, and a second place for one property's state would
+be a place to forget. `number` and `boolean` are the Number and Boolean
 wrapper objects, carrying `[[NumberData]]` and `[[BooleanData]]` the same
 way — a field, not a property, so `Object.keys(new Number(1))` is empty
-and no write can forge one. A kind with a `Float` in it still derives
-`DecidableEq`, because propositional equality on `Float` is SameValue
-(`Js/Val.lean` says so), which is the right test for a `[[NumberData]]`.
-`arguments` is the unmapped arguments object: ordinary in every respect
-but the `[[ParameterMap]]` slot, which is what
-`Object.prototype.toString` reads to answer `[object Arguments]`, so the
-kind *is* that slot and #389's `toString` needs no second visit to the
-call path. `hasOwn`, `ownKeys`, and `truncate` treat it as ordinary.
-A later slice adds a boxed string (#391). -/
+and no write can forge one. `error` is `[[ErrorData]]`, which has no
+other home and which `Object.prototype.toString` reads as `Error`;
+`arguments` is the unmapped arguments object, ordinary in every respect
+but the `[[ParameterMap]]` slot, which is what that same `toString`
+reads to answer `[object Arguments]`, so the kind *is* that slot.
+`hasOwn`, `ownKeys`, and `truncate` treat `arguments` as ordinary. A kind
+with a `Float` in it still derives `DecidableEq`, because propositional
+equality on `Float` is SameValue (`Js/Val.lean` says so), which is the
+right test for a `[[NumberData]]`. A later slice adds a boxed string
+(#391). -/
 inductive ObjKind where
   | ordinary
-  | array (length : Nat)
+  | array (length : Nat) (lengthWritable : Bool)
   | number (value : Float)
   | boolean (value : Bool)
   | arguments
+  | error
 deriving Repr, DecidableEq, Inhabited
 
 /-- An accessor property's two functions. Named `getter` and `setter`
@@ -287,31 +376,103 @@ structure Accessor where
   /-- `[[Set]]`. A write to a setter-less accessor property is a
   `TypeError` in strict mode. -/
   setter : Option Value := none
-deriving Repr, Inhabited
+deriving Repr, DecidableEq, Inhabited
 
-/-- An ordinary object: a prototype link, own data properties in
-insertion order, own accessor properties beside them, and — for a
-function — what calling it does. There are still no property
-descriptors: writability and enumerability are #389's, which is also
-what folds these two lists into one. -/
+/-- A property's value half: 6.1.7.1's two descriptor kinds. A property
+is one or the other and never both, which is why this is a sum rather
+than four optional fields. -/
+inductive PropSlot where
+  /-- A data property: `[[Value]]` and `[[Writable]]`. -/
+  | data (value : Value) (writable : Bool)
+  /-- An accessor property: `[[Get]]` and `[[Set]]`. -/
+  | accessor (a : Accessor)
+deriving Repr, DecidableEq, Inhabited
+
+/-- An own property: 6.1.7.1's attribute table, with the two attributes
+every property has beside the ones its kind has. -/
+structure Property where
+  /-- The value half, and which kind of property this is. -/
+  slot : PropSlot
+  /-- `[[Enumerable]]`: whether `for`-`in` and `Object.keys` see it. -/
+  enumerable : Bool
+  /-- `[[Configurable]]`: whether it may be deleted or redefined. -/
+  configurable : Bool
+deriving Repr, DecidableEq, Inhabited
+
+/-- A data property with every attribute set: CreateDataProperty's
+result, and so what an object literal's member, an array's element, a
+public class field, and an ordinary write all build. -/
+@[reducible] def Property.ordinary (v : Value) : Property :=
+  { slot := .data v true, enumerable := true, configurable := true }
+
+/-- Writable and configurable but not enumerable: the attributes every
+built-in method has, and the ones `constructor` on a prototype, `name`
+and `message` on an `Error.prototype`, a class method, and the `message`
+an `Error` constructor sets all carry. -/
+@[reducible] def Property.method (v : Value) : Property :=
+  { slot := .data v true, enumerable := false, configurable := true }
+
+/-- Configurable and nothing else: a function's `length` and `name`, so
+that `f.name = "x"` refuses in strict mode while
+`Object.defineProperty(f, "name", …)` succeeds — which is exactly what
+test262's `propertyHelper.js` verifies on every built-in. -/
+@[reducible] def Property.attribute (v : Value) : Property :=
+  { slot := .data v false, enumerable := false, configurable := true }
+
+/-- No attribute at all: `Number.EPSILON`, `Math.PI`, a constructor's
+`prototype`. -/
+@[reducible] def Property.constant (v : Value) : Property :=
+  { slot := .data v false, enumerable := false, configurable := false }
+
+/-- Writable and nothing else: an ordinary function's own `prototype`
+property (10.2.5 MakeConstructor), which a script may replace but not
+delete or make enumerable. -/
+@[reducible] def Property.functionPrototype (v : Value) : Property :=
+  { slot := .data v true, enumerable := false, configurable := false }
+
+/-- A data property's value; `none` for an accessor. -/
+def Property.value? : Property → Option Value
+  | { slot := .data v _, .. } => some v
+  | { slot := .accessor _, .. } => none
+
+/-- A data property's `[[Writable]]`; `none` for an accessor. -/
+def Property.writable? : Property → Option Bool
+  | { slot := .data _ w, .. } => some w
+  | { slot := .accessor _, .. } => none
+
+/-- An accessor property's two halves; `none` for a data property. -/
+def Property.accessor? : Property → Option Accessor
+  | { slot := .accessor a, .. } => some a
+  | { slot := .data _ _, .. } => none
+
+/-- Whether the property is an accessor property. -/
+def Property.isAccessor (p : Property) : Bool :=
+  match p.slot with
+  | .accessor _ => true
+  | .data _ _ => false
+
+/-- An ordinary object: a prototype link, its own properties in
+insertion order, whether it may grow, and — for a function — what
+calling it does. -/
 structure Obj where
-  /-- `[[Prototype]]`. `none` is the null prototype; a function object's
-  is one until `Function.prototype` exists (#389). -/
+  /-- `[[Prototype]]`. `none` is the null prototype. -/
   proto : Option Ref := none
-  /-- Own data properties, in insertion order. An array's elements are
+  /-- Own properties, in insertion order, **data and accessor together**:
+  a key names at most one property, which is what makes redefining a
+  getter as a data property the specification's replacement rather than
+  two properties of one name, and what lets `ownKeys` interleave the two
+  kinds as OrdinaryOwnPropertyKeys requires. An array's elements are
   here, under their index keys; its `length` is not. -/
-  properties : List (String × Value) := []
+  properties : List (String × Property) := []
   /-- `[[Call]]`. An object with one is a function. -/
   callable : Option Callable := none
   /-- The exotic-object classification. Defaulted, so an ordinary
   object's literal says nothing about it. -/
   kind : ObjKind := .ordinary
-  /-- Own accessor properties, in insertion order. **A key is in at most
-  one of the two lists**: `Obj.defineData` and `Obj.defineAccessor` are
-  the only ways in, and each drops the key from the other list first, so
-  redefining a getter as a data property and back is the spec's
-  replacement rather than two properties of one name. -/
-  accessors : List (String × Accessor) := []
+  /-- `[[Extensible]]`. A field rather than a property because
+  `Object.preventExtensions` changes a *state*: no key names it, and
+  nothing a script writes can forge one. -/
+  extensible : Bool := true
   /-- `[[PrivateElements]]`, restricted to fields — a private method or
   accessor is a decoder refusal, so no other kind can arrive. These are
   not properties: no key names them, `Object.keys` cannot see them, and
@@ -386,74 +547,92 @@ def Heap.writeObj (h : Heap) (r : Ref) (o : Obj) : Heap :=
   | some _ => { h with objects := h.objects.set! r o }
   | none => h
 
+/-- `Object.is` on values: the library's `sameValue` on primitives —
+which is what makes `Object.is(NaN, NaN)` true and `Object.is(0, -0)`
+false — reference identity on objects, and `false` across the two. It
+lives here rather than in `Eval` because `Obj.applyDescriptor` is a pure
+function and 10.1.6.3 asks the question twice. -/
+def sameValueValue : Value → Value → Bool
+  | .prim a, .prim b => JsVal.sameValue a b
+  | .obj r₁, .obj r₂ => r₁ == r₂
+  | .prim _, .obj _ => false
+  | .obj _, .prim _ => false
+
 /-- Find a key in a property list. -/
-def propGet : List (String × Value) → String → Option Value
+def propGet : List (String × Property) → String → Option Property
   | [], _ => none
   | (k, v) :: rest, key => if k == key then some v else propGet rest key
 
 /-- Create or overwrite a key in a property list. An existing key keeps
 its place in the insertion order; a new one goes last. -/
-def propSet : List (String × Value) → String → Value → List (String × Value)
+def propSet : List (String × Property) → String → Property → List (String × Property)
   | [], key, v => [(key, v)]
   | (k, w) :: rest, key, v =>
     if k == key then (key, v) :: rest else (k, w) :: propSet rest key v
 
-/-- An own property's value, or `none` if the object does not have it.
-Walking the prototype chain is `Eval`'s business: it may run user code
-once accessors land (#389), so it cannot be a pure function of the
-heap. -/
-def Obj.getOwn (o : Obj) (key : String) : Option Value :=
-  propGet o.properties key
-
-/-- Create or overwrite an own property. -/
-def Obj.setOwn (o : Obj) (key : String) (v : Value) : Obj :=
-  { o with properties := propSet o.properties key v }
-
 /-- Drop a key from a property list, keeping the rest in order. -/
-def propDrop : List (String × Value) → String → List (String × Value)
+def propDrop : List (String × Property) → String → List (String × Property)
   | [], _ => []
   | (k, v) :: rest, key => if k == key then rest else (k, v) :: propDrop rest key
 
-/-- Find a key in an accessor list. -/
-def accessorGet : List (String × Accessor) → String → Option Accessor
-  | [], _ => none
-  | (k, a) :: rest, key => if k == key then some a else accessorGet rest key
+/-- An own property, attributes and all, or `none` if the object does
+not have one under that key. An array's `length` is not here: it lives in
+the kind, and `Eval.findProperty` synthesizes its descriptor. -/
+def Obj.getOwnProperty (o : Obj) (key : String) : Option Property :=
+  propGet o.properties key
 
-/-- Drop a key from an accessor list. -/
-def accessorDrop : List (String × Accessor) → String → List (String × Accessor)
-  | [], _ => []
-  | (k, a) :: rest, key => if k == key then rest else (k, a) :: accessorDrop rest key
+/-- An own *data* property's value, or `none` if the object has no own
+property under that key or has an accessor there. Walking the prototype
+chain is `Eval`'s business: it runs user code, so it cannot be a pure
+function of the heap. -/
+def Obj.getOwn (o : Obj) (key : String) : Option Value :=
+  match o.getOwnProperty key with
+  | some p => p.value?
+  | none => none
 
-/-- Create or extend an accessor entry. An absent half leaves whatever is
-already there standing, which is ValidateAndApplyPropertyDescriptor's own
-rule: a descriptor without a `[[Set]]` field does not erase one. -/
-def accessorSet : List (String × Accessor) → String → Option Value → Option Value →
-    List (String × Accessor)
-  | [], key, g, s => [(key, { getter := g, setter := s })]
-  | (k, a) :: rest, key, g, s =>
-    if k == key then
-      (key, { getter := match g with | some _ => g | none => a.getter,
-              setter := match s with | some _ => s | none => a.setter }) :: rest
-    else (k, a) :: accessorSet rest key g s
-
-/-- An own accessor property, or `none` if the object does not have one
-under that key. -/
+/-- An own accessor property, or `none` if the object has no own
+property under that key or has a data property there. -/
 def Obj.getOwnAccessor (o : Obj) (key : String) : Option Accessor :=
-  accessorGet o.accessors key
+  match o.getOwnProperty key with
+  | some p => p.accessor?
+  | none => none
 
-/-- Define an own data property. A *definition*, not a write: an accessor
-of the same name is replaced rather than called, which is what makes a
-class field ignore a prototype setter. -/
-def Obj.defineData (o : Obj) (key : String) (v : Value) : Obj :=
-  { o with accessors := accessorDrop o.accessors key,
-           properties := propSet o.properties key v }
+/-- Define an own property with the attributes given. A *definition*,
+not a write: an accessor of the same name is replaced rather than
+called, which is what makes a class field ignore a prototype setter. An
+existing key keeps its place in the insertion order. -/
+def Obj.define (o : Obj) (key : String) (p : Property) : Obj :=
+  { o with properties := propSet o.properties key p }
 
-/-- Define an own accessor property, replacing a data property of the
-same name and merging into an accessor already there, so that a `get x`
-and a `set x` make one property with two halves. -/
-def Obj.defineAccessor (o : Obj) (key : String) (getter setter : Option Value) : Obj :=
-  { o with properties := propDrop o.properties key,
-           accessors := accessorSet o.accessors key getter setter }
+/-- Define one half of an accessor property, merging into an accessor
+already under that key so that a `get x` and a `set x` make one property
+with two halves, and replacing a data property outright. An absent half
+leaves whatever is there standing, which is
+ValidateAndApplyPropertyDescriptor's own rule: a descriptor without a
+`[[Set]]` field does not erase one. -/
+def Obj.defineAccessorHalf (o : Obj) (key : String) (getter setter : Option Value)
+    (enumerable configurable : Bool) : Obj :=
+  let a : Accessor :=
+    match o.getOwnAccessor key with
+    | some old =>
+      { getter := match getter with | some _ => getter | none => old.getter,
+        setter := match setter with | some _ => setter | none => old.setter }
+    | none => { getter, setter }
+  o.define key { slot := .accessor a, enumerable, configurable }
+
+/-- OrdinarySet's write half: an existing *data* property keeps its
+attributes and takes the value, and a key that is not there becomes an
+ordinary data property. The writability and extensibility checks are
+`Eval.setProp`'s, which has the `TypeError`s to throw. -/
+def Obj.setOwn (o : Obj) (key : String) (v : Value) : Obj :=
+  match o.getOwnProperty key with
+  | some p => o.define key { p with slot := .data v (p.writable?.getD true) }
+  | none => o.define key (Property.ordinary v)
+
+/-- `[[Delete]]`'s write half: drop the key. The configurability check is
+`Eval.deleteProp`'s. -/
+def Obj.remove (o : Obj) (key : String) : Obj :=
+  { o with properties := propDrop o.properties key }
 
 /-- Find a private element. -/
 def privateGet : List (PrivateName × Value) → PrivateName → Option Value
@@ -521,53 +700,261 @@ def arrayIndex? (key : String) : Option Nat :=
 /-- Whether an object is an Array exotic object. -/
 def Obj.isArray (o : Obj) : Bool :=
   match o.kind with
-  | .array _ => true
+  | .array _ _ => true
   | _ => false
 
-/-- `[[GetOwnProperty]]` reduced to a yes or no, which is all
-`Object.prototype.hasOwnProperty` asks. An array's `length` is an own
-property that lives in the kind rather than the property list, so it is
-answered here by hand; an accessor property is one too, so the second
-list is consulted beside the first. -/
-def Obj.hasOwn (o : Obj) (key : String) : Bool :=
+/-- An array's live `length` and its `[[Writable]]`, or `none` for
+anything that is not an Array exotic object. -/
+def Obj.arrayLength? (o : Obj) : Option (Nat × Bool) :=
   match o.kind with
-  | .array _ => key == "length" || (o.getOwn key).isSome || (o.getOwnAccessor key).isSome
-  | _ => (o.getOwn key).isSome || (o.getOwnAccessor key).isSome
+  | .array n w => some (n, w)
+  | _ => none
 
-/-- ArraySetLength's shortening half: drop every element at an index at
-or past the new length, keep the rest in order, and record the length.
-Growing is the same operation with nothing to drop. -/
-def Obj.truncate (o : Obj) (n : Nat) : Obj :=
+/-- `[[GetOwnProperty]]` (10.1.5.1, and 10.4.2.1 for the one exotic
+case): the own property under a key, **with an array's `length`
+synthesized** — a non-enumerable, non-configurable data property whose
+value is the live length and whose `[[Writable]]` is the kind's, because
+it is an own property that does not live in the property list. -/
+def Obj.ownProperty (o : Obj) (key : String) : Option Property :=
+  match o.kind with
+  | .array n w =>
+    if key == "length" then
+      some { slot := .data (Value.ofNat n) w, enumerable := false, configurable := false }
+    else o.getOwnProperty key
+  | _ => o.getOwnProperty key
+
+/-- `[[GetOwnProperty]]` reduced to a yes or no, which is all
+`Object.prototype.hasOwnProperty` and `Object.hasOwn` ask. -/
+def Obj.hasOwn (o : Obj) (key : String) : Bool :=
+  (o.ownProperty key).isSome
+
+/-- SetIntegrityLevel (7.3.15) as a pure function: the object stops being
+extensible and every own property stops being configurable, and under
+`frozen` every own *data* property stops being writable too — an array's
+`length` among them, which is why the kind's bit is set here. -/
+def Obj.setIntegrity (o : Obj) (frozen : Bool) : Obj :=
   { o with
-    kind := .array n,
-    properties := o.properties.filter (fun p =>
+    extensible := false,
+    kind := match o.kind with
+      | .array n w => .array n (if frozen then false else w)
+      | k => k,
+    properties := o.properties.map (fun p =>
+      (p.1,
+        { p.2 with
+          configurable := false,
+          slot := match p.2.slot with
+            | .data v w => .data v (if frozen then false else w)
+            | a => a })) }
+
+/-- TestIntegrityLevel (7.3.16), the question `Object.isFrozen` and
+`Object.isSealed` ask. -/
+def Obj.testIntegrity (o : Obj) (frozen : Bool) : Bool :=
+  !o.extensible
+    && (match o.kind with
+        | .array _ w => !(frozen && w)
+        | _ => true)
+    && o.properties.all (fun p =>
+        !p.2.configurable
+          && (!frozen ||
+              match p.2.slot with
+              | .data _ w => !w
+              | .accessor _ => true))
+
+/-- `Obj.truncate`'s loop: the doomed index keys from the top down, each
+dropped while it is configurable. The first non-configurable one stops
+the scan and fixes the length at one past it, which is 10.4.2.4 steps
+12–14 exactly. -/
+def truncateDrop (props : List (String × Property)) (reached : Nat) :
+    List (Nat × String) → List (String × Property) × Nat
+  | [] => (props, reached)
+  | (i, k) :: rest =>
+    match propGet props k with
+    | some p =>
+      if p.configurable then truncateDrop (propDrop props k) reached rest
+      else (props, i + 1)
+    | none => truncateDrop props reached rest
+
+/-- ArraySetLength's shortening half (10.4.2.4 steps 12–14): drop every
+element at an index at or past the new length, **from the top down and
+stopping at the first non-configurable one**, and answer the length the
+scan actually reached. Growing is the same operation with nothing to
+drop. `length`'s own `[[Writable]]` is not touched here: the caller
+decides whether the write was allowed at all. -/
+def Obj.truncate (o : Obj) (n : Nat) : Obj × Nat :=
+  let w := match o.kind with
+    | .array _ lw => lw
+    | _ => true
+  let doomed :=
+    (o.properties.filterMap (fun p =>
       match arrayIndex? p.1 with
-      | some i => i < n
-      | none => true) }
+      | some i => if n ≤ i then some (i, p.1) else none
+      | none => none)).mergeSort (fun a b => decide (b.1 ≤ a.1))
+  let (props, reached) := truncateDrop o.properties n doomed
+  ({ o with kind := .array reached w, properties := props }, reached)
 
 /-- OrdinaryOwnPropertyKeys: the index keys in ascending numeric order,
-then every other key in insertion order. Symbols are #392's, and an
-array's `length` is not here because it is not in the property list —
-`Object.keys([7, 8])` is `["0", "1"]`. Enumerability arrives with
-descriptors (#389), so until then every own key is listed, accessor keys
-included; they come after the data keys rather than interleaved with
-them, which is an ordering limit #389 removes along with the second
-list. -/
+then every other key in insertion order, **data and accessor properties
+interleaved** because they are one list. An array's `length` joins after
+the index keys and before the rest — it is an own property, so
+`Object.getOwnPropertyNames([1])` is `["0", "length"]`, even though it
+does not live in the property list. Symbols are #392's. -/
 def Obj.ownKeys (o : Obj) : List String :=
   let keys := o.properties.map (·.1)
   let indexed := keys.filterMap (fun k => (arrayIndex? k).map (fun i => (i, k)))
   (indexed.mergeSort (fun a b => decide (a.1 ≤ b.1))).map (·.2)
+    ++ (if o.isArray then ["length"] else [])
     ++ keys.filter (fun k => (arrayIndex? k).isNone)
-    ++ o.accessors.map (·.1)
 
-/-- A list of values as index-keyed properties, numbered from `start`. -/
-def indexProps (start : Nat) : List Value → List (String × Value)
+/-- The own keys `Object.keys` and `for`-`in` see: `ownKeys` filtered by
+`[[Enumerable]]`. An array's `length` is non-enumerable, so it never
+appears. -/
+def Obj.enumerableKeys (o : Obj) : List String :=
+  o.ownKeys.filter (fun k =>
+    match o.getOwnProperty k with
+    | some p => p.enumerable
+    | none => false)
+
+/-- A list of values as index-keyed ordinary data properties, numbered
+from `start`. -/
+def indexProps (start : Nat) : List Value → List (String × Property)
   | [] => []
-  | v :: rest => (Nat.repr start, v) :: indexProps (start + 1) rest
+  | v :: rest => (Nat.repr start, Property.ordinary v) :: indexProps (start + 1) rest
 
 /-- ArrayCreate's object: the elements under their index keys, the
-length in the kind, and the given prototype. -/
+length — writable, as ArrayCreate leaves it — in the kind, and the given
+prototype. -/
 def Obj.array (proto : Option Ref) (elements : List Value) : Obj :=
-  { kind := .array elements.length, proto, properties := indexProps 0 elements }
+  { kind := .array elements.length true, proto, properties := indexProps 0 elements }
+
+/-- A *partial* Property Descriptor (6.2.6): every field may be absent,
+and absence is not the same as `undefined`. `{ get: undefined }` is an
+accessor descriptor whose `[[Get]]` is `undefined`, while `{}` has no
+`[[Get]]` at all, so an absent field is `none` and a present one is
+`some` of whatever was there. -/
+structure Descriptor where
+  /-- `[[Value]]`. -/
+  value : Option Value := none
+  /-- `[[Get]]`. -/
+  getter : Option Value := none
+  /-- `[[Set]]`. -/
+  setter : Option Value := none
+  /-- `[[Writable]]`. -/
+  writable : Option Bool := none
+  /-- `[[Enumerable]]`. -/
+  enumerable : Option Bool := none
+  /-- `[[Configurable]]`. -/
+  configurable : Option Bool := none
+deriving Repr, DecidableEq, Inhabited
+
+/-- A descriptor's accessor half as an `Accessor` stores it: a `[[Get]]`
+or `[[Set]]` of `undefined` is stored as **absent**, because the two are
+the same property — a read of either answers `undefined` rather than
+calling one, and a write to either refuses. The *descriptor* still
+distinguishes them, which is what makes `{ get: undefined }` an accessor
+descriptor and `{}` a generic one. -/
+def accessorHalf : Option Value → Option Value
+  | some (.prim .undef) => none
+  | h => h
+
+/-- IsAccessorDescriptor (6.2.6.1). -/
+def Descriptor.isAccessor (d : Descriptor) : Bool :=
+  d.getter.isSome || d.setter.isSome
+
+/-- IsDataDescriptor (6.2.6.2). -/
+def Descriptor.isData (d : Descriptor) : Bool :=
+  d.value.isSome || d.writable.isSome
+
+/-- IsGenericDescriptor (6.2.6.3): neither of the other two. -/
+def Descriptor.isGeneric (d : Descriptor) : Bool :=
+  !d.isAccessor && !d.isData
+
+/-- Whether the descriptor mentions nothing at all, which 10.1.6.3 step 3
+accepts outright. -/
+def Descriptor.isEmpty (d : Descriptor) : Bool :=
+  d.value.isNone && d.getter.isNone && d.setter.isNone &&
+    d.writable.isNone && d.enumerable.isNone && d.configurable.isNone
+
+/-- FromPropertyDescriptor's other direction: a property read as the
+fully populated descriptor 6.2.6 says it is. -/
+def Property.toDescriptor (p : Property) : Descriptor :=
+  match p.slot with
+  | .data v w =>
+    { value := some v, writable := some w,
+      enumerable := some p.enumerable, configurable := some p.configurable }
+  | .accessor a =>
+    { getter := some (a.getter.getD (.prim .undef)),
+      setter := some (a.setter.getD (.prim .undef)),
+      enumerable := some p.enumerable, configurable := some p.configurable }
+
+/-- Whether a descriptor field that is present differs from the value
+already there, under SameValue — 10.1.6.3's repeated test. -/
+def descriptorKeeps (field : Option Value) (current : Option Value) : Bool :=
+  match field with
+  | none => true
+  | some v => sameValueValue v (current.getD (.prim .undef))
+
+/-- ValidateAndApplyPropertyDescriptor (10.1.6.3) as a **pure function**
+on an object: `none` is the specification's `false` — the change is
+refused — and `some o` is the object with the property replaced or
+appended.
+
+The refusals are the table's: a non-configurable property will not
+become configurable, will not flip its enumerability, will not change
+kind, will not take a different value while non-writable, will not
+become writable, and will not exchange either accessor half; and a key
+that is not there cannot be added to a non-extensible object. An absent
+field defaults to `false` or `undefined` on a new key and leaves the
+existing attribute standing on an old one.
+
+The throw belongs to the one caller that has a `TypeError` to raise, so
+the whole table is `#guard`-testable without a heap
+(`Test/Tarski/DescriptorTest.lean`). -/
+def Obj.applyDescriptor (o : Obj) (key : String) (d : Descriptor) : Option Obj :=
+  match o.getOwnProperty key with
+  | none =>
+    if !o.extensible then none
+    else
+      let p : Property :=
+        if d.isAccessor then
+          { slot := .accessor
+              { getter := accessorHalf d.getter, setter := accessorHalf d.setter },
+            enumerable := d.enumerable.getD false,
+            configurable := d.configurable.getD false }
+        else
+          { slot := .data (d.value.getD (.prim .undef)) (d.writable.getD false),
+            enumerable := d.enumerable.getD false,
+            configurable := d.configurable.getD false }
+      some (o.define key p)
+  | some cur =>
+    if d.isEmpty then some o
+    else
+      let refused :=
+        !cur.configurable &&
+          (d.configurable == some true ||
+            (d.enumerable.isSome && d.enumerable != some cur.enumerable) ||
+            (!d.isGeneric && d.isAccessor != cur.isAccessor) ||
+            (match cur.slot with
+             | .accessor a =>
+               !(descriptorKeeps d.getter a.getter && descriptorKeeps d.setter a.setter)
+             | .data v w =>
+               !w && (d.writable == some true || !descriptorKeeps d.value (some v))))
+      if refused then none
+      else
+        let enumerable := d.enumerable.getD cur.enumerable
+        let configurable := d.configurable.getD cur.configurable
+        let slot : PropSlot :=
+          match cur.slot, d.isAccessor, d.isData with
+          -- A data property redefined as an accessor, and the mirror:
+          -- the attributes the descriptor does not name come from the old
+          -- property, but the value half starts fresh.
+          | .data _ _, true, _ =>
+            .accessor { getter := accessorHalf d.getter, setter := accessorHalf d.setter }
+          | .accessor _, _, true => .data (d.value.getD (.prim .undef)) (d.writable.getD false)
+          | .data v w, _, _ => .data (d.value.getD v) (d.writable.getD w)
+          | .accessor a, _, _ =>
+            .accessor
+              { getter := match d.getter with | some g => accessorHalf (some g) | none => a.getter,
+                setter := match d.setter with | some s => accessorHalf (some s) | none => a.setter }
+        some (o.define key { slot, enumerable, configurable })
 
 end Tarski

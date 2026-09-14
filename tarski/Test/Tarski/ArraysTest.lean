@@ -206,8 +206,10 @@ so, until #390 gives `Array.prototype` a `toString`, a `TypeError`. -/
     (expr (.call (.member (.arrayLit [.strLit "a", .boolLit true, .numLit 2.5]) "join")
       [.strLit " "]))
   == "a true 2.5"
+-- A nested array's ToString is `Object.prototype.toString`'s tag:
+-- `Array.prototype.toString` is #390's, and makes this `1`.
 #guard outcome (expr (.call (.member (.arrayLit [nums [1.0]]) "join") []))
-  == "uncaught: TypeError: Cannot convert object to primitive value"
+  == "[object Array]"
 
 -- `const o = {}; o.join = Array.prototype.join; o.join();`
 #guard outcome

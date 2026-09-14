@@ -17,7 +17,7 @@ is never in the set at all and is unfolded one step at a time with `rw`:
 the `*UnfoldTest` files. A definition that recurses on the *heap* is in
 between: it stops as soon as the heap says so, but `simp` will unfold it
 forever under a reference it has not yet resolved. Those four —
-`getFromUp`, `findAccessorUp`, `protoChainHas`, and `construct` — join
+`getFromUp`, `findPropertyUp`, `protoChainHas`, and `construct` — join
 the set as *guarded simprocs* below, which fire only when the reference
 they are handed is a literal. A concrete heap has resolved it by then,
 which is exactly when the hand-written `rw` used to be legal.
@@ -35,9 +35,16 @@ it, exactly as it stops `getFromUp` and the other two prototype walks.
 
 **`Heap.initial` stays in the set.** Folding the realm behind per-
 reference read lemmas was measured while planning #479 and did not lift
-the kernel ceiling #471 records; it made elaboration slower instead. A
-fifty-nine-object literal heap is something `simp` pushes `readObj`
-through. -/
+the kernel ceiling #471 records; it made elaboration slower instead. An
+eighty-nine-object literal heap is something `simp` pushes `readObj`
+through.
+
+**What stays outside.** The list walks a native performs —
+`listFromArrayLike` for `apply`, and `forInNext`, the step from one
+object of a `for`-`in` to its prototype — recurse the way a loop does,
+and so do the three steps a bound function's target is reached by,
+`callBound`, `constructBound`, and `instanceOfBound`; each is `rw`'s and
+none is here. -/
 
 namespace Tarski
 
@@ -49,8 +56,10 @@ One block, grouped the way the tests' lists were. Every name here
 recurses on syntax or not at all. -/
 
 -- Evaluation proper, and the instantiation a block is preceded by.
+-- `evalNamed` is NamedEvaluation, a dispatch onto `evalExpr`.
 attribute [tarski_eval]
-  evalExpr evalExprs evalStmt evalStmts evalProps evalDeclarators evalBlock
+  evalExpr evalExprs evalStmt evalStmts evalProps evalDeclarators evalBlock evalNamed
+  evalForInLoop evalForIn bindForIn
   instantiateBlock hoistNames hoistDeclarators initFunctions
 
 -- `var` hoisting: VarDeclaredNames over a body, and the cells it gives them.
@@ -58,10 +67,12 @@ attribute [tarski_eval]
   varNames varNamesStmt varNamesCases hoistVars
 
 -- Calls: user code, built-ins, and the two opaque catch sites.
+-- `callReflectNative` is the `Object` and `Function` surface, split out
+-- of `callNative` so each match still has equations.
 attribute [tarski_eval]
-  callFunction callNative constructNative catchReturn attempt liftCompletion
-  makeFunction isConstructor NativeFn.constructs
-  toStringValue toNumberValue toNumberValues mathUnary pushElements
+  callFunction callNative callReflectNative constructNative catchReturn attempt liftCompletion
+  makeFunction isConstructor NativeFn.constructs nameOf functionSourceText builtinTag
+  toStringValue toStringValues toNumberValue toNumberValues toLengthValue mathUnary pushElements
 
 -- FunctionDeclarationInstantiation: parameters, their defaults, the
 -- `var`s a body hoists past them, and the `arguments` object a body that
@@ -78,22 +89,35 @@ attribute [tarski_eval]
 -- Classes and private elements.
 attribute [tarski_eval]
   evalClass defineMethods initializeInstance initFields initFieldList
-  constructClass runConstructor bindPrivateNames privateName
+  constructClass runConstructor superConstructor bindPrivateNames privateName
   readPrivate writePrivate addPrivate allocFromConstructor
   ClassDef.constructor? ClassDef.instanceFields ClassDef.staticFields
   ClassDef.privateNames classFields dedupNames firstConstructor privateFieldNames
 
 -- Property reads and writes, own-property depth only: the two prototype
--- steps are guarded simprocs below.
+-- steps are guarded simprocs below. The property protocol's own
+-- operations — `[[Delete]]`, `[[HasProperty]]`, `[[DefineOwnProperty]]`
+-- through a descriptor, and the enumeration helpers over a concrete key
+-- list — recurse on data or not at all.
 attribute [tarski_eval]
-  getProp setProp getFrom findAccessor
+  getProp setProp getFrom findProperty hasProperty deleteProp toObjectValue
+  descriptorField toDescriptor fromProperty refuseDefine defineArrayLength
+  definePropertyOrThrow readDescriptors applyDescriptors defineProperties
+  enumerableOwn assignKeys assignSources descriptorsInto
 
--- The `Obj` operations and the lists they keep.
+-- The `Obj` operations, the one property list they keep, and the
+-- descriptor table over it.
 attribute [tarski_eval]
-  Obj.getOwn Obj.setOwn Obj.getOwnAccessor Obj.getPrivate Obj.setPrivate Obj.addPrivate
-  Obj.defineData Obj.defineAccessor Obj.isArray Obj.hasOwn Obj.ownKeys Obj.truncate
+  Obj.getOwn Obj.setOwn Obj.getOwnAccessor Obj.getOwnProperty Obj.ownProperty
+  Obj.getPrivate Obj.setPrivate Obj.addPrivate
+  Obj.define Obj.defineAccessorHalf Obj.remove Obj.isArray Obj.arrayLength? Obj.hasOwn
+  Obj.ownKeys Obj.enumerableKeys Obj.truncate truncateDrop
+  Obj.setIntegrity Obj.testIntegrity Obj.applyDescriptor
   Obj.array indexProps
-  propGet propSet propDrop accessorGet accessorSet accessorDrop privateGet privateSet
+  propGet propSet propDrop privateGet privateSet
+  Property.value? Property.writable? Property.accessor? Property.isAccessor
+  Property.toDescriptor Descriptor.isAccessor Descriptor.isData Descriptor.isGeneric
+  Descriptor.isEmpty accessorHalf descriptorKeeps
 
 -- Operators and coercions. Every primitive operation is the library's;
 -- the evaluator only dispatches onto it.
@@ -127,10 +151,19 @@ attribute [tarski_eval]
   mathRef mathAbsRef mathCeilRef mathFloorRef mathFroundRef mathRoundRef
   mathSignRef mathSqrtRef mathTruncRef mathMaxRef mathMinRef mathPowRef
   parseFloatRef parseIntRef numberToFixedRef numberToExponentialRef
-  numberToPrecisionRef numberToLocaleStringRef
+  numberToPrecisionRef numberToLocaleStringRef throwTypeErrorRef consoleRef consoleLogRef
+  functionProtoRef functionCtorRef functionCallRef functionApplyRef functionBindRef
+  functionToStringRef objectProtoToStringRef objectProtoValueOfRef
+  objectProtoToLocaleStringRef objectProtoIsPrototypeOfRef
+  objectProtoPropertyIsEnumerableRef objectAssignRef objectCreateRef
+  objectDefinePropertiesRef objectDefinePropertyRef objectEntriesRef objectFreezeRef
+  objectGetOwnPropertyDescriptorRef objectGetOwnPropertyDescriptorsRef
+  objectGetOwnPropertyNamesRef objectGetPrototypeOfRef objectHasOwnRef
+  objectIsExtensibleRef objectIsFrozenRef objectIsSealedRef objectPreventExtensionsRef
+  objectSealRef objectSetPrototypeOfRef objectValuesRef
   objectCellRef arrayCellRef stringCellRef printCellRef hostCellRef
   numberCellRef booleanCellRef mathCellRef nanCellRef infinityCellRef
-  parseFloatCellRef parseIntCellRef
+  parseFloatCellRef parseIntCellRef consoleCellRef functionCellRef
 
 -- Running a script, and the transformer plumbing core does not tag as
 -- `simp` (`Tarski/Monad.lean` says why).
@@ -188,8 +221,8 @@ simproc [tarski_eval] unfoldGetFromUp (getFromUp _ _ _) :=
   unfoldWhen ``Tarski.getFromUp.eq_def 3 isRefLit
 
 /-- OrdinarySet's prototype step, taken once the parent is a literal. -/
-simproc [tarski_eval] unfoldFindAccessorUp (findAccessorUp _ _) :=
-  unfoldWhen ``Tarski.findAccessorUp.eq_def 2 isRefLit
+simproc [tarski_eval] unfoldFindPropertyUp (findPropertyUp _ _) :=
+  unfoldWhen ``Tarski.findPropertyUp.eq_def 2 isRefLit
 
 /-- `[[HasInstance]]`'s walk, taken once the object is a literal. -/
 simproc [tarski_eval] unfoldProtoChainHas (protoChainHas _ _) :=

@@ -76,3 +76,7 @@ test/language/expressions/call
 test/language/arguments-object
 test/language/function-code
 test/language/block-scope
+
+# The Object and Function built-ins and the property protocol (#389).
+test/built-ins/Object
+test/built-ins/Function

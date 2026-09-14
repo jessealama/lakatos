@@ -249,11 +249,33 @@ private def classSlice : Program :=
         "argument":{"type":"Literal","value":1,"raw":"1"}}}"#)
   == "unsupported: UnaryExpression ~"
 
+-- `delete n` decodes; it is the *evaluator* that reports the strict-mode
+-- early error, at the point of use.
 #guard decode (script
     r#"{"type":"ExpressionStatement","expression":{
         "type":"UnaryExpression","operator":"delete","prefix":true,
         "argument":{"type":"Identifier","name":"n"}}}"#)
-  == "unsupported: UnaryExpression delete"
+  == toString (repr [Stmt.exprStmt (.delete (.ident "n"))])
+
+-- `delete o.x` and `delete o[k]` are the two shapes that are
+-- `[[Delete]]`.
+#guard decode (script
+    r#"{"type":"ExpressionStatement","expression":{
+        "type":"UnaryExpression","operator":"delete","prefix":true,
+        "argument":{"type":"MemberExpression","computed":false,
+          "object":{"type":"Identifier","name":"o"},
+          "property":{"type":"Identifier","name":"x"}}}}"#)
+  == toString (repr [Stmt.exprStmt (.delete (.member (.ident "o") "x"))])
+
+-- `delete super.x` is refused by name: the specification makes it a
+-- `ReferenceError`, which is semantics this AST does not carry.
+#guard decode (script
+    r#"{"type":"ExpressionStatement","expression":{
+        "type":"UnaryExpression","operator":"delete","prefix":true,
+        "argument":{"type":"MemberExpression","computed":false,
+          "object":{"type":"Super"},
+          "property":{"type":"Identifier","name":"x"}}}}"#)
+  == "unsupported: UnaryExpression delete super"
 
 -- A target the slice cannot assign through reports itself: the bridge's
 -- placeholder for the member access is what names the refusal.
@@ -319,7 +341,7 @@ private def classSlice : Program :=
         "type":"BinaryExpression","operator":"in",
         "left":{"type":"Literal","value":"a","raw":"\"a\""},
         "right":{"type":"Identifier","name":"o"}}}"#)
-  == "unsupported: BinaryExpression in"
+  == toString (repr [Stmt.exprStmt (.binary .«in» (.strLit "a") (.ident "o"))])
 
 -- `++` and `--` decode, both ways round; no other update operator
 -- exists, but a producer other than the bridge could send one.
@@ -563,15 +585,15 @@ private def objectSlice : Program :=
         "property":{"type":"PrivateIdentifier","name":"x"}}}"#)
   == toString (repr [Stmt.exprStmt (.privateMember (.ident "o") "x")])
 
--- `#x in o` leaves the slice twice over: `in` is not an operator here,
--- and the bridge already refused the bare `#x` in place, since a private
--- name is not an expression.
+-- `#x in o` still leaves the slice: `in` is an operator now, but the
+-- bridge already refused the bare `#x` in place, since a private name is
+-- not an expression.
 #guard decode (script
     r#"{"type":"ExpressionStatement","expression":{
         "type":"BinaryExpression","operator":"in",
         "left":{"type":"Unsupported","kind":"PrivateIdentifier"},
         "right":{"type":"Identifier","name":"o"}}}"#)
-  == "unsupported: BinaryExpression in"
+  == "unsupported: PrivateIdentifier"
 
 -- `new.target` likewise; #486 owns the syntax.
 #guard decode (script

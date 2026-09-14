@@ -114,6 +114,10 @@ private def onlyStandard (n : Name) : CoreM Bool := do
 
 /-- info: true -/
 #guard_msgs in
+#eval onlyStandard ``Tarski.callReflectNative
+
+/-- info: true -/
+#guard_msgs in
 #eval onlyStandard ``Tarski.allocFromConstructor
 
 /-- info: true -/
@@ -385,7 +389,136 @@ private def onlyStandard (n : Name) : CoreM Bool := do
 
 /-- info: true -/
 #guard_msgs in
-#eval onlyStandard ``Tarski.findAccessor
+#eval onlyStandard ``Tarski.findProperty
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.hasProperty
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.deleteProp
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.toObjectValue
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.fromProperty
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.toLengthValue
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.listFromArrayLike
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.descriptorField
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.toDescriptor
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.refuseDefine
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.defineArrayLength
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.definePropertyOrThrow
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.readDescriptors
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.applyDescriptors
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.defineProperties
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.enumerableOwn
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.assignKeys
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.assignSources
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.descriptorsInto
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.builtinTag
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.functionSourceText
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.nameOf
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.evalNamed
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.callBound
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.constructBound
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.instanceOfBound
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.superConstructor
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.evalForInLoop
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.evalForIn
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.forInNext
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.bindForIn
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.Obj.applyDescriptor
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.Obj.define
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.Obj.defineAccessorHalf
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.Obj.remove
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.Obj.ownProperty
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.Obj.enumerableKeys
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.Obj.setIntegrity
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.Obj.testIntegrity
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.Obj.truncate
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.truncateDrop
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.Property.toDescriptor
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.Property.value?
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.sameValueValue
 
 /-- info: true -/
 #guard_msgs in
@@ -393,7 +526,7 @@ private def onlyStandard (n : Name) : CoreM Bool := do
 
 /-- info: true -/
 #guard_msgs in
-#eval onlyStandard ``Tarski.findAccessorUp
+#eval onlyStandard ``Tarski.findPropertyUp
 
 /-- info: true -/
 #guard_msgs in
@@ -461,11 +594,11 @@ private def onlyStandard (n : Name) : CoreM Bool := do
 
 /-- info: true -/
 #guard_msgs in
-#eval onlyStandard ``Tarski.Obj.defineData
+#eval onlyStandard ``Tarski.Obj.hasOwn
 
 /-- info: true -/
 #guard_msgs in
-#eval onlyStandard ``Tarski.Obj.defineAccessor
+#eval onlyStandard ``Tarski.Obj.ownKeys
 
 /-- info: true -/
 #guard_msgs in
@@ -588,7 +721,22 @@ private def onlyStandard (n : Name) : CoreM Bool := do
 
 /-- info: true -/
 #guard_msgs in
-#eval onlyStandard ``Tarski.findAccessorUp.eq_def
+#eval onlyStandard ``Tarski.findPropertyUp.eq_def
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.forInNext.eq_def
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.listFromArrayLike.eq_def
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.callBound.eq_def
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.constructBound.eq_def
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.instanceOfBound.eq_def
 
 -- The correspondence projection is a definition too, like the evaluator
 -- it reads: `project` decides what a run amounts to, it does not assume

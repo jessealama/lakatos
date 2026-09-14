@@ -19,7 +19,7 @@ private def program : Program :=
       (.block [.exprStmt (.assign (.ident "n") (.binary .add (.ident "n") (.numLit 1.0)))]),
     .exprStmt (.ident "n") ]
 
-attribute [local simp] evalExpr evalStmt evalStmts evalDeclarators
+attribute [local simp] evalExpr evalStmt evalStmts evalDeclarators evalNamed
   instantiateBlock hoistNames hoistDeclarators initFunctions
   varNames varNamesStmt varNamesCases hoistVars
   allocCell getCell readCell writeCell initCell putIdent
