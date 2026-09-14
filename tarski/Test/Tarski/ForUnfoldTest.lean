@@ -19,8 +19,8 @@ open Tarski
 
 /-- `let s = 0; for (let i = 0; i < 2; i++) { s = s + i; } s;` -/
 private def program : Program :=
-  [ .varDecl .«let» [{ name := "s", init := some (.numLit 0.0) }],
-    .forStmt (some (.decl .«let» [{ name := "i", init := some (.numLit 0.0) }]))
+  [ .varDecl .«let» [{ target := "s", init := some (.numLit 0.0) }],
+    .forStmt (some (.decl .«let» [{ target := "i", init := some (.numLit 0.0) }]))
       (some (.binary .lt (.ident "i") (.numLit 2.0)))
       (some (.update .inc false (.ident "i")))
       (.block [.exprStmt (.assign (.ident "s") (.binary .add (.ident "s") (.ident "i")))]),
@@ -35,6 +35,7 @@ private def program : Program :=
 -- rewrite: ToPrimitive answers a `Value` now, so without them every
 -- iteration's arithmetic pushes `simp` through a constructor match.
 attribute [local simp] evalExpr evalStmt evalStmts evalDeclarators evalNamed
+  bindPattern evalLeafRef writeLeaf Pattern.boundNames targetBoundNames allocNames
   instantiateBlock hoistNames hoistDeclarators initFunctions
   varNames varNamesStmt varNamesCases hoistVars
   evalForLoop copyBindings Env.rebind UpdateOp.step

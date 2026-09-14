@@ -41,15 +41,15 @@ completion buys: `n = n + 1` runs, then `return n` ends the call
 abruptly, and the write is still there. -/
 private def counter : Program :=
   [ .funcDecl "counter" []
-      [ .varDecl .«let» [{ name := "n", init := some (.numLit 0.0) }],
+      [ .varDecl .«let» [{ target := "n", init := some (.numLit 0.0) }],
         .returnStmt (some (.objectLit
           [.init "next" (.funcExpr none []
             [ .exprStmt (.assign (.ident "n") (.binary .add (.ident "n") (.numLit 1.0))),
               .returnStmt (some (.ident "n")) ])])) ],
-    .varDecl .«const» [{ name := "c", init := some (.call (.ident "counter") []) }],
+    .varDecl .«const» [{ target := "c", init := some (.call (.ident "counter") []) }],
     .exprStmt (.call (.member (.ident "c") "next") []),
     .exprStmt (.call (.member (.ident "c") "next") []),
-    .varDecl .«const» [{ name := "o", init := some (.objectLit [.init "a" (.numLit 1.0)]) }],
+    .varDecl .«const» [{ target := "o", init := some (.objectLit [.init "a" (.numLit 1.0)]) }],
     .exprStmt (.assign (.member (.ident "o") "b") (.call (.member (.ident "c") "next") [])),
     .exprStmt (.logical .and
       (.logical .and
@@ -87,7 +87,7 @@ private def counter : Program :=
 -- A named function expression binds its own name inside itself, and
 -- nowhere else.
 #guard outcome
-    [ .varDecl .«const» [{ name := "f", init := some (.funcExpr (some "fac") ["n"]
+    [ .varDecl .«const» [{ target := "f", init := some (.funcExpr (some "fac") ["n"]
         [ .returnStmt (some (.cond (.binary .le (.ident "n") (.numLit 1.0)) (.numLit 1.0)
             (.binary .mul (.ident "n")
               (.call (.ident "fac") [.binary .sub (.ident "n") (.numLit 1.0)])))) ]) }],
@@ -100,7 +100,7 @@ private def named : Expr :=
   .funcExpr (some "fac") [] [.returnStmt (some (.numLit 1.0))]
 
 #guard outcome
-    [ .varDecl .«const» [{ name := "f", init := some named }],
+    [ .varDecl .«const» [{ target := "f", init := some named }],
       .exprStmt (.ident "fac") ]
   == "uncaught: ReferenceError: fac is not defined"
 
@@ -108,7 +108,7 @@ private def named : Expr :=
 
 -- `const o = { v: 7, m: function () { return this.v; } }; o.m();`
 #guard outcome
-    [ .varDecl .«const» [{ name := "o", init := some (.objectLit
+    [ .varDecl .«const» [{ target := "o", init := some (.objectLit
         [ .init "v" (.numLit 7.0),
           .init "m" (.funcExpr none [] [.returnStmt (some (.member .this "v"))])]) }],
       .exprStmt (.call (.member (.ident "o") "m") []) ]
@@ -120,13 +120,13 @@ private def arrowThis : Expr := .arrow [] (.expr (.member .this "v"))
 
 private def lexicalThis : Expr :=
   .funcExpr none []
-    [ .varDecl .«const» [{ name := "g", init := some arrowThis }],
+    [ .varDecl .«const» [{ target := "g", init := some arrowThis }],
       .returnStmt (some (.call (.ident "g") [])) ]
 
 private def holder : Expr := .objectLit [.init "v" (.numLit 7.0), .init "m" lexicalThis]
 
 #guard outcome
-    [ .varDecl .«const» [{ name := "o", init := some holder }],
+    [ .varDecl .«const» [{ target := "o", init := some holder }],
       .exprStmt (.call (.member (.ident "o") "m") []) ]
   == "7"
 
@@ -135,7 +135,7 @@ private def holder : Expr := .objectLit [.init "v" (.numLit 7.0), .init "m" lexi
 private def returnThis : Expr := .funcExpr none [] [.returnStmt (some .this)]
 
 #guard outcome
-    [ .varDecl .«const» [{ name := "f", init := some returnThis }],
+    [ .varDecl .«const» [{ target := "f", init := some returnThis }],
       .exprStmt (.call (.ident "f") []) ]
   == "undefined"
 
@@ -181,19 +181,19 @@ private def returnThis : Expr := .funcExpr none [] [.returnStmt (some .this)]
 
 -- `const n = 1; n();`
 #guard outcome
-    [ .varDecl .«const» [{ name := "n", init := some (.numLit 1.0) }],
+    [ .varDecl .«const» [{ target := "n", init := some (.numLit 1.0) }],
       .exprStmt (.call (.ident "n") []) ]
   == "uncaught: TypeError: not a function"
 
 -- `const o = {}; o();` — an object without a `[[Call]]`.
 #guard outcome
-    [ .varDecl .«const» [{ name := "o", init := some (.objectLit []) }],
+    [ .varDecl .«const» [{ target := "o", init := some (.objectLit []) }],
       .exprStmt (.call (.ident "o") []) ]
   == "uncaught: TypeError: not a function"
 
 -- `const f = () => 1; new f();` — an arrow has no `[[Construct]]`.
 #guard outcome
-    [ .varDecl .«const» [{ name := "f", init := some (.arrow [] (.expr (.numLit 1.0))) }],
+    [ .varDecl .«const» [{ target := "f", init := some (.arrow [] (.expr (.numLit 1.0))) }],
       .exprStmt (.new (.ident "f") []) ]
   == "uncaught: TypeError: not a constructor"
 

@@ -25,7 +25,7 @@ private def outcome (p : Program) : String :=
 private def num (x : Float) : Expr := .numLit x
 
 /-- `let r = "";` — the variable the selection cases write. -/
-private def declareR : Stmt := .varDecl .«let» [{ name := "r", init := some (.strLit "") }]
+private def declareR : Stmt := .varDecl .«let» [{ target := "r", init := some (.strLit "") }]
 
 /-- `r = <s>;` -/
 private def setR (s : String) : Stmt := .exprStmt (.assign (.ident "r") (.strLit s))
@@ -124,7 +124,7 @@ private def nan : Expr := .binary .div (num 0.0) (num 0.0)
 #guard outcome
     [ .switchStmt (num 1.0)
         [ { test := some (num 0.0),
-            body := [.varDecl .«let» [{ name := "x", init := some (num 1.0) }]] },
+            body := [.varDecl .«let» [{ target := "x", init := some (num 1.0) }]] },
           { test := some (num 1.0), body := [.exprStmt (.ident "x")] } ] ]
   == "uncaught: ReferenceError: Cannot access 'x' before initialization"
 
@@ -133,7 +133,7 @@ private def nan : Expr := .binary .div (num 0.0) (num 0.0)
 #guard outcome
     [ .switchStmt (num 0.0)
         [ { test := some (num 0.0),
-            body := [.varDecl .«let» [{ name := "x", init := some (num 1.0) }]] },
+            body := [.varDecl .«let» [{ target := "x", init := some (num 1.0) }]] },
           { test := some (num 1.0),
             body := [.exprStmt (.assign (.ident "x") (num 2.0))] } ] ]
   == "2"
@@ -156,8 +156,8 @@ private def nan : Expr := .binary .div (num 0.0) (num 0.0)
 -- — a `continue` inside a `switch` is not the switch's, so it reaches the
 -- loop and skips the statement after it.
 #guard outcome
-    [ .varDecl .«let» [{ name := "s", init := some (num 0.0) }],
-      .forStmt (some (.decl .«let» [{ name := "i", init := some (num 0.0) }]))
+    [ .varDecl .«let» [{ target := "s", init := some (num 0.0) }],
+      .forStmt (some (.decl .«let» [{ target := "i", init := some (num 0.0) }]))
         (some (.binary .lt (.ident "i") (num 3.0)))
         (some (.update .inc false (.ident "i")))
         (.block

@@ -24,7 +24,7 @@ private def outcome (p : Program) : String :=
 
 /-- `const o = { a: 1 };`, the object every read below starts from. -/
 private def declareO : Stmt :=
-  .varDecl .«const» [{ name := "o", init := some (.objectLit [.init "a" (.numLit 1.0)]) }]
+  .varDecl .«const» [{ target := "o", init := some (.objectLit [.init "a" (.numLit 1.0)]) }]
 
 /-! ## Reading and writing own properties -/
 
@@ -47,7 +47,7 @@ private def declareO : Stmt :=
 -- `const o = {}; o[1] = "x"; o["1"];` — a numeric key is ToPropertyKey'd
 -- to its string, so the two spellings name one property.
 #guard outcome
-    [ .varDecl .«const» [{ name := "o", init := some (.objectLit []) }],
+    [ .varDecl .«const» [{ target := "o", init := some (.objectLit []) }],
       .exprStmt (.assign (.index (.ident "o") (.numLit 1.0)) (.strLit "x")),
       .exprStmt (.index (.ident "o") (.strLit "1")) ]
   == "x"
@@ -70,7 +70,7 @@ private def declareP : List Stmt :=
 -- `… const p = new P(); p.k;`
 #guard outcome
     (declareP ++
-      [ .varDecl .«const» [{ name := "p", init := some (.new (.ident "P") []) }],
+      [ .varDecl .«const» [{ target := "p", init := some (.new (.ident "P") []) }],
         .exprStmt (.member (.ident "p") "k") ])
   == "5"
 
@@ -78,7 +78,7 @@ private def declareP : List Stmt :=
 -- prototype's.
 #guard outcome
     (declareP ++
-      [ .varDecl .«const» [{ name := "p", init := some (.new (.ident "P") []) }],
+      [ .varDecl .«const» [{ target := "p", init := some (.new (.ident "P") []) }],
         .exprStmt (.assign (.member (.ident "p") "k") (.numLit 6.0)),
         .exprStmt (.member (.ident "p") "k") ])
   == "6"
@@ -88,9 +88,9 @@ private def declareP : List Stmt :=
 -- reads 5.
 #guard outcome
     (declareP ++
-      [ .varDecl .«const» [{ name := "p", init := some (.new (.ident "P") []) }],
+      [ .varDecl .«const» [{ target := "p", init := some (.new (.ident "P") []) }],
         .exprStmt (.assign (.member (.ident "p") "k") (.numLit 6.0)),
-        .varDecl .«const» [{ name := "q", init := some (.new (.ident "P") []) }],
+        .varDecl .«const» [{ target := "q", init := some (.new (.ident "P") []) }],
         .exprStmt (.member (.ident "q") "k") ])
   == "5"
 
@@ -177,7 +177,7 @@ private def declareP : List Stmt :=
 -- `const o = { valueOf: function () { return 3; } }; o + 1;` — a
 -- user-defined `valueOf` already works.
 #guard outcome
-    [ .varDecl .«const» [{ name := "o", init := some (.objectLit
+    [ .varDecl .«const» [{ target := "o", init := some (.objectLit
         [.init "valueOf" (.funcExpr none [] [.returnStmt (some (.numLit 3.0))])]) }],
       .exprStmt (.binary .add (.ident "o") (.numLit 1.0)) ]
   == "4"
@@ -185,7 +185,7 @@ private def declareP : List Stmt :=
 -- `const o = { valueOf: … }; o === o;` — `===` does not coerce, so the
 -- `valueOf` never runs and identity is the answer.
 #guard outcome
-    [ .varDecl .«const» [{ name := "o", init := some (.objectLit
+    [ .varDecl .«const» [{ target := "o", init := some (.objectLit
         [.init "valueOf" (.funcExpr none [] [.returnStmt (some (.numLit 3.0))])]) }],
       .exprStmt (.binary .strictEq (.ident "o") (.ident "o")) ]
   == "true"

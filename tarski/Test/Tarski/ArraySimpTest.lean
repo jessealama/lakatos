@@ -31,7 +31,7 @@ open Tarski
 
 /-- `const xs = [1]; xs.push(2); xs.length;` -/
 private def program : Program :=
-  [ .varDecl .«const» [{ name := "xs", init := some (.arrayLit [.numLit 1.0]) }],
+  [ .varDecl .«const» [{ target := "xs", init := some (.arrayLit [.numLit 1.0]) }],
     .exprStmt (.call (.member (.ident "xs") "push") [.numLit 2.0]),
     .exprStmt (.member (.ident "xs") "length") ]
 

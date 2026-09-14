@@ -30,13 +30,13 @@ private def no : Expr := .boolLit false
 #guard outcome [one] == "1"
 
 -- `1; let x = 2;` — a declaration completes empty.
-#guard outcome [one, .varDecl .«let» [{ name := "x", init := some (.numLit 2.0) }]] == "1"
+#guard outcome [one, .varDecl .«let» [{ target := "x", init := some (.numLit 2.0) }]] == "1"
 
 -- `1; {}` — an empty block completes empty too, so 1 stands.
 #guard outcome [one, .block []] == "1"
 
 -- `1; { let x = 5; }` — a block of nothing but declarations, likewise.
-#guard outcome [one, .block [.varDecl .«let» [{ name := "x", init := some (.numLit 5.0) }]]] == "1"
+#guard outcome [one, .block [.varDecl .«let» [{ target := "x", init := some (.numLit 5.0) }]]] == "1"
 
 -- `1; { 2; }` — a block does pass its statements' value through.
 #guard outcome [one, .block [.exprStmt (.numLit 2.0)]] == "2"
@@ -51,7 +51,7 @@ private def no : Expr := .boolLit false
 -- `1; if (true) { let x = 5; }` — an empty body is still undefined here,
 -- which is exactly where `if` and a bare block differ.
 #guard outcome
-    [one, .ifStmt yes (.block [.varDecl .«let» [{ name := "x", init := some (.numLit 5.0) }]]) none]
+    [one, .ifStmt yes (.block [.varDecl .«let» [{ target := "x", init := some (.numLit 5.0) }]]) none]
   == "undefined"
 
 -- `5; if (true) 7; else 8;` — an arm that produces a value gives it.
@@ -67,7 +67,7 @@ private def no : Expr := .boolLit false
 -- updates it, so the loop completes with the last body value.
 #guard outcome
     [one,
-     .varDecl .«let» [{ name := "n", init := some (.numLit 0.0) }],
+     .varDecl .«let» [{ target := "n", init := some (.numLit 0.0) }],
      .whileStmt (.binary .lt (.ident "n") (.numLit 2.0))
        (.block [.exprStmt (.assign (.ident "n") (.binary .add (.ident "n") (.numLit 1.0)))])]
   == "2"
@@ -88,7 +88,7 @@ does. -/
 
 /-- `for (let i = 0; i < <n>; i++) <body>` -/
 private def counting (n : Float) (body : Stmt) : Stmt :=
-  .forStmt (some (.decl .«let» [{ name := "i", init := some (.numLit 0.0) }]))
+  .forStmt (some (.decl .«let» [{ target := "i", init := some (.numLit 0.0) }]))
     (some (.binary .lt (.ident "i") (.numLit n)))
     (some (.update .inc false (.ident "i"))) body
 
@@ -133,20 +133,20 @@ private def counting (n : Float) (body : Stmt) : Stmt :=
 
 -- `const frozen = 1; frozen = 2;` — assignment to an immutable binding.
 #guard outcome
-    [.varDecl .«const» [{ name := "frozen", init := some (.numLit 1.0) }],
+    [.varDecl .«const» [{ target := "frozen", init := some (.numLit 1.0) }],
      .exprStmt (.assign (.ident "frozen") (.numLit 2.0))]
   == "uncaught: TypeError: Assignment to constant variable."
 
 -- `let n = 0; n = 2; n;` — a `let` binding is writable, and the write is
 -- visible afterwards because bindings live in the heap.
 #guard outcome
-    [.varDecl .«let» [{ name := "n", init := some (.numLit 0.0) }],
+    [.varDecl .«let» [{ target := "n", init := some (.numLit 0.0) }],
      .exprStmt (.assign (.ident "n") (.numLit 2.0)),
      .exprStmt (.ident "n")]
   == "2"
 
 -- `{ let n = 1; } n;` — and a block's bindings do not escape it.
 #guard outcome
-    [.block [.varDecl .«let» [{ name := "n", init := some (.numLit 1.0) }]],
+    [.block [.varDecl .«let» [{ target := "n", init := some (.numLit 1.0) }]],
      .exprStmt (.ident "n")]
   == "uncaught: ReferenceError: n is not defined"

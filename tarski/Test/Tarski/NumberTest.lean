@@ -211,11 +211,11 @@ generalization of it. -/
 -- `const f = Number.prototype.valueOf; f();` — detached, so `this` is
 -- `undefined` and the method refuses by name.
 #guard outcome
-    [ .varDecl .«const» [{ name := "f", init := some (.member (numberProp "prototype") "valueOf") }],
+    [ .varDecl .«const» [{ target := "f", init := some (.member (numberProp "prototype") "valueOf") }],
       .exprStmt (.call (.ident "f") []) ]
   == "uncaught: TypeError: Number.prototype.valueOf requires that 'this' be a Number"
 #guard outcome
-    [ .varDecl .«const» [{ name := "g", init := some (.member (numberProp "prototype") "toString") }],
+    [ .varDecl .«const» [{ target := "g", init := some (.member (numberProp "prototype") "toString") }],
       .exprStmt (.call (.ident "g") []) ]
   == "uncaught: TypeError: Number.prototype.toString requires that 'this' be a Number"
 
@@ -284,7 +284,7 @@ still shadow either, as it may shadow `Object`. -/
 #guard outcome (expr (.assign (.ident "NaN") (.numLit 1.0)))
   == "uncaught: TypeError: Assignment to constant variable."
 #guard outcome
-    [ .varDecl .«let» [{ name := "NaN", init := some (.numLit 1.0) }],
+    [ .varDecl .«let» [{ target := "NaN", init := some (.numLit 1.0) }],
       .exprStmt (.ident "NaN") ]
   == "1"
 
@@ -303,9 +303,9 @@ The read goes through `Number.prototype` and no wrapper is allocated. -/
 key is converted *first*, as the spec orders it, so the user `toString`
 runs. -/
 #guard outcome
-    [ .varDecl .«let» [{ name := "flag", init := some (.boolLit false) }],
+    [ .varDecl .«let» [{ target := "flag", init := some (.boolLit false) }],
       .varDecl .«const»
-        [ { name := "k",
+        [ { target := "k",
             init := some (.objectLit
               [ .init "toString"
                  (.funcExpr none []
@@ -402,12 +402,12 @@ private def stringOf (e : Expr) : Expr := .call (.ident "String") [e]
 
 -- A property key is ToString of the Number, so an exponent form is the key.
 #guard outcome
-    [ .varDecl .«const» [{ name := "o", init := some (.objectLit []) }],
+    [ .varDecl .«const» [{ target := "o", init := some (.objectLit []) }],
       .exprStmt (.assign (.index (.ident "o") (.numLit 1e21)) (.numLit 1.0)),
       .exprStmt (.call (.member (.call (.member (.ident "Object") "keys") [.ident "o"]) "join") []) ]
   == "1e+21"
 #guard outcome
-    [ .varDecl .«const» [{ name := "o", init := some (.objectLit []) }],
+    [ .varDecl .«const» [{ target := "o", init := some (.objectLit []) }],
       .exprStmt (.assign (.index (.ident "o") (.binary .add (.numLit 0.1) (.numLit 0.2)))
         (.numLit 7.0)),
       .exprStmt (.index (.ident "o") (.strLit "0.30000000000000004")) ]
@@ -487,7 +487,7 @@ private def poison (e : Expr) : Expr :=
 -- Detached, so `this` is `undefined` and each method refuses by name.
 #guard ["toFixed", "toExponential", "toPrecision", "toLocaleString"].all fun name =>
   outcome
-      [ .varDecl .«const» [{ name := "f", init := some (.member (numberProp "prototype") name) }],
+      [ .varDecl .«const» [{ target := "f", init := some (.member (numberProp "prototype") name) }],
         .exprStmt (.call (.ident "f") []) ]
     == s!"uncaught: TypeError: Number.prototype.{name} requires that 'this' be a Number"
 
@@ -522,7 +522,7 @@ radix, which is what the log below observes. -/
 
 -- `parseInt`'s string is converted first, so the log reads `sr`.
 #guard outcome
-    [ .varDecl .«let» [{ name := "log", init := some (.strLit "") }],
+    [ .varDecl .«let» [{ target := "log", init := some (.strLit "") }],
       .exprStmt (.call (.ident "parseInt")
         [ .objectLit [.init "toString" (.funcExpr none []
             [ .exprStmt (.assign (.ident "log") (.binary .add (.ident "log") (.strLit "s"))),

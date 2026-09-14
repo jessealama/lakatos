@@ -33,7 +33,7 @@ private def bump : Expr := .update .inc false (.ident "i")
 
 /-- `for (<kind> i = 0; i < n; i++) body`. -/
 private def counting (kind : DeclKind) (n : Float) (body : Stmt) : Stmt :=
-  .forStmt (some (.decl kind [{ name := "i", init := some (num 0.0) }]))
+  .forStmt (some (.decl kind [{ target := "i", init := some (num 0.0) }]))
     (some (below n)) (some bump) body
 
 /-! ## What the head leaves behind -/
@@ -50,13 +50,13 @@ private def counting (kind : DeclKind) (n : Float) (body : Stmt) : Stmt :=
 -- `for (let i = i; ;) {}` — and it has a dead zone of its own, so a head
 -- that reads itself throws.
 #guard outcome
-    [.forStmt (some (.decl .«let» [{ name := "i", init := some i }])) none none (.block [])]
+    [.forStmt (some (.decl .«let» [{ target := "i", init := some i }])) none none (.block [])]
   == "uncaught: ReferenceError: Cannot access 'i' before initialization"
 
 -- `let n = 0; for (n = 5; n < 6; n++) {} n;` — an expression head is
 -- evaluated for its effect and nothing else.
 #guard outcome
-    [ .varDecl .«let» [{ name := "n", init := some (num 0.0) }],
+    [ .varDecl .«let» [{ target := "n", init := some (num 0.0) }],
       .forStmt (some (.expr (.assign (.ident "n") (num 5.0))))
         (some (.binary .lt (.ident "n") (num 6.0)))
         (some (.update .inc false (.ident "n"))) (.block []),
@@ -66,8 +66,8 @@ private def counting (kind : DeclKind) (n : Float) (body : Stmt) : Stmt :=
 -- `const c = 1; for (const c = 2; c < 3;) { break; } c;` — a `const`
 -- head is the loop's too, so the outer binding is untouched.
 #guard outcome
-    [ .varDecl .«const» [{ name := "c", init := some (num 1.0) }],
-      .forStmt (some (.decl .«const» [{ name := "c", init := some (num 2.0) }]))
+    [ .varDecl .«const» [{ target := "c", init := some (num 1.0) }],
+      .forStmt (some (.decl .«const» [{ target := "c", init := some (num 2.0) }]))
         (some (.binary .lt (.ident "c") (num 3.0))) none (.block [.breakStmt none]),
       .exprStmt (.ident "c") ]
   == "1"
@@ -75,7 +75,7 @@ private def counting (kind : DeclKind) (n : Float) (body : Stmt) : Stmt :=
 -- `let n = 0; for (;;) { n++; if (n === 4) break; } n;` — three absent
 -- parts, and a `break` is the only exit.
 #guard outcome
-    [ .varDecl .«let» [{ name := "n", init := some (num 0.0) }],
+    [ .varDecl .«let» [{ target := "n", init := some (num 0.0) }],
       .forStmt none none none
         (.block
           [ .exprStmt (.update .inc false (.ident "n")),
@@ -87,7 +87,7 @@ private def counting (kind : DeclKind) (n : Float) (body : Stmt) : Stmt :=
 
 -- `let s = 0; for (let i = 0; i < 3; i++) s += i; s;`
 #guard outcome
-    [ .varDecl .«let» [{ name := "s", init := some (num 0.0) }],
+    [ .varDecl .«let» [{ target := "s", init := some (num 0.0) }],
       counting .«let» 3.0 (.exprStmt (.compoundAssign .add (.ident "s") i)),
       .exprStmt (.ident "s") ]
   == "3"
@@ -95,7 +95,7 @@ private def counting (kind : DeclKind) (n : Float) (body : Stmt) : Stmt :=
 -- `let s = 0; for (let i = 0; i < 3; i++) { if (i === 1) continue; s += i; } s;`
 -- — the update still runs for the skipped iteration, so the loop ends.
 #guard outcome
-    [ .varDecl .«let» [{ name := "s", init := some (num 0.0) }],
+    [ .varDecl .«let» [{ target := "s", init := some (num 0.0) }],
       counting .«let» 3.0
         (.block
           [ .ifStmt (.binary .strictEq i (num 1.0)) (.continueStmt none) none,
@@ -108,11 +108,11 @@ private def counting (kind : DeclKind) (n : Float) (body : Stmt) : Stmt :=
 -- — a labelled `continue` from the inner loop reaches the *outer* loop's
 -- update, and the statement after the inner loop never runs.
 #guard outcome
-    [ .varDecl .«let» [{ name := "s", init := some (num 0.0) }],
+    [ .varDecl .«let» [{ target := "s", init := some (num 0.0) }],
       .labeled "outer"
         (counting .«let» 3.0
           (.block
-            [ .forStmt (some (.decl .«let» [{ name := "j", init := some (num 0.0) }]))
+            [ .forStmt (some (.decl .«let» [{ target := "j", init := some (num 0.0) }]))
                 (some (.binary .lt (.ident "j") (num 3.0)))
                 (some (.update .inc false (.ident "j")))
                 (.block [.continueStmt (some "outer")]),
@@ -130,7 +130,7 @@ different values rather than three views of one. -/
 -- `const fs = []; for (let i = 0; i < 3; i++) { fs.push(function () { return i; }); }
 --    fs[0]() + "" + fs[2]();`
 #guard outcome
-    [ .varDecl .«const» [{ name := "fs", init := some (.arrayLit []) }],
+    [ .varDecl .«const» [{ target := "fs", init := some (.arrayLit []) }],
       counting .«let» 3.0
         (.block
           [ .exprStmt
@@ -147,7 +147,7 @@ different values rather than three views of one. -/
 -- The same body with a `var` head: one cell, so every closure reads the
 -- value the loop stopped at.
 #guard outcome
-    [ .varDecl .«const» [{ name := "fs", init := some (.arrayLit []) }],
+    [ .varDecl .«const» [{ target := "fs", init := some (.arrayLit []) }],
       counting .«var» 3.0
         (.block
           [ .exprStmt
@@ -166,9 +166,9 @@ different values rather than three views of one. -/
 -- — the head binding is copied, so `x` is still 1 on the one iteration.
 #guard outcome
     [ .varDecl .«let»
-        [ { name := "z", init := some (num 1.0) },
-          { name := "s", init := some (num 0.0) } ],
-      .forStmt (some (.decl .«let» [{ name := "x", init := some (num 1.0) }]))
+        [ { target := "z", init := some (num 1.0) },
+          { target := "s", init := some (num 0.0) } ],
+      .forStmt (some (.decl .«let» [{ target := "x", init := some (num 1.0) }]))
         (some (.binary .lt (.ident "z") (num 2.0)))
         (some (.update .inc false (.ident "z")))
         (.block [.exprStmt (.compoundAssign .add (.ident "s")
@@ -180,8 +180,8 @@ different values rather than three views of one. -/
 -- next iteration's cell, which is what makes the copy a copy and not a
 -- reset.
 #guard outcome
-    [ .varDecl .«let» [{ name := "s", init := some (.strLit "") }],
-      .forStmt (some (.decl .«let» [{ name := "x", init := some (num 0.0) }]))
+    [ .varDecl .«let» [{ target := "s", init := some (.strLit "") }],
+      .forStmt (some (.decl .«let» [{ target := "x", init := some (num 0.0) }]))
         (some (.binary .lt (.ident "x") (num 3.0)))
         (some (.update .inc false (.ident "x")))
         (.block

@@ -39,7 +39,7 @@ private def piece (s : String) : TemplateString := { cooked := some s, raw := s 
 template object itself. -/
 private def declareIdTag : Stmt :=
   .varDecl .«const»
-    [ { name := "tag",
+    [ { target := "tag",
         init := some (.funcExpr none ["s"] [.returnStmt (some (.ident "s"))]) } ]
 
 /-! ## Untagged -/
@@ -61,7 +61,7 @@ private def declareIdTag : Stmt :=
 -- first conjunct.
 #guard outcome
     [ .varDecl .«const»
-        [ { name := "o",
+        [ { target := "o",
             init := some (.objectLit
               [.init "v" (.numLit 2.0), .init "dyn1" (.numLit 1.0)]) } ],
       .exprStmt (.template ["", "-", ""]
@@ -94,7 +94,7 @@ private def declareIdTag : Stmt :=
 -- Left to right, one substitution at a time.
 -- `let i = 0; `a${i++}b${i++}c${i++}d`;`
 #guard outcome
-    [ .varDecl .«let» [{ name := "i", init := some (.numLit 0.0) }],
+    [ .varDecl .«let» [{ target := "i", init := some (.numLit 0.0) }],
       .exprStmt (.template ["a", "b", "c", "d"]
         [ .update .inc false (.ident "i"),
           .update .inc false (.ident "i"),
@@ -105,7 +105,7 @@ private def declareIdTag : Stmt :=
 -- value's `toString` has already run when a later expression throws.
 -- `let log = ""; try { `${{ toString() { log = log + "t"; return ""; } }}${(function () { throw new TypeError(); })()}`; } catch (e) {} log;`
 #guard outcome
-    [ .varDecl .«let» [{ name := "log", init := some (.strLit "") }],
+    [ .varDecl .«let» [{ target := "log", init := some (.strLit "") }],
       .tryStmt
         [ .exprStmt (.template ["", "", ""]
             [ .objectLit
@@ -146,7 +146,7 @@ private def declareIdTag : Stmt :=
 -- ``const tag = function (s, a, b) { return a + "," + b; }; tag`a${1}b${2}c`;``
 #guard outcome
     [ .varDecl .«const»
-        [ { name := "tag",
+        [ { target := "tag",
             init := some (.funcExpr none ["s", "a", "b"]
               [ .returnStmt (some (.binary .add
                   (.binary .add (.ident "a") (.strLit ",")) (.ident "b"))) ]) } ],
@@ -173,7 +173,7 @@ private def declareIdTag : Stmt :=
 -- ``const tag = function (s) { return typeof s[0] + ":" + s.raw[0]; }; tag`\unicode`;``
 #guard outcome
     [ .varDecl .«const»
-        [ { name := "tag",
+        [ { target := "tag",
             init := some (.funcExpr none ["s"]
               [ .returnStmt (some (.binary .add
                   (.binary .add
@@ -231,7 +231,7 @@ private def declareIdTag : Stmt :=
 -- ``const obj = { v: 5, fn(s) { return this.v; } }; obj.fn`x`;``
 #guard outcome
     [ .varDecl .«const»
-        [ { name := "obj",
+        [ { target := "obj",
             init := some (.objectLit
               [ .init "v" (.numLit 5.0),
                 .method .method "fn" ["s"] [.returnStmt (some (.member .this "v"))] ]) } ],
@@ -243,7 +243,7 @@ private def declareIdTag : Stmt :=
 #guard outcome
     [ declareIdTag,
       .varDecl .«const»
-        [ { name := "make",
+        [ { target := "make",
             init := some (.funcExpr none [] [.returnStmt (some (.ident "tag"))]) } ],
       .exprStmt (.index
         (.taggedTemplate (.call (.ident "make") []) 0 [piece "x"] []) (.numLit 0.0)) ]
@@ -253,7 +253,7 @@ private def declareIdTag : Stmt :=
 -- and what it answered is what `new` constructs.
 #guard outcome
     [ .varDecl .«const»
-        [ { name := "tag",
+        [ { target := "tag",
             init := some (.funcExpr none ["s"]
               [ .returnStmt (some (.funcExpr none ["a"]
                   [.exprStmt (.assign (.member .this "got") (.ident "a"))])) ]) } ],
@@ -264,9 +264,9 @@ private def declareIdTag : Stmt :=
 -- A chain applies the tags left to right.
 -- ``let log = ""; const tag = function (s) { log = log + s[0]; return tag; }; tag`a``b``c`; log;``
 #guard outcome
-    [ .varDecl .«let» [{ name := "log", init := some (.strLit "") }],
+    [ .varDecl .«let» [{ target := "log", init := some (.strLit "") }],
       .varDecl .«const»
-        [ { name := "tag",
+        [ { target := "tag",
             init := some (.funcExpr none ["s"]
               [ .exprStmt (.assign (.ident "log") (.binary .add (.ident "log")
                   (.index (.ident "s") (.numLit 0.0)))),
@@ -297,7 +297,7 @@ strict-mode `TypeError` a frozen write is. -/
 #guard outcome
     [ declareIdTag,
       .varDecl .«const»
-        [ { name := "t",
+        [ { target := "t",
             init := some (.taggedTemplate (.ident "tag") 0 [piece "a"] []) } ],
       .exprStmt (.assign (.index (.ident "t") (.numLit 0.0)) (.numLit 1.0)),
       .exprStmt (.index (.ident "t") (.numLit 0.0)) ]

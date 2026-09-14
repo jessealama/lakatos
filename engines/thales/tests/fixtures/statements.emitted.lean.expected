@@ -14,7 +14,7 @@ set_option autoImplicit false
 -- }
 def TsModel.floorAtOne.ast : Tarski.Program :=
   [.funcDecl "floorAtOne" ["x"]
-      [.varDecl .«let» [{ name := "y", init := some (.ident "x") }],
+      [.varDecl .«let» [{ target := "y", init := some (.ident "x") }],
         .ifStmt (.binary .lt (.ident "x") (.numLit 1))
           (.block [.exprStmt (.assign (.ident "y") (.numLit 1))]) none,
         .returnStmt (some (.ident "y"))]]
@@ -50,7 +50,7 @@ def TsModel.floorAtOne (x : JsNumber) : JsM JsNumber := do
 -- }
 def TsModel.grade.ast : Tarski.Program :=
   [.funcDecl "grade" ["score"]
-      [.varDecl .«const» [{ name := "bonus", init := some (.numLit 2) }],
+      [.varDecl .«const» [{ target := "bonus", init := some (.numLit 2) }],
         .ifStmt (.binary .lt (.ident "score") (.numLit 0))
           (.block
             [.throwStmt
@@ -58,7 +58,7 @@ def TsModel.grade.ast : Tarski.Program :=
           (some
             (.ifStmt (.binary .lt (.ident "score") (.numLit 10))
               (.block [.returnStmt (some (.binary .add (.ident "score") (.ident "bonus")))]) none)),
-        .varDecl .«let» [{ name := "rank", init := some (.numLit 0) }],
+        .varDecl .«let» [{ target := "rank", init := some (.numLit 0) }],
         .ifStmt (.binary .lt (.ident "score") (.numLit 20))
           (.block [.exprStmt (.assign (.ident "rank") (.numLit 1))])
           (some (.block [.exprStmt (.assign (.ident "rank") (.numLit 2))])),

@@ -65,11 +65,11 @@ f() && tdz;
 ``` -/
 private def issueExample : Program :=
   [ .funcDecl "f" []
-      [ .varDecl .«const» [{ name := "before", init := some (.unary .typeof (.ident "g")) }],
+      [ .varDecl .«const» [{ target := "before", init := some (.unary .typeof (.ident "g")) }],
         .funcDecl "g" [] [.returnStmt (some (.member args "length"))],
-        .varDecl .«let» [{ name := "r", init := some (.strLit "") }],
+        .varDecl .«let» [{ target := "r", init := some (.strLit "") }],
         .labeled "outer"
-          (.forStmt (some (.decl .«let» [{ name := "i", init := some (num 0.0) }]))
+          (.forStmt (some (.decl .«let» [{ target := "i", init := some (num 0.0) }]))
             (some (.binary .lt (.ident "i") (num 3.0)))
             (some (.update .inc false (.ident "i")))
             (.block
@@ -86,14 +86,14 @@ private def issueExample : Program :=
               (.binary .strictEq
                 (.call (.ident "g") [num 1.0, num 2.0, num 3.0]) (num 3.0)))
             (.binary .strictEq (.ident "r") (.strLit "02")))) ],
-    .varDecl .«let» [{ name := "tdz", init := some (.boolLit false) }],
+    .varDecl .«let» [{ target := "tdz", init := some (.boolLit false) }],
     .tryStmt [.exprStmt (.ident "x")]
       (some { param := some "e",
               body :=
                 [ .exprStmt (.assign (.ident "tdz")
                     (.binary .instanceof (.ident "e") (.ident "ReferenceError"))) ] })
       none,
-    .varDecl .«let» [{ name := "x", init := some (num 1.0) }],
+    .varDecl .«let» [{ target := "x", init := some (num 1.0) }],
     .exprStmt (.logical .and (.call (.ident "f") []) (.ident "tdz")) ]
 
 #guard outcome issueExample == "true"

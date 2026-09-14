@@ -50,7 +50,7 @@ caught;
         [ .ifStmt (.binary .strictEq (.ident "x") (.numLit 0.0))
             (.throwStmt (.new (.ident "RangeError") [.strLit "zero"])) none,
           .returnStmt (some (.binary .div (.numLit 1.0) (.ident "x"))) ],
-      .varDecl .«let» [{ name := "caught", init := some (.strLit "") }],
+      .varDecl .«let» [{ target := "caught", init := some (.strLit "") }],
       .tryStmt (stmt (.call (.ident "inv") [.numLit 0.0]))
         (some { param := some "e",
                 body := stmt (.assign (.ident "caught")
@@ -98,12 +98,12 @@ table says. -/
 -- binding it could not reach.
 #guard outcome
     [ tryCatch (stmt (.ident "x")) (some "e") (stmt (.member (.ident "e") "message")),
-      .varDecl .«let» [{ name := "x", init := none }] ]
+      .varDecl .«let» [{ target := "x", init := none }] ]
   == "Cannot access 'x' before initialization"
 
 -- `const c = 1; try { c = 2; } catch (e) { e instanceof TypeError; }`
 #guard outcome
-    [ .varDecl .«const» [{ name := "c", init := some (.numLit 1.0) }],
+    [ .varDecl .«const» [{ target := "c", init := some (.numLit 1.0) }],
       tryCatch (stmt (.assign (.ident "c") (.numLit 2.0))) (some "e")
         (stmt (.binary .instanceof (.ident "e") (.ident "TypeError"))) ]
   == "true"
@@ -178,7 +178,7 @@ table says. -/
 -- survives a caught throw, which is what the monad's transformer order
 -- is for.
 #guard outcome
-    [ .varDecl .«const» [{ name := "o", init := some (.objectLit []) }],
+    [ .varDecl .«const» [{ target := "o", init := some (.objectLit []) }],
       tryCatch
         [.exprStmt (.assign (.member (.ident "o") "x") (.numLit 1.0)), .throwStmt (.numLit 0.0)]
         none [],
@@ -194,7 +194,7 @@ table says. -/
 -- `let e = "outer"; try { throw "inner"; } catch (e) {} e;` — and it
 -- lives in a scope of its own.
 #guard outcome
-    [ .varDecl .«let» [{ name := "e", init := some (.strLit "outer") }],
+    [ .varDecl .«let» [{ target := "e", init := some (.strLit "outer") }],
       tryCatch [.throwStmt (.strLit "inner")] (some "e") [],
       .exprStmt (.ident "e") ]
   == "outer"
@@ -229,7 +229,7 @@ standing; an abrupt one overrides. -/
 
 -- `let n = 0; function f() { try { return 1; } finally { n = 5; } } f() + n;`
 #guard outcome
-    [ .varDecl .«let» [{ name := "n", init := some (.numLit 0.0) }],
+    [ .varDecl .«let» [{ target := "n", init := some (.numLit 0.0) }],
       .funcDecl "f" []
         [.tryStmt [.returnStmt (some (.numLit 1.0))] none
           (some (stmt (.assign (.ident "n") (.numLit 5.0))))],
@@ -288,7 +288,7 @@ standing; an abrupt one overrides. -/
 
 -- `const F = function () {}; F.prototype = 1; ({}) instanceof F;`
 #guard outcome
-    [ .varDecl .«const» [{ name := "F", init := some (.funcExpr none [] []) }],
+    [ .varDecl .«const» [{ target := "F", init := some (.funcExpr none [] []) }],
       .exprStmt (.assign (.member (.ident "F") "prototype") (.numLit 1.0)),
       .exprStmt (.binary .instanceof (.objectLit []) (.ident "F")) ]
   == "uncaught: TypeError: Function has non-object prototype in instanceof check"

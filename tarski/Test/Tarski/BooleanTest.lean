@@ -85,11 +85,11 @@ A primitive receiver and a wrapper receiver take the same path. -/
 /-! ## Detached, the two methods refuse by name -/
 
 #guard outcome
-    [ .varDecl .«const» [{ name := "f", init := some (.member boolProto "valueOf") }],
+    [ .varDecl .«const» [{ target := "f", init := some (.member boolProto "valueOf") }],
       .exprStmt (.call (.ident "f") []) ]
   == "uncaught: TypeError: Boolean.prototype.valueOf requires that 'this' be a Boolean"
 #guard outcome
-    [ .varDecl .«const» [{ name := "g", init := some (.member boolProto "toString") }],
+    [ .varDecl .«const» [{ target := "g", init := some (.member boolProto "toString") }],
       .exprStmt (.call (.ident "g") []) ]
   == "uncaught: TypeError: Boolean.prototype.toString requires that 'this' be a Boolean"
 

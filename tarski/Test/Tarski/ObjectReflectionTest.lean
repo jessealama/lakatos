@@ -35,7 +35,7 @@ private def joined (e : Expr) : Expr := .call (.member e "join") []
 
 /-- `const <n> = <e>;` -/
 private def «let» (n : String) (e : Expr) : Stmt :=
-  .varDecl .«const» [{ name := n, init := some e }]
+  .varDecl .«const» [{ target := n, init := some e }]
 
 /-- An object literal with no members, which every case starts from. -/
 private def empty : Expr := .objectLit []

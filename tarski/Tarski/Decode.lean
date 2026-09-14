@@ -441,7 +441,7 @@ partial def decodeExpr (j : Json) : DecodeM Expr := do
     | "ArrayPattern" | "ObjectPattern" =>
       -- Only `=` takes a pattern; `[a] += b` does not parse.
       if op == "=" then
-        pure (.assignPattern (← decodePattern left) (← decodeExpr (← field j "right")))
+        pure (.assignPattern (← decodePattern false left) (← decodeExpr (← field j "right")))
       else bad "AssignmentExpression pattern with a compound operator"
     | _ =>
       let target ← toTarget (← decodeExpr left)
@@ -536,29 +536,32 @@ partial def decodeParams : List Json → DecodeM (List Param)
     | "RestElement" =>
       if !rest.isEmpty then bad "RestElement is not last"
       else
-        pure [{ target := ← decodePattern (← field p "argument"), default := none,
+        pure [{ target := ← decodePattern true (← field p "argument"), default := none,
                 rest := true }]
     | "AssignmentPattern" =>
-      let target ← decodePattern (← field p "left")
+      let target ← decodePattern true (← field p "left")
       let d ← decodeExpr (← field p "right")
       pure ({ target, default := some d } :: (← decodeParams rest))
     | "Unsupported" => throw (.unsupported (← strField p "kind"))
     | _ =>
-      pure ({ target := ← decodePattern p, default := none } :: (← decodeParams rest))
+      pure ({ target := ← decodePattern true p, default := none } :: (← decodeParams rest))
 
 /-- One binding or assignment pattern. The two families share a decoder
-because they share an ESTree node family; what tells them apart is where
-the caller puts the result, and a leaf that is not an `Identifier` meets
-`toTarget`'s refusals. -/
-partial def decodePattern (j : Json) : DecodeM Pattern := do
+because they share an ESTree node family; what tells them apart is
+`binding`, which is what makes a **binding** position — a parameter, a
+declarator, a `catch` clause, a declaration loop head — admit only an
+identifier leaf, as the grammar does. -/
+partial def decodePattern (binding : Bool) (j : Json) : DecodeM Pattern := do
   match ← nodeType j with
   | "Identifier" => pure (.target (.ident (← strField j "name")))
-  | "MemberExpression" => pure (.target (← toTarget (← decodeExpr j)))
+  | "MemberExpression" =>
+    if binding then bad "binding pattern leaf is a MemberExpression"
+    else pure (.target (← toTarget (← decodeExpr j)))
   | "ArrayPattern" =>
-    let (elements, rest) ← decodePatternElems (← arrayField j "elements")
+    let (elements, rest) ← decodePatternElems binding (← arrayField j "elements")
     pure (.array elements rest)
   | "ObjectPattern" =>
-    let (props, rest) ← decodePatternProps (← arrayField j "properties")
+    let (props, rest) ← decodePatternProps binding (← arrayField j "properties")
     pure (.object props rest)
   | "Unsupported" => throw (.unsupported (← strField j "kind"))
   | other => throw (.unsupported other)
@@ -566,32 +569,32 @@ partial def decodePattern (j : Json) : DecodeM Pattern := do
 /-- An `ArrayPattern`'s elements: JSON `null` is an elision, a
 `RestElement` must be last, and anything else is an element with or
 without a default. -/
-partial def decodePatternElems :
+partial def decodePatternElems (binding : Bool) :
     List Json → DecodeM (List (Option PatternElem) × Option Pattern)
   | [] => pure ([], none)
   | e :: rest => do
     if e.isNull then
-      let (es, r) ← decodePatternElems rest
+      let (es, r) ← decodePatternElems binding rest
       pure (none :: es, r)
     else
       match ← nodeType e with
       | "RestElement" =>
         if !rest.isEmpty then bad "RestElement is not last"
-        else pure ([], some (← decodePattern (← field e "argument")))
+        else pure ([], some (← decodePattern binding (← field e "argument")))
       | "AssignmentPattern" =>
-        let target ← decodePattern (← field e "left")
+        let target ← decodePattern binding (← field e "left")
         let d ← decodeExpr (← field e "right")
-        let (es, r) ← decodePatternElems rest
+        let (es, r) ← decodePatternElems binding rest
         pure (some { target, default := some d } :: es, r)
       | _ =>
-        let target ← decodePattern e
-        let (es, r) ← decodePatternElems rest
+        let target ← decodePattern binding e
+        let (es, r) ← decodePatternElems binding rest
         pure (some { target, default := none } :: es, r)
 
 /-- An `ObjectPattern`'s properties. A `RestElement` must be last and its
 argument must be a leaf, which is what the grammar says for both pattern
 families. -/
-partial def decodePatternProps :
+partial def decodePatternProps (binding : Bool) :
     List Json → DecodeM (List PatternProp × Option Target)
   | [] => pure ([], none)
   | p :: rest => do
@@ -599,7 +602,7 @@ partial def decodePatternProps :
     | "RestElement" =>
       if !rest.isEmpty then bad "RestElement is not last"
       else
-        match ← decodePattern (← field p "argument") with
+        match ← decodePattern binding (← field p "argument") with
         | .target t => pure ([], some t)
         | _ => throw (.unsupported "RestElement pattern")
     | "Property" =>
@@ -612,10 +615,11 @@ partial def decodePatternProps :
           let prop ←
             match ← nodeType value with
             | "AssignmentPattern" =>
-              pure { key, target := ← decodePattern (← field value "left"),
+              pure { key, target := ← decodePattern binding (← field value "left"),
                      default := some (← decodeExpr (← field value "right")) }
-            | _ => pure { key, target := ← decodePattern value, default := none }
-          let (ps, r) ← decodePatternProps rest
+            | _ =>
+              pure { key, target := ← decodePattern binding value, default := none }
+          let (ps, r) ← decodePatternProps binding rest
           pure (prop :: ps, r)
       | other => throw (.unsupported s!"Property {other}")
     | "Unsupported" => throw (.unsupported (← strField p "kind"))
@@ -809,7 +813,7 @@ partial def decodeClass (j : Json) : DecodeM ClassDef := do
 partial def decodeDeclarator (j : Json) : DecodeM Declarator := do
   match ← nodeType j with
   | "VariableDeclarator" =>
-    let target ← decodePattern (← field j "id")
+    let target ← decodePattern true (← field j "id")
     match ← optField j "init" with
     | some e => pure { target, init := some (← decodeExpr e) }
     | none =>
@@ -917,7 +921,7 @@ partial def decodeLoopHead (j : Json) : DecodeM ForInLeft := do
       | none => pure (.decl kind d.target)
       | some _ => throw (.unsupported "ForInStatement initializer")
     | _ => throw (.unsupported "ForInStatement initializer")
-  | "ArrayPattern" | "ObjectPattern" => pure (.pattern (← decodePattern head))
+  | "ArrayPattern" | "ObjectPattern" => pure (.pattern (← decodePattern false head))
   | _ => pure (.target (← toTarget (← decodeExpr head)))
 
 /-- A `CatchClause`. The parameter is a binding pattern, and an
@@ -926,7 +930,7 @@ around it, survives — which is the precedent a function parameter set. -/
 partial def decodeCatch (j : Json) : DecodeM CatchClause := do
   let param ← match ← optField j "param" with
     | none => pure none
-    | some p => pure (some (← decodePattern p))
+    | some p => pure (some (← decodePattern true p))
   pure { param, body := ← decodeStmts (← blockField j "body") }
 
 /-- A `VariableDeclaration`'s declarators, in a statement or in a `for`

@@ -16,7 +16,7 @@ open Tarski
 /-! ## The shape -/
 
 #guard Heap.initial.cells.size == 37
-#guard Heap.initial.objects.size == 144
+#guard Heap.initial.objects.size == 156
 
 /-! ## Each kind's prototype
 
@@ -80,7 +80,6 @@ constructor object. -/
 
 `Object.prototype` carries the whole of 20.1.3 but `__proto__` (#487)
 and `@@toStringTag` (#392); `Object` carries the whole of 20.1.2 but
-`fromEntries` and `groupBy` (iterators, #394) and
 `getOwnPropertySymbols` (#392). -/
 
 #guard match Heap.initial.readObj objectProtoRef with
@@ -104,10 +103,12 @@ private def objectStatics : List (String × Ref) :=
     ("defineProperty", objectDefinePropertyRef),
     ("entries", objectEntriesRef),
     ("freeze", objectFreezeRef),
+    ("fromEntries", objectFromEntriesRef),
     ("getOwnPropertyDescriptor", objectGetOwnPropertyDescriptorRef),
     ("getOwnPropertyDescriptors", objectGetOwnPropertyDescriptorsRef),
     ("getOwnPropertyNames", objectGetOwnPropertyNamesRef),
     ("getPrototypeOf", objectGetPrototypeOfRef),
+    ("groupBy", objectGroupByRef),
     ("hasOwn", objectHasOwnRef),
     ("is", objectIsRef),
     ("isExtensible", objectIsExtensibleRef),
@@ -123,8 +124,6 @@ private def objectStatics : List (String × Ref) :=
   | some o =>
     o.getOwn "prototype" == some (.obj objectProtoRef)
       && objectStatics.all (fun p => o.getOwn p.1 == some (.obj p.2))
-      && o.getOwn "fromEntries" == none
-      && o.getOwn "groupBy" == none
       && (match o.callable with
           | some (.native .objectCtor) => true
           | _ => false)
@@ -656,6 +655,57 @@ private def nativeAt (r : Ref) (n : NativeFn) : Bool :=
          (objectSealRef, .objectSeal),
          (objectSetPrototypeOfRef, .objectSetPrototypeOf),
          (objectValuesRef, .objectValues) ].all fun p => nativeAt p.1 p.2
+
+/-! ## The iterators
+
+The nine objects #394 appended: `%IteratorPrototype%` and its
+`@@iterator`, `%ArrayIteratorPrototype%` and its `next`, the three
+`Array.prototype` iterator-producing methods, and the two `Object`
+members that consume an iterable. Neither prototype has a global
+binding: nothing in source names one.
+
+`Array.prototype[@@iterator]` **is** `Array.prototype.values`
+(23.1.3.40), one object and not two, and an `arguments` object's
+`@@iterator` is that same object. -/
+
+#guard [ (iteratorProtoIteratorRef, NativeFn.iteratorProtoIterator, "[Symbol.iterator]", 0),
+         (arrayIteratorNextRef, .arrayIteratorNext, "next", 0),
+         (arrayKeysRef, .arrayKeys, "keys", 0),
+         (arrayValuesRef, .arrayValues, "values", 0),
+         (arrayEntriesRef, .arrayEntries, "entries", 0),
+         (objectFromEntriesRef, .objectFromEntries, "fromEntries", 1),
+         (objectGroupByRef, .objectGroupBy, "groupBy", 2) ].all fun p =>
+  match Heap.initial.readObj p.1 with
+  | some o =>
+    (match o.callable with
+     | some (.native f) => f == p.2.1
+     | _ => false)
+      && o.getOwn "name" == some (.prim (.str p.2.2.1))
+      && o.getOwn "length" == some (.prim (.num p.2.2.2.toFloat))
+      && o.proto == some functionProtoRef
+  | none => false
+
+#guard match Heap.initial.readObj iteratorProtoRef with
+  | some o =>
+    o.proto == some objectProtoRef
+      && o.getOwn WellKnownSymbol.iterator.key == some (.obj iteratorProtoIteratorRef)
+  | none => false
+
+#guard match Heap.initial.readObj arrayIteratorProtoRef with
+  | some o =>
+    o.proto == some iteratorProtoRef
+      && o.getOwn "next" == some (.obj arrayIteratorNextRef)
+      && o.getOwn WellKnownSymbol.toStringTag.key
+        == some (.prim (.str "Array Iterator"))
+  | none => false
+
+#guard match Heap.initial.readObj arrayProtoRef with
+  | some o =>
+    o.getOwn "entries" == some (.obj arrayEntriesRef)
+      && o.getOwn "keys" == some (.obj arrayKeysRef)
+      && o.getOwn "values" == some (.obj arrayValuesRef)
+      && o.getOwn WellKnownSymbol.iterator.key == some (.obj arrayValuesRef)
+  | none => false
 
 /-! ## The five new global bindings
 

@@ -39,7 +39,7 @@ private def subcls (name parent : String) (elements : List ClassElement) : Stmt 
 
 /-- `const <name> = <e>;` -/
 private def letConst (name : String) (e : Expr) : Stmt :=
-  .varDecl .«const» [{ name, init := some e }]
+  .varDecl .«const» [{ target := name, init := some e }]
 
 /-! ## The issue's example -/
 

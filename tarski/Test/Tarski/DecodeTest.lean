@@ -116,9 +116,9 @@ private def wholeSliceJson : String := script <|
 `Identifier` and decodes to the literal, not to a reference. -/
 private def wholeSlice : Program :=
   [ .varDecl .«let»
-      [ { name := "n", init := some (.numLit 0.0) },
-        { name := "seen", init := some (.boolLit false) } ],
-    .varDecl .«const» [{ name := "limit", init := some (.numLit 2.5) }],
+      [ { target := "n", init := some (.numLit 0.0) },
+        { target := "seen", init := some (.boolLit false) } ],
+    .varDecl .«const» [{ target := "limit", init := some (.numLit 2.5) }],
     .whileStmt (.binary .lt (.ident "n") (.ident "limit"))
       (.block [.exprStmt (.assign (.ident "n") (.binary .add (.ident "n") (.numLit 1.0)))]),
     .ifStmt (.unary .not (.ident "seen"))
@@ -130,7 +130,7 @@ private def wholeSlice : Program :=
     -- already resolved its right-associativity, so the decoder has
     -- nothing to say about it.
     .exprStmt (.binary .exponent (.numLit 2.0) (.numLit 3.0)),
-    .forStmt (some (.decl .«let» [{ name := "i", init := some (.numLit 0.0) }]))
+    .forStmt (some (.decl .«let» [{ target := "i", init := some (.numLit 0.0) }]))
       (some (.binary .lt (.ident "i") (.numLit 2.0)))
       (some (.update .inc false (.ident "i")))
       (.block
@@ -138,13 +138,13 @@ private def wholeSlice : Program :=
           .switchStmt (.ident "i")
             [ { test := some (.numLit 0.0), body := [.breakStmt none] },
               { test := none, body := [.empty] } ] ]),
-    .varDecl .«var» [{ name := "hoisted", init := some (.unary .void (.numLit 0.0)) }],
+    .varDecl .«var» [{ target := "hoisted", init := some (.unary .void (.numLit 0.0)) }],
     -- `do`/`while` names its body first, as the source does.
     .doWhileStmt (.block [.exprStmt (.compoundAssign .add (.ident "n") (.numLit 1.0))])
       (.boolLit false),
     -- An `AssignmentPattern` parameter is a `Param` with a default; a
     -- plain `Identifier` is one without.
-    .funcDecl "withDefault" ["a", { name := "b", default := some (.numLit 1.0) }]
+    .funcDecl "withDefault" ["a", { target := "b", default := some (.numLit 1.0) }]
       [.returnStmt (some (.ident "b"))],
     .exprStmt .undefLit ]
 
@@ -182,7 +182,7 @@ private def classSlice : Program :=
             .method .method false "m" []
               [.returnStmt (some (.call (.superMember "m") []))] ] },
     .varDecl .«const»
-      [{ name := "C",
+      [{ target := "C",
          init := some (.classExpr { name := some "N", superClass := none, elements := [] }) }] ]
 
 #guard decode classSliceJson == toString (repr classSlice)
@@ -192,7 +192,7 @@ private def classSlice : Program :=
 #guard decode (script
     r#"{"type":"VariableDeclaration","kind":"let","declarations":[
          {"type":"VariableDeclarator","id":{"type":"Identifier","name":"x"},"init":null}]}"#)
-  == toString (repr ([.varDecl .«let» [{ name := "x", init := none }]] : Program))
+  == toString (repr ([.varDecl .«let» [{ target := "x", init := none }]] : Program))
 
 -- An `if` with no `else`.
 #guard decode (script
@@ -318,7 +318,7 @@ private def classSlice : Program :=
            "init":{"type":"Literal","value":0,"raw":"0"}}]},
         "test":null,"update":null,"body":{"type":"EmptyStatement"}}"#)
   == toString (repr
-    ([.forStmt (some (.decl .«var» [{ name := "i", init := some (.numLit 0.0) }]))
+    ([.forStmt (some (.decl .«var» [{ target := "i", init := some (.numLit 0.0) }]))
         none none .empty] : Program))
 
 -- An expression head is evaluated for its effect.
@@ -475,11 +475,11 @@ private def objectSliceJson : String := script <|
 private def objectSlice : Program :=
   [ .funcDecl "add" ["a", "b"]
       [.returnStmt (some (.binary .add (.ident "a") (.ident "b")))],
-    .varDecl .«const» [{ name := "o", init := some (.objectLit
+    .varDecl .«const» [{ target := "o", init := some (.objectLit
       [ .init "a" (.numLit 1.0),
         .init "b key" (.strLit "s"),
         .init "m" (.funcExpr none [] [.returnStmt (some .this)])]) }],
-    .varDecl .«const» [{ name := "g", init := some (.arrow ["x"] (.expr (.ident "x"))) }],
+    .varDecl .«const» [{ target := "g", init := some (.arrow ["x"] (.expr (.ident "x"))) }],
     .exprStmt (.assign (.member (.ident "o") "a") (.numLit 2.0)),
     .exprStmt (.call (.member (.ident "o") "m") []),
     .exprStmt (.new (.ident "add") []),
@@ -538,9 +538,9 @@ private def objectSlice : Program :=
         "body":{"type":"BlockStatement","body":[]},"async":false,"generator":false}"#)
   == "unsupported: Parameter"
 
--- An `AssignmentPattern` whose `left` is not an identifier is a binding
--- pattern with a default, which the bridge refuses whole; one reaching
--- the decoder is a broken producer, not a program outside the slice.
+-- A binding position admits only an identifier leaf, which is what the
+-- grammar says; a member leaf there is a broken producer, not a program
+-- outside the slice.
 #guard decode (script
     r#"{"type":"FunctionDeclaration","id":{"type":"Identifier","name":"f"},
         "params":[{"type":"AssignmentPattern",
@@ -550,7 +550,7 @@ private def objectSlice : Program :=
                            "computed":false},
                    "right":{"type":"Literal","value":1,"raw":"1"}}],
         "body":{"type":"BlockStatement","body":[]},"async":false,"generator":false}"#)
-  == "malformed: AssignmentPattern left is a MemberExpression"
+  == "malformed: binding pattern leaf is a MemberExpression"
 
 -- A destructured parameter names its pattern.
 #guard decode (script

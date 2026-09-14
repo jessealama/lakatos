@@ -133,6 +133,7 @@ attribute [tarski_eval]
 -- list — recurse on data or not at all.
 attribute [tarski_eval]
   getProp setProp getFrom findProperty hasProperty deleteProp toObjectValue
+  createDataProperty
   descriptorField toDescriptor fromProperty refuseDefine defineArrayLength
   definePropertyOrThrow readDescriptors applyDescriptors defineProperties
   enumerableOwn assignKeys assignSources descriptorsInto

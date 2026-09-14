@@ -26,7 +26,7 @@ open Tarski
 
 /-- `const o = { a: 1 }; o.a;` -/
 private def program : Program :=
-  [ .varDecl .«const» [{ name := "o", init := some (.objectLit [.init "a" (.numLit 1.0)]) }],
+  [ .varDecl .«const» [{ target := "o", init := some (.objectLit [.init "a" (.numLit 1.0)]) }],
     .exprStmt (.member (.ident "o") "a") ]
 
 example : runProgram program = some (.ok (some (.prim (.num 1.0)))) := by

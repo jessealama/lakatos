@@ -38,7 +38,7 @@ private def callF (params : List Param) (body : List Stmt) (call : List Expr) : 
   [ .funcDecl "f" params body, .exprStmt (.call (.ident "f") call) ]
 
 /-- `<name> = <e>` as a parameter. -/
-private def dflt (name : String) (e : Expr) : Param := { name, default := some e }
+private def dflt (name : String) (e : Expr) : Param := { target := name, default := some e }
 
 /-! ## When a default runs -/
 
@@ -63,7 +63,7 @@ private def returnB : List Stmt := [.returnStmt (some (.ident "b"))]
 -- — only the second default runs, so `n` ends at 10 rather than 11, and
 -- the two run left to right.
 #guard outcome
-    [ .varDecl .«let» [{ name := "n", init := some (num 0.0) }],
+    [ .varDecl .«let» [{ target := "n", init := some (num 0.0) }],
       .funcDecl "f"
         [ dflt "a" (.assign (.ident "n") (.binary .add (.ident "n") (num 1.0))),
           dflt "b" (.assign (.ident "n") (.binary .add (.ident "n") (num 10.0))) ]
@@ -107,7 +107,7 @@ parameters', rather than sharing them. -/
 -- still answers 1 while the body's `var a` has moved to 2.
 #guard outcome
     (callF [dflt "g" (.arrow [] (.expr (.ident "a"))), dflt "a" (num 1.0)]
-      [ .varDecl .«var» [{ name := "a", init := some (num 2.0) }],
+      [ .varDecl .«var» [{ target := "a", init := some (num 2.0) }],
         .returnStmt (some (.binary .add
           (.binary .add (.call (.ident "g") []) (.strLit ":")) (.ident "a"))) ]
       [])
@@ -117,14 +117,14 @@ parameters', rather than sharing them. -/
 -- initializer performs no operation, so the copy stands.
 #guard outcome
     (callF [dflt "a" (num 1.0)]
-      [.varDecl .«var» [{ name := "a", init := none }], .returnStmt (some (.ident "a"))] [])
+      [.varDecl .«var» [{ target := "a", init := none }], .returnStmt (some (.ident "a"))] [])
   == "1"
 
 -- `function f(a = 1) { var a = 3; return a; } f();` — and one with an
 -- initializer writes the copy.
 #guard outcome
     (callF [dflt "a" (num 1.0)]
-      [ .varDecl .«var» [{ name := "a", init := some (num 3.0) }],
+      [ .varDecl .«var» [{ target := "a", init := some (num 3.0) }],
         .returnStmt (some (.ident "a")) ]
       [])
   == "3"
@@ -133,9 +133,9 @@ parameters', rather than sharing them. -/
 -- — the parameter scope is outside the body's, so the default's closure
 -- never sees the body's `let`.
 #guard outcome
-    [ .varDecl .«let» [{ name := "x", init := some (.strLit "outer") }],
+    [ .varDecl .«let» [{ target := "x", init := some (.strLit "outer") }],
       .funcDecl "f" [dflt "g" (.arrow [] (.expr (.ident "x")))]
-        [ .varDecl .«let» [{ name := "x", init := some (.strLit "inner") }],
+        [ .varDecl .«let» [{ target := "x", init := some (.strLit "inner") }],
           .returnStmt (some (.call (.ident "g") [])) ],
       .exprStmt (.call (.ident "f") []) ]
   == "outer"
