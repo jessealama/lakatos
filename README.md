@@ -179,6 +179,10 @@ Properties are written in [Lemma](spec/), a little specification language
 embedded in JSDoc — annotated files remain ordinary TypeScript accepted by
 `tsc --strict`.
 
+What a `PROVED` verdict rests on, and the two limits on it today, are
+stated in the spec's
+[What a Theorem rests on](spec/semantics.md#what-a-theorem-rests-on).
+
 ## Commands
 
 - **`lakatos check <file>`** — the flagship: refute first (fast — catches
