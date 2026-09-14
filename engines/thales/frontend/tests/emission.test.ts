@@ -1059,6 +1059,30 @@ describe("statement bodies (#148)", () => {
   const annotated = (decl: string) =>
     `/** @ensures{p} forall (x: int ∈ [0, 5)) { f(x) >= 0 } */\n${decl}\n`;
 
+  test.each([
+    "Error",
+    "TypeError",
+    "RangeError",
+    "ReferenceError",
+    "SyntaxError",
+    "EvalError",
+    "URIError",
+  ])("a throw of %s is that error kind, and nothing else (#478)", (kind) => {
+    const src = annotated(
+      "export function f(x: number): number { " +
+        `if (x < 0) { throw new ${kind}("bad"); } return x; }`,
+    );
+    const { emission, classified } = emitModule(src, "t.ts");
+    expect(classified).toEqual([]);
+    expect(emission.declarations.filter((d) => d.kind === "residual")).toEqual(
+      [],
+    );
+    expect(fnBody(emission.declarations[0]!)[0]).toMatchObject({
+      kind: "if",
+      then: [{ kind: "throw", error: kind }],
+    });
+  });
+
   test("a branching, throwing, reassigning body maps statement for statement", () => {
     const src = annotated(
       [
@@ -11500,6 +11524,202 @@ describe("residual sites in function bodies", () => {
     expect(classifications(src).classified).toEqual([
       ["Inappropriate", "'**' is not supported"],
     ]);
+  });
+});
+
+describe("a throw of a non-error class is a residual site (#478)", () => {
+  /** The issue's example: a guard whose throw is of a class the model has
+   * no error kind for. The declared class is there only to show that the
+   * check does not consult it. */
+  const GUARD =
+    "class Foo {}\n" +
+    "/** @ensures{positive} forall (a: int ∈ [1, 5)) { guard(a) > 0 } */\n" +
+    "export function guard(a: number): number {\n" +
+    "  if (a < 0) throw new Foo();\n  return a;\n}\n";
+
+  test("the site ends the path, the declaration is still modeled", () => {
+    const { emission, classified } = emitModule(GUARD, "r.ts");
+    expect(classified).toEqual([]);
+    const fn = emission.declarations.find((d) => d.kind === "function");
+    assert(fn?.kind === "function");
+    expect(residualsOf(GUARD)).toEqual([
+      {
+        kind: "residual",
+        owner: "guard",
+        site: 1,
+        construct: "'Foo' is not an error class",
+        params: [{ name: "a", type: "number" }],
+        type: "number",
+      },
+    ]);
+    expect(fn.body).toEqual([
+      {
+        kind: "if",
+        cond: {
+          kind: "binop",
+          op: "<",
+          left: { kind: "id", name: "a" },
+          right: { kind: "num", lit: "0" },
+        },
+        then: [
+          {
+            kind: "return",
+            expr: {
+              kind: "residual",
+              owner: "guard",
+              site: 1,
+              args: [{ kind: "id", name: "a" }],
+            },
+          },
+        ],
+      },
+      { kind: "return", expr: { kind: "id", name: "a" } },
+    ]);
+    expect(fn.noncomputable).toBe(true);
+    expect(emission.obligations).toHaveLength(1);
+  });
+
+  test("the check is syntactic: no declaration of the class is needed", () => {
+    const undeclared = GUARD.replace("class Foo {}\n", "");
+    expect(residualsOf(undeclared)).toEqual(residualsOf(GUARD));
+  });
+
+  test("the arguments of such a throw are not walked", () => {
+    const src = GUARD.replace(
+      "throw new Foo();",
+      "throw new Foo(a.q, 1 ** 2);",
+    );
+    expect(residualConstructs(src)).toEqual(["'Foo' is not an error class"]);
+  });
+
+  test("the site takes the codomain of the function it ends", () => {
+    const src =
+      "export function ok(a: number): boolean {\n" +
+      "  if (a < 0) { throw new Foo(); }\n  return true;\n}\n" +
+      "/** @ensures{p} forall (a: int ∈ [0, 5)) { f(a) >= 0 } */\n" +
+      "export function f(a: number): number {\n" +
+      "  if (ok(a)) { return 1; }\n  return 0;\n}\n";
+    expect(residualsOf(src)).toMatchObject([
+      { owner: "ok", site: 1, type: "boolean" },
+    ]);
+  });
+
+  test("a method and a getter own the site, the receiver first", () => {
+    const src =
+      "export class C {\n  #v: number;\n" +
+      "  constructor(v: number) { this.#v = v; }\n" +
+      "  /** @ensures{p} forall (x: number) { new C(x).m() >= 0 } */\n" +
+      "  m(): number { if (this.#v < 0) { throw new Foo(); } return this.#v; }\n" +
+      "  get g(): number { if (this.#v < 0) { throw new Foo(); } return 1; }\n}\n";
+    const { emission, classified } = emitModule(src, "r.ts");
+    expect(classified).toEqual([]);
+    // Getters are walked before methods, so the getter's site comes first.
+    expect(residualsOf(src)).toMatchObject([
+      {
+        owner: "C#g",
+        site: 1,
+        construct: "'Foo' is not an error class",
+        params: [{ name: "self", type: { class: "C" } }],
+        type: "number",
+      },
+      {
+        owner: "C#m",
+        site: 1,
+        params: [{ name: "self", type: { class: "C" } }],
+      },
+    ]);
+    const cls = emission.declarations.find((d) => d.kind === "class");
+    assert(cls?.kind === "class");
+    expect(cls.methods[0]?.body[0]).toMatchObject({
+      kind: "if",
+      then: [
+        {
+          kind: "return",
+          expr: {
+            kind: "residual",
+            owner: "C#m",
+            site: 1,
+            args: [{ kind: "self" }],
+          },
+        },
+      ],
+    });
+  });
+
+  test("a constructor discards its site, since a constructor cannot return", () => {
+    const src =
+      "export class C {\n  #v: number;\n" +
+      "  constructor(v: number) { if (v < 0) { throw new Foo(); } this.#v = v; }\n" +
+      "  /** @ensures{p} forall (x: int ∈ [0, 5)) { new C(x).v >= 0 } */\n" +
+      "  get v(): number { return this.#v; }\n}\n";
+    const { emission, classified } = emitModule(src, "r.ts");
+    expect(classified).toEqual([]);
+    expect(residualsOf(src)).toMatchObject([
+      {
+        owner: "C#constructor",
+        site: 1,
+        params: [{ name: "v", type: "number" }],
+      },
+    ]);
+    const cls = emission.declarations.find((d) => d.kind === "class");
+    assert(cls?.kind === "class");
+    expect(cls.ctor.body).toEqual([
+      {
+        kind: "if",
+        cond: {
+          kind: "binop",
+          op: "<",
+          left: { kind: "id", name: "v" },
+          right: { kind: "num", lit: "0" },
+        },
+        then: [
+          {
+            kind: "discard",
+            expr: {
+              kind: "residual",
+              owner: "C#constructor",
+              site: 1,
+              args: [{ kind: "id", name: "v" }],
+            },
+          },
+        ],
+      },
+      { kind: "field-set", field: "#v", expr: { kind: "id", name: "v" } },
+    ]);
+    expect(cls.ctor.noncomputable).toBe(true);
+  });
+
+  test("a site leaves its arm, so a branch of two throws has no tail", () => {
+    const src =
+      "/** @ensures{p} forall (a: int ∈ [1, 5)) { f(a) > 0 } */\n" +
+      "export function f(a: number): number {\n" +
+      "  if (a < 0) { throw new RangeError('negative'); } else { throw new Foo(); }\n}\n";
+    const fn = emitModule(src, "r.ts").emission.declarations.find(
+      (d) => d.kind === "function",
+    );
+    assert(fn?.kind === "function");
+    expect(fn.body).toHaveLength(1);
+    expect(fn.body[0]).toMatchObject({
+      kind: "if",
+      then: [{ kind: "throw", error: "RangeError" }],
+      else: [{ kind: "return", expr: { kind: "residual", site: 1 } }],
+    });
+  });
+
+  test("the spelling decides: a class named RangeError is still that kind", () => {
+    const src =
+      "class RangeError {}\n" +
+      "/** @ensures{p} forall (a: int ∈ [1, 5)) { f(a) > 0 } */\n" +
+      "export function f(a: number): number {\n" +
+      "  if (a < 0) { throw new RangeError(); }\n  return a;\n}\n";
+    const fn = emitModule(src, "r.ts").emission.declarations.find(
+      (d) => d.kind === "function",
+    );
+    assert(fn?.kind === "function");
+    expect(residualsOf(src)).toEqual([]);
+    expect(fn.body[0]).toMatchObject({
+      then: [{ kind: "throw", error: "RangeError" }],
+    });
   });
 });
 

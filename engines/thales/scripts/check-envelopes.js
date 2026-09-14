@@ -175,6 +175,11 @@ const DEGRADATION_FIXTURES = [
   `${CONFORMANCE}/theorem/residual-untaken-branch.ts`,
   `${CONFORMANCE}/inappropriate/residual-dropped-value.ts`,
   `${CONFORMANCE}/inappropriate/residual-sites-distinct.ts`,
+  // A throw of a class outside the seven error kinds is a site too: off the
+  // property's path, and on it. The reason is the prover's, so the store
+  // pins it end to end.
+  `${CONFORMANCE}/theorem/custom-throw-unreached.ts`,
+  `${CONFORMANCE}/inappropriate/custom-throw-reached.ts`,
 ];
 
 /** The import slice: the closure fixtures the switchover carved out — a
