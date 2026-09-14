@@ -53,7 +53,7 @@ cp -rf source dest          # NOT: cp -r source dest
 
 ## Beads Issue Tracker
 
-This project uses **bd (beads)** for agent-local task tracking; GitHub Issues on `jessealama/lakatos` is the issue tracker. Run `bd prime` to see full workflow context and commands.
+This project uses **bd (beads)** for agent-local task tracking; GitHub Issues on `lakatos-ts/lakatos` is the issue tracker. Run `bd prime` to see full workflow context and commands.
 
 ### Quick Reference
 
@@ -66,7 +66,7 @@ bd close <id>         # Complete work
 
 ### Rules
 
-- GitHub Issues on `jessealama/lakatos` is the project's issue tracker; `bd` is agent-local task tracking within a session. Anything that outlives the session is a GitHub issue, not a bead.
+- GitHub Issues on `lakatos-ts/lakatos` is the project's issue tracker; `bd` is agent-local task tracking within a session. Anything that outlives the session is a GitHub issue, not a bead.
 - Use `bd` instead of TodoWrite, TaskCreate, or markdown TODO lists for in-session task tracking
 - Run `bd prime` for detailed command reference and session close protocol
 - Persistent memory stays in the agent's own memory files, not `bd remember`

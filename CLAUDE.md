@@ -14,7 +14,7 @@ Every TypeScript part — `src/`, `lemma/`, pabst, thales's `frontend/` — is o
 
 ## Issue tracker
 
-GitHub Issues on `jessealama/lakatos` is the tracker: bugs, features, triage, and everything a PR or design record refers to by number. Conventions: `engines/thales/docs/agents/issue-tracker.md`; triage labels: `engines/thales/docs/agents/triage-labels.md`.
+GitHub Issues on `lakatos-ts/lakatos` is the tracker: bugs, features, triage, and everything a PR or design record refers to by number. Conventions: `engines/thales/docs/agents/issue-tracker.md`; triage labels: `engines/thales/docs/agents/triage-labels.md`.
 
 Beads (`bd`, below) is agent-local task tracking within a session, not a second issue tracker: a bead is a step toward an issue, never a substitute for filing one.
 

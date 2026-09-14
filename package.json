@@ -13,11 +13,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jessealama/lakatos.git"
+    "url": "git+https://github.com/lakatos-ts/lakatos.git"
   },
-  "homepage": "https://github.com/jessealama/lakatos#readme",
+  "homepage": "https://github.com/lakatos-ts/lakatos#readme",
   "bugs": {
-    "url": "https://github.com/jessealama/lakatos/issues"
+    "url": "https://github.com/lakatos-ts/lakatos/issues"
   },
   "bin": {
     "lakatos": "dist/src/cli.js",
