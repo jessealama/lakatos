@@ -40,8 +40,13 @@ open Tarski Js
 -- A class evaluation allocates a prototype, a constructor object, and a
 -- cell per declared name before the constructor's first statement runs,
 -- and a symbolic argument keeps both branches alive, so `simp`'s own
--- recursion needs more room than a closed program's.
+-- recursion needs more room than a closed program's. The realm is
+-- eighty-nine objects with attributes on every property since #389, and
+-- the kernel's check of either obligation runs past the default
+-- heartbeat budget on it; that whole-program `simp` has a ceiling the
+-- heap's representation sets is #471's.
 set_option maxRecDepth 8000
+set_option maxHeartbeats 4000000
 
 /-! ### A free function, both branches -/
 

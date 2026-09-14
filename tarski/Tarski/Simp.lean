@@ -67,10 +67,13 @@ attribute [tarski_eval]
   varNames varNamesStmt varNamesCases hoistVars
 
 -- Calls: user code, built-ins, and the two opaque catch sites.
--- `callReflectNative` is the `Object` and `Function` surface, split out
--- of `callNative` so each match still has equations.
+-- `callReflectNative`, the `Object` and `Function` surface `callNative`
+-- defers to, is not here: its twenty-nine arms are past the depth at
+-- which Lean generates a match's equation lemmas, so registering it
+-- overflows `maxRecDepth` before any proof runs (#471's ceiling, seen
+-- from the other side).
 attribute [tarski_eval]
-  callFunction callNative callReflectNative constructNative catchReturn attempt liftCompletion
+  callFunction callNative constructNative catchReturn attempt liftCompletion
   makeFunction isConstructor NativeFn.constructs nameOf functionSourceText builtinTag
   toStringValue toStringValues toNumberValue toNumberValues toLengthValue mathUnary pushElements
 
