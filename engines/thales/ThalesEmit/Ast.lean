@@ -50,6 +50,25 @@ def optTerm (t? : Option Term) : RenderM Term :=
   | none => `(none)
   | some t => `(some $t)
 
+/-- A template's cooked strings, one more of them than its substitutions. -/
+def strsTerm (ss : List String) : RenderM Term :=
+  let xs := ss.toArray.map strTerm
+  `([$xs,*])
+
+/-- A tagged template's site number, the decoder's index for its Parse
+Node, as a numeral. -/
+def natTerm (n : Nat) : Term := ⟨Syntax.mkNumLit (toString n)⟩
+
+/-- One `TemplateString` of a tagged template: its cooked value, `none`
+for a raw text the cooked grammar refuses, beside the raw text. -/
+def templateStringTerm (s : Tarski.TemplateString) : RenderM Term := do
+  let cooked ← optTerm (s.cooked.map strTerm)
+  `({ cooked := $cooked, raw := $(strTerm s.raw) })
+
+def templateStringsTerm (ss : List Tarski.TemplateString) : RenderM Term := do
+  let xs ← ss.toArray.mapM templateStringTerm
+  `([$xs,*])
+
 /-- A `Float` as the literal whose bits it has: `Number::toString`'s
 answer, read back by `numTerm` — `Infinity` and `NaN` as the library's
 constants, a leading `-` as a negation, anything with a point or an
@@ -136,6 +155,11 @@ partial def exprTerm : Tarski.Expr → RenderM Term
     ctorApp "new" #[← exprTerm callee, ← exprsTerm args]
   | .arrayLit elements => do ctorApp "arrayLit" #[← exprsTerm elements]
   | .objectLit props => do ctorApp "objectLit" #[← propsTerm props]
+  | .template strings exprs => do
+    ctorApp "template" #[← strsTerm strings, ← exprsTerm exprs]
+  | .taggedTemplate tag site strings exprs => do
+    ctorApp "taggedTemplate"
+      #[← exprTerm tag, natTerm site, ← templateStringsTerm strings, ← exprsTerm exprs]
   | .funcExpr name params body => do
     ctorApp "funcExpr"
       #[← optTerm (name.map strTerm), ← paramsTerm params, ← stmtsTerm body]
@@ -156,12 +180,25 @@ partial def exprsTerm (es : List Tarski.Expr) : RenderM Term := do
   let xs ← es.toArray.mapM exprTerm
   `([$xs,*])
 
-/-- An object literal's members: the source order the AST keeps, each a
-key-and-value pair. -/
-partial def propsTerm (ps : List (String × Tarski.Expr)) : RenderM Term := do
-  let xs ← ps.toArray.mapM fun (k, v) => do
-    let value ← exprTerm v
-    `(($(strTerm k), $value))
+/-- A property key: a written name, or the expression a computed key
+(and a numeric literal key) evaluates through ToPropertyKey. -/
+partial def propKeyTerm : Tarski.PropKey → RenderM Term
+  | .name s => ctorApp "name" #[strTerm s]
+  | .computed e => do ctorApp "computed" #[← exprTerm e]
+
+/-- One object-literal member: a key-and-value pair (a shorthand is one
+whose value is its own name), a method or accessor, or the `__proto__:`
+form. -/
+partial def propDefTerm : Tarski.PropDef → RenderM Term
+  | .init key value => do ctorApp "init" #[← propKeyTerm key, ← exprTerm value]
+  | .method kind key params body => do
+    ctorApp "method"
+      #[methodKindTerm kind, ← propKeyTerm key, ← paramsTerm params, ← stmtsTerm body]
+  | .proto value => do ctorApp "proto" #[← exprTerm value]
+
+/-- An object literal's members, in the source order the AST keeps. -/
+partial def propsTerm (ps : List Tarski.PropDef) : RenderM Term := do
+  let xs ← ps.toArray.mapM propDefTerm
   `([$xs,*])
 
 partial def targetTerm : Tarski.Target → RenderM Term

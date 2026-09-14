@@ -411,12 +411,13 @@ describe("the pieces a closure is built from", () => {
   test("a non-computed member name and a key are not references", () => {
     // `o.e`, the key `a`, the field name `g`, and the method name `m` are
     // names in their own right, not references. `o[f]` is a reference, and
-    // so are the values. A computed key is an `Unsupported` placeholder
-    // the bridge kept no name inside, so `c` and `i` are not here — and a
-    // closure carrying one is a closure the decoder refuses, so it never
-    // replays. `C` and `o` are their own declarations' ids, which the
-    // over-approximation collects and the lookup then resolves to
-    // themselves.
+    // so are the values. An object literal's computed key `[c]` is an
+    // expression, so `c` is a reference too. A *class* computed key is an
+    // `Unsupported` placeholder the bridge kept no name inside, so `i` and
+    // `j` are not here — and a closure carrying one is a closure the
+    // decoder refuses, so it never replays. `C` and `o` are their own
+    // declarations' ids, which the over-approximation collects and the
+    // lookup then resolves to themselves.
     const doc = bridged(
       [
         "const o = { a: b, [c]: d };",
@@ -430,6 +431,8 @@ describe("the pieces a closure is built from", () => {
     expect([...referencedNames(doc.body)].sort()).toEqual([
       "C",
       "b",
+      "c",
+      "d",
       "f",
       "h",
       "o",

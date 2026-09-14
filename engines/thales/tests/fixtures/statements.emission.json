@@ -358,8 +358,31 @@
                           },
                           "arguments": [
                             {
-                              "type": "Unsupported",
-                              "kind": "TemplateExpression"
+                              "type": "TemplateLiteral",
+                              "quasis": [
+                                {
+                                  "type": "TemplateElement",
+                                  "value": {
+                                    "cooked": "negative score: ",
+                                    "raw": "negative score: "
+                                  },
+                                  "tail": false
+                                },
+                                {
+                                  "type": "TemplateElement",
+                                  "value": {
+                                    "cooked": "",
+                                    "raw": ""
+                                  },
+                                  "tail": true
+                                }
+                              ],
+                              "expressions": [
+                                {
+                                  "type": "Identifier",
+                                  "name": "score"
+                                }
+                              ]
                             }
                           ]
                         }

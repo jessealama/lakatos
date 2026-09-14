@@ -106,8 +106,35 @@ literal already share. -/
 #guard rendersSyntax (exprTerm (.arrayLit [.numLit 1, .numLit 2]))
   `(.arrayLit [.numLit 1, .numLit 2])
 #guard rendersSyntax (exprTerm (.objectLit [])) `(.objectLit [])
-#guard rendersSyntax (exprTerm (.objectLit [("a", .numLit 1), ("b", .ident "x")]))
-  `(.objectLit [("a", .numLit 1), ("b", .ident "x")])
+-- Every member form: a written key, a computed key, a method, an
+-- accessor, and `__proto__:`. A key is spelled through its constructor
+-- rather than the `Coe String PropKey` shorthand, so the two key shapes
+-- read alike.
+#guard rendersSyntax
+  (exprTerm (.objectLit [.init (.name "a") (.numLit 1), .init (.computed (.ident "k")) (.ident "x")]))
+  `(.objectLit [.init (.name "a") (.numLit 1), .init (.computed (.ident "k")) (.ident "x")])
+#guard rendersSyntax (propDefTerm (.init (.name "b") (.ident "b")))
+  `(.init (.name "b") (.ident "b"))
+#guard rendersSyntax (propDefTerm (.method .method (.name "m") ["x"] [.returnStmt none]))
+  `(.method .method (.name "m") ["x"] [.returnStmt none])
+#guard rendersSyntax (propDefTerm (.method .getter (.computed (.strLit "g")) [] []))
+  `(.method .getter (.computed (.strLit "g")) [] [])
+#guard rendersSyntax (propDefTerm (.method .setter (.name "s") ["v"] []))
+  `(.method .setter (.name "s") ["v"] [])
+#guard rendersSyntax (propDefTerm (.proto (.ident "p"))) `(.proto (.ident "p"))
+#guard rendersSyntax (propKeyTerm (.name "a")) `(.name "a")
+#guard rendersSyntax (propKeyTerm (.computed (.numLit 1.5))) `(.computed (.numLit 1.5))
+-- A template's strings are one more than its substitutions; a tagged
+-- one carries its site number and both texts of each string, `cooked`
+-- being `none` where the cooked grammar refuses the raw text.
+#guard rendersSyntax (exprTerm (.template ["plain"] [])) `(.template ["plain"] [])
+#guard rendersSyntax (exprTerm (.template ["a", "b", "c"] [.ident "x", .ident "y"]))
+  `(.template ["a", "b", "c"] [.ident "x", .ident "y"])
+#guard rendersSyntax
+  (exprTerm (.taggedTemplate (.ident "tag") 0
+    [{ cooked := some "x", raw := "x" }, { cooked := none, raw := "\\unicode" }] [.numLit 1]))
+  `(.taggedTemplate (.ident "tag") 0
+    [{ cooked := some "x", raw := "x" }, { cooked := none, raw := "\\unicode" }] [.numLit 1])
 #guard rendersSyntax (exprTerm (.funcExpr none [] [.returnStmt none]))
   `(.funcExpr none [] [.returnStmt none])
 #guard rendersSyntax (exprTerm (.funcExpr (some "f") ["x"] [.returnStmt (some (.ident "x"))]))
@@ -383,6 +410,24 @@ private def keywordsDoc : String := r#"{"type":"VariableDeclaration","kind":"var
 
 #eval show Elab.Command.CommandElabM Unit from
   documentRoundTrips `keywordsRoundTrip keywordsDoc
+
+/-- The bridge's own output for the shapes #395 added: every object-literal
+member form, an untagged template with and without substitutions, and two
+tagged ones, the second holding a raw text the cooked grammar refuses. The
+source it came from:
+
+```js
+const o = { a: 1, b, [k]: 2, 1.5: x, m() { return 1; }, get g() { return 2; }, set s(v) { }, __proto__: p };
+`plain`;
+`a${x}b${y}c`;
+tag`x${1}y`;
+tag`\unicode`;
+```
+-/
+private def templatesDoc : String := r#"{"type":"VariableDeclaration","kind":"const","declarations":[{"type":"VariableDeclarator","id":{"type":"Identifier","name":"o"},"init":{"type":"ObjectExpression","properties":[{"type":"Property","key":{"type":"Identifier","name":"a"},"value":{"type":"Literal","value":1,"raw":"1"},"kind":"init","computed":false,"shorthand":false,"method":false},{"type":"Property","key":{"type":"Identifier","name":"b"},"value":{"type":"Identifier","name":"b"},"kind":"init","computed":false,"shorthand":true,"method":false},{"type":"Property","key":{"type":"Identifier","name":"k"},"value":{"type":"Literal","value":2,"raw":"2"},"kind":"init","computed":true,"shorthand":false,"method":false},{"type":"Property","key":{"type":"Literal","value":1.5,"raw":"1.5"},"value":{"type":"Identifier","name":"x"},"kind":"init","computed":false,"shorthand":false,"method":false},{"type":"Property","key":{"type":"Identifier","name":"m"},"value":{"type":"FunctionExpression","id":null,"params":[],"body":{"type":"BlockStatement","body":[{"type":"ReturnStatement","argument":{"type":"Literal","value":1,"raw":"1"}}]},"async":false,"generator":false},"kind":"init","computed":false,"shorthand":false,"method":true},{"type":"Property","key":{"type":"Identifier","name":"g"},"value":{"type":"FunctionExpression","id":null,"params":[],"body":{"type":"BlockStatement","body":[{"type":"ReturnStatement","argument":{"type":"Literal","value":2,"raw":"2"}}]},"async":false,"generator":false},"kind":"get","computed":false,"shorthand":false,"method":false},{"type":"Property","key":{"type":"Identifier","name":"s"},"value":{"type":"FunctionExpression","id":null,"params":[{"type":"Identifier","name":"v"}],"body":{"type":"BlockStatement","body":[]},"async":false,"generator":false},"kind":"set","computed":false,"shorthand":false,"method":false},{"type":"Property","key":{"type":"Identifier","name":"__proto__"},"value":{"type":"Identifier","name":"p"},"kind":"init","computed":false,"shorthand":false,"method":false}]}}]},{"type":"ExpressionStatement","expression":{"type":"TemplateLiteral","quasis":[{"type":"TemplateElement","value":{"cooked":"plain","raw":"plain"},"tail":true}],"expressions":[]}},{"type":"ExpressionStatement","expression":{"type":"TemplateLiteral","quasis":[{"type":"TemplateElement","value":{"cooked":"a","raw":"a"},"tail":false},{"type":"TemplateElement","value":{"cooked":"b","raw":"b"},"tail":false},{"type":"TemplateElement","value":{"cooked":"c","raw":"c"},"tail":true}],"expressions":[{"type":"Identifier","name":"x"},{"type":"Identifier","name":"y"}]}},{"type":"ExpressionStatement","expression":{"type":"TaggedTemplateExpression","tag":{"type":"Identifier","name":"tag"},"quasi":{"type":"TemplateLiteral","quasis":[{"type":"TemplateElement","value":{"cooked":"x","raw":"x"},"tail":false},{"type":"TemplateElement","value":{"cooked":"y","raw":"y"},"tail":true}],"expressions":[{"type":"Literal","value":1,"raw":"1"}]}}},{"type":"ExpressionStatement","expression":{"type":"TaggedTemplateExpression","tag":{"type":"Identifier","name":"tag"},"quasi":{"type":"TemplateLiteral","quasis":[{"type":"TemplateElement","value":{"cooked":null,"raw":"\\unicode"},"tail":true}],"expressions":[]}}}"#
+
+#eval show Elab.Command.CommandElabM Unit from
+  documentRoundTrips `templatesRoundTrip templatesDoc
 
 open Elab Command in
 /-- Every closure the store's emissions carry, round-tripped. These are the

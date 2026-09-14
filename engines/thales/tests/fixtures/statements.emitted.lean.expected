@@ -41,7 +41,21 @@ def TsModel.floorAtOne (x : JsNumber) : JsM JsNumber := do
 --   }
 --   return rank * 100;
 -- }
--- TsModel.grade.ast: unsupported: TemplateExpression
+def TsModel.grade.ast : Tarski.Program :=
+  [.funcDecl "grade" ["score"]
+      [.varDecl .«const» [{ name := "bonus", init := some (.numLit 2) }],
+        .ifStmt (.binary .lt (.ident "score") (.numLit 0))
+          (.block
+            [.throwStmt
+                (.new (.ident "RangeError") [.template ["negative score: ", ""] [.ident "score"]])])
+          (some
+            (.ifStmt (.binary .lt (.ident "score") (.numLit 10))
+              (.block [.returnStmt (some (.binary .add (.ident "score") (.ident "bonus")))]) none)),
+        .varDecl .«let» [{ name := "rank", init := some (.numLit 0) }],
+        .ifStmt (.binary .lt (.ident "score") (.numLit 20))
+          (.block [.exprStmt (.assign (.ident "rank") (.numLit 1))])
+          (some (.block [.exprStmt (.assign (.ident "rank") (.numLit 2))])),
+        .returnStmt (some (.binary .mul (.ident "rank") (.numLit 100)))]]
 
 @[js_norm, grind]
 def TsModel.grade (score : JsNumber) : JsM JsNumber := do
