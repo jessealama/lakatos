@@ -7,22 +7,30 @@ error: `Decode` refuses it as `unsupported`, and that is the only place
 the word appears.
 
 Strict mode only. Parameters are plain identifiers: a default is #393's,
-rest and binding patterns are #394's, and `var` is still absent, so
-hoisting here is per-block and covers `let`, `const`, and function
-declarations only. `throw` and `try`, labels, and `break`/`continue` are
-here; `switch` — the other breakable statement — is #393's and `for` and
-`do`/`while` are #383's, classes #384's. Later slices add constructors;
-they do not reshape the ones here. -/
+rest and binding patterns are #394's. `var` is here, so hoisting covers
+two scopes at once: `let`, `const`, and function declarations are
+instantiated per block, while a `var` is hoisted to the enclosing
+function or script and initialized to `undefined` there, with no dead
+zone. `throw` and `try`, labels, `break`/`continue`, `for`, and `switch`
+— the two remaining breakable statements — are here; `do`/`while`,
+`for`-`in`, `arguments`, and parameter defaults are #393's, `for`-`of`
+and binding patterns #394's, classes #384's. Later slices add
+constructors; they do not reshape the ones here. -/
 
 namespace Tarski
 
-/-- The declaration forms this slice has. `var` is deliberately absent:
-hoisting and function-scoped bindings are #393's. -/
+/-- The declaration forms this slice has. -/
 inductive DeclKind where
   /-- ESTree `VariableDeclaration` with `kind: "let"`. -/
   | «let»
   /-- ESTree `VariableDeclaration` with `kind: "const"`. -/
   | «const»
+  /-- ESTree `VariableDeclaration` with `kind: "var"`. Function-scoped
+  rather than block-scoped, and hoisted: the binding is created and set
+  to `undefined` when the function or script is instantiated, so a read
+  before the declarator is `undefined` rather than the dead zone's
+  `ReferenceError`. See `varNames` in `Tarski/Eval.lean`. -/
+  | «var»
 deriving Repr, DecidableEq, Inhabited
 
 /-- The prefix operators. -/
@@ -38,6 +46,22 @@ inductive UnaryOp where
   an unresolvable identifier does not throw under: `typeof nope` is
   `"undefined"` where `nope` alone is a `ReferenceError`. -/
   | typeof
+  /-- ESTree `UnaryExpression` with `operator: "void"`. It evaluates its
+  operand — for the effects — and answers `undefined`; the value is never
+  coerced, so `void {}` does not run ToPrimitive. `delete` and `~` are
+  the other two spellings ESTree puts here, and neither is in the
+  slice. -/
+  | void
+deriving Repr, DecidableEq, Inhabited
+
+/-- The two update operators, which read a target, add or subtract one,
+and write it back. ESTree gives them a node of their own, because the
+value of the expression depends on which side the operator was on. -/
+inductive UpdateOp where
+  /-- `++`. -/
+  | inc
+  /-- `--`. -/
+  | dec
 deriving Repr, DecidableEq, Inhabited
 
 /-- The infix operators: the arithmetic four plus `%`, the four
@@ -156,9 +180,19 @@ inductive Expr where
   /-- ESTree `ArrowFunctionExpression`. An arrow has no `this` of its
   own, so `this` inside one is an ordinary lexical lookup. -/
   | arrow (params : List String) (body : ArrowBody)
-  /-- ESTree `AssignmentExpression` with `operator: "="`; compound
-  assignment is #383's. -/
+  /-- ESTree `AssignmentExpression` with `operator: "="`. -/
   | assign (target : Target) (value : Expr)
+  /-- ESTree `AssignmentExpression` with one of the five arithmetic
+  compound operators, `+= -= *= /= %=`, carried here as the `BinaryOp`
+  they apply. The decoder refuses every other compound spelling by name:
+  `**=` needs an exponent the library does not model, and the shifts and
+  the bitwise and logical assignments need ToInt32 or short-circuiting,
+  which are later slices. -/
+  | compoundAssign (op : BinaryOp) (target : Target) (value : Expr)
+  /-- ESTree `UpdateExpression`. `isPrefix` is ESTree's `prefix`: the
+  prefix form answers the new number, the postfix form the old one, and
+  both coerce the target's value with ToNumber before stepping it. -/
+  | update (op : UpdateOp) (isPrefix : Bool) (target : Target)
 
 /-- An arrow function's body: `expression: true` in ESTree means the
 concise form, whose value is the expression's. -/
@@ -169,8 +203,8 @@ inductive ArrowBody where
   | block (body : List Stmt)
 
 /-- What an assignment writes to. An inductive rather than three
-constructors of `Expr`, so that #383's compound assignment adds
-operators and not target forms. -/
+constructors of `Expr`, which is what let compound assignment and the
+update operators add operators and not target forms. -/
 inductive Target where
   /-- ESTree `Identifier`. -/
   | ident (name : String)
@@ -195,6 +229,21 @@ inductive Stmt where
   | ifStmt (test : Expr) (consequent : Stmt) (alternate : Option Stmt)
   /-- ESTree `WhileStatement`. -/
   | whileStmt (test : Expr) (body : Stmt)
+  /-- ESTree `ForStatement`. The head's three parts are each optional,
+  so `for (;;)` is three `none`s. A `let` head gets a fresh binding per
+  iteration — copied after the body and before the update, so a closure
+  the body made keeps that iteration's value — while a `const` or `var`
+  head does not. -/
+  | forStmt (init : Option ForInit) (test : Option Expr) (update : Option Expr)
+      (body : Stmt)
+  /-- ESTree `SwitchStatement`. The whole case block is one declarative
+  scope, instantiated before any test runs; selection is strict equality
+  in source order, a selected clause falls through into the ones after
+  it, and `default` may sit anywhere among them. -/
+  | switchStmt (discriminant : Expr) (cases : List SwitchCase)
+  /-- ESTree `EmptyStatement`, the bare `;`. It completes empty, so it
+  leaves the running completion value standing. -/
+  | empty
   /-- ESTree `BlockStatement`: its own declarative scope. -/
   | block (body : List Stmt)
   /-- ESTree `ThrowStatement`. -/
@@ -215,6 +264,25 @@ inductive Stmt where
   | breakStmt (label : Option String)
   /-- ESTree `ContinueStatement`; `none` is the unlabelled form. -/
   | continueStmt (label : Option String)
+
+/-- ESTree `ForStatement.init`: a declaration, an expression evaluated
+for its effect, or nothing. A declaration head is its own scope — the
+loop's — which is why the loop, and not the block around it, allocates
+the cells. -/
+inductive ForInit where
+  /-- A `VariableDeclaration` in the head. -/
+  | decl (kind : DeclKind) (declarators : List Declarator)
+  /-- An expression in the head, whose value is dropped. -/
+  | expr (value : Expr)
+
+/-- ESTree `SwitchCase`. `test` is `none` for the `default` clause, and
+`body` is the clause's `consequent` — the statements between this label
+and the next one, which are not a block and not a scope of their own. -/
+structure SwitchCase where
+  /-- ESTree `SwitchCase.test`; `none` is `default`. -/
+  test : Option Expr
+  /-- ESTree `SwitchCase.consequent`. -/
+  body : List Stmt
 
 /-- ESTree `CatchClause`. `param` is `none` for the optional-binding
 form, `catch { }`; a binding pattern is #394's and arrives as
@@ -246,7 +314,8 @@ end
 -- not among them — no handler accepts the nesting, and nothing needs a
 -- decision procedure on syntax: the tests compare programs by `repr` and
 -- results by `Value`, which stays decidable.
-deriving instance Repr, Inhabited for Expr, ArrowBody, Target, Stmt, CatchClause, Declarator
+deriving instance Repr, Inhabited for Expr, ArrowBody, Target, Stmt, ForInit, SwitchCase,
+  CatchClause, Declarator
 
 /-- ESTree `Program` with `sourceType: "script"`, its `"use strict"`
 directive already consumed by the decoder. -/

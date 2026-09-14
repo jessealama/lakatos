@@ -12,13 +12,13 @@ defined by `partial_fixpoint`, so the equations are theorems and a
 non-terminating program is `none`, not an axiom.
 
 The non-recursive helpers live outside the `mutual` block on purpose:
-their equations are ordinary and `simp` may use them freely. Three of the
+their equations are ordinary and `simp` may use them freely. Four of the
 recursive ones are never added to a simp set and are unfolded one step at
-a time with `rw`: `evalWhile`, `getProp`, and `joinElements`. The rule is
-not "recursive" but "recursive on something other than syntax" —
-`evalExpr` and its neighbours recurse on a concrete AST, which runs out,
-while a loop recurses until a heap value says stop, a prototype walk
-until a heap link does, and a join until an array's length does, and
+a time with `rw`: `evalWhile`, `evalFor`, `getProp`, and `joinElements`.
+The rule is not "recursive" but "recursive on something other than
+syntax" — `evalExpr` and its neighbours recurse on a concrete AST, which
+runs out, while a loop recurses until a heap value says stop, a prototype
+walk until a heap link does, and a join until an array's length does, and
 `simp` unfolds all three under a binder it has not resolved, forever.
 What decides membership in the block is whether a definition can reach
 user code: `getProp`, `toPrimitive`, and `setProp` can (a prototype chain
@@ -32,6 +32,15 @@ That is one mechanism answering three needs: the temporal dead zone (a
 cell exists but holds nothing until its declarator runs), a function
 declaration callable above its own text, and two declarations that call
 each other.
+
+A `var` is instantiated somewhere else and at another time. `varNames`
+collects VarDeclaredNames over a whole function body or script — through
+blocks, loops, `switch` clauses, and `try` parts, but never into a
+nested function — and `hoistVars` gives each of them a cell holding
+`undefined` before the body runs. That is why a `var` has no dead zone,
+why a block's `var` outlives the block, and why a `var` naming a
+parameter or an existing global keeps the binding already there rather
+than erasing it.
 
 ## The messages the evaluator raises
 
@@ -75,6 +84,14 @@ open Js
 def DeclKind.isMutable : DeclKind → Bool
   | .«let» => true
   | .«const» => false
+  | .«var» => true
+
+/-- One step of an update operator, applied to the number ToNumeric
+gave. `++` and `--` are the two, and neither saturates: the arithmetic is
+the library's binary64, so `Infinity++` is `Infinity`. -/
+def UpdateOp.step : UpdateOp → Float → Float
+  | .inc, x => x + 1.0
+  | .dec, x => x - 1.0
 
 /-- ToNumber on primitives. Not `JsVal.toNumber`, whose wrong-tag throw
 is the prover refusing a coercion rather than JS performing one: here the
@@ -241,14 +258,15 @@ def typeofName : TypeofResult → String
   | .symbol => "symbol"
 
 /-- Apply a prefix operator to an operand ToPrimitive has already run
-on. `not` and `typeof` never coerce, so `evalExpr` answers them before
-reaching here; the arms are still written out, because a total function
-of the operator is easier to reason about than a partial one. -/
+on. `not`, `typeof`, and `void` never coerce, so `evalExpr` answers them
+before reaching here; the arms are still written out, because a total
+function of the operator is easier to reason about than a partial one. -/
 def applyUnary : UnaryOp → JsVal → Value
   | .neg, v => .prim (.num (-(toNumberPrim v)))
   | .plus, v => .prim (.num (toNumberPrim v))
   | .not, v => .prim (.bool (!toBooleanPrim (.prim v)))
   | .typeof, v => .prim (.str (typeofName v.typeof))
+  | .void, _ => .prim .undef
 
 /-- Apply a coercing infix operator to its two operands, both of which
 ToPrimitive has already run on, left first. Two operators look at the
@@ -309,6 +327,13 @@ label is among those the loop was reached through. -/
 def loopContinues (labels : List String) : Option String → Bool
   | none => true
   | some l => labels.contains l
+
+/-- The `default` clause and everything after it, or nothing when there
+is no `default`. Pure, and a search over syntax, so it is outside the
+fixpoint block. -/
+def dropUntilDefault : List SwitchCase → List SwitchCase
+  | [] => []
+  | c :: rest => if c.test.isNone then c :: rest else dropUntilDefault rest
 
 /-- Put a reified completion back into the monad: the answer `attempt`
 gave, resumed. -/
@@ -382,12 +407,94 @@ def hoistDeclarators (env : Env) (mutable : Bool) : List Declarator → EvalM En
     let r ← allocCell { mutable }
     hoistDeclarators ((d.name, r) :: env) mutable rest
 
+mutual
+
+/-- VarDeclaredNames (8.2.5) over what this AST has: every name a `var`
+declares anywhere inside a function body or script, in source order. It
+descends through blocks, both loops, a `switch`'s clauses, and a `try`'s
+three parts, because none of those is a variable scope; it stops at a
+function declaration and at every expression, because a nested function's
+`var`s are its own. Pure and structural, so `evalProgram` and
+`callFunction` still reduce under `simp`. -/
+def varNames : List Stmt → List String
+  | [] => []
+  | s :: rest => varNamesStmt s ++ varNames rest
+
+/-- One statement's VarDeclaredNames; see `varNames`. -/
+def varNamesStmt : Stmt → List String
+  | .varDecl .«var» declarators => declarators.map (·.name)
+  | .block body => varNames body
+  | .ifStmt _ consequent none => varNamesStmt consequent
+  | .ifStmt _ consequent (some alternate) => varNamesStmt consequent ++ varNamesStmt alternate
+  | .whileStmt _ body => varNamesStmt body
+  | .forStmt (some (.decl .«var» declarators)) _ _ body =>
+    declarators.map (·.name) ++ varNamesStmt body
+  | .forStmt _ _ _ body => varNamesStmt body
+  | .switchStmt _ cases => varNamesCases cases
+  | .tryStmt block none none => varNames block
+  | .tryStmt block (some ⟨_, handler⟩) none => varNames block ++ varNames handler
+  | .tryStmt block none (some finalizer) => varNames block ++ varNames finalizer
+  | .tryStmt block (some ⟨_, handler⟩) (some finalizer) =>
+    varNames block ++ varNames handler ++ varNames finalizer
+  | .labeled _ body => varNamesStmt body
+  | _ => []
+
+/-- A `switch`'s clauses' VarDeclaredNames, in source order. -/
+def varNamesCases : List SwitchCase → List String
+  | [] => []
+  | ⟨_, body⟩ :: rest => varNames body ++ varNamesCases rest
+
+end
+
+/-- VarDeclaredNames instantiated: a cell per name, holding `undefined`
+rather than nothing, which is the whole of why a `var` has no dead zone.
+`skip` is what is already bound and must stay bound — a function's
+parameters (10.2.11 step 27) and the global environment's own names
+(16.1.7 step 17) — so `function f(a) { var a; }` keeps the argument and
+`var Error;` at top level leaves `Error` where it was. A name already
+handled by this pass joins `skip`, so `var x = 1; var x = 2;` allocates
+one cell. -/
+def hoistVars (env : Env) (skip : List String) : List String → EvalM Env
+  | [] => pure env
+  | n :: rest =>
+    if skip.contains n then hoistVars env skip rest
+    else do
+      let r ← allocCell { mutable := true, value := some undefValue }
+      hoistVars ((n, r) :: env) (n :: skip) rest
+
+/-- Point a name at another cell, innermost binding first. Replacing
+rather than pushing is what keeps a scope chain the same length across a
+loop's iterations, so a thousand-iteration loop does not leave a
+thousand shadowed copies for `Env.lookup` to walk. -/
+def Env.rebind : Env → String → CellRef → Env
+  | [], _, _ => []
+  | (n, r) :: rest, name, fresh =>
+    if n == name then (name, fresh) :: rest else (n, r) :: Env.rebind rest name fresh
+
+/-- CreatePerIterationEnvironment (14.7.4.4): a fresh cell per name,
+holding what the current one holds, with every other binding left alone.
+A `for`'s `let` head is copied this way before the first test and again
+after each body, so a closure the body made keeps that iteration's cell
+while the update writes the next iteration's. A name still in its dead
+zone copies as one — the cell is fresh and holds nothing. -/
+def copyBindings (env : Env) : List String → EvalM Env
+  | [] => pure env
+  | n :: rest => do
+    let c ← match Env.lookup env n with
+      | some r => getCell r
+      | none => pure { mutable := true, value := none }
+    let fresh ← allocCell c
+    copyBindings (Env.rebind env n fresh) rest
+
 /-- Pass one over a statement list's direct statements. Nested blocks are
-not descended into: each has its own scope and instantiates itself. -/
+not descended into: each has its own scope and instantiates itself. A
+`var` is not a block's — `hoistVars` gave it a cell in the enclosing
+function or script — so it is skipped here. -/
 def hoistNames (env : Env) : List Stmt → EvalM Env
   | [] => pure env
   | s :: rest => do
     let env' ← match s with
+      | .varDecl .«var» _ => pure env
       | .varDecl kind declarators => hoistDeclarators env kind.isMutable declarators
       | .funcDecl name _ _ => do
         let r ← allocCell { mutable := true }
@@ -418,6 +525,23 @@ def instantiateBlock (env : Env) (body : List Stmt) : EvalM Env := do
   let env' ← hoistNames env body
   initFunctions env' body
   pure env'
+
+/-- PutValue to an identifier reference: the dead-zone read, the `const`
+refusal, and the write. One definition rather than three copies, because
+plain assignment, compound assignment, and `++` all write the same way
+and differ only in what they wrote. It needs no user code, so it lives
+outside the fixpoint block. -/
+def putIdent (env : Env) (name : String) (v : Value) : EvalM Unit :=
+  match Env.lookup env name with
+  | some r => do
+    let cell ← getCell r
+    match cell.value with
+    | none =>
+      throwJsError .referenceError s!"Cannot access '{name}' before initialization"
+    | some _ =>
+      if cell.mutable then writeCell r v
+      else throwJsError .typeError "Assignment to constant variable."
+  | none => throwJsError .referenceError s!"{name} is not defined"
 
 mutual
 
@@ -458,6 +582,12 @@ def evalExpr (env : Env) : Expr → EvalM Value
       | _ => do
         let v ← evalExpr env operand
         pure (.prim (.str (← typeofValue v)))
+    | .void => do
+      -- `void e` evaluates its operand for the effects and answers
+      -- `undefined`; the value is discarded uncoerced, so `void {}` does
+      -- not reach ToPrimitive.
+      let _ ← evalExpr env operand
+      pure undefValue
     | _ => do
       let v ← evalExpr env operand
       pure (applyUnary op (← toPrimitive .number v))
@@ -467,12 +597,8 @@ def evalExpr (env : Env) : Expr → EvalM Value
     match op with
     | .instanceof => pure (.prim (.bool (← instanceOf l r)))
     | _ =>
-      if op.coerces then do
-        let lp ← toPrimitive .number l
-        let rp ← toPrimitive .number r
-        pure (applyBinary op lp rp)
-      else
-        pure (applyStrict op l r)
+      if op.coerces then applyCoercing op l r
+      else pure (applyStrict op l r)
   | .logical op left right => do
     -- Short-circuiting: the answer is one of the operands, never a
     -- boolean of its own, and the right one may not run at all.
@@ -537,19 +663,8 @@ def evalExpr (env : Env) : Expr → EvalM Value
     match target with
     | .ident name => do
       let v ← evalExpr env value
-      match Env.lookup env name with
-      | some r => do
-        let cell ← getCell r
-        match cell.value with
-        | none =>
-          throwJsError .referenceError s!"Cannot access '{name}' before initialization"
-        | some _ =>
-          if cell.mutable then do
-            writeCell r v
-            pure v
-          else
-            throwJsError .typeError "Assignment to constant variable."
-      | none => throwJsError .referenceError s!"{name} is not defined"
+      putIdent env name v
+      pure v
     | .member object name => do
       let base ← evalExpr env object
       let v ← evalExpr env value
@@ -561,6 +676,68 @@ def evalExpr (env : Env) : Expr → EvalM Value
       let v ← evalExpr env value
       setProp base (← toPropertyKey k) v
       pure v
+  | .compoundAssign op target value =>
+    -- 13.15.2 in its own order: the target's *reference* is evaluated
+    -- once and read, then the right operand, then the operator, then the
+    -- write. So `let x = 1; x += (x = 2)` is 3 — the left read happened
+    -- before the right side moved it — and `o[k()].p += 1` calls `k`
+    -- once.
+    match target with
+    | .ident name => do
+      let l ← evalExpr env (.ident name)
+      let r ← evalExpr env value
+      let result ← applyCoercing op l r
+      putIdent env name result
+      pure result
+    | .member object name => do
+      let base ← evalExpr env object
+      let l ← getProp base name
+      let r ← evalExpr env value
+      let result ← applyCoercing op l r
+      setProp base name result
+      pure result
+    | .index object key => do
+      let base ← evalExpr env object
+      let k ← toPropertyKey (← evalExpr env key)
+      let l ← getProp base k
+      let r ← evalExpr env value
+      let result ← applyCoercing op l r
+      setProp base k result
+      pure result
+  | .update op isPrefix target =>
+    -- 13.4.2–13.4.5: read the reference, ToNumeric it, step it, write it
+    -- back, and answer the new number for the prefix form and the old one
+    -- for the postfix form. BigInt is outside the slice, so ToNumeric is
+    -- ToNumber and the arithmetic is the library's binary64.
+    match target with
+    | .ident name => do
+      let old := toNumberPrim (← toPrimitive .number (← evalExpr env (.ident name)))
+      let stepped := op.step old
+      putIdent env name (.prim (.num stepped))
+      pure (.prim (.num (if isPrefix then stepped else old)))
+    | .member object name => do
+      let base ← evalExpr env object
+      let old := toNumberPrim (← toPrimitive .number (← getProp base name))
+      let stepped := op.step old
+      setProp base name (.prim (.num stepped))
+      pure (.prim (.num (if isPrefix then stepped else old)))
+    | .index object key => do
+      let base ← evalExpr env object
+      let k ← toPropertyKey (← evalExpr env key)
+      let old := toNumberPrim (← toPrimitive .number (← getProp base k))
+      let stepped := op.step old
+      setProp base k (.prim (.num stepped))
+      pure (.prim (.num (if isPrefix then stepped else old)))
+  partial_fixpoint
+
+/-- ApplyStringOrNumericBinaryOperator: ToPrimitive on each operand with
+the number hint, left first, and then the operator. `a op b` and
+`a op= b` are the same computation once each side has a value, which is
+what this names. -/
+def applyCoercing (op : BinaryOp) (l r : Value) : EvalM Value := do
+  let lp ← toPrimitive .number l
+  let rp ← toPrimitive .number r
+  pure (applyBinary op lp rp)
   partial_fixpoint
 
 /-- Evaluate an argument list, left to right. -/
@@ -765,7 +942,13 @@ def callFunction (f : Value) (thisArg : Value) (args : List Value) : EvalM Value
           let tr ← allocCell { mutable := false, value := some thisArg }
           pure ((thisName, tr) :: c.env)
       let bound ← bindParams withThis c.params args
-      let inner ← instantiateBlock bound c.body
+      -- FunctionDeclarationInstantiation 10.2.11 steps 27–28: the `var`s
+      -- first, skipping the parameters, so `function f(a) { var a; }`
+      -- keeps the argument; then the block's own declarations, whose
+      -- cells are pushed later and so shadow a `var` of the same name,
+      -- which is what makes `var f; function f() {}` end as the function.
+      let hoisted ← hoistVars bound c.params (varNames c.body)
+      let inner ← instantiateBlock hoisted c.body
       catchReturn do
         let _ ← evalStmts inner c.body none
         pure undefValue
@@ -1086,8 +1269,8 @@ def evalStmt (env : Env) : Stmt → Option Value → EvalM (Option Value)
   | .exprStmt value, _ => do
     let v ← evalExpr env value
     pure (some v)
-  | .varDecl _ declarators, acc => do
-    evalDeclarators env declarators
+  | .varDecl kind declarators, acc => do
+    evalDeclarators env kind declarators
     pure acc
   | .funcDecl _ _ _, acc =>
     -- Instantiation already built and bound it; the statement itself
@@ -1110,6 +1293,12 @@ def evalStmt (env : Env) : Stmt → Option Value → EvalM (Option Value)
     -- An unlabelled loop reached directly: no label names it, so only an
     -- unlabelled `continue` is its own.
     evalLoop env [] test body
+  | .forStmt init test update body, _ => evalForLoop env [] init test update body
+  | .switchStmt discriminant cases, _ => evalSwitch env discriminant cases
+  | .empty, acc =>
+    -- The empty statement completes empty, so the running value stands:
+    -- `1; ;` is 1, where `1; undefined;` would be undefined.
+    pure acc
   | .block body, acc => evalBlock env body acc
   | .throwStmt argument, _ => do
     let v ← evalExpr env argument
@@ -1197,6 +1386,7 @@ def evalLabeled (env : Env) (labels : List String) :
       if l' == l then pure v else throwCompletion (.«break» (some l') v)
     | .error c => throwCompletion c
   | .whileStmt test body, _ => evalLoop env labels test body
+  | .forStmt init test update body, _ => evalForLoop env labels init test update body
   | s, acc => evalStmt env s acc
   partial_fixpoint
 
@@ -1215,19 +1405,24 @@ def evalLoop (env : Env) (labels : List String) (test : Expr) (body : Stmt) :
 /-- Initialize a declaration's cells left to right, each initializer
 seeing the ones before it. The cells already exist — instantiation
 allocated them — so this ends their temporal dead zone rather than
-binding anything new. A declarator without an initializer binds
-`undefined`, which is what makes `let x;` different from a name in its
-dead zone. -/
-def evalDeclarators (env : Env) : List Declarator → EvalM Unit
+binding anything new. A `let` or `const` declarator without an
+initializer binds `undefined`, which is what makes `let x;` different
+from a name in its dead zone; a `var` without one does nothing at all,
+because `hoistVars` already put `undefined` in the cell and 14.3.2.1
+says `var x;` performs no operation. -/
+def evalDeclarators (env : Env) (kind : DeclKind) : List Declarator → EvalM Unit
   | [] => pure ()
   | d :: rest => do
-    let v ← match d.init with
-      | some e => evalExpr env e
-      | none => pure undefValue
-    match Env.lookup env d.name with
-    | some r => initCell r v
-    | none => pure ()
-    evalDeclarators env rest
+    match kind, d.init with
+    | .«var», none => pure ()
+    | _, init =>
+      let v ← match init with
+        | some e => evalExpr env e
+        | none => pure undefValue
+      match Env.lookup env d.name with
+      | some r => initCell r v
+      | none => pure ()
+    evalDeclarators env kind rest
   partial_fixpoint
 
 /-- Run a statement list, threading the running completion value. -/
@@ -1258,13 +1453,135 @@ def evalWhile (env : Env) (labels : List String) (test : Expr) (body : Stmt)
     pure acc
   partial_fixpoint
 
+/-- ForLoopEvaluation (14.7.4.2) and its two declaration forms. The head
+runs first: a `let` or `const` head gets a scope of its own, so its
+bindings are the loop's and not the enclosing block's and a self-
+referring initializer sees its own dead zone; a `var` head writes cells
+`hoistVars` already made; an expression head is evaluated for effect.
+Only a `let` head is copied per iteration (14.7.4.3 step 2 is the first
+copy, before the first test), because `const` cannot be updated and a
+`var` is not the loop's binding at all. The whole thing is a
+BreakableStatement, so an unlabelled `break` ends it with the running
+value. -/
+def evalForLoop (env : Env) (labels : List String) (init : Option ForInit)
+    (test update : Option Expr) (body : Stmt) : EvalM (Option Value) := do
+  let (loopEnv, perIter) ← match init with
+    | none => pure (env, ([] : List String))
+    | some (.expr e) => do
+      let _ ← evalExpr env e
+      pure (env, [])
+    | some (.decl .«var» declarators) => do
+      evalDeclarators env .«var» declarators
+      pure (env, [])
+    | some (.decl kind declarators) => do
+      let inner ← hoistDeclarators env kind.isMutable declarators
+      evalDeclarators inner kind declarators
+      pure (inner, if kind == .«let» then declarators.map (·.name) else [])
+  let firstEnv ← copyBindings loopEnv perIter
+  match ← attempt (evalFor firstEnv labels test update body perIter (some undefValue)) with
+  | .ok v => pure v
+  | .error (.«break» none v) => pure v
+  | .error c => throwCompletion c
+  partial_fixpoint
+
+/-- ForBodyEvaluation (14.7.4.3) — `evalWhile`'s twin, and the second
+definition whose equation is `rw`'s and never a simp set's. An absent
+test is one that is always true, which is what makes `for (;;)` a loop
+with no exit but a `break`.
+
+The order of steps 3.b–3.f is the whole point: the body runs, *then* the
+per-iteration bindings are copied, *then* the update runs in the copies.
+So a closure the body made keeps this iteration's cell at the value the
+body left, and the update writes the next iteration's cell. A `continue`
+this loop answers for reaches the copy and the update like a normal
+completion; any other completion, `break` included, leaves. -/
+def evalFor (env : Env) (labels : List String) (test update : Option Expr)
+    (body : Stmt) (perIter : List String) (acc : Option Value) : EvalM (Option Value) := do
+  let running ← match test with
+    | none => pure true
+    | some t => pure (toBooleanPrim (← evalExpr env t))
+  if running then
+    let v ← match ← attempt (evalStmt env body acc) with
+      | .ok v => pure v
+      | .error (.«continue» l v) =>
+        if loopContinues labels l then pure v else throwCompletion (.«continue» l v)
+      | .error c => throwCompletion c
+    let env' ← copyBindings env perIter
+    match update with
+      | none => pure ()
+      | some u => do
+        let _ ← evalExpr env' u
+        pure ()
+    evalFor env' labels test update body perIter v
+  else
+    pure acc
+  partial_fixpoint
+
+/-- CaseBlockEvaluation's frame (14.12.4). The discriminant is evaluated
+first, then the whole case block is instantiated as *one* scope — before
+any clause's test runs, which is why a `let` in a later clause is in its
+dead zone for an earlier one. A `switch` is a BreakableStatement, so an
+unlabelled `break` ends it with the running value while a `continue`
+passes through to the loop around it. -/
+def evalSwitch (env : Env) (discriminant : Expr) (cases : List SwitchCase) :
+    EvalM (Option Value) := do
+  let v ← evalExpr env discriminant
+  let inner ← instantiateBlock env (cases.flatMap (·.body))
+  match ← attempt (evalCases inner v cases) with
+  | .ok r => pure r
+  | .error (.«break» none r) => pure r
+  | .error c => throwCompletion c
+  partial_fixpoint
+
+/-- CaseBlockEvaluation (14.12.2): the clause the discriminant selects
+and every clause after it, or — when nothing matched — `default` and
+every clause after *it*. The running value starts at `undefined`, so a
+`switch` that selects nothing still completes with one. -/
+def evalCases (env : Env) (v : Value) (cases : List SwitchCase) : EvalM (Option Value) := do
+  match ← selectCase env v cases with
+  | some selected => runCases env selected (some undefValue)
+  | none => runCases env (dropUntilDefault cases) (some undefValue)
+  partial_fixpoint
+
+/-- The clauses from the first one whose test is strictly equal to the
+discriminant, or `none` when none is. The tests run in source order and
+`default` is skipped, which is exactly 14.12.2's A-clauses-then-B-clauses
+order, since every A clause precedes every B clause in the source. A test
+that throws ends the `switch`, and the tests after it never run. -/
+def selectCase (env : Env) (v : Value) : List SwitchCase → EvalM (Option (List SwitchCase))
+  | [] => pure none
+  | c :: rest =>
+    match c.test with
+    | none => selectCase env v rest
+    | some t => do
+      let tv ← evalExpr env t
+      if strictEqValue v tv then pure (some (c :: rest)) else selectCase env v rest
+  partial_fixpoint
+
+/-- Run a run of clauses in order, threading the running completion
+value. Fall-through is the list running out rather than a jump: a `break`
+in one of the bodies is what stops it, and `evalSwitch` catches that. -/
+def runCases (env : Env) : List SwitchCase → Option Value → EvalM (Option Value)
+  | [], acc => pure acc
+  | c :: rest, acc => do
+    let v ← evalStmts env c.body acc
+    runCases env rest v
+  partial_fixpoint
+
 end
+
 
 /-- Run a whole script from the realm's global environment. The script
 body is a block like any other, so it is instantiated first — on top of
-`globalEnv`, which is where `Error` and its subclasses are bound. -/
+`globalEnv`, which is where `Error` and its subclasses are bound.
+
+GlobalDeclarationInstantiation (16.1.7) puts the `var`s in ahead of that,
+skipping every name the global environment already has: `var Error;` at
+top level leaves `Error` where it was, and `var print = 1;` writes the
+existing binding rather than shadowing it with `undefined`. -/
 def evalProgram (p : Program) : EvalM (Option Value) := do
-  let env ← instantiateBlock globalEnv p
+  let hoisted ← hoistVars globalEnv (globalEnv.map (·.1)) (varNames p)
+  let env ← instantiateBlock hoisted p
   evalStmts env p none
 
 /-- A script's run, heap and all: `none` is divergence, `.error` an

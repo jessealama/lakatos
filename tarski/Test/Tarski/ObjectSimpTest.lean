@@ -33,8 +33,9 @@ private def program : Program :=
 -- (see `Tarski/Monad.lean`); the rest is the evaluator's own.
 attribute [local simp] evalExpr evalStmt evalStmts evalDeclarators evalProps
   instantiateBlock hoistNames hoistDeclarators initFunctions
+  varNames varNamesStmt varNamesCases hoistVars
   setProp
-  allocCell getCell readCell writeCell initCell
+  allocCell getCell readCell writeCell initCell putIdent
   allocObj newObject readObj writeObj modifyObj
   Env.lookup Heap.alloc Heap.read Heap.write
   Heap.allocObj Heap.readObj Heap.writeObj

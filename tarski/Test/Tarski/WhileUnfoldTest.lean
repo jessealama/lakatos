@@ -21,9 +21,10 @@ private def program : Program :=
 
 attribute [local simp] evalExpr evalStmt evalStmts evalDeclarators
   instantiateBlock hoistNames hoistDeclarators initFunctions
-  allocCell getCell readCell writeCell initCell
+  varNames varNamesStmt varNamesCases hoistVars
+  allocCell getCell readCell writeCell initCell putIdent
   Env.lookup Heap.alloc Heap.read Heap.write
-  applyBinary applyUnary applyStrict BinaryOp.coerces toPrimitive
+  applyBinary applyUnary applyStrict BinaryOp.coerces applyCoercing toPrimitive
   toNumberPrim toBooleanPrim isStrPrim toStringPrim strictEqValue
   evalBlock evalLoop attempt liftCompletion loopContinues
   DeclKind.isMutable Heap.initial globalEnv runScript runProgram evalProgram

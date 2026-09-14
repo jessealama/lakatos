@@ -31,9 +31,10 @@ private def program : Program :=
 -- is the library's `===`; the evaluator only dispatches to it.
 attribute [local simp] evalExpr evalStmt evalStmts evalDeclarators
   instantiateBlock hoistNames hoistDeclarators initFunctions
-  allocCell getCell readCell writeCell initCell
+  varNames varNamesStmt varNamesCases hoistVars
+  allocCell getCell readCell writeCell initCell putIdent
   Env.lookup Heap.alloc Heap.read Heap.write
-  applyBinary applyUnary applyStrict BinaryOp.coerces toPrimitive
+  applyBinary applyUnary applyStrict BinaryOp.coerces applyCoercing toPrimitive
   toNumberPrim toBooleanPrim isStrPrim toStringPrim strictEqValue
   DeclKind.isMutable Heap.initial globalEnv runScript runProgram evalProgram Js.JsVal.strictEq
   ExceptT.run_bind Except.map throwJsError throwCompletion
