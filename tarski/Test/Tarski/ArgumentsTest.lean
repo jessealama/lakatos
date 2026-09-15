@@ -9,7 +9,8 @@ below are about — writing `arguments[0]` does not move the parameter and
 writing the parameter does not move `arguments[0]` — together with the
 three things around it: `length` is the *argument* count rather than the
 parameter count, `callee` is an accessor whose getter and setter are both
-`%ThrowTypeError%`, and an arrow has no `arguments` of its own, so one
+`%ThrowTypeError%`, `@@iterator` is `%Array.prototype.values%` itself
+(10.4.4.6 step 8), and an arrow has no `arguments` of its own, so one
 inside an arrow is the enclosing function's and one at top level resolves
 nowhere.
 
@@ -205,3 +206,19 @@ private def calleeMessage : String :=
           (.member (.call (.member (.ident "Object") "keys") [args]) "join") [])) ]
       [num 1.0, num 2.0])
   == "0,1"
+
+-- Its own *symbol* key is `@@iterator` and nothing else, and it is
+-- `%Array.prototype.values%` itself rather than a second function.
+#guard outcome
+    (callF []
+      [ .returnStmt (some (.member (.call
+          (.member (.ident "Object") "getOwnPropertySymbols") [args]) "length")) ]
+      [num 1.0])
+  == "1"
+#guard outcome
+    (callF []
+      [ .returnStmt (some (.binary .strictEq
+          (.index (.call (.member (.ident "Object") "getOwnPropertySymbols") [args]) (num 0.0))
+          (.member (.ident "Symbol") "iterator"))) ]
+      [])
+  == "true"

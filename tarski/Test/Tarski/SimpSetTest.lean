@@ -42,11 +42,21 @@ private def simprocIn (n : Name) : CoreM Bool := do
 #guard_msgs in
 #eval (#[``Tarski.evalExpr, ``Tarski.evalStmt, ``Tarski.callFunction, ``Tarski.getFrom,
   ``Tarski.findProperty, ``Tarski.getProp, ``Tarski.project,
-  ``Tarski.readNumber].allM unfoldsIn)
+  ``Tarski.readNumber,
+  -- The iteration protocol and the pattern walk. `callIteratorNative` is
+  -- split out of `callNative` for `callReflectNative`'s reason and is
+  -- registered all the same: seven arms are far below the equation-lemma
+  -- ceiling, and a closed destructuring has to reduce without a local
+  -- lemma list (`Test/Tarski/DestructuringSimpTest.lean`).
+  ``Tarski.getIterator, ``Tarski.iteratorStep, ``Tarski.iteratorClose,
+  ``Tarski.bindPattern, ``Tarski.bindElements, ``Tarski.bindProps,
+  ``Tarski.evalArgs, ``Tarski.evalArrayElements, ``Tarski.evalForOfLoop,
+  ``Tarski.callIteratorNative].allM unfoldsIn)
 
--- Recursion on a loop (`evalWhile`, `evalDoWhile`, `evalFor`, `joinElements`,
--- `listFromArrayLike`, `rawSegments`, `forInNext`, and the three
--- bound-function steps) or on the heap (the three prototype walks and
+-- Recursion on a loop (`evalWhile`, `evalDoWhile`, `evalFor`, `evalForOf`,
+-- `joinElements`, `listFromArrayLike`, `rawSegments`, `forInNext`, the
+-- three bound-function steps, and the three walks that run until an
+-- iterator says stop) or on the heap (the three prototype walks and
 -- `construct`): never a plain unfolding. The loop arms are `rw`'s, and
 -- the `*UnfoldTest` files are where that happens; the four heap
 -- recursions are the guarded simprocs below.
@@ -56,13 +66,20 @@ private def simprocIn (n : Name) : CoreM Bool := do
 -- `match` over twenty-nine and thirty-four arms with bodies that size has
 -- no equation lemmas to register, so `rw` on either diverges and putting
 -- either in the set overflows `maxRecDepth` before a proof runs.
+-- `callIteratorNative` is the one split-out group that *is* registered:
+-- seven arms are far below that ceiling.
 /-- info: false -/
 #guard_msgs in
 #eval (#[``Tarski.evalWhile, ``Tarski.evalDoWhile, ``Tarski.evalFor, ``Tarski.joinElements,
   ``Tarski.getFromUp, ``Tarski.findPropertyUp, ``Tarski.protoChainHas,
   ``Tarski.construct, ``Tarski.listFromArrayLike, ``Tarski.forInNext, ``Tarski.rawSegments,
   ``Tarski.callBound, ``Tarski.constructBound, ``Tarski.instanceOfBound,
-  ``Tarski.callReflectNative, ``Tarski.callStringNative].anyM unfoldsIn)
+  ``Tarski.callReflectNative, ``Tarski.callStringNative,
+  -- The four walks that run until an *iterator* says stop are loops by
+  -- the same rule, and `Test/Tarski/ForOfUnfoldTest.lean` is where
+  -- `evalForOf` is unfolded a step at a time.
+  ``Tarski.evalForOf, ``Tarski.iteratorToList, ``Tarski.fromEntriesInto,
+  ``Tarski.groupByInto].anyM unfoldsIn)
 
 -- The four heap recursions are in the set, as simprocs.
 /-- info: true -/

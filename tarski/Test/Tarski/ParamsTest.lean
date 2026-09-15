@@ -16,8 +16,10 @@ different one. That is observable without `eval`, which is why it is
 implemented rather than approximated.
 
 `length` is ExpectedArgumentCount — the parameters before the first
-default — as an own data property on every function and class
-constructor. Its attributes are #389's, as `prototype`'s are, and so is
+default *or rest parameter* — as an own data property on every function
+and class constructor. What a rest parameter and a pattern parameter do
+to it, and to step 28's `var` scope, is
+`Test/Tarski/DestructuringTest.lean`'s. Its attributes are #389's, as `prototype`'s are, and so is
 `name`. -/
 
 open Tarski

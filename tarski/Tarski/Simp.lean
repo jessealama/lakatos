@@ -99,8 +99,9 @@ attribute [tarski_eval]
 -- family: no proof today reads a symbol or a JSON text.
 attribute [tarski_eval]
   callFunction callNative constructNative catchReturn attempt liftCompletion
-  makeFunction isConstructor NativeFn.constructs nameOf functionSourceText builtinTag
-  toStringValue toStringValues toNumberValue toNumberValues toLengthValue mathUnary pushElements
+  makeFunction isCallable isConstructor NativeFn.constructs nameOf functionSourceText builtinTag
+  toStringValue toStringValues toNumberValue toNumberValues toLengthValue
+  toIntegerOrInfinityValue mathUnary pushElements
   ordinaryHasInstance installErrorCause
 
 -- FunctionDeclarationInstantiation: parameters, their defaults, the

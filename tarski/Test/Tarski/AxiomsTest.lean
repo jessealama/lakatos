@@ -647,6 +647,117 @@ private def onlyStandard (n : Name) : CoreM Bool := do
 #guard_msgs in
 #eval onlyStandard ``Js.Number.FloatOps.natOfIntegral
 
+-- #394's iteration protocol, destructuring walk, and the two `Object`
+-- members that consume an iterable.
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.getIterator
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.iteratorStep
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.iteratorClose
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.iteratorToList
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.evalForOfLoop
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.evalForOf
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.evalLeafRef
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.writeLeaf
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.patternLeafRef
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.bindOne
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.bindPattern
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.bindProps
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.bindElements
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.bindRest
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.copyDataProperties
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.copyKeys
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.evalArgs
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.evalArrayElements
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.defineFrom
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.callIteratorNative
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.fromEntriesInto
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.groupByInto
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.createIterResult
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.allocNames
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.Pattern.boundNames
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.Pattern.containsExpression
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.mentionsArgumentsPattern
+
 -- The unfolding equations the proofs rewrite with are theorems of the
 -- same standing: if they were not, every postcondition proved through a
 -- `while` or a prototype walk would rest on whatever they did assume.
@@ -679,6 +790,25 @@ private def onlyStandard (n : Name) : CoreM Bool := do
 /-- info: true -/
 #guard_msgs in
 #eval onlyStandard ``Tarski.evalDoWhile.eq_def
+
+-- And the four walks that run until an *iterator* says stop: `evalForOf`
+-- is `Test/Tarski/ForOfUnfoldTest.lean`'s `rw`, and the other three are
+-- the list, the entry walk, and the grouping.
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.evalForOf.eq_def
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.iteratorToList.eq_def
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.fromEntriesInto.eq_def
+
+/-- info: true -/
+#guard_msgs in
+#eval onlyStandard ``Tarski.groupByInto.eq_def
 
 -- The library definitions the evaluator now dispatches to: the formatter,
 -- the parser, and the two integer conversions. They are ordinary
