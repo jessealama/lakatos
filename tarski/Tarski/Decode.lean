@@ -915,12 +915,22 @@ partial def decodeLoopHead (j : Json) : DecodeM ForInLeft := do
   match ← nodeType head with
   | "VariableDeclaration" =>
     let kind ← declKind (← strField head "kind")
-    match ← declaratorList head with
-    | [d] =>
-      match d.init with
-      | none => pure (.decl kind d.target)
-      | some _ => throw (.unsupported "ForInStatement initializer")
-    | _ => throw (.unsupported "ForInStatement initializer")
+    -- The declarator is read here rather than through `declaratorList`
+    -- because a *head*'s pattern declarator has no initializer and must
+    -- not have one: `for (const [a] of xs)` is the ordinary spelling,
+    -- where `const [a];` does not parse at all.
+    match (← field head "declarations").getArr? with
+    | .ok ds =>
+      match ds.toList with
+      | [d] =>
+        match ← nodeType d with
+        | "VariableDeclarator" =>
+          match ← optField d "init" with
+          | none => pure (.decl kind (← decodePattern true (← field d "id")))
+          | some _ => throw (.unsupported "ForInStatement initializer")
+        | other => throw (.unsupported other)
+      | _ => throw (.unsupported "ForInStatement initializer")
+    | .error _ => bad "VariableDeclaration declarations is not an array"
   | "ArrayPattern" | "ObjectPattern" => pure (.pattern (← decodePattern false head))
   | _ => pure (.target (← toTarget (← decodeExpr head)))
 

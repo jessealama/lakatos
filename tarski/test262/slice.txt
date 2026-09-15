@@ -102,3 +102,17 @@ test/built-ins/ThrowTypeError
 
 # The String built-ins and the wrapper (#391).
 test/built-ins/String
+
+# Iterators, for-of, spread, and destructuring (#394). Spread has no
+# directory of its own at the pin: its tests are the `spread-*` files
+# under `call` (already here), `new`, `array`, and `super`, and `super`
+# stays out with the rest of #384's leftovers. The `dstr` subtree of
+# every directory above ratchets with this block.
+test/language/statements/for-of
+test/language/expressions/array
+test/language/expressions/new
+test/built-ins/ArrayIteratorPrototype
+test/built-ins/Array/prototype/keys
+test/built-ins/Array/prototype/values
+test/built-ins/Array/prototype/entries
+test/built-ins/Array/prototype/Symbol.iterator
