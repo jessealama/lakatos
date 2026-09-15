@@ -217,7 +217,7 @@ new refusal is written against a list rather than invented.
 | GetIterator with no callable `@@iterator`          | `TypeError`      | `{v} is not iterable`                                         |
 | an `@@iterator` that answers a primitive           | `TypeError`      | `Result of the Symbol.iterator method is not an object`       |
 | a `next` or `return` that answers a primitive      | `TypeError`      | `Iterator result {v} is not an object`                        |
-| `%ArrayIteratorPrototype%.next` off an array iterator | `TypeError`   | `next method called on incompatible receiver {v}`             |
+| an iterator's `next` off an iterator of its kind    | `TypeError`      | `next method called on incompatible receiver {v}`             |
 | an object pattern destructuring `undefined` or `null` | `TypeError`   | `Cannot destructure '{v}' as it is {undefined\|null}.`        |
 | `Object.fromEntries` over a non-object entry       | `TypeError`      | `Iterator value {v} is not an entry object`                   |
 | a `.spread` reached outside a list                 | `SyntaxError`    | `Unexpected token '...'`                                      |
@@ -1430,7 +1430,7 @@ def getTemplateObject (site : Nat) (strings : List TemplateString) : EvalM Value
 -- only a large definition, so raising it is the knob rather than
 -- splitting a block whose whole point is that its members may call one
 -- another.
-set_option maxHeartbeats 1000000 in
+set_option maxHeartbeats 2000000 in
 mutual
 
 /-- Evaluate an expression. -/
@@ -2008,7 +2008,10 @@ def copyKeys (target src : Ref) (excluded : List Key) : List Key → EvalM Unit
   | k :: rest => do
     if excluded.contains k then pure ()
     else
-      match (← readObj src).getOwnProperty k with
+      -- `ownProperty` rather than `getOwnProperty`, so a String exotic
+      -- object's synthesized indices are seen: `{ ..."ab" }` is two
+      -- members.
+      match (← readObj src).ownProperty k with
       | some prop =>
         if prop.enumerable then createDataProperty target k (← getProp (.obj src) k)
         else pure ()
@@ -3326,7 +3329,8 @@ def callNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Valu
   -- ceiling, and a closed destructuring or one `for`-`of` step has to
   -- reduce without a local lemma list.
   | .iteratorProtoIterator | .arrayIteratorNext | .arrayKeys | .arrayValues
-  | .arrayEntries | .objectFromEntries | .objectGroupBy =>
+  | .arrayEntries | .objectFromEntries | .objectGroupBy
+  | .stringProtoIterator | .stringIteratorNext =>
     callIteratorNative f thisArg args
   | .print => do
     -- The host's output binding. There is no IO in `EvalM`, so the line
@@ -3764,8 +3768,13 @@ array that grows mid-iteration visit the new elements, and writes
 `undefined` into `[[IteratedArrayLike]]` when it runs out, which is what
 keeps an exhausted iterator done.
 
+The String Iterator is here too, and it is the one walk that steps by
+**code point** rather than by code unit: `JsString.codePointAt?` answers
+the point starting at an index and how many units it took, which is
+exactly the step 22.1.5.1.1 takes.
+
 The arm for anything else is unreachable: `callNative` routes exactly
-the seven constructors below here. -/
+the nine constructors below here. -/
 def callIteratorNative (f : NativeFn) (thisArg : Value) (args : List Value) :
     EvalM Value :=
   match f with
@@ -3815,6 +3824,40 @@ def callIteratorNative (f : NativeFn) (thisArg : Value) (args : List Value) :
       let ir ← getIterator items
       fromEntriesInto ir obj
       pure (.obj obj)
+  | .stringProtoIterator => do
+    -- 22.1.3.36: RequireObjectCoercible, then ToString, then a fresh
+    -- iterator over the *string* — a receiver that is a wrapper object
+    -- is read through its own `toString`.
+    match thisArg with
+    | .prim .undef | .prim .null =>
+      throwJsError .typeError "Cannot convert undefined or null to object"
+    | _ => pure ()
+    let str ← toStringValue thisArg
+    let r ← allocObj
+      { proto := some stringIteratorProtoRef, kind := .stringIterator (some str) 0 }
+    pure (.obj r)
+  | .stringIteratorNext =>
+    match thisArg with
+    | .obj r => do
+      match (← readObj r).kind with
+      | .stringIterator iterated index =>
+        match iterated with
+        | none => createIterResult undefValue true
+        | some str =>
+          match str.codePointAt? index with
+          | none => do
+            modifyObj r (fun o => { o with kind := .stringIterator none index })
+            createIterResult undefValue true
+          | some (_, taken) => do
+            modifyObj r (fun o =>
+              { o with kind := .stringIterator (some str) (index + taken) })
+            createIterResult (.prim (.str (str.extract index (index + taken)))) false
+      | _ =>
+        throwJsError .typeError
+          s!"next method called on incompatible receiver {formatValue thisArg}"
+    | _ =>
+      throwJsError .typeError
+        s!"next method called on incompatible receiver {formatValue thisArg}"
   | .objectGroupBy => do
     match args.headD undefValue with
     | .prim .undef | .prim .null =>

@@ -44,6 +44,9 @@ private def program : Program :=
 -- index the program actually parses is one literal, so it is one lemma.
 @[local simp] private theorem arrayIndex_one : arrayIndex? "1" = some 1 := by decide
 
+-- The realm is a hundred and fifty-six objects now, so `simp` walks a
+-- deeper literal than the default recursion limit allows.
+set_option maxRecDepth 4000 in
 example : runProgram program = some (.ok (some (.prim (.num 2.0)))) := by
   simp [tarski_eval, program]
 

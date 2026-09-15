@@ -67,6 +67,7 @@ set_option maxHeartbeats 4000000 in
 example : runProgram fromArray = some (.ok (some (.prim (.num 1.0)))) := by
   simp [tarski_eval, fromArray]
 
+set_option maxRecDepth 8000 in
 example : runProgram fromObject = some (.ok (some (.prim (.num 2.0)))) := by
   simp [tarski_eval, fromObject]
 

@@ -253,6 +253,7 @@ attribute [tarski_eval]
   objectGetOwnPropertySymbolsRef errorIsErrorRef
   iteratorProtoRef iteratorProtoIteratorRef arrayIteratorProtoRef arrayIteratorNextRef
   arrayKeysRef arrayValuesRef arrayEntriesRef objectFromEntriesRef objectGroupByRef
+  stringIteratorProtoRef stringIteratorNextRef stringProtoIteratorRef
   symbolCellRef jsonCellRef aggregateErrorCellRef wellKnownSymbolCellBase
   WellKnownSymbol.name WellKnownSymbol.description WellKnownSymbol.id
   WellKnownSymbol.symbol WellKnownSymbol.key WellKnownSymbol.all

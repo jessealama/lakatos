@@ -557,6 +557,10 @@ inductive NativeFn where
   | objectFromEntries
   /-- `Object.groupBy` (20.1.2.9). -/
   | objectGroupBy
+  /-- `String.prototype[@@iterator]` (22.1.3.36). -/
+  | stringProtoIterator
+  /-- `%StringIteratorPrototype%.next` (22.1.5.1.1). -/
+  | stringIteratorNext
 deriving Repr, DecidableEq, Inhabited
 
 /-- A bound function exotic object's three internal slots plus the one
@@ -640,6 +644,7 @@ inductive ObjKind where
   | error
   | symbol (value : Symbol)
   | arrayIterator (iterated : Option Value) (kind : IterKind) (index : Nat)
+  | stringIterator (iterated : Option Js.JsString) (index : Nat)
 deriving Repr, DecidableEq, Inhabited
 
 /-- An accessor property's two functions. Named `getter` and `setter`

@@ -505,32 +505,41 @@ def errorIsErrorRef : Ref := 108
 
 /-- `%IteratorPrototype%` (27.1.2), which every iterator here inherits
 from and which nothing in source can name. -/
-def iteratorProtoRef : Ref := 109
+def iteratorProtoRef : Ref := 144
 
 /-- `%IteratorPrototype%[@@iterator]` (27.1.2.1). -/
-def iteratorProtoIteratorRef : Ref := 110
+def iteratorProtoIteratorRef : Ref := 145
 
 /-- `%ArrayIteratorPrototype%` (23.1.5.2). -/
-def arrayIteratorProtoRef : Ref := 111
+def arrayIteratorProtoRef : Ref := 146
 
 /-- `%ArrayIteratorPrototype%.next` (23.1.5.2.1). -/
-def arrayIteratorNextRef : Ref := 112
+def arrayIteratorNextRef : Ref := 147
 
 /-- `Array.prototype.keys`. -/
-def arrayKeysRef : Ref := 113
+def arrayKeysRef : Ref := 148
 
 /-- `Array.prototype.values`, which is `Array.prototype[@@iterator]` and
 an `arguments` object's `@@iterator` too. -/
-def arrayValuesRef : Ref := 114
+def arrayValuesRef : Ref := 149
 
 /-- `Array.prototype.entries`. -/
-def arrayEntriesRef : Ref := 115
+def arrayEntriesRef : Ref := 150
 
 /-- `Object.fromEntries`. -/
-def objectFromEntriesRef : Ref := 116
+def objectFromEntriesRef : Ref := 151
 
 /-- `Object.groupBy`. -/
-def objectGroupByRef : Ref := 117
+def objectGroupByRef : Ref := 152
+
+/-- `%StringIteratorPrototype%` (22.1.5.1). -/
+def stringIteratorProtoRef : Ref := 153
+
+/-- `%StringIteratorPrototype%.next` (22.1.5.1.1). -/
+def stringIteratorNextRef : Ref := 154
+
+/-- `String.prototype[@@iterator]` (22.1.3.36). -/
+def stringProtoIteratorRef : Ref := 155
 
 /-- The cell the first well-known symbol's identity lives in; the
 thirteen run from here to 36, in 6.1.5.1's table order. -/
@@ -929,13 +938,13 @@ def Heap.initial : Heap where
            ("defineProperty", Property.method (.obj 76)),
            ("entries", Property.method (.obj 77)),
            ("freeze", Property.method (.obj 78)),
-           ("fromEntries", Property.method (.obj 116)),
+           ("fromEntries", Property.method (.obj 151)),
            ("getOwnPropertyDescriptor", Property.method (.obj 79)),
            ("getOwnPropertyDescriptors", Property.method (.obj 80)),
            ("getOwnPropertyNames", Property.method (.obj 81)),
            ("getOwnPropertySymbols", Property.method (.obj 107)),
            ("getPrototypeOf", Property.method (.obj 82)),
-           ("groupBy", Property.method (.obj 117)),
+           ("groupBy", Property.method (.obj 152)),
            ("hasOwn", Property.method (.obj 83)),
            ("is", Property.method (.obj 18)),
            ("isExtensible", Property.method (.obj 84)),
@@ -958,12 +967,12 @@ def Heap.initial : Heap where
        { proto := some 15,
          properties :=
            [ ("constructor", Property.method (.obj 21)),
-             ("entries", Property.method (.obj 115)),
+             ("entries", Property.method (.obj 150)),
              ("join", Property.method (.obj 23)),
-             ("keys", Property.method (.obj 113)),
+             ("keys", Property.method (.obj 148)),
              ("push", Property.method (.obj 22)),
-             ("values", Property.method (.obj 114)),
-             (WellKnownSymbol.iterator.key, Property.method (.obj 114)) ],
+             ("values", Property.method (.obj 149)),
+             (WellKnownSymbol.iterator.key, Property.method (.obj 149)) ],
          kind := .array 0 true },
        -- 21: Array
        Obj.builtinWith .arrayCtor "Array" 1
@@ -1338,7 +1347,8 @@ def Heap.initial : Heap where
              (Key.str "trim", Property.method (.obj 140)),
              (Key.str "trimEnd", Property.method (.obj 141)),
              (Key.str "trimStart", Property.method (.obj 142)),
-             (Key.str "valueOf", Property.method (.obj 143)) ] },
+             (Key.str "valueOf", Property.method (.obj 143)),
+             (WellKnownSymbol.iterator.key, Property.method (.obj 155)) ] },
        -- 110: String.fromCharCode
        Obj.builtin (.string .fromCharCode) "fromCharCode" 1,
        -- 111: String.fromCodePoint

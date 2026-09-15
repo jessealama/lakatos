@@ -442,15 +442,14 @@ private def patternCtor : ClassDef :=
       .exprStmt (.ident "x") ]
   == "1"
 -- A `for`-`in` head may be a pattern too, and each key is destructured
--- as an assignment pattern. An *array* pattern over a key is the string
--- iterator, which `String.prototype` does not have until #391, so this
--- pins the refusal rather than `"xy"`.
+-- as an assignment pattern: an array pattern over a key walks the
+-- string's code points.
 #guard outcome
     [ .varDecl .«let» [{ target := "a", init := none }, { target := "b", init := none }],
       .forInStmt (.pattern (.array [el "a", el "b"] none)) (.objectLit [.init "xy" (num 1.0)])
         .empty,
       .exprStmt (.binary .add (.ident "a") (.ident "b")) ]
-  == "uncaught: TypeError: xy is not iterable"
+  == "xy"
 
 -- An *object* pattern over a key reads through the string's properties,
 -- which needs no iterator.

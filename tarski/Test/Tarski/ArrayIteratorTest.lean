@@ -182,6 +182,50 @@ source: `Object.getPrototypeOf` is the only way to either. -/
         (.member (.member (.ident "it") "next") "name")) ]
   == "0next"
 
+/-! ## The String Iterator
+
+22.1.5.1 walks a string by **code point**, not by code unit, which is the
+one place the two differ observably outside `codePointAt`: an astral
+character is one step and two units. `String.prototype[@@iterator]` is
+what `for`-`of` over a string, a spread of one, and IterableToList of one
+all reach. -/
+
+#guard outcome
+    [ .exprStmt (joined (.arrayLit [.spread (.strLit "ab")])) ]
+  == "a,b"
+#guard outcome
+    [ .exprStmt (.member (.arrayLit [.spread (.strLit "a😀")]) "length") ]
+  == "2"
+#guard outcome
+    [ .exprStmt (.member (.strLit "a😀") "length") ]
+  == "3"
+#guard outcome
+    [ «let» "out" (.arrayLit []),
+      .forOfStmt (.decl .«const» "c") (.strLit "ab")
+        (.exprStmt (.call (.member (.ident "out") "push") [.ident "c"])),
+      .exprStmt (joined (.ident "out")) ]
+  == "a,b"
+-- 22.1.3.36 step 1 is RequireObjectCoercible, so a nullish receiver is
+-- the ToObject refusal rather than the string `"undefined"`.
+#guard outcome
+    [ .exprStmt (.call (.member (.index (.member (.ident "String") "prototype")
+        (.member (.ident "Symbol") "iterator")) "call") [.undefLit]) ]
+  == "uncaught: TypeError: Cannot convert undefined or null to object"
+
+#guard outcome [.exprStmt (tagOf (.call (.index (.strLit "a")
+    (.member (.ident "Symbol") "iterator")) []))]
+  == "[object String Iterator]"
+#guard outcome
+    [ .exprStmt (.binary .strictEq
+        (protoOf (protoOf (.call (.index (.strLit "a")
+          (.member (.ident "Symbol") "iterator")) [])))
+        (protoOf (protoOf (.call (.member twelve "values") [])))) ]
+  == "true"
+#guard outcome
+    [ .exprStmt (.call (.member (.member (protoOf (.call (.index (.strLit "a")
+        (.member (.ident "Symbol") "iterator")) [])) "next") "call") [.objectLit []]) ]
+  == "uncaught: TypeError: next method called on incompatible receiver [object Object]"
+
 /-! ## `arguments`
 
 10.4.4.6 step 8 links an `arguments` object's `@@iterator` to

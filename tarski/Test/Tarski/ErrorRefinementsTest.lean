@@ -117,10 +117,10 @@ private def agg : Expr :=
 #guard outcome (expr (.member (.member
   (.call (.ident "AggregateError") [.arrayLit []]) "errors") "length")) == "0"
 
--- Step 4 is IterableToList, so a string argument is `is not iterable`
--- until `String.prototype` has an `@@iterator` (#391).
+-- Step 4 is IterableToList, so a string argument is its *code points*,
+-- through `String.prototype[@@iterator]`.
 #guard outcome (expr (.member (.member (make "AggregateError" [.strLit "ab"]) "errors")
-  "length")) == "uncaught: TypeError: ab is not iterable"
+  "length")) == "2"
 
 -- `undefined` is not iterable.
 #guard outcome (expr (make "AggregateError" []))

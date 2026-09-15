@@ -1,6 +1,6 @@
 # The failure list for the PR-gated slice
 
-Written 2026-09-14 against test262 at `419d3e0a2273ba01a3bfcbec423f2801425b8e93`
+Written 2026-09-15 against test262 at `419d3e0a2273ba01a3bfcbec423f2801425b8e93`
 (`tarski/test262/pin.json`), from one run of
 
 ```bash
@@ -14,8 +14,9 @@ added, the two class directories #384 added, the fifteen declaration
 instantiation, jump, and `arguments` directories #393 added, the two
 `Object` and `Function` directories #389 added, the three template and
 object-literal directories #395 added, the seven `Symbol`, `JSON`, and
-`*Error` directories #392 added, and `test/built-ins/String`, which #391
-added — and
+`*Error` directories #392 added, `test/built-ins/String`, which #391
+added, and the ten iterator, `for`-`of`, spread, and array-literal
+directories #394 added — and
 `tarski/frontend/tests/test262-failures.test.ts` holds this file and
 `tarski/test262/expected.json` together: each directory named here is a key
 of that file, every directory with a positive `fail` count appears, and the
@@ -56,15 +57,15 @@ answering the wrong thing**. The 207 rows that waited on #391 are gone:
 the String wrapper object exists, and a string is a sequence of UTF-16
 code units.
 
-The 1,425 failures below, by owner: 840 what #376 excludes (`eval`,
+The 1,451 failures below, by owner: 915 what #376 excludes (`eval`,
 `Date`, `RegExp`, `Proxy`, `Reflect`, typed arrays, the keyed
-collections, explicit resource management, `Error.prototype.stack`,
-`JSON.rawJSON` and the reviver's source text, the `Function`
-constructor's semantics, and `nativeFunctionMatcher.js`, which matches
-source text with a regular expression), 183 the global object (#487),
-150 the transcendental `Math` members (#434), 75 the rest of
-`Array.prototype` and `@@species` (#390), 65 the global `isNaN` and
-`isFinite` (#441), 56 iterators (#394), 15 the Unicode character
+collections, explicit resource management, the `Iterator` constructor and
+its helpers, `Error.prototype.stack`, `JSON.rawJSON` and the reviver's
+source text, the `Function` constructor's semantics, and
+`nativeFunctionMatcher.js`, which matches source text with a regular
+expression), 185 the global object (#487), 150 the transcendental `Math`
+members (#434), 80 the rest of `Array.prototype` and `@@species` (#390),
+65 the global `isNaN` and `isFinite` (#441), 15 the Unicode character
 database (#518), 13 `Math.clz32`/`imul` (#440), 10 the `@@split`,
 `@@replace`, and `@@match` lookups the `String` methods skip (#523), 5
 `Math.random` (#445), and 13 the seven filed defects (#436, #460, #496,
@@ -74,7 +75,7 @@ database (#518), 13 `Math.clz32`/`imul` (#440), 10 the `@@split`,
 152 unsupported and three not run. Not one of the 148 is a `String`
 member answering the wrong thing: 77 are regular expressions (#376),
 which is `match`, `matchAll`, `search`, and the regex arguments to
-`split` and `replace`; 15 are the string iterator (#394); 15 are the
+`split` and `replace`; 15 are the
 Unicode character database (#518) — the case-mapping tests and the two
 `normalize` results, which are what ASCII case mapping and an identity
 `normalize` cost; 15 are the rest of `Array.prototype` (#390), reached
@@ -88,22 +89,25 @@ regular-expression literals, 21 `!=`, 11 BigInt literals, 7 the comma
 operator, and 4 the `Function` constructor.
 
 **The two `Object` and `Function` directories are 3,031 pass and 519
-fail**, against 2,912 and 638 before this slice: the 122 rows that
-waited on the String wrapper are gone, and three of those tests fail
-for another reason now. Their 519: 289 `eval`, `Date`, `RegExp`, `Proxy`,
-`Reflect`, and typed arrays (#376); 143 the global object, whose `this`
-at top level a third of `Object`'s older tests reach for (#487); 39 the
-rest of `Array.prototype`, which the order tests reach through `map` and
-`indexOf` (#390); 38 iterators (#394); and 10 `Math` members the library
-does not model, read through `getOwnPropertyDescriptor` (#434, #445).
-None is a filed defect.
+fail** before this slice and are 3,075 and 483 after it: the 38 rows
+that waited on iterators are gone — `Object.fromEntries` is 25 pass and 0
+fail against 0 and 25, `Object.groupBy` 14 and 0 against 2 and 12 — and
+one `Object/keys` test that was unsupported now runs and reaches `Proxy`.
+Their 483: 292 `eval`, `Date`, `RegExp`, `Proxy`, `Reflect`, and typed
+arrays (#376); 143 the global object, whose `this` at top level a third
+of `Object`'s older tests reach for (#487); 39 the rest of
+`Array.prototype`, which the order tests reach through `map` and
+`indexOf` (#390); and 9 `Math` members the library does not model, read
+through `getOwnPropertyDescriptor` (#434, #445). None is a filed
+defect.
 **The `propertyHelper.js`-based tests run and pass**: `Math/abs` is 8 and
 0, and `length.js`, `name.js`, and `prop-desc.js` under it are three of
 them.
 
-`test/harness` is 61 pass and 18 fail, against 60 and 19: what is left
-of them is `Array.prototype` (7), the global object (6), typed arrays
-(4), and `Date` (1).
+`test/harness` is 61 pass and 20 fail, against 61 and 18: two more of
+`propertyHelper.js`'s own tests decode now, and both reach for the global
+object. What is left is `Array.prototype` (7), the global object (8),
+typed arrays (4), and `Date` (1).
 
 **The seven directories #392 added are 330 pass, 127 fail, and 52
 unsupported**: `Symbol` 68/9/19, `JSON` 114/37/14, `Error` 48/37/8,
@@ -115,9 +119,8 @@ whole of `SuppressedError` and the two `Symbol.dispose` members; 22
 `Proxy`; 16 `JSON.rawJSON`, `JSON.isRawJSON`, and the reviver's `context`
 argument, a stage-3 proposal; 9 `isConstructor.js`, which needs
 `Reflect.construct`; and 1 `RegExp` — 11 the global object (#487), 7
-`Array.prototype` and `@@species` (#390), 3 the iterator protocol, which
-is `AggregateError`'s `errors` read from a user iterator (#394), 2 a
-defect #392 found and filed (#512), and 1 `JSON.stringify` writing a lone
+`Array.prototype` and `@@species` (#390), 2 a defect #392 found and
+filed (#512), and 1 `JSON.stringify` writing a lone
 surrogate as U+FFFD rather than its `\u` escape, because the JSON text
 is a Lean `String` (#522). **Not one is a symbol, a JSON text, or an
 `Error` member answering the wrong thing.**
@@ -163,14 +166,28 @@ operator but `+`. It takes a Symbol operand to see, so the four
 slice; `addition`'s passes, `+` being the one operator whose order this
 matches. Fixing it is #436's, not this slice's.
 
+**The ten directories this slice added are 591 pass, 49 fail, and 149
+unsupported.** `statements/for-of` is 450 pass and 40 fail across its own
+directory and its `dstr` subtree — the subtree itself is 403 and **0** —
+and not one of the 40 is the loop: 18 are typed arrays, 10 the keyed
+collections, 6 `eval`, 3 `Array.prototype.pop`, 2 `using` declarations,
+and 1 `Proxy`. `expressions/array` is 50 pass and 0 fail,
+`expressions/new` 54 and 0, `ArrayIteratorPrototype` 9 and 9 — those 9
+failures typed arrays and nothing else — and the four `Array.prototype`
+iterator members 28 and 0. **Every other directory's `dstr` subtree
+ratcheted with them**, which is where most of the 2,456 newly passing
+tests are, and the String iterator this slice added on top of #391's
+wrapper cleared `String/prototype/Symbol.iterator` to 6 pass and 0 fail.
+
 ## The table
 
 | directory                                                             | fails | class        | why                                                                                                                 | owner |
 | --------------------------------------------------------------------- | ----- | ------------ | ------------------------------------------------------------------------------------------------------------------- | ----- |
-| `test/built-ins/AggregateError`                                       | 3     | builtin      | the iterator protocol and `@@iterator` are absent                                                                   | #394  |
 | `test/built-ins/AggregateError`                                       | 1     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
 | `test/built-ins/AggregateError`                                       | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                                                        | #376  |
+| `test/built-ins/AggregateError`                                       | 1     | out-of-scope | `promiseHelper.js` needs promises                                                                                   | #376  |
 | `test/built-ins/AggregateError`                                       | 1     | builtin      | there is no global object                                                                                           | #487  |
+| `test/built-ins/ArrayIteratorPrototype/next`                          | 9     | out-of-scope | typed arrays and their buffers are excluded by the epic                                                             | #376  |
 | `test/built-ins/Boolean`                                              | 1     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/built-ins/Boolean`                                              | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                                                        | #376  |
 | `test/built-ins/Boolean`                                              | 1     | builtin      | there is no global object                                                                                           | #487  |
@@ -197,10 +214,10 @@ matches. Fixing it is #436's, not this slice's.
 | `test/built-ins/Function/prototype/toString`                          | 2     | out-of-scope | `nativeFunctionMatcher.js` matches source text with a regular expression                                            | #376  |
 | `test/built-ins/Function/prototype/toString`                          | 1     | out-of-scope | the bridge keeps no source text, and the matcher is a regular expression                                            | #376  |
 | `test/built-ins/JSON`                                                 | 1     | builtin      | there is no global object                                                                                           | #487  |
-| `test/built-ins/JSON/isRawJSON`                                       | 5     | out-of-scope | `JSON.rawJSON` and the reviver's source text are a stage-3 proposal                                                 | #376  |
+| `test/built-ins/JSON/isRawJSON`                                       | 6     | out-of-scope | `JSON.rawJSON` and the reviver's source text are a stage-3 proposal                                                 | #376  |
 | `test/built-ins/JSON/parse`                                           | 9     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
-| `test/built-ins/JSON/parse`                                           | 3     | out-of-scope | `JSON.rawJSON` and the reviver's source text are a stage-3 proposal                                                 | #376  |
-| `test/built-ins/JSON/rawJSON`                                         | 8     | out-of-scope | `JSON.rawJSON` and the reviver's source text are a stage-3 proposal                                                 | #376  |
+| `test/built-ins/JSON/parse`                                           | 5     | out-of-scope | `JSON.rawJSON` and the reviver's source text are a stage-3 proposal                                                 | #376  |
+| `test/built-ins/JSON/rawJSON`                                         | 9     | out-of-scope | `JSON.rawJSON` and the reviver's source text are a stage-3 proposal                                                 | #376  |
 | `test/built-ins/JSON/stringify`                                       | 9     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
 | `test/built-ins/JSON/stringify`                                       | 1     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                                                        | #390  |
 | `test/built-ins/JSON/stringify`                                       | 1     | bug          | `JSON.stringify` quotes a string through a Lean `String`, so a lone surrogate is U+FFFD rather than its `\u` escape | #522  |
@@ -302,9 +319,6 @@ matches. Fixing it is #436's, not this slice's.
 | `test/built-ins/Object/freeze`                                        | 4     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
 | `test/built-ins/Object/freeze`                                        | 1     | out-of-scope | `Date` is excluded by the epic                                                                                      | #376  |
 | `test/built-ins/Object/freeze`                                        | 1     | out-of-scope | regular expressions are excluded by the epic                                                                        | #376  |
-| `test/built-ins/Object/fromEntries`                                   | 13    | builtin      | `Object.fromEntries` and `groupBy` take an iterable                                                                 | #394  |
-| `test/built-ins/Object/fromEntries`                                   | 11    | builtin      | the iterator protocol and `@@iterator` are absent                                                                   | #394  |
-| `test/built-ins/Object/fromEntries`                                   | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                                                        | #376  |
 | `test/built-ins/Object/getOwnPropertyDescriptor`                      | 47    | out-of-scope | `Date` is excluded by the epic                                                                                      | #376  |
 | `test/built-ins/Object/getOwnPropertyDescriptor`                      | 20    | builtin      | the rest of `Array.prototype` is absent, `toString` among it                                                        | #390  |
 | `test/built-ins/Object/getOwnPropertyDescriptor`                      | 11    | builtin      | there is no global object                                                                                           | #487  |
@@ -320,8 +334,6 @@ matches. Fixing it is #436's, not this slice's.
 | `test/built-ins/Object/getPrototypeOf`                                | 2     | out-of-scope | `Date` is excluded by the epic                                                                                      | #376  |
 | `test/built-ins/Object/getPrototypeOf`                                | 2     | out-of-scope | regular expressions are excluded by the epic                                                                        | #376  |
 | `test/built-ins/Object/getPrototypeOf`                                | 1     | builtin      | there is no global object                                                                                           | #487  |
-| `test/built-ins/Object/groupBy`                                       | 11    | builtin      | `Object.fromEntries` and `groupBy` take an iterable                                                                 | #394  |
-| `test/built-ins/Object/groupBy`                                       | 1     | builtin      | the iterator protocol and `@@iterator` are absent                                                                   | #394  |
 | `test/built-ins/Object/internals/DefineOwnProperty`                   | 3     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
 | `test/built-ins/Object/isExtensible`                                  | 2     | out-of-scope | `Date` is excluded by the epic                                                                                      | #376  |
 | `test/built-ins/Object/isExtensible`                                  | 2     | out-of-scope | regular expressions are excluded by the epic                                                                        | #376  |
@@ -334,7 +346,7 @@ matches. Fixing it is #436's, not this slice's.
 | `test/built-ins/Object/isSealed`                                      | 2     | out-of-scope | regular expressions are excluded by the epic                                                                        | #376  |
 | `test/built-ins/Object/isSealed`                                      | 1     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
 | `test/built-ins/Object/isSealed`                                      | 1     | builtin      | there is no global object                                                                                           | #487  |
-| `test/built-ins/Object/keys`                                          | 4     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
+| `test/built-ins/Object/keys`                                          | 5     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
 | `test/built-ins/Object/keys`                                          | 1     | out-of-scope | `Date` is excluded by the epic                                                                                      | #376  |
 | `test/built-ins/Object/preventExtensions`                             | 2     | out-of-scope | `Date` is excluded by the epic                                                                                      | #376  |
 | `test/built-ins/Object/preventExtensions`                             | 2     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
@@ -355,7 +367,7 @@ matches. Fixing it is #436's, not this slice's.
 | `test/built-ins/Object/prototype/toString`                            | 5     | out-of-scope | the keyed collections and promises are excluded by the epic                                                         | #376  |
 | `test/built-ins/Object/prototype/toString`                            | 3     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
 | `test/built-ins/Object/prototype/toString`                            | 2     | out-of-scope | BigInt is excluded by the epic                                                                                      | #376  |
-| `test/built-ins/Object/prototype/toString`                            | 2     | builtin      | the iterator protocol and `@@iterator` are absent                                                                   | #394  |
+| `test/built-ins/Object/prototype/toString`                            | 2     | out-of-scope | the `Iterator` constructor and its helpers are excluded by the epic                                                 | #376  |
 | `test/built-ins/Object/prototype/toString`                            | 1     | out-of-scope | `Date` is excluded by the epic                                                                                      | #376  |
 | `test/built-ins/Object/seal`                                          | 14    | out-of-scope | typed arrays and their buffers are excluded by the epic                                                             | #376  |
 | `test/built-ins/Object/seal`                                          | 7     | out-of-scope | the keyed collections and promises are excluded by the epic                                                         | #376  |
@@ -369,7 +381,6 @@ matches. Fixing it is #436's, not this slice's.
 | `test/built-ins/String`                                               | 2     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                                                        | #390  |
 | `test/built-ins/String`                                               | 2     | builtin      | there is no global object                                                                                           | #487  |
 | `test/built-ins/String`                                               | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                                                        | #376  |
-| `test/built-ins/String/prototype/Symbol.iterator`                     | 5     | builtin      | the string iterator and `String.prototype[@@iterator]` are absent                                                   | #394  |
 | `test/built-ins/String/prototype/charAt`                              | 1     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/built-ins/String/prototype/charCodeAt`                          | 1     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/built-ins/String/prototype/codePointAt`                         | 1     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                                                        | #390  |
@@ -380,7 +391,7 @@ matches. Fixing it is #436's, not this slice's.
 | `test/built-ins/String/prototype/localeCompare`                       | 1     | builtin      | Lean has no Unicode character database: case mapping is ASCII-only and `normalize` answers its input                | #518  |
 | `test/built-ins/String/prototype/match`                               | 27    | out-of-scope | regular expressions are excluded by the epic                                                                        | #376  |
 | `test/built-ins/String/prototype/match`                               | 1     | out-of-scope | `isConstructor.js` needs `Reflect.construct`                                                                        | #376  |
-| `test/built-ins/String/prototype/matchAll`                            | 10    | builtin      | the string iterator and `String.prototype[@@iterator]` are absent                                                   | #394  |
+| `test/built-ins/String/prototype/matchAll`                            | 12    | out-of-scope | `matchAll` needs `RegExp`, which is excluded by the epic                                                            | #376  |
 | `test/built-ins/String/prototype/normalize`                           | 2     | builtin      | Lean has no Unicode character database: case mapping is ASCII-only and `normalize` answers its input                | #518  |
 | `test/built-ins/String/prototype/normalize`                           | 1     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                                                        | #390  |
 | `test/built-ins/String/prototype/replace`                             | 2     | out-of-scope | regular expressions are excluded by the epic                                                                        | #376  |
@@ -422,7 +433,7 @@ matches. Fixing it is #436's, not this slice's.
 | `test/built-ins/parseFloat`                                           | 2     | builtin      | there is no global object                                                                                           | #487  |
 | `test/built-ins/parseInt`                                             | 2     | builtin      | there is no global object                                                                                           | #487  |
 | `test/harness`                                                        | 7     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                                                        | #390  |
-| `test/harness`                                                        | 6     | builtin      | there is no global object                                                                                           | #487  |
+| `test/harness`                                                        | 8     | builtin      | there is no global object                                                                                           | #487  |
 | `test/harness`                                                        | 4     | out-of-scope | typed arrays and their buffers are excluded by the epic                                                             | #376  |
 | `test/harness`                                                        | 1     | out-of-scope | `Date` is excluded by the epic                                                                                      | #376  |
 | `test/language/arguments-object`                                      | 2     | out-of-scope | an early-error test that reaches for `eval`                                                                         | #376  |
@@ -434,7 +445,8 @@ matches. Fixing it is #436's, not this slice's.
 | `test/language/expressions/arrow-function/arrow`                      | 4     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/language/expressions/assignment`                                | 1     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                                                        | #390  |
 | `test/language/expressions/assignment`                                | 1     | protocol     | the bridge drops the parentheses that keep NamedEvaluation from naming a function                                   | #499  |
-| `test/language/expressions/call`                                      | 4     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
+| `test/language/expressions/assignment/destructuring`                  | 2     | builtin      | the rest of `Array.prototype` is absent, `map` among it                                                             | #390  |
+| `test/language/expressions/call`                                      | 8     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/language/expressions/call`                                      | 1     | out-of-scope | an early-error test that reaches for `eval`                                                                         | #376  |
 | `test/language/expressions/class`                                     | 1     | builtin      | `Function.prototype.caller` and `arguments` are the `%ThrowTypeError%` accessors                                    | #487  |
 | `test/language/expressions/class/elements`                            | 24    | out-of-scope | an early-error test that reaches for `eval`                                                                         | #376  |
@@ -466,7 +478,9 @@ matches. Fixing it is #436's, not this slice's.
 | `test/language/expressions/multiplication`                            | 1     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/language/expressions/multiplication`                            | 1     | bug          | the left operand is not converted fully before the right one                                                        | #436  |
 | `test/language/expressions/object`                                    | 8     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
+| `test/language/expressions/object`                                    | 3     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
 | `test/language/expressions/object`                                    | 1     | builtin      | the rest of `Array.prototype` is absent, `toString` among it                                                        | #390  |
+| `test/language/expressions/object/dstr`                               | 3     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
 | `test/language/expressions/strict-does-not-equals`                    | 2     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/language/expressions/strict-equals`                             | 2     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/language/expressions/subtraction`                               | 9     | builtin      | the global `isNaN` and `isFinite` are not in the realm                                                              | #441  |
@@ -514,6 +528,12 @@ matches. Fixing it is #436's, not this slice's.
 | `test/language/statements/empty`                                      | 1     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/language/statements/expression`                                 | 2     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
 | `test/language/statements/for`                                        | 7     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
+| `test/language/statements/for-of`                                     | 18    | out-of-scope | typed arrays and their buffers are excluded by the epic                                                             | #376  |
+| `test/language/statements/for-of`                                     | 10    | out-of-scope | the keyed collections are excluded by the epic                                                                      | #376  |
+| `test/language/statements/for-of`                                     | 6     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
+| `test/language/statements/for-of`                                     | 3     | builtin      | the rest of `Array.prototype` is absent, `pop` among it                                                             | #390  |
+| `test/language/statements/for-of`                                     | 2     | out-of-scope | explicit resource management (`using`) is excluded by the epic                                                      | #376  |
+| `test/language/statements/for-of`                                     | 1     | out-of-scope | `Proxy` and `Reflect` are excluded by the epic                                                                      | #376  |
 | `test/language/statements/function`                                   | 4     | builtin      | `Function.prototype.caller` and `arguments` are the `%ThrowTypeError%` accessors                                    | #487  |
 | `test/language/statements/function`                                   | 3     | out-of-scope | an early-error test that reaches for `eval`                                                                         | #376  |
 | `test/language/statements/function`                                   | 2     | out-of-scope | `eval` is excluded by the epic                                                                                      | #376  |
@@ -541,59 +561,45 @@ the document by name before the evaluator saw it, which is the verdict the
 runner should file for a program outside the fragment. The kinds, and who
 owns them:
 
-| kind                                                                                                                                                     | owner                                                                                                             |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `VariableDeclarationList`, `VariableStatement`, `OmittedExpression`, `SpreadElement`, `SpreadAssignment`, `EqualsToken`                                  | #394 — binding and assignment patterns, holes, and spread; `EqualsToken` is a `CoverInitializedName`, `{ a = 1 }` |
-| `BinaryExpression ,`, the shifts and the bitwise forms, `AssignmentExpression >>>=`                                                                      | #376 — operators the epic does not model                                                                          |
-| `BigIntLiteral`                                                                                                                                          | #376 — BigInt is out of scope                                                                                     |
-| `FunctionExpression generator`, `FunctionDeclaration generator`, `FunctionExpression async`, `ArrowFunctionExpression async`, `RegularExpressionLiteral` | #376 — generators, async, and regular expressions are out of scope                                                |
-| `ComputedPropertyName`                                                                                                                                   | #384 — a computed _class_ key; every object-literal one is in the slice                                           |
-| `MethodDefinition private`, `ClassStaticBlockDeclaration`, `AccessorKeyword`, `AssignmentExpression super target`                                        | #473 — private methods and accessors, static blocks, and `super.x = v`                                            |
-| `MethodDefinition generator`, `MethodDefinition async`, `Property generator`, `Property async`, `Decorator`                                              | #376 — generators, async, and decorators are out of scope                                                         |
-| `MethodDefinition numeric key`                                                                                                                           | #384 — a numeric _class_ key; a literal's is a computed key in the slice                                          |
-| `Parameter`                                                                                                                                              | #394 — rest parameters, and a binding pattern with a default                                                      |
-| `ArrayBindingPattern`, `ObjectBindingPattern`                                                                                                            | #394 — binding patterns                                                                                           |
-| `ForOfStatement`                                                                                                                                         | #394 — the one loop form left                                                                                     |
-| `Function constructor`                                                                                                                                   | #376 — the constructor's semantics are `eval` by another spelling                                                 |
-| `AssignmentExpression target`, `LogicalExpression ??`, `BinaryExpression ==`, `BinaryExpression !=`                                                      | #376 — loose equality, nullish coalescing, and targets with no reference form                                     |
-| `MetaProperty`                                                                                                                                           | #486 — `new.target` as syntax                                                                                     |
-| `WithStatement`                                                                                                                                          | #376 — `with` is not strict-mode syntax and the epic is strict mode only                                          |
-| `$262.createRealm`, `$262.detachArrayBuffer`                                                                                                             | #376 — the host hooks are refused by name                                                                         |
+| kind                                                                                                                                                     | owner                                                                         |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `BinaryExpression ,`, the shifts and the bitwise forms, `AssignmentExpression >>>=`                                                                      | #376 — operators the epic does not model                                      |
+| `BigIntLiteral`                                                                                                                                          | #376 — BigInt is out of scope                                                 |
+| `FunctionExpression generator`, `FunctionDeclaration generator`, `FunctionExpression async`, `ArrowFunctionExpression async`, `RegularExpressionLiteral` | #376 — generators, async, and regular expressions are out of scope            |
+| `ComputedPropertyName`                                                                                                                                   | #384 — a computed _class_ key; every object-literal one is in the slice       |
+| `MethodDefinition private`, `ClassStaticBlockDeclaration`, `AccessorKeyword`, `AssignmentExpression super target`                                        | #473 — private methods and accessors, static blocks, and `super.x = v`        |
+| `MethodDefinition generator`, `MethodDefinition async`, `Property generator`, `Property async`, `Decorator`                                              | #376 — generators, async, and decorators are out of scope                     |
+| `MethodDefinition numeric key`                                                                                                                           | #384 — a numeric _class_ key; a literal's is a computed key in the slice      |
+| `Parameter`                                                                                                                                              | #376 — a TypeScript parameter property, which declares and assigns a field    |
+| `Function constructor`                                                                                                                                   | #376 — the constructor's semantics are `eval` by another spelling             |
+| `AssignmentExpression target`, `LogicalExpression ??`, `BinaryExpression ==`, `BinaryExpression !=`                                                      | #376 — loose equality, nullish coalescing, and targets with no reference form |
+| `MetaProperty`                                                                                                                                           | #486 — `new.target` as syntax                                                 |
+| `WithStatement`                                                                                                                                          | #376 — `with` is not strict-mode syntax and the epic is strict mode only      |
+| `$262.createRealm`, `$262.detachArrayBuffer`                                                                                                             | #376 — the host hooks are refused by name                                     |
 
 The counts, from the same run. They are not tested — only the table above
 is — but they are what names the next slice to land.
 
 ```
   MethodDefinition generator  1436
-  Parameter  813
-  ArrayBindingPattern  508
-  MethodDefinition private  497
-  FunctionExpression generator  417
-  ObjectBindingPattern  378
-  ComputedPropertyName  329
-  FunctionDeclaration generator  239
-  VariableStatement  227
-  VariableDeclarationList  226
+  MethodDefinition private  881
+  FunctionExpression generator  540
+  ComputedPropertyName  331
+  FunctionDeclaration generator  300
+  BinaryExpression ,  266
   MethodDefinition async  217
   Property generator  197
-  BinaryExpression ,  185
-  Function constructor  172
-  BigIntLiteral  88
-  RegularExpressionLiteral  81
-  AssignmentExpression target  64
-  SpreadElement  53
+  Function constructor  192
+  RegularExpressionLiteral  184
+  BigIntLiteral  109
+  $262.createRealm  58
   Property async  50
-  SpreadAssignment  42
+  BinaryExpression ==  34
   ClassStaticBlockDeclaration  34
-  BinaryExpression ==  32
+  BinaryExpression !=  30
   MethodDefinition numeric key  29
-  $262.createRealm  21
-  OmittedExpression  20
   Decorator  12
-  EqualsToken  12
   AssignmentExpression super target  7
-  BinaryExpression !=  7
-  ForOfStatement  6
   FunctionExpression async  6
   MetaProperty  6
   ArrowFunctionExpression async  4
@@ -601,13 +607,14 @@ is — but they are what names the next slice to land.
   FunctionDeclaration async  4
   PropertyDefinition numeric key  4
   AssignmentExpression >>>=  3
+  $262.detachArrayBuffer  2
   AccessorKeyword  2
   LogicalExpression ??  2
-  $262.detachArrayBuffer  1
   AssignmentExpression &&=  1
   AssignmentExpression ??=  1
   AssignmentExpression |=  1
   AssignmentExpression ||=  1
   BinaryExpression >>  1
+  BinaryExpression >>>  1
   WithStatement  1
 ```

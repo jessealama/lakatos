@@ -189,6 +189,13 @@ both, *defined* on the literal. -/
       .exprStmt (.binary .add (.member (.ident "o") "a") (.ident "reads")) ]
   == "2"
 
+-- A string source is its *index* properties, which is what makes
+-- `{ ..."ab" }` two members.
+#guard outcome
+    [ .exprStmt (.call (.member (.call (.member (.ident "Object") "values")
+        [.objectLit [.spread (.strLit "ab")]]) "join") []) ]
+  == "a,b"
+
 -- A nullish source copies nothing at all.
 #guard outcome
     [ .exprStmt (.call (.member (.call (.member (.ident "Object") "keys")

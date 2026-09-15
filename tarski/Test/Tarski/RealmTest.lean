@@ -378,12 +378,14 @@ private def stringMembers : List (StringFn × String × Nat) :=
       && o.getOwn "length" == some (Value.ofNat m.2.2)
   | none => false
 
--- `String.prototype`'s property list is `length`, `constructor`, and
--- then the thirty-one methods in `StringFn.all`'s order.
+-- `String.prototype`'s property list is `length`, `constructor`, the
+-- thirty-one methods in `StringFn.all`'s order, and then `@@iterator`,
+-- which is a symbol key and so last (`Obj.ownKeys`).
 #guard match Heap.initial.readObj stringProtoRef with
   | some o =>
     o.properties.map (·.1)
       == ("length" :: "constructor" :: (stringMembers.drop 3).map (·.2.1)).map Key.str
+        ++ [WellKnownSymbol.iterator.key]
   | none => false
 
 -- The regex-taking members, the iterator, and Annex B are *not* here:
@@ -658,10 +660,11 @@ private def nativeAt (r : Ref) (n : NativeFn) : Bool :=
 
 /-! ## The iterators
 
-The nine objects #394 appended: `%IteratorPrototype%` and its
+The twelve objects #394 appended: `%IteratorPrototype%` and its
 `@@iterator`, `%ArrayIteratorPrototype%` and its `next`, the three
-`Array.prototype` iterator-producing methods, and the two `Object`
-members that consume an iterable. Neither prototype has a global
+`Array.prototype` iterator-producing methods, the two `Object` members
+that consume an iterable, and `%StringIteratorPrototype%` with its `next`
+and `String.prototype[@@iterator]`. Neither prototype has a global
 binding: nothing in source names one.
 
 `Array.prototype[@@iterator]` **is** `Array.prototype.values`
@@ -674,7 +677,9 @@ binding: nothing in source names one.
          (arrayValuesRef, .arrayValues, "values", 0),
          (arrayEntriesRef, .arrayEntries, "entries", 0),
          (objectFromEntriesRef, .objectFromEntries, "fromEntries", 1),
-         (objectGroupByRef, .objectGroupBy, "groupBy", 2) ].all fun p =>
+         (objectGroupByRef, .objectGroupBy, "groupBy", 2),
+         (stringIteratorNextRef, .stringIteratorNext, "next", 0),
+         (stringProtoIteratorRef, .stringProtoIterator, "[Symbol.iterator]", 0) ].all fun p =>
   match Heap.initial.readObj p.1 with
   | some o =>
     (match o.callable with
@@ -697,6 +702,19 @@ binding: nothing in source names one.
       && o.getOwn "next" == some (.obj arrayIteratorNextRef)
       && o.getOwn WellKnownSymbol.toStringTag.key
         == some (.prim (.str "Array Iterator"))
+  | none => false
+
+#guard match Heap.initial.readObj stringIteratorProtoRef with
+  | some o =>
+    o.proto == some iteratorProtoRef
+      && o.getOwn "next" == some (.obj stringIteratorNextRef)
+      && o.getOwn WellKnownSymbol.toStringTag.key
+        == some (.prim (.str "String Iterator"))
+  | none => false
+
+#guard match Heap.initial.readObj stringProtoRef with
+  | some o =>
+    o.getOwn WellKnownSymbol.iterator.key == some (.obj stringProtoIteratorRef)
   | none => false
 
 #guard match Heap.initial.readObj arrayProtoRef with
