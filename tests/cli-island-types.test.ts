@@ -59,35 +59,53 @@ const EXPECTED = {
   },
 } as const;
 
-describe.each(["prove", "refute", "check"] as const)(
-  "%s: a type fault inside an atom is the annotation's InputError",
+async function expectIslandRefusal(
+  command: "prove" | "refute" | "check",
+  file: keyof typeof EXPECTED,
+): Promise<void> {
+  const { code, stdout, stderr } = await runMain([command, file]);
+  expect(code).toBe(2);
+  expect(stdout).toHaveLength(1);
+  const env = JSON.parse(stdout[0]!);
+  expectValidEnvelope(env);
+  expect(env.annotations).toEqual([
+    {
+      file,
+      function: EXPECTED[file].function,
+      property: "p",
+      szs: "InputError",
+      error: EXPECTED[file].error,
+    },
+  ]);
+  expect(stderr).toContain(`error: ${EXPECTED[file].error}`);
+  // No engine saw the annotation: the spine counts nothing to run.
+  expect(stderr.join("\n")).toMatch(
+    /emitted 0 annotations|generated 0 properties|not implemented/,
+  );
+}
+
+describe("prove: a type fault inside an atom is the annotation's InputError", () => {
+  useTempProject("lakatos-island-prove-", REPROS);
+
+  it.each(Object.keys(EXPECTED) as Array<keyof typeof EXPECTED>)(
+    "%s reports InputError naming the atom and exits 2",
+    async (file) => {
+      await expectIslandRefusal("prove", file);
+    },
+  );
+});
+
+// The gate refuses the annotation before any engine sees it, which the
+// assertion on the spine's own count is what establishes, so the other two
+// commands need one witness each rather than the whole sweep.
+describe.each(["refute", "check"] as const)(
+  "%s refuses the same annotation the same way",
   (command) => {
     useTempProject(`lakatos-island-${command}-`, REPROS);
 
-    it.each(Object.keys(EXPECTED) as Array<keyof typeof EXPECTED>)(
-      "%s reports InputError naming the atom and exits 2",
-      async (file) => {
-        const { code, stdout, stderr } = await runMain([command, file]);
-        expect(code).toBe(2);
-        expect(stdout).toHaveLength(1);
-        const env = JSON.parse(stdout[0]!);
-        expectValidEnvelope(env);
-        expect(env.annotations).toEqual([
-          {
-            file,
-            function: EXPECTED[file].function,
-            property: "p",
-            szs: "InputError",
-            error: EXPECTED[file].error,
-          },
-        ]);
-        expect(stderr).toContain(`error: ${EXPECTED[file].error}`);
-        // No engine saw the annotation: the spine counts nothing to run.
-        expect(stderr.join("\n")).toMatch(
-          /emitted 0 annotations|generated 0 properties|not implemented/,
-        );
-      },
-    );
+    it("j.ts reports InputError naming the atom and exits 2", async () => {
+      await expectIslandRefusal(command, "j.ts");
+    });
   },
 );
 

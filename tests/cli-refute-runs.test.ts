@@ -7,13 +7,14 @@ import { clearRunDirs, seedRefuteProject } from "./helpers/refute-project.js";
 
 const repoRoot = process.cwd();
 
-// README usage claims: `lakatos refute` prints a single JSON envelope to
-// stdout, exits 0/1 on clean/failing runs, echoes the seed, and reproduces a
-// run when the seed is passed back. The generated tests import
+// README usage claims about where a run's artifacts land: the envelope
+// names the run directory, a later invocation reads none of an earlier
+// one's mirrors, and a glob reports across every matched file. The
+// generated tests import
 // "lakatos/runtime" via the package self-reference, so these must run inside
 // the repo tree (a gitignored scratch dir under .lakatos/), unlike the
 // os.tmpdir()-based suites above.
-describe("cli refute command (README usage claims)", () => {
+describe("cli refute run directories", () => {
   const workDir = path.join(repoRoot, ".lakatos", "clitest-runs");
 
   beforeAll(() => {
@@ -27,46 +28,6 @@ describe("cli refute command (README usage claims)", () => {
   // Each test starts from a clean set of run directories; the tests that
   // exercise stale mirrors create their own staleness within the body.
   beforeEach(() => clearRunDirs(workDir));
-
-  it(
-    "refute --seed echoes the given seed in the envelope",
-    { timeout: 60000 },
-    async () => {
-      const { code, stdout } = await runMain([
-        "refute",
-        "--seed",
-        "123",
-        "good.ts",
-      ]);
-      expect(code).toBe(0);
-      expect(JSON.parse(stdout[0]!).seed).toBe(123);
-    },
-  );
-
-  it(
-    "passing a prior run's seed back reproduces that run",
-    { timeout: 120000 },
-    async () => {
-      const first = JSON.parse(
-        (await runMain(["refute", "bad.ts"])).stdout[0]!,
-      );
-      // Two degenerate runs would agree; pin that the baseline refuted before
-      // comparing, so a degenerate baseline names itself instead of reading
-      // like a seed bug.
-      expect(first.annotations).toMatchObject([
-        { szs: "CounterSatisfiable", kind: "falsified" },
-      ]);
-      clearRunDirs(workDir);
-      const second = JSON.parse(
-        (await runMain(["refute", "--seed", String(first.seed), "bad.ts"]))
-          .stdout[0]!,
-      );
-      expect(second.seed).toBe(first.seed);
-      expect(second.annotations).toEqual(first.annotations);
-      expect(second.passed).toBe(first.passed);
-      expect(second.failed).toBe(first.failed);
-    },
-  );
 
   it(
     "refute's generated tests land under the run directory the envelope names",

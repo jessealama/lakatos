@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 import { extract } from "../src/extract.js";
 import { parsePrefix } from "../src/prefix-parser.js";
 import { parseBody } from "../src/formula-parser.js";
-import { typecheckProject } from "../src/typecheck.js";
+import { typecheckProject, type TypecheckResult } from "../src/typecheck.js";
 import {
   typeFormulas,
   type IslandTyping,
@@ -47,8 +47,11 @@ describe("spec/fixtures/island conformance corpus", () => {
   const reject = names("reject");
   let dir: string;
   let prevCwd: string;
+  // One program over the whole corpus. typecheckProject reads the scratch
+  // directory, not the fixture, so per fixture it was the same compilation
+  // once for each of them.
+  let check: TypecheckResult;
   const typing = (rel: string): IslandTyping => {
-    const check = typecheckProject(dir);
     if (check.kind !== "clean")
       throw new Error(
         `the corpus must type check on its own: ${JSON.stringify(check)}`,
@@ -74,6 +77,7 @@ describe("spec/fixtures/island conformance corpus", () => {
     writeFileSync(path.join(dir, "tsconfig.json"), TSCONFIG, "utf8");
     prevCwd = process.cwd();
     process.chdir(dir);
+    check = typecheckProject(dir);
   });
   afterAll(() => {
     process.chdir(prevCwd);
