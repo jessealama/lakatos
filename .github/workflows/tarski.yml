@@ -319,6 +319,44 @@ jobs:
             tests/exe-e2e.test.ts \
             tests/exe-fixtures.test.ts
 
+  warm-cache:
+    # A push to main gates nothing: every commit arrives through the merge
+    # queue, which ran these checks on the same tree. But a run restores
+    # caches only from its own ref or the default branch, and queue runs
+    # live on throwaway gh-readonly-queue refs, so this is the only writer
+    # of the refs/heads/main Lake cache that pull-request branches restore
+    # from. It builds and saves; it runs nothing.
+    name: Warm the Lake cache
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - uses: ./.github/actions/tarski-setup
+
+      - name: Build the evaluator's binary
+        run: lake build tarski
+
+      - name: Save Lake build artifacts
+        uses: actions/cache/save@v6
+        with:
+          path: tarski/.lake/build
+          key: tarski-${{ runner.os }}-${{ hashFiles('tarski/lean-toolchain', 'tarski/lakefile.lean') }}
+
+      # The test262 clone is warmed here too, keyed by the pin rather than
+      # by the tree, so a slice job restores it instead of cloning.
+      - name: Cache test262
+        uses: actions/cache@v6
+        with:
+          path: tarski/.test262
+          key: test262-${{ hashFiles('tarski/test262/pin.json') }}
+
+      - name: Set up test262
+        timeout-minutes: 5
+        run: node scripts/setup-test262.js
+
   tarski:
     # The required-check context. Its name must stay exactly
     # "Build + Lean tests": the main ruleset names it, and a required
@@ -382,8 +420,9 @@ jobs:
           lint: false
           use-github-cache: false
 
-      - name: Cache Lake build artifacts
-        uses: actions/cache@v6
+      # Restore only; the push-to-main warmer is the single writer.
+      - name: Restore Lake build artifacts
+        uses: actions/cache/restore@v6
         with:
           path: tarski/.lake/build
           key: tarski-${{ runner.os }}-${{ hashFiles('tarski/lean-toolchain', 'tarski/lakefile.lean') }}
