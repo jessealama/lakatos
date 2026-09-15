@@ -62,15 +62,16 @@ function corpus(): string[] {
  * Measured, not predicted: a row that moves is either a slice that landed
  * or a regression, and either way it belongs in a diff.
  *
- * Seventeen of the corpus's two hundred and seventy-six. The six
+ * Sixteen of the corpus's two hundred and seventy-six. The six
  * `ImportDeclaration` rows are the multi-file fixtures, which `exe`
- * refuses by design — it resolves no module graph; the one `Parameter`
- * row is a rest parameter (#394). The rest is syntax outside the
- * evaluated fragment: BigInt, a regular expression, `&`, `??`, a
- * computed *class* key, a private accessor, an `async` function, and an
- * `export default class` with no name, which is a class declaration
- * with no `id` once the module syntax is off it. The four fixtures
- * refused for a template literal left this map when #395 landed.
+ * refuses by design — it resolves no module graph. The rest is syntax
+ * outside the evaluated fragment: BigInt, a regular expression, `&`,
+ * `??`, a computed *class* key, a private accessor, an `async` function,
+ * and an `export default class` with no name, which is a class
+ * declaration with no `id` once the module syntax is off it. The four
+ * fixtures refused for a template literal left this map when #395
+ * landed, and the one `Parameter` row — a rest constructor parameter —
+ * left it when #394 did.
  */
 const UNSUPPORTED: Record<string, string> = {
   "engines/pabst/tests/fixtures/e2e/bounded.ts": "BigIntLiteral",
@@ -93,7 +94,6 @@ const UNSUPPORTED: Record<string, string> = {
   "spec/fixtures/attach/reject/computed-name.ts": "ComputedPropertyName",
   "spec/fixtures/attach/reject/private-getter.ts": "MethodDefinition private",
   "spec/fixtures/binder/reject/ctor-param-optional.ts": "LogicalExpression ??",
-  "spec/fixtures/binder/reject/ctor-param-rest.ts": "Parameter",
   "spec/fixtures/island/accept/reexported-import.ts": "ImportDeclaration",
   "spec/fixtures/island/reject/imported-not-reexported.ts": "ImportDeclaration",
 };

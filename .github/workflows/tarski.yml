@@ -286,9 +286,10 @@ jobs:
       - name: test262 PR-gated slice
         # The two class directories #384 joined are about five thousand
         # tests on their own, which roughly doubled the step's wall clock,
-        # #393's fifteen add about 2,600 more, and #391's
-        # `test/built-ins/String` adds 1,223. Five and a half minutes
-        # locally.
+        # #393's fifteen add about 2,600 more, #391's
+        # `test/built-ins/String` adds 1,223, and #394's ten add about
+        # 1,500 with every other directory's `dstr` subtree behind them.
+        # The wall clock is measured in the PR that last moved it.
         timeout-minutes: 20
         run: |
           node ../dist/tarski/frontend/src/test262/cli.js \
