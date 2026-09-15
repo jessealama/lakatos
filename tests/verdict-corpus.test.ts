@@ -6,6 +6,7 @@ import {
   runForEnvelope,
   useRepoScratchDir,
 } from "./helpers/cli.js";
+import { shardOf } from "../engines/thales/scripts/shard.js";
 
 // Needs the Lean toolchain and is minutes-slow, so it only runs when asked:
 // thales.yml sets the variable; unit and coverage runs stay identical
@@ -93,6 +94,25 @@ const fixtures = corpusFixtures();
 const timeoutFixtures = fixtures.filter((f) => f.startsWith("timeout/"));
 const mainFixtures = fixtures.filter((f) => !f.startsWith("timeout/"));
 
+// Each shard runs its share in one prove invocation. The fixed cost of an
+// invocation is about a second against a corpus whose marginal cost is two
+// hundred times that, so the split pays for itself. It is round-robin
+// because the fixtures are collected bucket by bucket, and contiguous
+// blocks would put a whole bucket in one shard.
+const corpusShard = process.env.LAKATOS_CORPUS_SHARD;
+const shardedMain = shardOf(mainFixtures, corpusShard);
+// The timeout bucket is one invocation of its own and is not worth
+// dividing; the first shard carries it.
+const runsTimeoutBucket =
+  corpusShard === undefined || corpusShard.startsWith("1/");
+// A refutation is what makes the run exit 1, so the expected code is a
+// property of the shard rather than of the corpus.
+const mainExitCode = shardedMain.some((f) =>
+  f.startsWith("countersatisfiable/"),
+)
+  ? 1
+  : 0;
+
 // The corpus runs in ONE prove invocation: one Lean build for the whole
 // corpus, with per-file containment already localizing artifact failures.
 describe.runIf(enabled)("verdict corpus", () => {
@@ -125,17 +145,16 @@ describe.runIf(enabled)("verdict corpus", () => {
 
   it(
     "every annotation receives its bucket's SZS status",
-    { timeout: proveTimeoutMs(mainFixtures.length) },
+    { timeout: proveTimeoutMs(shardedMain.length) },
     async () => {
       // These fixtures are graded at the default budget; only the timeout
       // bucket reduces it.
       vi.stubEnv("LAKATOS_PROVE_HEARTBEATS", undefined);
-      // The countersatisfiable bucket guarantees refutations: exit 1.
-      const env = await runForEnvelope(["prove", ...mainFixtures], 1);
+      const env = await runForEnvelope(["prove", ...shardedMain], mainExitCode);
 
       // Completeness: every fixture contributes at least one annotation.
       const covered = new Set(env.annotations.map((a) => a.file));
-      expect(mainFixtures.filter((f) => !covered.has(f))).toEqual([]);
+      expect(shardedMain.filter((f) => !covered.has(f))).toEqual([]);
 
       // Completeness, per annotation: a fixture that carries two @ensures
       // contributes two graded entries, however its blocks are divided.
@@ -143,7 +162,7 @@ describe.runIf(enabled)("verdict corpus", () => {
       for (const a of env.annotations) {
         graded.set(a.file, (graded.get(a.file) ?? 0) + 1);
       }
-      const undercounted = mainFixtures.flatMap((f) => {
+      const undercounted = shardedMain.flatMap((f) => {
         const want = ensuresCount(f);
         const got = graded.get(f) ?? 0;
         return got === want
@@ -164,7 +183,7 @@ describe.runIf(enabled)("verdict corpus", () => {
     },
   );
 
-  it(
+  it.runIf(runsTimeoutBucket)(
     "timeout fixtures exceed a reduced heartbeat budget",
     { timeout: proveTimeoutMs(timeoutFixtures.length) },
     async () => {
