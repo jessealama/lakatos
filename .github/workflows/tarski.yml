@@ -29,57 +29,16 @@ defaults:
     working-directory: tarski
 
 jobs:
-  build-and-test:
-    name: Build + Lean tests
-    # The PR job and the whole-suite run share a workflow and never each
-    # other's triggers.
-    if: github.event_name == 'push' || github.event_name == 'pull_request' || github.event_name == 'merge_group'
+  lean-tests:
+    name: Lean tests and fixture scripts
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
     runs-on: ubuntu-latest
-    # The slice is the long pole and it grew with #390; 25 of these are its
-    # step's own budget.
-    timeout-minutes: 45
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      # The runner is TypeScript and the binary is Lean, and the check the
-      # issue asks for on every PR touching `tarski/` needs both in one
-      # job. The bridge's own vitest suites still run in `lakatos.yml`.
-      - name: Install Node
-        uses: actions/setup-node@v7
-        with:
-          node-version: 26
-          cache: npm
-          cache-dependency-path: package-lock.json
-
-      - name: Install Lean toolchain
-        uses: leanprover/lean-action@v1
-        with:
-          lake-package-directory: tarski
-          auto-config: false
-          build: false
-          test: false
-          lint: false
-          use-github-cache: false
-
-      - name: Cache Lake build artifacts
-        uses: actions/cache@v6
-        with:
-          path: tarski/.lake/build
-          key: tarski-${{ runner.os }}-${{ hashFiles('tarski/lean-toolchain', 'tarski/lakefile.lean') }}
-          restore-keys: |
-            tarski-${{ runner.os }}-
-
-      - name: Install npm dependencies
-        working-directory: .
-        run: npm ci
-
-      - name: Build the TypeScript
-        working-directory: .
-        run: npm run build
-
-      - name: Build
-        run: lake build
+      - uses: ./.github/actions/tarski-setup
 
       - name: Build the evaluator's binary
         run: lake build tarski
@@ -276,6 +235,22 @@ jobs:
           out=$(.lake/build/bin/tarski run Test/Tarski/fixtures/array-builtins.json)
           test "$out" = "true" || { echo "expected true, got $out"; exit 1; }
 
+  test262-slice:
+    name: test262 slice
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+    runs-on: ubuntu-latest
+    # The slice is this workflow's long pole and it grew with #390; the 30
+    # minutes its own step takes sit inside this budget alongside the setup.
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - uses: ./.github/actions/tarski-setup
+
+      - name: Build the evaluator's binary
+        run: lake build tarski
+
       # The suite itself, at the commit in tarski/test262/pin.json. The
       # clone is a build artifact: cached by the pin's hash, fetched at
       # depth 1 by SHA, never a submodule.
@@ -306,6 +281,20 @@ jobs:
           node ../dist/tarski/frontend/src/test262/cli.js \
             --slice-file test262/slice.txt --check test262/expected.json
 
+  runner-e2e:
+    name: Runner and exe end to end
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - uses: ./.github/actions/tarski-setup
+
+      - name: Build the evaluator's binary
+        run: lake build tarski
+
       # The suites that need the real binary: what ties the fake binary the
       # unit tests run to the real one, `lakatos exe`'s own transcript, and
       # the comparison of every `@ensures` fixture in the repo against
@@ -320,6 +309,31 @@ jobs:
             tarski/frontend/tests/test262-e2e.test.ts \
             tests/exe-e2e.test.ts \
             tests/exe-fixtures.test.ts
+
+  tarski:
+    # The required-check context. Its name must stay exactly
+    # "Build + Lean tests": the main ruleset names it, and a required
+    # context that never reports blocks every pull request.
+    name: Build + Lean tests
+    if: always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
+    needs: [lean-tests, test262-slice, runner-e2e]
+    runs-on: ubuntu-latest
+    steps:
+      # `needs` alone does not fail a dependent job when a dependency is
+      # cancelled or skipped, so a cancelled job would report this required
+      # check green. Assert each result explicitly.
+      - name: Assert every job succeeded
+        working-directory: .
+        run: |
+          results='${{ join(needs.*.result, ',') }}'
+          echo "job results: $results"
+          case "$results" in
+            *failure* | *cancelled* | *skipped*)
+              echo "at least one tarski job did not succeed"
+              exit 1
+              ;;
+          esac
+          echo "all tarski jobs succeeded"
 
   # The second tier: the whole of `language`, `built-ins`, and `intl402`,
   # weekly and on demand, writing `tarski/test262/results.{md,json}`. A
