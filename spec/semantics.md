@@ -308,7 +308,7 @@ codes.
 
 | Verdict (human) | SZS status | Meaning |
 |---|---|---|
-| PROVED | `Theorem` | Established for all inputs (exhaustive check or proof). A prover lists what it assumed (opaque islands, assumed callee contracts) as `axioms`; a refuter's enumerated Theorem assumes nothing and carries its case count instead (see below). |
+| PROVED | `Theorem` | Established for all inputs (exhaustive check or proof). A prover lists what it assumed (opaque islands, assumed callee contracts) as `axioms`; a refuter's enumerated Theorem assumes nothing and carries its case count instead (see below). A prover's Theorem also carries `model`, whether the model it was proved about was itself proved equal to the evaluator (see below). |
 | REFUTED | `CounterSatisfiable` | A concrete counterexample exists (and is reported). |
 | TESTED, not proved | `Unknown` | No engine established the claim; sub-statuses per engine (e.g. refuter `GaveUp` after its sampling runs with no counterexample, prover `GaveUp`). |
 | UNSUPPORTED | `Inappropriate` | The code the annotation depends on is outside the engine's mappable subset — the claim was never evaluated, which is a statement about the engine, not the property. The verdict carries a reason naming the offending construct. |
@@ -368,17 +368,35 @@ reader who wants to know what the evaluator handles today reads the table,
 including its rows for the tests that are not run — sloppy mode, modules,
 async, and the parse-error tests, which are outside the evaluator's job.
 
-Two limits, until the correspondence between the model and the evaluator
-is itself proved:
+The correspondence between the model and the evaluator is proved one
+declaration at a time. Beside each model the prover's artifact carries the
+declaration's own syntax tree, as the parser bridge produces it, and an
+obligation that running the evaluator on that tree gives what the model
+gives, on every input the declaration's types admit. The verdict's `model`
+field reports the outcome: `validated`, the obligation went through, or
+`unvalidated` with a reason — a construct the model has no run for, a
+proof that did not go through, an exhausted budget, or a declaration for
+which no obligation was stated (class members, today).
 
-- **Only the primitives are shared.** The evaluator runs a program's
-  control flow; the prover's model of the same control flow is produced by
-  a separate translation (the emitter), and nothing yet proves that the
-  two agree on any given declaration. A `Theorem` is a statement about the
-  emitter's model of your function. Translation validation — a
-  per-declaration proof that the model is what the evaluator would run —
-  is the planned closing of this gap, and until it lands this section, not
-  the verdict, is the trust story.
+A `validated` model says that for that declaration the two accounts
+agree, so the `Theorem` is a statement about what the evaluator would run,
+not only about the emitter's reading of your source. It rests on the
+parser bridge that produced the syntax tree, the evaluator itself, and
+Lean's kernel; it says nothing about how faithfully the evaluator matches
+JavaScript, which stays a measured question and not an asserted one, and
+nothing about a caller that reaches your declaration with values its types
+rule out. Where a declaration's binder ranges over a class, the model's
+account of that class still admits more instances than the source can
+build; a `validated` model is a correspondence, not a tightening of the
+claim.
+
+Two limits remain:
+
+- **Where a model is `unvalidated`, only the primitives are shared.** The
+  evaluator runs that declaration's control flow, the prover's model of
+  the same control flow is the emitter's translation, and nothing proves
+  the two agree — a `Theorem` about it is a statement about that model.
+  The field's reason says which of the four cases it is.
 - **`refute` runs on Node.** A counterexample is a value computed by V8,
   not by the model, so a `REFUTED` verdict is a fact about the JavaScript
   engine you ship on; a counterexample the model would not produce (or the
