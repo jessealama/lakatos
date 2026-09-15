@@ -45,7 +45,11 @@ function boundNames(stmt: Statement): string[] {
   if (stmt.type === "FunctionDeclaration" || stmt.type === "ClassDeclaration")
     return [stmt.id.name];
   if (stmt.type === "VariableDeclaration")
-    return stmt.declarations.map((d) => d.id.name);
+    // The corpus's declarations all bind one name, so a declarator whose
+    // `id` is a pattern binds nothing the expectations below name.
+    return stmt.declarations.flatMap((d) =>
+      d.id.type === "Identifier" ? [d.id.name] : [],
+    );
   return [];
 }
 

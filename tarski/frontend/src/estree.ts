@@ -563,9 +563,8 @@ function callArguments(
 function bindingName(name: ts.BindingName, sf: ts.SourceFile): Pattern {
   if (ts.isIdentifier(name)) return { type: "Identifier", name: name.text };
   if (ts.isArrayBindingPattern(name)) {
-    const elements = name.elements.map(
-      (e): Pattern | RestElement | null =>
-        ts.isOmittedExpression(e) ? null : bindingElement(e, sf),
+    const elements = name.elements.map((e): Pattern | RestElement | null =>
+      ts.isOmittedExpression(e) ? null : bindingElement(e, sf),
     );
     return { type: "ArrayPattern", elements };
   }
@@ -606,7 +605,10 @@ function bindingName(name: ts.BindingName, sf: ts.SourceFile): Pattern {
 /** One element of a binding pattern: a rest marker makes a
  * `RestElement`, an initializer an `AssignmentPattern`, and the name
  * itself is a pattern. */
-function bindingElement(e: ts.BindingElement, sf: ts.SourceFile): Pattern | RestElement {
+function bindingElement(
+  e: ts.BindingElement,
+  sf: ts.SourceFile,
+): Pattern | RestElement {
   const inner = bindingName(e.name, sf);
   if (e.dotDotDotToken) return { type: "RestElement", argument: inner };
   if (e.initializer)
@@ -803,7 +805,10 @@ function objectMember(
   sf: ts.SourceFile,
 ): Property | SpreadElement | Unsupported {
   if (ts.isSpreadAssignment(member)) {
-    return { type: "SpreadElement", argument: expression(member.expression, sf) };
+    return {
+      type: "SpreadElement",
+      argument: expression(member.expression, sf),
+    };
   }
   if (ts.isShorthandPropertyAssignment(member)) {
     // `{ a = 1 }` is a CoverInitializedName: the cover grammar for a
