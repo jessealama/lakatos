@@ -67,6 +67,10 @@ describe("the trust section", () => {
     expect(trust).toMatch(/V8/);
   });
 
+  it("names the field a reader checks the first limit against", () => {
+    expect(trust).toMatch(/`model`/);
+  });
+
   it("names no tactic, Lean version, or internal module", () => {
     const forbidden = [
       "native_decide",

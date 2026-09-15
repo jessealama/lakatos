@@ -18,6 +18,11 @@ const { parseVerdicts, runArtifact } = await frontend("run");
 const { qualifiedName } = await import(
   path.join(repoRoot, "dist", "lemma", "src", "index.js")
 );
+// The envelope's own rule for the model field, so the store and the CLI
+// cannot drift: same build-first failure mode as the lemma import above.
+const { modelFor } = await import(
+  path.join(repoRoot, "dist", "src", "envelope.js")
+);
 
 const CONFORMANCE = "engines/thales/tests/conformance";
 
@@ -302,13 +307,6 @@ const EXPECTED_FILE = path.join(
 );
 const updating = process.env.UPDATE_ENVELOPES === "1";
 
-// The store records verdicts, not models, so nothing here reads a
-// correspondence proof — and the manifest's 289 declarations would cost
-// about two hours at the real budget. One heartbeat makes every
-// declaration report the budget reason in milliseconds; the real budget is
-// exercised by check:verdict-channel's validate.lean fixture.
-process.env.LAKATOS_PROVE_VALIDATE_HEARTBEATS ??= "1";
-
 const { check, done } = checker("envelopes");
 check(
   !updating || process.env.LAKATOS_PROVE_E2E === "1",
@@ -341,27 +339,40 @@ const leanPath = spawnSync("lake", ["env", "printenv", "LEAN_PATH"], {
 check(Boolean(leanPath), "lake env yielded no LEAN_PATH");
 
 /** One envelope entry, as the CLI ships it. `kind` rides only on the
- * refusals that carry one into the envelope. */
-function entry(fn, property, szs, reason, axioms, counterexample, kind) {
-  return { function: fn, property, szs, reason, axioms, counterexample, kind };
+ * refusals that carry one into the envelope, and `model` only on the
+ * statuses the envelope's own rule gives it. */
+function entry(fn, property, szs, reason, axioms, counterexample, kind, model) {
+  return {
+    function: fn,
+    property,
+    szs,
+    reason,
+    axioms,
+    counterexample,
+    kind,
+    model,
+  };
 }
 
-function projectVerdict(v) {
+function projectVerdict(v, modelsByFn) {
+  const fn = v.identity[1];
   return entry(
-    v.identity[1],
+    fn,
     v.identity[2],
     v.szs,
     v.reason,
     v.axioms,
     v.counterexample,
+    undefined,
+    modelFor(v.szs, modelsByFn.get(fn), fn),
   );
 }
 
 const identityOf = (a) =>
   `${qualifiedName(a.functionName, a.className, a.isStatic)} ${a.propertyName}`;
 
-/** Run one artifact and return its verdicts, failing the check run on any
- * channel violation. */
+/** Run one artifact and return its verdicts and model lines, failing the
+ * check run on any channel violation. */
 function verdictsOf(leanFile, label) {
   const run = runArtifact(engineRoot, leanFile);
   check(run.error === undefined, `${label}: failed to run lake: ${run.error}`);
@@ -369,9 +380,9 @@ function verdictsOf(leanFile, label) {
     run.status === 0,
     `${label}: expected exit 0, got ${run.status}\nstderr:\n${run.stderr}`,
   );
-  const { verdicts, messages } = parseVerdicts(run.stdout ?? "");
+  const { verdicts, models, messages } = parseVerdicts(run.stdout ?? "");
   for (const m of messages) check(false, `${label}: ${m}`);
-  return verdicts;
+  return { verdicts, models };
 }
 
 for (const [i, fixture] of fixtures.entries()) {
@@ -384,6 +395,19 @@ for (const [i, fixture] of fixtures.entries()) {
     process.env.LAKATOS_PROVE_HEARTBEATS = "1";
   } else {
     delete process.env.LAKATOS_PROVE_HEARTBEATS;
+  }
+
+  // The two quick fixtures run at the real correspondence budget, so the
+  // store carries a validated model (the tracer's add, about half a
+  // minute, deterministic in heartbeats). The corpus slices run at one
+  // heartbeat: every obligation reports the budget reason in
+  // milliseconds, and the manifest's 289 declarations stay minutes rather
+  // than the two hours the real budget would cost. The script owns the
+  // variable in both arms, so an exported value cannot skew the store.
+  if (QUICK_FIXTURES.includes(fixture)) {
+    delete process.env.LAKATOS_PROVE_VALIDATE_HEARTBEATS;
+  } else {
+    process.env.LAKATOS_PROVE_VALIDATE_HEARTBEATS = "1";
   }
 
   // Emit JSON, render with thales-emit, run the artifact, and join the
@@ -404,10 +428,22 @@ for (const [i, fixture] of fixtures.entries()) {
     `${fixture}: thales-emit failed (${emit.status}):\n${emit.stderr}`,
   );
   if (emit.status !== 0) continue;
+  const { verdicts, models } = verdictsOf(leanFile, fixture);
+  // One artifact, one file: the declaration's name is the whole key, and
+  // a second line for one declaration is the channel violation the CLI's
+  // join reports.
+  const modelsByFn = new Map();
+  for (const m of models) {
+    check(
+      !modelsByFn.has(m.function),
+      `${fixture}: duplicate model line for '${m.function}'`,
+    );
+    modelsByFn.set(m.function, m);
+  }
   const byIdentity = new Map(
-    verdictsOf(leanFile, fixture).map((v) => [
+    verdicts.map((v) => [
       `${v.identity[1]} ${v.identity[2]}`,
-      projectVerdict(v),
+      projectVerdict(v, modelsByFn),
     ]),
   );
   for (const c of classified) {

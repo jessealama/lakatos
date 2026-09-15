@@ -2,7 +2,11 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { expectValidEnvelope } from "./helpers/envelope-schema.js";
-import { UNSUPPORTED_RANGE_KIND, type Envelope } from "../src/envelope.js";
+import {
+  MODEL_CARRIERS,
+  UNSUPPORTED_RANGE_KIND,
+  type Envelope,
+} from "../src/envelope.js";
 import { SZS_STATUSES } from "../src/szs.js";
 import { QUALIFIED_NAME_PATTERN } from "../lemma/src/index.js";
 
@@ -145,6 +149,7 @@ describe("envelope schema", () => {
           property: "p",
           szs: "Theorem",
           axioms: [],
+          model: { status: "validated" },
         },
       ],
     };
@@ -161,6 +166,7 @@ describe("envelope schema", () => {
           property: "p",
           szs: "Theorem",
           axioms: ["Lean.ofReduceBool"],
+          model: { status: "validated" },
         },
       ],
     };
@@ -675,6 +681,198 @@ describe("envelope schema", () => {
       ],
     };
     expect(() => expectValidEnvelope(envelope)).not.toThrow();
+  });
+
+  it("accepts a Theorem whose model is unvalidated, with its reason", () => {
+    const envelope: Envelope = {
+      ...META,
+      annotations: [
+        {
+          file: "f.ts",
+          function: "f",
+          property: "p",
+          szs: "Theorem",
+          axioms: [],
+          model: { status: "unvalidated", reason: "'**' is not supported" },
+        },
+      ],
+    };
+    expect(() => expectValidEnvelope(envelope)).not.toThrow();
+  });
+
+  it("rejects a Theorem that does not say what its model rests on", () => {
+    expect(() =>
+      expectValidEnvelope({
+        ...META,
+        annotations: [
+          {
+            file: "f.ts",
+            function: "f",
+            property: "p",
+            szs: "Theorem",
+            axioms: [],
+          },
+        ],
+      } as unknown as Envelope),
+    ).toThrow();
+  });
+
+  it("rejects a validated model that also carries a reason", () => {
+    expect(() =>
+      expectValidEnvelope({
+        ...META,
+        annotations: [
+          {
+            file: "f.ts",
+            function: "f",
+            property: "p",
+            szs: "Theorem",
+            axioms: [],
+            model: { status: "validated", reason: "r" },
+          },
+        ],
+      } as unknown as Envelope),
+    ).toThrow();
+  });
+
+  it("rejects an unvalidated model with no reason, or an empty one", () => {
+    for (const model of [
+      { status: "unvalidated" },
+      { status: "unvalidated", reason: "" },
+      { status: "maybe", reason: "r" },
+    ]) {
+      expect(() =>
+        expectValidEnvelope({
+          ...META,
+          annotations: [
+            {
+              file: "f.ts",
+              function: "f",
+              property: "p",
+              szs: "Theorem",
+              axioms: [],
+              model,
+            },
+          ],
+        } as unknown as Envelope),
+      ).toThrow();
+    }
+  });
+
+  it("accepts a model on every other status the prover carries it on", () => {
+    const envelope: Envelope = {
+      ...META,
+      annotations: [
+        {
+          file: "f.ts",
+          function: "a",
+          property: "p",
+          szs: "GaveUp",
+          reason: "decide failed",
+          model: { status: "validated" },
+        },
+        {
+          file: "f.ts",
+          function: "b",
+          property: "p",
+          szs: "Timeout",
+          reason: "the attempt exceeded thales.heartbeats = 1",
+          model: { status: "unvalidated", reason: "budget" },
+        },
+        {
+          file: "f.ts",
+          function: "c",
+          property: "p",
+          szs: "Inappropriate",
+          reason: "await is unmapped",
+          model: { status: "unvalidated", reason: "'**' is not supported" },
+        },
+        {
+          file: "f.ts",
+          function: "d",
+          property: "p",
+          szs: "CounterSatisfiable",
+          kind: "falsified",
+          counterexample: { x: 0 },
+          model: { status: "validated" },
+        },
+      ],
+    };
+    expect(() => expectValidEnvelope(envelope)).not.toThrow();
+  });
+
+  it("rejects a model on every shape that does not carry one", () => {
+    const entries: Record<string, unknown>[] = [
+      { szs: "Theorem", kind: "enumerated", cases: 3 },
+      { szs: "Timeout", kind: "budget", reason: "r" },
+      { szs: "GaveUp", kind: "exhausted", error: "boom" },
+      { szs: "Error", kind: "threw", counterexample: { x: 0 }, error: "boom" },
+      { szs: "Error", error: "property elaboration failed" },
+      { szs: "User", reason: "the run was interrupted (SIGINT)" },
+      { szs: "InputError", error: "malformed @ensures" },
+      {
+        szs: "NotTried",
+        kind: UNSUPPORTED_RANGE_KIND,
+        reason: "endpoint too large",
+      },
+    ];
+    for (const entry of entries) {
+      expect(() =>
+        expectValidEnvelope({
+          ...META,
+          annotations: [
+            {
+              file: "f.ts",
+              function: "f",
+              property: "p",
+              ...entry,
+              model: { status: "validated" },
+            },
+          ],
+        } as unknown as Envelope),
+      ).toThrow();
+    }
+  });
+
+  it("gives the model field exactly the shapes MODEL_CARRIERS names", () => {
+    // The four titles cover the five carrier statuses: proven is Theorem,
+    // unattempted or unrefuted is GaveUp and Timeout, inappropriate is
+    // Inappropriate, and falsified is CounterSatisfiable.
+    const schema = JSON.parse(
+      readFileSync(
+        fileURLToPath(
+          new URL("../schemas/envelope.schema.json", import.meta.url),
+        ),
+        "utf8",
+      ),
+    );
+    const branches = schema.definitions.annotation.oneOf as {
+      title: string;
+      required: string[];
+      properties: Record<string, unknown>;
+    }[];
+    expect(
+      new Set(branches.filter((b) => b.properties.model).map((b) => b.title)),
+    ).toEqual(
+      new Set([
+        "proven",
+        "unattempted or unrefuted",
+        "inappropriate",
+        "falsified",
+      ]),
+    );
+    expect(
+      branches.filter((b) => b.required.includes("model")).map((b) => b.title),
+    ).toEqual(["proven"]);
+    expect(MODEL_CARRIERS).toEqual(
+      new Set([
+        "Theorem",
+        "GaveUp",
+        "Timeout",
+        "CounterSatisfiable",
+        "Inappropriate",
+      ]),
+    );
   });
 
   it("rejects a budget Timeout without a reason, and the budget kind on a GaveUp", () => {

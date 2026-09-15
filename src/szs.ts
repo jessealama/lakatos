@@ -55,6 +55,16 @@ export const PROVE_STATUSES: ReadonlySet<ProveStatus> = new Set(
   ),
 );
 
+/** The two answers a correspondence proof can give about one
+ * declaration: `validated`, the model was proved equal to the
+ * evaluator's run of the declaration's own syntax tree, or
+ * `unvalidated`, it was not, and the reason says why. ThalesDsl's
+ * `ModelStatus` enumerates exactly these —
+ * tests/verdict-contract.test.ts pins the two. */
+export const MODEL_STATUSES = ["validated", "unvalidated"] as const;
+
+export type ModelStatus = (typeof MODEL_STATUSES)[number];
+
 export function isProveStatus(s: string): s is ProveStatus {
   return (PROVE_STATUSES as ReadonlySet<string>).has(s);
 }

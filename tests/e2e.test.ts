@@ -165,7 +165,18 @@ describe.runIf(enabled)("lakatos prove end-to-end (tracer)", () => {
       const by = new Map(
         env.annotations.map((a) => [`${a.function}/${a.property}`, a]),
       );
-      expect(by.get("add/commutes")).toMatchObject({ szs: "Theorem" });
+      // One heartbeat: the closer's budget reason reaches the envelope
+      // verbatim, so the store and the field pin the engine's wording.
+      expect(by.get("add/commutes")).toMatchObject({
+        szs: "Theorem",
+        model: {
+          status: "unvalidated",
+          reason: "budget: the attempt exceeded thales.validateHeartbeats = 1",
+        },
+      });
+      // A frontend classification never reached Lean, so no obligation was
+      // run for it and the envelope says nothing about its model.
+      expect(by.get("fetchTotal/nonNegative")).not.toHaveProperty("model");
       expect(by.get("fetchTotal/nonNegative")).toMatchObject({
         szs: "Inappropriate",
         reason: expect.stringContaining("AsyncKeyword"),
@@ -177,6 +188,25 @@ describe.runIf(enabled)("lakatos prove end-to-end (tracer)", () => {
         ),
       });
       expect(env.annotations).toHaveLength(3);
+    },
+  );
+
+  it(
+    "the tracer's add validates its model at the real budget",
+    { timeout: proveTimeoutMs(1) },
+    async () => {
+      // 0 is not a budget and is ignored, so this is the default one: the
+      // correspondence proof the issue's example shows, end to end.
+      vi.stubEnv("LAKATOS_PROVE_VALIDATE_HEARTBEATS", "0");
+      const env = await runForEnvelope(["prove", "tracer.ts"]);
+      const add = env.annotations.find(
+        (a) => `${a.function}/${a.property}` === "add/commutes",
+      );
+      expect(add).toMatchObject({
+        szs: "Theorem",
+        axioms: [],
+        model: { status: "validated" },
+      });
     },
   );
 

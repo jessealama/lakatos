@@ -96,6 +96,16 @@ Larger domains are sampled, 1,000 runs per property, and the two sampled
 `GaveUp` cases are distinguished by the `kind` field: present
 (`"exhausted"`) when generation gave up, absent when every run passed.
 
+A prover's `Theorem` also carries `model`, what the prover established
+about the model the property was proved over:
+`{ "status": "validated" }` when the model was proved equal to the
+evaluator's run of the declaration's own syntax tree, and
+`{ "status": "unvalidated", "reason": "…" }` when it was not — a
+construct the model has no run for, a proof that did not go through, an
+exhausted budget, or a declaration no obligation was stated for. The
+prover's `GaveUp`, `Timeout`, `CounterSatisfiable`, and `Inappropriate`
+carry it too where the prover reached them; a refuter entry never does.
+
 `NotTried` also covers unhealthy runs: when the underlying engine run
 fails outright — the test runner dies before reporting, a generated test
 can't even load, the Lean toolchain is missing, the Lean run fails, or
@@ -189,7 +199,9 @@ Properties are written in [Lemma](spec/), a little specification language
 embedded in JSDoc — annotated files remain ordinary TypeScript accepted by
 `tsc --strict`.
 
-What a `PROVED` verdict rests on, and the two limits on it today, are
+What a `PROVED` verdict rests on — per declaration, the envelope's
+`model` field says whether the prover's model was proved equal to the
+evaluator's run of it, and why not — and the limits that remain are
 stated in the spec's
 [What a Theorem rests on](spec/semantics.md#what-a-theorem-rests-on).
 
@@ -207,8 +219,9 @@ stated in the spec's
   about actually run. Two limits are worth stating in place, and both are
   the ones
   [What a Theorem rests on](spec/semantics.md#what-a-theorem-rests-on)
-  spells out: only the _primitives_ are shared between the evaluator and
-  the model a proof is stated over, until translation validation lands;
+  spells out: a proof's model is checked against the evaluator one
+  declaration at a time, and where that check did not go through only the
+  _primitives_ are shared (the envelope's `model` field says which);
   and `refute` runs on Node, not on this evaluator, so `exe` and `refute`
   can disagree exactly where the model and V8 do. The evaluator's own
   output formatting is its own third limit: `console.log` prints ToString
@@ -223,11 +236,11 @@ Human-readable verdicts lead; each carries an
 [SZS ontology](https://tptp.org/UserDocs/SZSOntology/) status as
 metadata, shared with both engines' own output:
 
-| Verdict            | SZS status           | Meaning                                                                                                                                           |
-| ------------------ | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| PROVED             | `Theorem`            | Holds for all inputs. Any assumptions (opaque callees, assumed contracts) are listed with the verdict — the trust boundary is impossible to miss. |
-| REFUTED            | `CounterSatisfiable` | A concrete counterexample was found and is reported.                                                                                              |
-| TESTED, not proved | `Unknown`            | The refuter found nothing in its sampled runs and the prover gave up; per-engine sub-statuses (`GaveUp`, `Timeout`) say why.                      |
+| Verdict            | SZS status           | Meaning                                                                                                                                                                                                                  |
+| ------------------ | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| PROVED             | `Theorem`            | Holds for all inputs. Any assumptions (opaque callees, assumed contracts) are listed with the verdict, and the model's status is appended when it is not validated: `PROVED (model unvalidated: '**' is not supported)`. |
+| REFUTED            | `CounterSatisfiable` | A concrete counterexample was found and is reported.                                                                                                                                                                     |
+| TESTED, not proved | `Unknown`            | The refuter found nothing in its sampled runs and the prover gave up; per-engine sub-statuses (`GaveUp`, `Timeout`) say why.                                                                                             |
 
 Exit codes are deliberately boring: `0` — no property refuted; `1` — at
 least one property refuted (or a counterexample found by the prover);

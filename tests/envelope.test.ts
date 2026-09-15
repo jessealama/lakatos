@@ -12,9 +12,12 @@ import {
   interruptedResults,
   joinProveVerdicts,
   joinRefuteVerdicts,
+  modelFor,
+  unstatedModelReason,
   type AnnotationResult,
   type PlannedProperty,
   type PropertyIdentity,
+  type ProveModelLine,
   type ProveVerdict,
 } from "../src/envelope.js";
 
@@ -273,10 +276,21 @@ describe("identityOf", () => {
           reason: "kernel-checked",
         },
       ],
+      [],
     );
     expect(join).toEqual({
       kind: "joined",
-      annotations: [{ ...IDS[0], szs: "Theorem", axioms: [] }],
+      annotations: [
+        {
+          ...IDS[0],
+          szs: "Theorem",
+          axioms: [],
+          model: {
+            status: "unvalidated",
+            reason: unstatedModelReason(IDS[0]!.function),
+          },
+        },
+      ],
     });
   });
 });
@@ -413,6 +427,28 @@ describe("buildEnvelope", () => {
     });
   });
 
+  it("no refuter entry carries a model, whatever its kind", () => {
+    // The model field is the prover's account of its own model; the
+    // refute spine has none, and the envelope must not invent one.
+    const v = json(
+      [
+        failed(
+          encodeIssue({
+            ...IDS[0]!,
+            kind: "falsified",
+            counterexample: { x: -1 },
+          }),
+        ),
+        failed(encodeIssue({ ...IDS[1]!, kind: "exhausted", error: "boom" })),
+        passed,
+      ],
+      1,
+      2,
+    );
+    const env = buildEnvelope(META, v, [{ ...IDS[2]!, cases: 4 }, ...IDS]);
+    for (const a of env.annotations) expect(a).not.toHaveProperty("model");
+  });
+
   it("throws on an unreadable failure instead of shipping GaveUp", () => {
     const v = json([failed("Error: boom\n  at x")], 0, 1);
     expect(() => buildEnvelope(META, v, IDS)).toThrow(
@@ -436,6 +472,26 @@ describe("joinProveVerdicts", () => {
     szs,
     reason,
   });
+  const validated = (fn: string): ProveModelLine => ({
+    file: "t.ts",
+    function: fn,
+    status: "validated",
+  });
+  const unvalidated = (fn: string, reason: string): ProveModelLine => ({
+    file: "t.ts",
+    function: fn,
+    status: "unvalidated",
+    reason,
+  });
+  /** What a declaration the artifact printed no model line for gets. */
+  const unstated = (fn: string) => ({
+    status: "unvalidated" as const,
+    reason: unstatedModelReason(fn),
+  });
+  const annotationsOf = (join: ReturnType<typeof joinProveVerdicts>) => {
+    expect(join.kind).toBe("joined");
+    return (join as { annotations: AnnotationResult[] }).annotations;
+  };
 
   it("maps each status to its envelope shape", () => {
     const join = joinProveVerdicts(
@@ -451,14 +507,26 @@ describe("joinProveVerdicts", () => {
         verdict("d", "GaveUp", "decide failed"),
         verdict("e", "NotTried", "no structured property"),
       ],
+      [],
     );
     expect(join).toEqual({
       kind: "joined",
       annotations: [
-        { ...id("a"), szs: "Theorem", axioms: [] },
-        { ...id("b"), szs: "Inappropriate", reason: "await is unmapped" },
+        { ...id("a"), szs: "Theorem", axioms: [], model: unstated("a") },
+        {
+          ...id("b"),
+          szs: "Inappropriate",
+          reason: "await is unmapped",
+          model: unstated("b"),
+        },
+        // Error and NotTried stay bare: the schema has no model there.
         { ...id("c"), szs: "Error", error: "elaboration failed" },
-        { ...id("d"), szs: "GaveUp", reason: "decide failed" },
+        {
+          ...id("d"),
+          szs: "GaveUp",
+          reason: "decide failed",
+          model: unstated("d"),
+        },
         { ...id("e"), szs: "NotTried", reason: "no structured property" },
       ],
     });
@@ -468,6 +536,7 @@ describe("joinProveVerdicts", () => {
     const join = joinProveVerdicts(
       [id("a"), id("b")],
       [verdict("b", "Theorem"), verdict("a", "Theorem")],
+      [],
     );
     expect(join.kind).toBe("joined");
     expect(
@@ -481,6 +550,7 @@ describe("joinProveVerdicts", () => {
     const join = joinProveVerdicts(
       [id("a"), id("b")],
       [verdict("a", "Theorem")],
+      [],
     );
     expect(join.kind).toBe("mismatched");
     expect((join as { messages: string[] }).messages.join("\n")).toContain(
@@ -493,6 +563,7 @@ describe("joinProveVerdicts", () => {
       joinProveVerdicts(
         [id("a")],
         [verdict("a", "Theorem"), verdict("ghost", "Theorem")],
+        [],
       ).kind,
     ).toBe("mismatched");
   });
@@ -502,6 +573,7 @@ describe("joinProveVerdicts", () => {
       joinProveVerdicts(
         [id("a")],
         [verdict("a", "Theorem"), verdict("a", "GaveUp")],
+        [],
       ).kind,
     ).toBe("mismatched");
   });
@@ -510,11 +582,17 @@ describe("joinProveVerdicts", () => {
     const join = joinProveVerdicts(
       [id("a")],
       [{ ...verdict("a", "Theorem"), axioms: ["Lean.ofReduceBool"] }],
+      [],
     );
     expect(join).toEqual({
       kind: "joined",
       annotations: [
-        { ...id("a"), szs: "Theorem", axioms: ["Lean.ofReduceBool"] },
+        {
+          ...id("a"),
+          szs: "Theorem",
+          axioms: ["Lean.ofReduceBool"],
+          model: unstated("a"),
+        },
       ],
     });
   });
@@ -528,6 +606,7 @@ describe("joinProveVerdicts", () => {
           counterexample: { x: 0, y: "9007199254740992" },
         },
       ],
+      [],
     );
     expect(join).toEqual({
       kind: "joined",
@@ -537,6 +616,7 @@ describe("joinProveVerdicts", () => {
           szs: "CounterSatisfiable",
           kind: "falsified",
           counterexample: { x: 0, y: "9007199254740992" },
+          model: unstated("a"),
         },
       ],
     });
@@ -551,6 +631,7 @@ describe("joinProveVerdicts", () => {
           counterexample: { n: 1, b: false },
         },
       ],
+      [],
     );
     expect(join).toMatchObject({
       kind: "joined",
@@ -568,6 +649,7 @@ describe("joinProveVerdicts", () => {
     const join = joinProveVerdicts(
       [id("a")],
       [verdict("a", "CounterSatisfiable")],
+      [],
     );
     expect(join.kind).toBe("mismatched");
     expect((join as { messages: string[] }).messages.join("\n")).toContain(
@@ -581,6 +663,7 @@ describe("joinProveVerdicts", () => {
     const join = joinProveVerdicts(
       [id("a")],
       [{ ...verdict("a", "CounterSatisfiable"), counterexample: {} }],
+      [],
     );
     expect(join.kind).toBe("mismatched");
     expect((join as { messages: string[] }).messages.join("\n")).toContain(
@@ -591,11 +674,155 @@ describe("joinProveVerdicts", () => {
   it("a status the envelope cannot represent is a mismatch", () => {
     // Only a broken engine sends this, so the type has to be forced.
     const bogus = verdict("a", "Unknown" as ProveStatus);
-    expect(joinProveVerdicts([id("a")], [bogus]).kind).toBe("mismatched");
+    expect(joinProveVerdicts([id("a")], [bogus], []).kind).toBe("mismatched");
   });
 
   it("a Timeout verdict joins with its reason", () => {
-    const join = joinProveVerdicts([id("a")], [verdict("a", "Timeout")]);
+    const join = joinProveVerdicts([id("a")], [verdict("a", "Timeout")], []);
     expect(join.kind).toBe("joined");
+  });
+
+  it("a validated model line lands on the Theorem it belongs to", () => {
+    const join = joinProveVerdicts(
+      [id("a")],
+      [verdict("a", "Theorem")],
+      [validated("a")],
+    );
+    expect(annotationsOf(join)[0]).toEqual({
+      ...id("a"),
+      szs: "Theorem",
+      axioms: [],
+      model: { status: "validated" },
+    });
+  });
+
+  it("an unvalidated model line lands with its reason verbatim", () => {
+    const join = joinProveVerdicts(
+      [id("a")],
+      [verdict("a", "Theorem")],
+      [unvalidated("a", "'**' is not supported")],
+    );
+    expect(annotationsOf(join)[0]!.model).toEqual({
+      status: "unvalidated",
+      reason: "'**' is not supported",
+    });
+  });
+
+  it("one line serves every status that carries the field", () => {
+    // One declaration, one obligation, several annotations of it.
+    const many: PropertyIdentity[] = [
+      { file: "t.ts", function: "a", property: "p" },
+      { file: "t.ts", function: "a", property: "q" },
+      { file: "t.ts", function: "a", property: "r" },
+      { file: "t.ts", function: "a", property: "s" },
+    ];
+    const join = joinProveVerdicts(
+      many,
+      [
+        { identity: ["t.ts", "a", "p"], szs: "GaveUp", reason: "r" },
+        { identity: ["t.ts", "a", "q"], szs: "Timeout", reason: "r" },
+        { identity: ["t.ts", "a", "r"], szs: "Inappropriate", reason: "r" },
+        {
+          identity: ["t.ts", "a", "s"],
+          szs: "CounterSatisfiable",
+          reason: "r",
+          counterexample: { x: 0 },
+        },
+      ],
+      [unvalidated("a", "the run of 'a' did not reduce to its model")],
+    );
+    for (const a of annotationsOf(join))
+      expect(a.model).toEqual({
+        status: "unvalidated",
+        reason: "the run of 'a' did not reduce to its model",
+      });
+  });
+
+  it("a Theorem with no model line says no obligation was stated", () => {
+    const join = joinProveVerdicts([id("a")], [verdict("a", "Theorem")], []);
+    expect(annotationsOf(join)[0]!.model).toEqual({
+      status: "unvalidated",
+      reason: "no correspondence obligation was stated for 'a'",
+    });
+  });
+
+  it("an Error and a NotTried carry no model even with a line", () => {
+    const join = joinProveVerdicts(
+      [id("a"), id("b")],
+      [verdict("a", "Error"), verdict("b", "NotTried")],
+      [validated("a"), validated("b")],
+    );
+    for (const a of annotationsOf(join)) expect(a).not.toHaveProperty("model");
+  });
+
+  it("a model line for a function no annotation names is ignored", () => {
+    const join = joinProveVerdicts(
+      [id("a")],
+      [verdict("a", "Theorem")],
+      [validated("a"), validated("ghost")],
+    );
+    expect(join.kind).toBe("joined");
+    expect(annotationsOf(join)[0]!.model).toEqual({ status: "validated" });
+  });
+
+  it("two model lines for one declaration are a mismatch naming it", () => {
+    const join = joinProveVerdicts(
+      [id("a")],
+      [verdict("a", "Theorem")],
+      [validated("a"), unvalidated("a", "budget")],
+    );
+    expect(join.kind).toBe("mismatched");
+    expect((join as { messages: string[] }).messages.join("\n")).toContain(
+      'duplicate model line for ["t.ts","a"]',
+    );
+  });
+
+  it("a line for the same name in another file does not travel", () => {
+    const join = joinProveVerdicts(
+      [id("a")],
+      [verdict("a", "Theorem")],
+      [{ file: "other.ts", function: "a", status: "validated" }],
+    );
+    expect(annotationsOf(join)[0]!.model).toEqual(unstated("a"));
+  });
+});
+
+describe("modelFor", () => {
+  const line: ProveModelLine = {
+    file: "t.ts",
+    function: "f",
+    status: "unvalidated",
+    reason: "budget: the attempt exceeded thales.validateHeartbeats = 1",
+  };
+
+  it("every carrier gets the field, with a line and without", () => {
+    for (const szs of [
+      "Theorem",
+      "GaveUp",
+      "Timeout",
+      "CounterSatisfiable",
+      "Inappropriate",
+    ] as const) {
+      expect(modelFor(szs, line, "f")).toEqual({
+        status: "unvalidated",
+        reason: line.status === "unvalidated" ? line.reason : "",
+      });
+      expect(modelFor(szs, undefined, "f")).toEqual({
+        status: "unvalidated",
+        reason: unstatedModelReason("f"),
+      });
+      expect(
+        modelFor(
+          szs,
+          { file: "t.ts", function: "f", status: "validated" },
+          "f",
+        ),
+      ).toEqual({ status: "validated" });
+    }
+  });
+
+  it("no other status carries the field", () => {
+    for (const szs of ["Error", "NotTried", "InputError", "User"] as const)
+      expect(modelFor(szs, line, "f")).toBeUndefined();
   });
 });
