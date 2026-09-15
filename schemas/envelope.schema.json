@@ -30,11 +30,31 @@
       "minProperties": 1,
       "additionalProperties": { "type": ["number", "boolean", "string"] }
     },
+    "model": {
+      "description": "Whether the prover's model of the annotated declaration was proved equal to the evaluator's run of the declaration's own syntax tree on every typed input. unvalidated carries the reason: a construct the model has no run for, a proof that did not reduce, a budget, or a declaration no obligation was stated for.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status"],
+          "properties": { "status": { "const": "validated" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "reason"],
+          "properties": {
+            "status": { "const": "unvalidated" },
+            "reason": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
     "annotation": {
       "oneOf": [
         {
           "title": "unattempted or unrefuted",
-          "description": "reason, when present, is the prover's account of why it stopped (GaveUp), never started (NotTried), or ran out of budget (Timeout).",
+          "description": "reason, when present, is the prover's account of why it stopped (GaveUp), never started (NotTried), or ran out of budget (Timeout). model, when present, is the prover's account of its model of the declaration.",
           "additionalProperties": false,
           "required": ["file", "function", "property", "szs"],
           "properties": {
@@ -42,7 +62,8 @@
             "function": { "$ref": "#/definitions/functionName" },
             "property": { "type": "string", "minLength": 1 },
             "szs": { "enum": ["GaveUp", "NotTried", "Timeout"] },
-            "reason": { "type": "string", "minLength": 1 }
+            "reason": { "type": "string", "minLength": 1 },
+            "model": { "$ref": "#/definitions/model" }
           }
         },
         {
@@ -74,9 +95,16 @@
         },
         {
           "title": "proven",
-          "description": "The prover established the property. axioms lists the non-standard axioms the proof depends on: empty for a kernel-checked proof, and e.g. Lean.ofReduceBool for one admitted from compiled evaluation.",
+          "description": "The prover established the property. axioms lists the non-standard axioms the proof depends on: empty for a kernel-checked proof, and e.g. Lean.ofReduceBool for one admitted from compiled evaluation. model says whether the prover's model of the declaration was itself proved equal to the evaluator's run of the declaration's syntax tree.",
           "additionalProperties": false,
-          "required": ["file", "function", "property", "szs", "axioms"],
+          "required": [
+            "file",
+            "function",
+            "property",
+            "szs",
+            "axioms",
+            "model"
+          ],
           "properties": {
             "file": { "type": "string" },
             "function": { "$ref": "#/definitions/functionName" },
@@ -85,7 +113,8 @@
             "axioms": {
               "type": "array",
               "items": { "type": "string", "minLength": 1 }
-            }
+            },
+            "model": { "$ref": "#/definitions/model" }
           }
         },
         {
@@ -118,7 +147,7 @@
         },
         {
           "title": "inappropriate",
-          "description": "The code the annotation depends on is outside the mappable subset; reason names the offending construct.",
+          "description": "The code the annotation depends on is outside the mappable subset; reason names the offending construct. model, when present, is the prover's account of its model of the declaration.",
           "additionalProperties": false,
           "required": ["file", "function", "property", "szs", "reason"],
           "properties": {
@@ -126,7 +155,8 @@
             "function": { "$ref": "#/definitions/functionName" },
             "property": { "type": "string", "minLength": 1 },
             "szs": { "const": "Inappropriate" },
-            "reason": { "type": "string", "minLength": 1 }
+            "reason": { "type": "string", "minLength": 1 },
+            "model": { "$ref": "#/definitions/model" }
           }
         },
         {
@@ -157,6 +187,7 @@
         },
         {
           "title": "falsified",
+          "description": "The property is false of the annotated declaration and counterexample is the witness. From the prover the entry may carry model, its account of its model of the declaration; the refuter never sets it.",
           "additionalProperties": false,
           "required": [
             "file",
@@ -172,7 +203,8 @@
             "property": { "type": "string", "minLength": 1 },
             "szs": { "const": "CounterSatisfiable" },
             "kind": { "const": "falsified" },
-            "counterexample": { "$ref": "#/definitions/counterexample" }
+            "counterexample": { "$ref": "#/definitions/counterexample" },
+            "model": { "$ref": "#/definitions/model" }
           }
         },
         {

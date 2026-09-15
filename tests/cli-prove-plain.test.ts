@@ -4,7 +4,11 @@ import * as path from "node:path";
 import { announcedRunDir, runMain, useTempProject } from "./helpers/cli.js";
 import { expectValidEnvelope } from "./helpers/envelope-schema.js";
 import { runEmission } from "../engines/thales/frontend/src/run.js";
-import type { ProveVerdict } from "../src/envelope.js";
+import {
+  unstatedModelReason,
+  type ProveModelLine,
+  type ProveVerdict,
+} from "../src/envelope.js";
 import type { ProveStatus } from "../src/szs.js";
 import { RUN_ROOT } from "../src/run-dir.js";
 
@@ -24,6 +28,13 @@ const verdict = (
   property: string,
   szs: ProveStatus,
 ): ProveVerdict => ({ identity: [file, fn, property], szs, reason: "r" });
+
+/** What a declaration the artifact stated no obligation for carries: the
+ * mocks below ship no model lines, so this is every entry's field. */
+const unstated = (fn: string) => ({
+  status: "unvalidated" as const,
+  reason: unstatedModelReason(fn),
+});
 
 describe("cli prove, plain pipeline", () => {
   useTempProject("lakatos-cli-prove-plain-", {
@@ -89,6 +100,7 @@ describe("cli prove, plain pipeline", () => {
           property: "pos",
           szs: "Theorem",
           axioms: [],
+          model: unstated("small"),
         },
       ]),
     );
@@ -146,6 +158,7 @@ describe("cli prove, plain pipeline", () => {
           reason:
             "the property reaches code outside the model: 'double' could not " +
             "be modeled: unmapped TypeScript construct 'VariableStatement' at 1:7",
+          model: unstated("applyDouble"),
         },
         {
           file: "classbinder.ts",
@@ -195,6 +208,7 @@ describe("cli prove, plain pipeline", () => {
           property: "pos",
           szs: "Theorem",
           axioms: [],
+          model: unstated("annotated"),
         },
         {
           file: "other.ts",
@@ -441,6 +455,114 @@ describe("cli prove, plain pipeline", () => {
     const env = JSON.parse(missing.stdout[0]!);
     expectValidEnvelope(env);
     expect(env.annotations[0].szs).toBe("NotTried");
+  });
+
+  it("a validated model lands on the Theorem and prints nothing", async () => {
+    const model: ProveModelLine = {
+      file: "mixed.ts",
+      function: "small",
+      status: "validated",
+    };
+    runEmissionMock.mockReturnValue({
+      kind: "completed",
+      models: [model],
+      verdicts: [verdict("mixed.ts", "small", "pos", "Theorem")],
+      failures: [],
+      diagnostics: [],
+    });
+    const { code, stdout, stderr } = await runMain(["prove", "mixed.ts"]);
+    expect(code).toBe(0);
+    const env = JSON.parse(stdout[0]!);
+    expectValidEnvelope(env);
+    expect(
+      env.annotations.find((a: { function: string }) => a.function === "small"),
+    ).toEqual({
+      file: "mixed.ts",
+      function: "small",
+      property: "pos",
+      szs: "Theorem",
+      axioms: [],
+      model: { status: "validated" },
+    });
+    expect(stderr.join("\n")).not.toContain("model unvalidated");
+  });
+
+  it("an unvalidated model is one stderr note beside the verdict", async () => {
+    runEmissionMock.mockReturnValue({
+      kind: "completed",
+      models: [
+        {
+          file: "mixed.ts",
+          function: "small",
+          status: "unvalidated",
+          reason: "'**' is not supported",
+        },
+      ],
+      verdicts: [verdict("mixed.ts", "small", "pos", "Theorem")],
+      failures: [],
+      diagnostics: [],
+    });
+    const { code, stdout, stderr } = await runMain(["prove", "mixed.ts"]);
+    expect(code).toBe(0);
+    const env = JSON.parse(stdout[0]!);
+    expectValidEnvelope(env);
+    expect(
+      env.annotations.find((a: { function: string }) => a.function === "small")
+        .model,
+    ).toEqual({ status: "unvalidated", reason: "'**' is not supported" });
+    expect(stderr.filter((l) => l.includes("model unvalidated"))).toEqual([
+      "lakatos: mixed.ts small/pos: PROVED (model unvalidated: '**' is not supported)",
+    ]);
+  });
+
+  it("a duplicate model line is unhealthy, exit 2", async () => {
+    runEmissionMock.mockReturnValue({
+      kind: "completed",
+      models: [
+        { file: "mixed.ts", function: "small", status: "validated" },
+        {
+          file: "mixed.ts",
+          function: "small",
+          status: "unvalidated",
+          reason: "budget",
+        },
+      ],
+      verdicts: [verdict("mixed.ts", "small", "pos", "Theorem")],
+      failures: [],
+      diagnostics: [],
+    });
+    const { code, stdout, stderr } = await runMain(["prove", "mixed.ts"]);
+    expect(code).toBe(2);
+    expect(stderr.join("\n")).toContain("duplicate model line for");
+    const env = JSON.parse(stdout[0]!);
+    expectValidEnvelope(env);
+    expect(
+      env.annotations.find((a: { function: string }) => a.function === "small")
+        .szs,
+    ).toBe("NotTried");
+  });
+
+  it("a model line for an unannotated declaration is ignored", async () => {
+    runEmissionMock.mockReturnValue({
+      kind: "completed",
+      models: [
+        { file: "mixed.ts", function: "ghost", status: "validated" },
+        { file: "mixed.ts", function: "small", status: "validated" },
+      ],
+      verdicts: [verdict("mixed.ts", "small", "pos", "Theorem")],
+      failures: [],
+      diagnostics: [],
+    });
+    const { code, stdout } = await runMain(["prove", "mixed.ts"]);
+    expect(code).toBe(0);
+    const env = JSON.parse(stdout[0]!);
+    expectValidEnvelope(env);
+    const withModel = env.annotations.filter(
+      (a: { model?: unknown }) => a.model !== undefined,
+    );
+    expect(withModel.map((a: { function: string }) => a.function)).toEqual([
+      "small",
+    ]);
   });
 
   it("Lean diagnostics pass through to stderr on a healthy run", async () => {

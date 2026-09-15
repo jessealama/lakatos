@@ -164,6 +164,22 @@ function noteUnsupportedRanges(untried: AnnotationResult[]): void {
     );
 }
 
+/** The prover's model of a declaration is not always proved equal to the
+ * evaluator's run of it, and a PROVED verdict that rests on an
+ * unvalidated model says so where a person can see it: one line per
+ * proven annotation whose model did not validate, in the rendering
+ * `check` will print beside the verdict. A validated model prints
+ * nothing, and stdout stays the one parseable envelope. */
+function noteUnvalidatedModels(annotations: AnnotationResult[]): void {
+  for (const a of annotations) {
+    if (a.szs !== "Theorem") continue;
+    if (a.model === undefined || a.model.status !== "unvalidated") continue;
+    console.error(
+      `lakatos: ${a.file} ${a.function}/${a.property}: PROVED (model unvalidated: ${a.model.reason})`,
+    );
+  }
+}
+
 /** What one command's codegen produced, normalized across engines. */
 interface Plan {
   /** Annotations the engine will attempt; the verdict join accounts for each. */
@@ -323,6 +339,7 @@ async function runCommand(spine: Spine, patterns: string[]): Promise<number> {
       );
     }
 
+    noteUnvalidatedModels(outcome.annotations);
     emitEnvelope({
       ...meta,
       ...outcome.meta,
@@ -433,9 +450,9 @@ commands:
           and message to stderr with exit 1
 
 exe accepts exactly the programs prove accepts (the same typecheck gate) and
-is honest to the same limits: only the primitives are shared between the
-evaluator and the prover's model until translation validation lands, and
-refute runs on Node, not on this evaluator.
+is honest to the same limits: a proof's model is checked against the
+evaluator per declaration (the envelope's model field says whether, and why
+not), and refute runs on Node, not on this evaluator.
 
 when no files are given, lakatos discovers your sources: the files that
 tsconfig.json would compile. declaration files (.d.ts) are skipped unless a
@@ -738,6 +755,7 @@ function leanRunOutcome(
   const join = joinProveVerdicts(
     plan.identities.filter((i) => !failedSources.has(i.file)),
     result.verdicts,
+    result.models,
   );
   if (join.kind === "mismatched")
     return { kind: "unhealthy", messages: join.messages };

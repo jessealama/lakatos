@@ -3,7 +3,10 @@ import {
   type Issue,
   type IssueKind,
 } from "../engines/pabst/src/contract.js";
-import type { LeanVerdict } from "../engines/thales/frontend/src/run.js";
+import type {
+  LeanVerdict,
+  ModelLine,
+} from "../engines/thales/frontend/src/run.js";
 import type { VitestJson } from "../engines/pabst/src/vitest-json.js";
 import { isProveStatus, szsForIssue, type SzsStatus } from "./szs.js";
 
@@ -19,6 +22,50 @@ export interface PropertyIdentity {
  * branch is pinned to this spelling by test; thales's own literal is
  * pinned by the type union. */
 export const UNSUPPORTED_RANGE_KIND = "unsupported-range" as const;
+
+/** D8's field: what the prover established about its model of the
+ * annotated declaration. Nested under its own key so `reason` never
+ * collides with the verdict's own, and `reason` is present exactly when
+ * the model is unvalidated. */
+export type ModelField =
+  { status: "validated" } | { status: "unvalidated"; reason: string };
+
+/** The statuses that carry the model field. A prover's Theorem must have
+ * one; the other four carry it when the prover reached them. Every other
+ * status — the prover's Error and NotTried, and every refuter result —
+ * leaves it off, and the envelope schema makes it a violation there. */
+export const MODEL_CARRIERS: ReadonlySet<SzsStatus> = new Set<SzsStatus>([
+  "Theorem",
+  "GaveUp",
+  "Timeout",
+  "CounterSatisfiable",
+  "Inappropriate",
+]);
+
+/** The reason a declaration the artifact printed no model line for
+ * carries: a class member (until the emitter states their obligations),
+ * or an emitter that forgot one. Nothing was proved either way, so the
+ * model is unvalidated and says so. */
+export function unstatedModelReason(fn: string): string {
+  return `no correspondence obligation was stated for '${fn}'`;
+}
+
+/** The model field one annotation gets: undefined for a status that does
+ * not carry it, the line's own account where there is a line, and the
+ * unstated reason where there is none. One function, so the CLI join and
+ * the envelope store read the field off the same rule. */
+export function modelFor(
+  szs: SzsStatus,
+  line: ModelLine | undefined,
+  fn: string,
+): ModelField | undefined {
+  if (!MODEL_CARRIERS.has(szs)) return undefined;
+  if (line === undefined)
+    return { status: "unvalidated", reason: unstatedModelReason(fn) };
+  return line.status === "validated"
+    ? { status: "validated" }
+    : { status: "unvalidated", reason: line.reason };
+}
 
 /** One annotation's outcome in a lakatos run. Beyond the refutation
  * kinds, `unsupported-range` marks a NotTried whose range only fits the
@@ -38,6 +85,12 @@ export interface AnnotationResult extends PropertyIdentity {
   axioms?: string[];
   /** Theorem from the refuter only: how many tuples it evaluated. */
   cases?: number;
+  /** Prover annotations only (D8): whether the declaration's model was
+   * proved equal to the evaluator's run of its own syntax tree, and why
+   * not. Required on a proven Theorem; carried on GaveUp, Timeout,
+   * CounterSatisfiable, and Inappropriate from the prover; never on a
+   * refuter result, an Error, or a NotTried. */
+  model?: ModelField;
 }
 
 /** What codegen planned for one annotation: its identity, plus, when the
@@ -210,6 +263,9 @@ export function buildEnvelope(
  * format, owns the shape. */
 export type ProveVerdict = LeanVerdict;
 
+/** One #thales_validate model line, the same way. */
+export type ProveModelLine = ModelLine;
+
 export type ProveJoin =
   | { kind: "joined"; annotations: AnnotationResult[] }
   | { kind: "mismatched"; messages: string[] };
@@ -219,14 +275,28 @@ export type ProveJoin =
  * one: its substance is the counterexample, which ships in the same
  * falsified shape the refutation engine uses. Error diagnostics travel in
  * `error` like every other engine failure. */
-function verdictResult(p: PropertyIdentity, v: ProveVerdict): AnnotationResult {
+function verdictResult(
+  p: PropertyIdentity,
+  v: ProveVerdict,
+  line: ModelLine | undefined,
+): AnnotationResult {
   const id = identityOf(p);
   const szs = v.szs;
-  if (szs === "Theorem") return { ...id, szs, axioms: v.axioms ?? [] };
+  const model = modelFor(szs, line, p.function);
+  // Spread only where the status carries it, so the Error and NotTried
+  // shapes stay exactly as bare as the schema says they are.
+  const m = model === undefined ? {} : { model };
+  if (szs === "Theorem") return { ...id, szs, axioms: v.axioms ?? [], ...m };
   if (szs === "CounterSatisfiable")
-    return { ...id, szs, kind: "falsified", counterexample: v.counterexample };
+    return {
+      ...id,
+      szs,
+      kind: "falsified",
+      counterexample: v.counterexample,
+      ...m,
+    };
   if (szs === "Error") return { ...id, szs, error: v.reason };
-  return { ...id, szs, reason: v.reason };
+  return { ...id, szs, reason: v.reason, ...m };
 }
 
 /**
@@ -238,8 +308,20 @@ function verdictResult(p: PropertyIdentity, v: ProveVerdict): AnnotationResult {
 export function joinProveVerdicts(
   identities: PropertyIdentity[],
   verdicts: ProveVerdict[],
+  models: ProveModelLine[],
 ): ProveJoin {
   const messages: string[] = [];
+  // A model line is per declaration, so one line serves every annotation
+  // of its function. A second line for the same declaration is a channel
+  // violation, as unhealthy as a duplicate verdict; a line for a function
+  // no annotation names is not — the emitter states an obligation for
+  // every entry-module declaration, annotated or not.
+  const modelByKey = new Map<string, ProveModelLine>();
+  for (const m of models) {
+    const key = JSON.stringify([m.file, m.function]);
+    if (modelByKey.has(key)) messages.push(`duplicate model line for ${key}`);
+    modelByKey.set(key, m);
+  }
   const byKey = new Map<string, ProveVerdict>();
   for (const v of verdicts) {
     const key = identityKey({
@@ -275,7 +357,13 @@ export function joinProveVerdicts(
       continue;
     }
     byKey.delete(key);
-    annotations.push(verdictResult(id, v));
+    annotations.push(
+      verdictResult(
+        id,
+        v,
+        modelByKey.get(JSON.stringify([id.file, id.function])),
+      ),
+    );
   }
   for (const key of byKey.keys()) {
     messages.push(`verdict for unknown annotation ${key}`);
