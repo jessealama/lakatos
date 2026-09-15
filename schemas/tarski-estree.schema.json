@@ -31,6 +31,7 @@
         { "$ref": "#/definitions/DoWhileStatement" },
         { "$ref": "#/definitions/ForStatement" },
         { "$ref": "#/definitions/ForInStatement" },
+        { "$ref": "#/definitions/ForOfStatement" },
         { "$ref": "#/definitions/SwitchStatement" },
         { "$ref": "#/definitions/EmptyStatement" },
         { "$ref": "#/definitions/BlockStatement" },
@@ -83,10 +84,11 @@
     },
 
     "VariableDeclarator": {
+      "description": "`id` is a binding name: an Identifier or a binding pattern. A pattern with `init` `null` does not parse, and the Lean decoder refuses one as malformed.",
       "type": "object",
       "properties": {
         "type": { "const": "VariableDeclarator" },
-        "id": { "$ref": "#/definitions/Identifier" },
+        "id": { "$ref": "#/definitions/Pattern" },
         "init": {
           "oneOf": [{ "$ref": "#/definitions/Expression" }, { "type": "null" }]
         }
@@ -157,21 +159,40 @@
     },
 
     "ForInStatement": {
-      "description": "`left` is a VariableDeclaration for a declaration head and an Expression for an assignment-target one. The Lean decoder requires a declaration head to have exactly one declarator with no initializer: `for (var x = 1 in o)` is the sloppy-only form B.3.5 keeps alive, and it is refused by name. `for`-`of` is not this node and arrives as `Unsupported`.",
+      "description": "`left` is a VariableDeclaration for a declaration head, an Expression for an assignment-target one, and an ArrayPattern or ObjectPattern for a destructuring one. The Lean decoder requires a declaration head to have exactly one declarator with no initializer: `for (var x = 1 in o)` is the sloppy-only form B.3.5 keeps alive, and it is refused by name.",
       "type": "object",
       "properties": {
         "type": { "const": "ForInStatement" },
-        "left": {
-          "oneOf": [
-            { "$ref": "#/definitions/VariableDeclaration" },
-            { "$ref": "#/definitions/Expression" }
-          ]
-        },
+        "left": { "$ref": "#/definitions/LoopHead" },
         "right": { "$ref": "#/definitions/Expression" },
         "body": { "$ref": "#/definitions/Statement" }
       },
       "required": ["type", "left", "right", "body"],
       "additionalProperties": false
+    },
+
+    "ForOfStatement": {
+      "description": "`left` takes the same three shapes a ForInStatement's does. `await` is always false: `for await` is async iteration, which is outside the epic, and the bridge refuses the modifier in place.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "ForOfStatement" },
+        "left": { "$ref": "#/definitions/LoopHead" },
+        "right": { "$ref": "#/definitions/Expression" },
+        "body": { "$ref": "#/definitions/Statement" },
+        "await": { "const": false }
+      },
+      "required": ["type", "left", "right", "body", "await"],
+      "additionalProperties": false
+    },
+
+    "LoopHead": {
+      "description": "The head of a `for`-`in` or a `for`-`of`: a declaration, an assignment target, or an assignment pattern.",
+      "anyOf": [
+        { "$ref": "#/definitions/VariableDeclaration" },
+        { "$ref": "#/definitions/Expression" },
+        { "$ref": "#/definitions/ArrayPattern" },
+        { "$ref": "#/definitions/ObjectPattern" }
+      ]
     },
 
     "SwitchStatement": {
@@ -259,16 +280,12 @@
     },
 
     "CatchClause": {
-      "description": "The optional-binding form, `catch { }`, has `param: null`. A destructuring binding is outside the slice and arrives as `Unsupported` with the pattern's kind, so the clause — and the `try` around it — survives and only the binding is refused.",
+      "description": "The optional-binding form, `catch { }`, has `param: null`. Every binding form, patterns included, is a Pattern; an out-of-slice one arrives as `Unsupported` in place, so the clause — and the `try` around it — survives.",
       "type": "object",
       "properties": {
         "type": { "const": "CatchClause" },
         "param": {
-          "oneOf": [
-            { "$ref": "#/definitions/Identifier" },
-            { "$ref": "#/definitions/Unsupported" },
-            { "type": "null" }
-          ]
+          "oneOf": [{ "$ref": "#/definitions/Pattern" }, { "type": "null" }]
         },
         "body": { "$ref": "#/definitions/BlockStatement" }
       },
@@ -475,7 +492,7 @@
     },
 
     "AssignmentExpression": {
-      "description": "The evaluator takes `=` and the five arithmetic compound operators — `+=`, `-=`, `*=`, `/=`, `%=` — to an identifier or a member. The schema admits every assignment operator and every target expression so that `**=`, the shifts, the bitwise and logical forms, and an out-of-slice target reach the Lean decoder and are refused there by name.",
+      "description": "The evaluator takes `=` and the five arithmetic compound operators — `+=`, `-=`, `*=`, `/=`, `%=` — to an identifier or a member. The schema admits every assignment operator and every target expression so that `**=`, the shifts, the bitwise and logical forms, and an out-of-slice target reach the Lean decoder and are refused there by name. A destructuring target — an ArrayPattern or an ObjectPattern — is admitted with every operator too, so that a compound one is refused there rather than here.",
       "type": "object",
       "properties": {
         "type": { "const": "AssignmentExpression" },
@@ -499,7 +516,13 @@
             "??="
           ]
         },
-        "left": { "$ref": "#/definitions/Expression" },
+        "left": {
+          "anyOf": [
+            { "$ref": "#/definitions/Expression" },
+            { "$ref": "#/definitions/ArrayPattern" },
+            { "$ref": "#/definitions/ObjectPattern" }
+          ]
+        },
         "right": { "$ref": "#/definitions/Expression" }
       },
       "required": ["type", "operator", "left", "right"],
@@ -552,7 +575,7 @@
     },
 
     "CallExpression": {
-      "description": "A spread argument is outside the slice and arrives as an `Unsupported` element in `arguments`; an optional call (`f?.()`) makes the whole call `Unsupported`. A `Super` callee is `super(...)`, which runs the parent constructor rather than calling a value.",
+      "description": "A spread argument is a SpreadElement among the `arguments`; an optional call (`f?.()`) makes the whole call `Unsupported`. A `Super` callee is `super(...)`, which runs the parent constructor rather than calling a value.",
       "type": "object",
       "properties": {
         "type": { "const": "CallExpression" },
@@ -562,13 +585,21 @@
             { "$ref": "#/definitions/Super" }
           ]
         },
-        "arguments": {
-          "type": "array",
-          "items": { "$ref": "#/definitions/Expression" }
-        }
+        "arguments": { "$ref": "#/definitions/Arguments" }
       },
       "required": ["type", "callee", "arguments"],
       "additionalProperties": false
+    },
+
+    "Arguments": {
+      "description": "An argument list, a spread in place.",
+      "type": "array",
+      "items": {
+        "anyOf": [
+          { "$ref": "#/definitions/Expression" },
+          { "$ref": "#/definitions/SpreadElement" }
+        ]
+      }
     },
 
     "NewExpression": {
@@ -577,23 +608,26 @@
       "properties": {
         "type": { "const": "NewExpression" },
         "callee": { "$ref": "#/definitions/Expression" },
-        "arguments": {
-          "type": "array",
-          "items": { "$ref": "#/definitions/Expression" }
-        }
+        "arguments": { "$ref": "#/definitions/Arguments" }
       },
       "required": ["type", "callee", "arguments"],
       "additionalProperties": false
     },
 
     "ArrayExpression": {
-      "description": "A hole is outside the slice and arrives as an `Unsupported` element with kind `OmittedExpression`, a spread as one with kind `SpreadElement`; each stands in place, so the literal survives and only the element is refused.",
+      "description": "A `null` element is an elision — the source's `[1, , 2]` — and a SpreadElement is `...xs`.",
       "type": "object",
       "properties": {
         "type": { "const": "ArrayExpression" },
         "elements": {
           "type": "array",
-          "items": { "$ref": "#/definitions/Expression" }
+          "items": {
+            "oneOf": [
+              { "$ref": "#/definitions/Expression" },
+              { "$ref": "#/definitions/SpreadElement" },
+              { "type": "null" }
+            ]
+          }
         }
       },
       "required": ["type", "elements"],
@@ -609,6 +643,7 @@
           "items": {
             "anyOf": [
               { "$ref": "#/definitions/Property" },
+              { "$ref": "#/definitions/SpreadElement" },
               { "$ref": "#/definitions/Unsupported" }
             ]
           }
@@ -619,7 +654,7 @@
     },
 
     "Property": {
-      "description": "One member of an object literal. `key` is an `Identifier` or a string or numeric `Literal` unless `computed`, in which case it is any expression; `value` is a `FunctionExpression` when `kind` is `\"get\"` or `\"set\"` or when `method` is true, which the Lean decoder checks. A shorthand's `value` is its own `Identifier`. Spread is the one member form still outside the slice, and arrives as an `Unsupported` member instead.",
+      "description": "One member of an object literal. `key` is an `Identifier` or a string or numeric `Literal` unless `computed`, in which case it is any expression; `value` is a `FunctionExpression` when `kind` is `\"get\"` or `\"set\"` or when `method` is true, which the Lean decoder checks. A shorthand's `value` is its own `Identifier`. Spread is a SpreadElement among the members.",
       "type": "object",
       "properties": {
         "type": { "const": "Property" },
@@ -690,25 +725,121 @@
     },
 
     "AssignmentPattern": {
-      "description": "A parameter with a default: `left` is the parameter's name and `right` the initializer, which runs only when the argument is `undefined`. A binding pattern on the left is outside the slice, so the whole parameter arrives as `Unsupported` instead; an assignment pattern as a destructuring *target* is a later slice's, so this node appears only in a Params list.",
+      "description": "A target with a default: `left` is the target and `right` the initializer, which runs only when the value is `undefined`. It is a parameter's default, an ArrayPattern element's, and an ObjectPattern property's alike.",
       "type": "object",
       "properties": {
         "type": { "const": "AssignmentPattern" },
-        "left": { "$ref": "#/definitions/Identifier" },
+        "left": { "$ref": "#/definitions/Pattern" },
         "right": { "$ref": "#/definitions/Expression" }
       },
       "required": ["type", "left", "right"],
       "additionalProperties": false
     },
 
+    "SpreadElement": {
+      "description": "`...x` in an array literal, an argument list, or an object literal. In a *pattern* the same source is a RestElement instead.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "SpreadElement" },
+        "argument": { "$ref": "#/definitions/Expression" }
+      },
+      "required": ["type", "argument"],
+      "additionalProperties": false
+    },
+
+    "RestElement": {
+      "description": "`...x` in a pattern: a parameter list's last parameter, an array pattern's last element, or an object pattern's last property. The Lean decoder requires it to be last and undefaulted, and refuses an object rest whose argument is itself a pattern.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "RestElement" },
+        "argument": { "$ref": "#/definitions/Pattern" }
+      },
+      "required": ["type", "argument"],
+      "additionalProperties": false
+    },
+
+    "ArrayPattern": {
+      "description": "`[a, , ...rest]` as a binding or an assignment target. A `null` element is an elision.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "ArrayPattern" },
+        "elements": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              { "$ref": "#/definitions/Pattern" },
+              { "$ref": "#/definitions/RestElement" },
+              { "type": "null" }
+            ]
+          }
+        }
+      },
+      "required": ["type", "elements"],
+      "additionalProperties": false
+    },
+
+    "PatternProperty": {
+      "description": "One property of an ObjectPattern: a Property whose `value` is a pattern. `shorthand` is true for `{ a }` and for `{ a = 1 }`, whose `value` is then an AssignmentPattern over the same name.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "Property" },
+        "key": { "$ref": "#/definitions/Expression" },
+        "value": { "$ref": "#/definitions/Pattern" },
+        "kind": { "const": "init" },
+        "computed": { "type": "boolean" },
+        "shorthand": { "type": "boolean" },
+        "method": { "const": false }
+      },
+      "required": [
+        "type",
+        "key",
+        "value",
+        "kind",
+        "computed",
+        "shorthand",
+        "method"
+      ],
+      "additionalProperties": false
+    },
+
+    "ObjectPattern": {
+      "description": "`{ a, b: c = 1, ...rest }` as a binding or an assignment target.",
+      "type": "object",
+      "properties": {
+        "type": { "const": "ObjectPattern" },
+        "properties": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              { "$ref": "#/definitions/PatternProperty" },
+              { "$ref": "#/definitions/RestElement" }
+            ]
+          }
+        }
+      },
+      "required": ["type", "properties"],
+      "additionalProperties": false
+    },
+
+    "Pattern": {
+      "description": "What a binding or an assignment pattern may be written with. A MemberExpression leaf is legal only in an *assignment* pattern; the Lean decoder is what refuses one in a binding position.",
+      "anyOf": [
+        { "$ref": "#/definitions/Identifier" },
+        { "$ref": "#/definitions/MemberExpression" },
+        { "$ref": "#/definitions/ArrayPattern" },
+        { "$ref": "#/definitions/ObjectPattern" },
+        { "$ref": "#/definitions/AssignmentPattern" },
+        { "$ref": "#/definitions/Unsupported" }
+      ]
+    },
+
     "Params": {
-      "description": "A parameter list. A plain identifier and an AssignmentPattern over one are in the slice: a rest parameter arrives as `Unsupported` with kind `Parameter`, and a binding pattern — with or without a default — with the pattern's own kind, so the function node itself survives and only the parameter is refused.",
+      "description": "A parameter list. Every binding form is in the slice: an Identifier, an AssignmentPattern over any pattern, an ArrayPattern or ObjectPattern, and a RestElement. A parameter property is TypeScript syntax and arrives as `Unsupported` with the modifier's kind, so the function node itself survives and only the parameter is refused.",
       "type": "array",
       "items": {
         "anyOf": [
-          { "$ref": "#/definitions/Identifier" },
-          { "$ref": "#/definitions/AssignmentPattern" },
-          { "$ref": "#/definitions/Unsupported" }
+          { "$ref": "#/definitions/Pattern" },
+          { "$ref": "#/definitions/RestElement" }
         ]
       }
     },

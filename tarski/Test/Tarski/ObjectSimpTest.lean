@@ -26,9 +26,12 @@ open Tarski
 
 /-- `const o = { a: 1 }; o.a;` -/
 private def program : Program :=
-  [ .varDecl .«const» [{ name := "o", init := some (.objectLit [.init "a" (.numLit 1.0)]) }],
+  [ .varDecl .«const» [{ target := "o", init := some (.objectLit [.init "a" (.numLit 1.0)]) }],
     .exprStmt (.member (.ident "o") "a") ]
 
+-- The realm is a hundred and fifty-six objects now, so `simp` walks a
+-- deeper literal than the default recursion limit allows.
+set_option maxRecDepth 4000 in
 example : runProgram program = some (.ok (some (.prim (.num 1.0)))) := by
   simp [tarski_eval, program]
 

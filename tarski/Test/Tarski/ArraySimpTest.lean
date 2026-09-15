@@ -31,7 +31,7 @@ open Tarski
 
 /-- `const xs = [1]; xs.push(2); xs.length;` -/
 private def program : Program :=
-  [ .varDecl .«const» [{ name := "xs", init := some (.arrayLit [.numLit 1.0]) }],
+  [ .varDecl .«const» [{ target := "xs", init := some (.arrayLit [.numLit 1.0]) }],
     .exprStmt (.call (.member (.ident "xs") "push") [.numLit 2.0]),
     .exprStmt (.member (.ident "xs") "length") ]
 
@@ -44,6 +44,9 @@ private def program : Program :=
 -- index the program actually parses is one literal, so it is one lemma.
 @[local simp] private theorem arrayIndex_one : arrayIndex? "1" = some 1 := by decide
 
+-- The realm is a hundred and fifty-six objects now, so `simp` walks a
+-- deeper literal than the default recursion limit allows.
+set_option maxRecDepth 4000 in
 example : runProgram program = some (.ok (some (.prim (.num 2.0)))) := by
   simp [tarski_eval, program]
 

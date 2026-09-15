@@ -28,7 +28,7 @@ private def num (x : Float) : Expr := .numLit x
 
 /-- `let x = <value>;` -/
 private def letX (value : Expr) : Stmt :=
-  .varDecl .«let» [{ name := "x", init := some value }]
+  .varDecl .«let» [{ target := "x", init := some value }]
 
 private def x : Expr := .ident "x"
 
@@ -51,7 +51,7 @@ private def x : Expr := .ident "x"
 -- `let b = true; b++; b;` — ToNumeric first, so a boolean becomes a
 -- number and then steps.
 #guard outcome
-    [ .varDecl .«let» [{ name := "b", init := some (.boolLit true) }],
+    [ .varDecl .«let» [{ target := "b", init := some (.boolLit true) }],
       .exprStmt (.update .inc false (.ident "b")),
       .exprStmt (.ident "b") ]
   == "2"
@@ -71,7 +71,7 @@ private def x : Expr := .ident "x"
 
 -- `const c = 1; c++;`
 #guard outcome
-    [ .varDecl .«const» [{ name := "c", init := some (num 1.0) }],
+    [ .varDecl .«const» [{ target := "c", init := some (num 1.0) }],
       .exprStmt (.update .inc false (.ident "c")) ]
   == "uncaught: TypeError: Assignment to constant variable."
 
@@ -93,7 +93,7 @@ private def x : Expr := .ident "x"
 
 -- `const o = { n: 1 }; o.n++; o["n"];`
 #guard outcome
-    [ .varDecl .«const» [{ name := "o", init := some (.objectLit [.init "n" (num 1.0)]) }],
+    [ .varDecl .«const» [{ target := "o", init := some (.objectLit [.init "n" (num 1.0)]) }],
       .exprStmt (.update .inc false (.member (.ident "o") "n")),
       .exprStmt (.index (.ident "o") (.strLit "n")) ]
   == "2"
@@ -101,15 +101,15 @@ private def x : Expr := .ident "x"
 -- `const o = {}; o.p++;` — a missing property reads `undefined`, which
 -- ToNumeric makes NaN.
 #guard outcome
-    [ .varDecl .«const» [{ name := "o", init := some (.objectLit []) }],
+    [ .varDecl .«const» [{ target := "o", init := some (.objectLit []) }],
       .exprStmt (.update .inc true (.member (.ident "o") "p")) ]
   == "NaN"
 
 -- `const xs = [0, 0]; let i = 0; xs[i++] = 5; i + ":" + xs[0];` — the
 -- index expression runs once, so the write lands at 0 and `i` ends at 1.
 #guard outcome
-    [ .varDecl .«const» [{ name := "xs", init := some (.arrayLit [num 0.0, num 0.0]) }],
-      .varDecl .«let» [{ name := "i", init := some (num 0.0) }],
+    [ .varDecl .«const» [{ target := "xs", init := some (.arrayLit [num 0.0, num 0.0]) }],
+      .varDecl .«let» [{ target := "i", init := some (num 0.0) }],
       .exprStmt (.assign (.index (.ident "xs") (.update .inc false (.ident "i"))) (num 5.0)),
       .exprStmt
         (.binary .add
@@ -120,8 +120,8 @@ private def x : Expr := .ident "x"
 -- `const xs = [1, 1]; let i = 0; xs[i++]++; i + ":" + xs[0] + ":" + xs[1];`
 -- — and an update through a computed key evaluates that key once too.
 #guard outcome
-    [ .varDecl .«const» [{ name := "xs", init := some (.arrayLit [num 1.0, num 1.0]) }],
-      .varDecl .«let» [{ name := "i", init := some (num 0.0) }],
+    [ .varDecl .«const» [{ target := "xs", init := some (.arrayLit [num 1.0, num 1.0]) }],
+      .varDecl .«let» [{ target := "i", init := some (num 0.0) }],
       .exprStmt (.update .inc false (.index (.ident "xs") (.update .inc false (.ident "i")))),
       .exprStmt
         (.binary .add
@@ -147,7 +147,7 @@ private def compound (op : BinaryOp) (start amount : Float) : String :=
 -- `let s = "a"; s += 1; s;` — `+=` is `+`, so a string operand
 -- concatenates rather than coercing to a number.
 #guard outcome
-    [ .varDecl .«let» [{ name := "s", init := some (.strLit "a") }],
+    [ .varDecl .«let» [{ target := "s", init := some (.strLit "a") }],
       .exprStmt (.compoundAssign .add (.ident "s") (num 1.0)),
       .exprStmt (.ident "s") ]
   == "a1"
@@ -162,20 +162,20 @@ private def compound (op : BinaryOp) (start amount : Float) : String :=
 
 -- `const o = {}; o.p += 1;` — `undefined + 1` is NaN.
 #guard outcome
-    [ .varDecl .«const» [{ name := "o", init := some (.objectLit []) }],
+    [ .varDecl .«const» [{ target := "o", init := some (.objectLit []) }],
       .exprStmt (.compoundAssign .add (.member (.ident "o") "p") (num 1.0)) ]
   == "NaN"
 
 -- `const o = { n: 1 }; o.n += 2; o.n;`
 #guard outcome
-    [ .varDecl .«const» [{ name := "o", init := some (.objectLit [.init "n" (num 1.0)]) }],
+    [ .varDecl .«const» [{ target := "o", init := some (.objectLit [.init "n" (num 1.0)]) }],
       .exprStmt (.compoundAssign .add (.member (.ident "o") "n") (num 2.0)),
       .exprStmt (.member (.ident "o") "n") ]
   == "3"
 
 -- `const c = 1; c += 1;` — the same `const` refusal.
 #guard outcome
-    [ .varDecl .«const» [{ name := "c", init := some (num 1.0) }],
+    [ .varDecl .«const» [{ target := "c", init := some (num 1.0) }],
       .exprStmt (.compoundAssign .add (.ident "c") (num 1.0)) ]
   == "uncaught: TypeError: Assignment to constant variable."
 
@@ -188,7 +188,7 @@ private def compound (op : BinaryOp) (start amount : Float) : String :=
 -- `let n = 0; void n++; n;` — the operand is evaluated, and its value
 -- dropped.
 #guard outcome
-    [ .varDecl .«let» [{ name := "n", init := some (num 0.0) }],
+    [ .varDecl .«let» [{ target := "n", init := some (num 0.0) }],
       .exprStmt (.unary .void (.update .inc false (.ident "n"))),
       .exprStmt (.ident "n") ]
   == "1"

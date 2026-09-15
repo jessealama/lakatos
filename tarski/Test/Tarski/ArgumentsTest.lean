@@ -9,7 +9,8 @@ below are about — writing `arguments[0]` does not move the parameter and
 writing the parameter does not move `arguments[0]` — together with the
 three things around it: `length` is the *argument* count rather than the
 parameter count, `callee` is an accessor whose getter and setter are both
-`%ThrowTypeError%`, and an arrow has no `arguments` of its own, so one
+`%ThrowTypeError%`, `@@iterator` is `%Array.prototype.values%` itself
+(10.4.4.6 step 8), and an arrow has no `arguments` of its own, so one
 inside an arrow is the enclosing function's and one at top level resolves
 nowhere.
 
@@ -65,11 +66,11 @@ f() && tdz;
 ``` -/
 private def issueExample : Program :=
   [ .funcDecl "f" []
-      [ .varDecl .«const» [{ name := "before", init := some (.unary .typeof (.ident "g")) }],
+      [ .varDecl .«const» [{ target := "before", init := some (.unary .typeof (.ident "g")) }],
         .funcDecl "g" [] [.returnStmt (some (.member args "length"))],
-        .varDecl .«let» [{ name := "r", init := some (.strLit "") }],
+        .varDecl .«let» [{ target := "r", init := some (.strLit "") }],
         .labeled "outer"
-          (.forStmt (some (.decl .«let» [{ name := "i", init := some (num 0.0) }]))
+          (.forStmt (some (.decl .«let» [{ target := "i", init := some (num 0.0) }]))
             (some (.binary .lt (.ident "i") (num 3.0)))
             (some (.update .inc false (.ident "i")))
             (.block
@@ -86,14 +87,14 @@ private def issueExample : Program :=
               (.binary .strictEq
                 (.call (.ident "g") [num 1.0, num 2.0, num 3.0]) (num 3.0)))
             (.binary .strictEq (.ident "r") (.strLit "02")))) ],
-    .varDecl .«let» [{ name := "tdz", init := some (.boolLit false) }],
+    .varDecl .«let» [{ target := "tdz", init := some (.boolLit false) }],
     .tryStmt [.exprStmt (.ident "x")]
       (some { param := some "e",
               body :=
                 [ .exprStmt (.assign (.ident "tdz")
                     (.binary .instanceof (.ident "e") (.ident "ReferenceError"))) ] })
       none,
-    .varDecl .«let» [{ name := "x", init := some (num 1.0) }],
+    .varDecl .«let» [{ target := "x", init := some (num 1.0) }],
     .exprStmt (.logical .and (.call (.ident "f") []) (.ident "tdz")) ]
 
 #guard outcome issueExample == "true"
@@ -205,3 +206,19 @@ private def calleeMessage : String :=
           (.member (.call (.member (.ident "Object") "keys") [args]) "join") [])) ]
       [num 1.0, num 2.0])
   == "0,1"
+
+-- Its own *symbol* key is `@@iterator` and nothing else, and it is
+-- `%Array.prototype.values%` itself rather than a second function.
+#guard outcome
+    (callF []
+      [ .returnStmt (some (.member (.call
+          (.member (.ident "Object") "getOwnPropertySymbols") [args]) "length")) ]
+      [num 1.0])
+  == "1"
+#guard outcome
+    (callF []
+      [ .returnStmt (some (.binary .strictEq
+          (.index (.call (.member (.ident "Object") "getOwnPropertySymbols") [args]) (num 0.0))
+          (.member (.ident "Symbol") "iterator"))) ]
+      [])
+  == "true"

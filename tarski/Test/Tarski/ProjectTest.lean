@@ -26,7 +26,7 @@ private def five : Program := [.exprStmt (.numLit 5.0)]
 
 /-- `let x = 1;` — a declaration has no completion value. -/
 private def declOnly : Program :=
-  [.varDecl .«let» [{ name := "x", init := some (.numLit 1.0) }]]
+  [.varDecl .«let» [{ target := "x", init := some (.numLit 1.0) }]]
 
 /-- info: some (Tarski.Outcome.other) -/
 #guard_msgs in

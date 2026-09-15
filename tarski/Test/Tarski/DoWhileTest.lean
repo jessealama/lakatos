@@ -25,7 +25,7 @@ private def num (x : Float) : Expr := .numLit x
 
 /-- `let <n> = <x>;` -/
 private def declare (n : String) (x : Float) : Stmt :=
-  .varDecl .«let» [{ name := n, init := some (num x) }]
+  .varDecl .«let» [{ target := n, init := some (num x) }]
 
 /-- `<n>++;` -/
 private def bump (n : String) : Stmt := .exprStmt (.update .inc false (.ident n))
@@ -87,9 +87,9 @@ private def bump (n : String) : Stmt := .exprStmt (.update .inc false (.ident n)
 -- — the labelled `continue` is the *outer* loop's, so it leaves the
 -- `do`/`while` entirely and the `i === 1` pass contributes nothing.
 #guard outcome
-    [ .varDecl .«let» [{ name := "r", init := some (.strLit "") }],
+    [ .varDecl .«let» [{ target := "r", init := some (.strLit "") }],
       .labeled "outer"
-        (.forStmt (some (.decl .«let» [{ name := "i", init := some (num 0.0) }]))
+        (.forStmt (some (.decl .«let» [{ target := "i", init := some (num 0.0) }]))
           (some (.binary .lt (.ident "i") (num 3.0)))
           (some (.update .inc false (.ident "i")))
           (.block
@@ -132,7 +132,7 @@ private def bump (n : String) : Stmt := .exprStmt (.update .inc false (.ident n)
 -- the script's, so `varNames` must walk through this statement too.
 #guard outcome
     [ .doWhileStmt
-        (.block [.varDecl .«var» [{ name := "v", init := some (num 1.0) }]])
+        (.block [.varDecl .«var» [{ target := "v", init := some (num 1.0) }]])
         (.boolLit false),
       .exprStmt (.ident "v") ]
   == "1"

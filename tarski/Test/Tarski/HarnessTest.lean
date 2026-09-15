@@ -155,7 +155,7 @@ private def compareArray : List Stmt :=
       [ .ifStmt (.binary .strictNe (.member (.ident "b") "length")
           (.member (.ident "a") "length"))
           (.block [.returnStmt (some (.boolLit false))]) none,
-        .varDecl .«let» [{ name := "i", init := some (.numLit 0.0) }],
+        .varDecl .«let» [{ target := "i", init := some (.numLit 0.0) }],
         .whileStmt (.binary .lt (.ident "i") (.member (.ident "a") "length"))
           (.block
             [ .ifStmt (.unary .not (.call (.ident "isSameValue")

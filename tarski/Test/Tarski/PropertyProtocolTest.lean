@@ -29,7 +29,7 @@ private def expr (e : Expr) : Program := [.exprStmt e]
 
 /-- `const <n> = <e>;` -/
 private def «let» (n : String) (e : Expr) : Stmt :=
-  .varDecl .«const» [{ name := n, init := some e }]
+  .varDecl .«const» [{ target := n, init := some e }]
 
 /-- `<l> in <r>`. -/
 private def inOp (l r : Expr) : Expr := .binary .«in» l r
@@ -95,7 +95,7 @@ a non-configurable one refuses. -/
   == "uncaught: TypeError: Cannot read properties of null (reading 'x')"
 #guard outcome (expr (.delete (.numLit 1.0))) == "true"
 #guard outcome
-    [ .varDecl .«let» [{ name := "n", init := some (.numLit 0.0) }],
+    [ .varDecl .«let» [{ target := "n", init := some (.numLit 0.0) }],
       .exprStmt (.delete (.update .inc true (.ident "n"))),
       .exprStmt (.ident "n") ]
   == "1"

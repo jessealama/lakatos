@@ -39,7 +39,7 @@ private def bump (name : String) (k : Float) : Stmt :=
 
 /-- `let name = x;` -/
 private def letNum (name : String) (x : Float) : Stmt :=
-  .varDecl .«let» [{ name, init := some (num x) }]
+  .varDecl .«let» [{ target := name, init := some (num x) }]
 
 /-! ## Where a jump goes -/
 

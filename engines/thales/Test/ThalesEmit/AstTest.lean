@@ -173,12 +173,12 @@ literal already share. -/
 A plain parameter is its name, through `Coe String Param`; a defaulted one
 is the structure it is, so the two spellings sit side by side in one list. -/
 
-#guard rendersSyntax (paramsTerm ["a", { name := "b", default := some (.numLit 1e21) }])
-  `(["a", { name := "b", default := some (.numLit 1e+21) }])
-#guard rendersSyntax (declaratorTerm { name := "x", init := none })
-  `({ name := "x", init := none })
-#guard rendersSyntax (declaratorTerm { name := "x", init := some (.numLit 1) })
-  `({ name := "x", init := some (.numLit 1) })
+#guard rendersSyntax (paramsTerm ["a", { target := "b", default := some (.numLit 1e21) }])
+  `(["a", { target := "b", default := some (.numLit 1e+21) }])
+#guard rendersSyntax (declaratorTerm { target := "x", init := none })
+  `({ target := "x", init := none })
+#guard rendersSyntax (declaratorTerm { target := "x", init := some (.numLit 1) })
+  `({ target := "x", init := some (.numLit 1) })
 
 /-! ## Statements -/
 
@@ -265,14 +265,14 @@ component, and that is pinned as text. -/
   printsAs (pure (binaryOpTerm .«in»)) ".«in»"
   printsAs (classKeyTerm (.«public» "n")) ".«public» \"n\""
   printsAs (classKeyTerm (.«private» "v")) ".«private» \"v\""
-  printsAs (stmtTerm (.varDecl .«let» [{ name := "x", init := none }]))
-    ".varDecl .«let» [{ name := \"x\", init := none }]"
-  printsAs (stmtTerm (.varDecl .«const» [{ name := "x", init := some (.numLit 1) }]))
-    ".varDecl .«const» [{ name := \"x\", init := some (.numLit 1) }]"
-  printsAs (stmtTerm (.varDecl .«var» [{ name := "x", init := none }]))
-    ".varDecl .«var» [{ name := \"x\", init := none }]"
-  printsAs (forInitTerm (.decl .«let» [{ name := "i", init := some (.numLit 0) }]))
-    ".decl .«let» [{ name := \"i\", init := some (.numLit 0) }]"
+  printsAs (stmtTerm (.varDecl .«let» [{ target := "x", init := none }]))
+    ".varDecl .«let» [{ target := \"x\", init := none }]"
+  printsAs (stmtTerm (.varDecl .«const» [{ target := "x", init := some (.numLit 1) }]))
+    ".varDecl .«const» [{ target := \"x\", init := some (.numLit 1) }]"
+  printsAs (stmtTerm (.varDecl .«var» [{ target := "x", init := none }]))
+    ".varDecl .«var» [{ target := \"x\", init := none }]"
+  printsAs (forInitTerm (.decl .«let» [{ target := "i", init := some (.numLit 0) }]))
+    ".decl .«let» [{ target := \"i\", init := some (.numLit 0) }]"
   printsAs (forInLeftTerm (.decl .«const» "k")) ".decl .«const» \"k\""
   printsAs (exprTerm (.binary .«in» (.strLit "p") (.ident "o")))
     ".binary .«in» (.strLit \"p\") (.ident \"o\")"

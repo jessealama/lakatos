@@ -541,6 +541,26 @@ inductive NativeFn where
   | objectGetOwnPropertySymbols
   /-- `Error.isError`. -/
   | errorIsError
+  /-- `%IteratorPrototype%[@@iterator]` (27.1.2.1), which answers its own
+  receiver — what makes every iterator that inherits from it iterable. -/
+  | iteratorProtoIterator
+  /-- `%ArrayIteratorPrototype%.next` (23.1.5.2.1). -/
+  | arrayIteratorNext
+  /-- `Array.prototype.keys` (23.1.3.19). -/
+  | arrayKeys
+  /-- `Array.prototype.values` (23.1.3.38). `Array.prototype[@@iterator]`
+  is this same function object (23.1.3.40). -/
+  | arrayValues
+  /-- `Array.prototype.entries` (23.1.3.5). -/
+  | arrayEntries
+  /-- `Object.fromEntries` (20.1.2.7). -/
+  | objectFromEntries
+  /-- `Object.groupBy` (20.1.2.9). -/
+  | objectGroupBy
+  /-- `String.prototype[@@iterator]` (22.1.3.36). -/
+  | stringProtoIterator
+  /-- `%StringIteratorPrototype%.next` (22.1.5.1.1). -/
+  | stringIteratorNext
 deriving Repr, DecidableEq, Inhabited
 
 /-- A bound function exotic object's three internal slots plus the one
@@ -567,6 +587,18 @@ inductive Callable where
   target with the bound `this` and the bound arguments in front. -/
   | bound (b : BoundFunction)
 deriving Repr, Inhabited
+
+/-- `[[ArrayLikeIterationKind]]` (23.1.5.1): which of the three things an
+Array Iterator answers per step. -/
+inductive IterKind where
+  /-- `Array.prototype.keys`: the index. -/
+  | keys
+  /-- `Array.prototype.values`, which `Array.prototype[@@iterator]` *is*
+  (23.1.3.40): the element. -/
+  | values
+  /-- `Array.prototype.entries`: a fresh two-element array. -/
+  | entries
+deriving Repr, DecidableEq, Inhabited
 
 /-- How exotic an object is. `ordinary` is every object with no
 internal behaviour of its own; `array` is the Array exotic object, and
@@ -595,7 +627,13 @@ a String exotic object's index properties are synthesized from the slot,
 because they are unbounded data an object should not copy, while its
 `length` is a real own `constant` property, because StringCreate
 (10.4.3.4) defines it once with DefinePropertyOrThrow and it can never
-change — which is also what puts it first among the non-index keys. -/
+change — which is also what puts it first among the non-index keys.
+`arrayIterator` is the Array Iterator's three slots (23.1.5.1) —
+`[[IteratedArrayLike]]`, `[[ArrayLikeNextIndex]]`, and
+`[[ArrayLikeIterationKind]]` — and `stringIterator` the String
+Iterator's two (22.1.5.1), each with a `none` for the `undefined` the
+specification writes into the first when the walk runs out; they are
+fields for the same reason a `length` is. -/
 inductive ObjKind where
   | ordinary
   | array (length : Nat) (lengthWritable : Bool)
@@ -605,6 +643,8 @@ inductive ObjKind where
   | arguments
   | error
   | symbol (value : Symbol)
+  | arrayIterator (iterated : Option Value) (kind : IterKind) (index : Nat)
+  | stringIterator (iterated : Option Js.JsString) (index : Nat)
 deriving Repr, DecidableEq, Inhabited
 
 /-- An accessor property's two functions. Named `getter` and `setter`

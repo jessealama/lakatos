@@ -146,16 +146,16 @@ Math.max(a, b); log;` — every argument is coerced, in order, *before* any
 is compared, so `b`'s `valueOf` runs even though `a`'s already answered
 NaN. A fold that coerced lazily would print `a`. -/
 #guard outcome
-    [ .varDecl .«let» [{ name := "log", init := some (.strLit "") }],
+    [ .varDecl .«let» [{ target := "log", init := some (.strLit "") }],
       .varDecl .«const»
-        [ { name := "a",
+        [ { target := "a",
             init := some (.objectLit
               [ .init "valueOf"
                  (.funcExpr none []
                    [ .exprStmt (.assign (.ident "log")
                        (.binary .add (.ident "log") (.strLit "a"))),
                      .returnStmt (some (.ident "NaN")) ])]) },
-          { name := "b",
+          { target := "b",
             init := some (.objectLit
               [ .init "valueOf"
                  (.funcExpr none []

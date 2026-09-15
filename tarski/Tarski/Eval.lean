@@ -19,12 +19,14 @@ than syntax" — `evalExpr` and its neighbours recurse on a concrete AST,
 which runs out, while a loop recurses until a heap value says stop, a
 prototype walk until a heap link does, and a join until an array's length
 does, and `simp` unfolds all three under a binder it has not resolved,
-forever. So the loop arms — `evalWhile`, `evalDoWhile`, `evalFor` — and
-the list walks — `joinElements`, `listFromArrayLike`, and `forInNext`,
-the step from one object of a `for`-`in` to its prototype — never join a
-simp set at all and are unfolded one step at a time with `rw`, as are
-the three steps a bound function's target is reached by — `callBound`,
-`constructBound`, and `instanceOfBound`. `getFromUp`, `findPropertyUp`,
+forever. So the loop arms — `evalWhile`, `evalDoWhile`, `evalFor`, and
+`evalForOf` — and the list walks — `joinElements`, `listFromArrayLike`,
+`forInNext`, the step from one object of a `for`-`in` to its prototype,
+and the four walks that run until an iterator says stop (`iteratorToList`,
+`fromEntriesInto`, `groupByInto`) — never join a simp set at all and are
+unfolded one step at a time with `rw`, as are the three steps a bound
+function's target is reached by — `callBound`, `constructBound`, and
+`instanceOfBound`. `getFromUp`, `findPropertyUp`,
 `protoChainHas`, and `construct` join `tarski_eval` only as *guarded
 simprocs* (`Tarski/Simp.lean`), which fire when the reference they are
 handed is a literal — which is what a concrete heap has already
@@ -60,12 +62,44 @@ declarator, an assignment to an identifier, an object literal's member,
 and a class field. An anonymous function that reaches `evalExpr` any
 other way is named `""`, which is what the specification gives it too.
 
+## The iteration protocol
+
+GetIterator, IteratorStepValue, and IteratorClose (7.4.3, 7.4.8, 7.4.11)
+are `getIterator`, `iteratorStep`, and `iteratorClose`, three ordinary
+members of the block. An Iterator Record here is a `{ iterator, next }`
+pair with `next` read **once**, as the specification reads it, and no
+`[[Done]]` field at all: *done* is which code path a throw took. A throw
+from `next`, from the result's `done`, or from its `value` escapes an
+`attempt`-free call and no `return` is called; a throw from anything
+between two steps is caught with `attempt` and closes the iterator. That
+is 7.4.8–7.4.11 read as control flow, and it is what keeps `iteratorStep`
+a plain member and each walk one `attempt`.
+
+Destructuring is one walk, `bindPattern`, for both pattern families:
+ESTree gives them one node family and 14.3.3 and 13.15.5 are the same
+order. `BindMode` says how a leaf is *written* — `.init` is
+InitializeReferencedBinding on a cell instantiation allocated, `.var` and
+`.assign` are PutValue — and `LeafRef` is a leaf's reference evaluated
+**before** the value is stepped or read, which 13.15.5.4 and 13.15.5.5
+require of an assignment pattern and a binding pattern never needs.
+
+`evalForOf` is ForIn/OfBodyEvaluation for `iterate`: the per-iteration
+binding is *inside* the `attempt`, because step 6.h closes the iterator
+when the binding itself fails, and every exit but exhaustion and a throw
+from the iterator closes — a `break`, a `continue` this loop does not
+answer for, a `return`, a body throw. Spread and an array literal's
+holes are `evalArgs` and `evalArrayElements`: ArgumentListEvaluation and
+ArrayAccumulation, each iterating a `.spread` and counting a `.hole`
+without defining anything.
+
 `for`-`in` is EnumerateObjectProperties' informative algorithm, 14.7.5.9:
 each object's own string keys are snapshotted when that object is
 reached, a key is visited only if it is *still* own and enumerable when
 its turn comes, and every key already seen shadows the prototypes'. The
 keys of one level are data, so only the step to the next object
-(`forInNext`) is `rw`'s: a proof unfolds object levels, not keys.
+(`forInNext`) is `rw`'s: a proof unfolds object levels, not keys. The
+head is a `ForInLeft` and `bindForIn` the per-iteration binder for a
+`for`-`of` too: the two heads are the same production.
 
 A block's declarations are instantiated before its first statement runs.
 That is one mechanism answering three needs: the temporal dead zone (a
@@ -93,9 +127,11 @@ their own, initialized left to right, so a default may read a parameter
 to its left and not one to its right. With an initializer present the
 `var`s get a scope of their own whose cells start from the parameters'
 values (step 28); without one they share the parameters' cells (step
-27). `arguments` is a source name bound to an immutable cell when — and
-only when — the function's own code spells it, which `mentionsArguments`
-decides once per function object; without `eval` and the `Function`
+27). A pattern parameter's names are cells exactly as a plain
+parameter's are, and a rest parameter takes every argument left over as a
+fresh array. `arguments` is a source name bound to an immutable cell
+when — and only when — the function's own code spells it, which
+`mentionsArguments` decides once per function object; without `eval` and the `Function`
 constructor, both outside this epic, an unspelled `arguments` cannot be
 observed. A function's `length` is ExpectedArgumentCount, an own data
 property `makeFunction` and `evalClass` define.
@@ -178,8 +214,19 @@ new refusal is written against a list rather than invented.
 | `Function.prototype.apply` off a function          | `TypeError`      | `Function.prototype.apply was called on {v}, which is not a function` |
 | `apply`'s second argument a non-object             | `TypeError`      | `CreateListFromArrayLike called on non-object`                |
 | `Function(...)` reached through an alias           | `TypeError`      | `Function constructor is out of scope`                        |
+| GetIterator with no callable `@@iterator`          | `TypeError`      | `{v} is not iterable`                                         |
+| an `@@iterator` that answers a primitive           | `TypeError`      | `Result of the Symbol.iterator method is not an object`       |
+| a `next` or `return` that answers a primitive      | `TypeError`      | `Iterator result {v} is not an object`                        |
+| an iterator's `next` off an iterator of its kind    | `TypeError`      | `next method called on incompatible receiver {v}`             |
+| an object pattern destructuring `undefined` or `null` | `TypeError`   | `Cannot destructure '{v}' as it is {undefined\|null}.`        |
+| `Object.fromEntries` over a non-object entry       | `TypeError`      | `Iterator value {v} is not an entry object`                   |
+| a `.spread` reached outside a list                 | `SyntaxError`    | `Unexpected token '...'`                                      |
+| a `.hole` reached outside an array literal         | `SyntaxError`    | `Unexpected token ','`                                        |
 
-The three `SyntaxError`s stand in for early errors the epic does not
+The last two `SyntaxError`s are unreachable through the decoder, which
+never places a spread or a hole outside the lists that iterate them;
+they are stated as the placeholder rows they are. The other three stand
+in for early errors the epic does not
 check: they are raised where the construct is *used* rather than where
 the script is parsed. `Object.prototype.toString`'s tags are not
 messages and are not here.
@@ -649,6 +696,10 @@ def mentionsArgumentsExpr : Expr → Bool
   | .new callee args => mentionsArgumentsExpr callee || mentionsArgumentsExprs args
   | .arrayLit elements => mentionsArgumentsExprs elements
   | .objectLit props => mentionsArgumentsPropDefs props
+  | .assignPattern p value =>
+    mentionsArgumentsPattern p || mentionsArgumentsExpr value
+  | .spread argument => mentionsArgumentsExpr argument
+  | .hole => false
   | .template _ exprs => mentionsArgumentsExprs exprs
   | .taggedTemplate tag _ _ exprs =>
     mentionsArgumentsExpr tag || mentionsArgumentsExprs exprs
@@ -680,6 +731,8 @@ def mentionsArgumentsPropDefs : List PropDef → Bool
     mentionsArgumentsPropKey key || mentionsArgumentsPropDefs rest
   | .proto value :: rest =>
     mentionsArgumentsExpr value || mentionsArgumentsPropDefs rest
+  | .spread value :: rest =>
+    mentionsArgumentsExpr value || mentionsArgumentsPropDefs rest
 
 /-- An object literal member's key; see `mentionsArgumentsExpr`. -/
 def mentionsArgumentsPropKey : PropKey → Bool
@@ -700,11 +753,45 @@ def mentionsArgumentsArrow : ArrowBody → Bool
   | .expr value => mentionsArgumentsExpr value
   | .block body => mentionsArgumentsStmts body
 
-/-- A parameter list's initializers; see `mentionsArgumentsExpr`. -/
+/-- A parameter list's targets and initializers; see
+`mentionsArgumentsExpr`. -/
 def mentionsArgumentsParams : List Param → Bool
   | [] => false
-  | ⟨_, none⟩ :: rest => mentionsArgumentsParams rest
-  | ⟨_, some d⟩ :: rest => mentionsArgumentsExpr d || mentionsArgumentsParams rest
+  | ⟨t, none, _⟩ :: rest => mentionsArgumentsPattern t || mentionsArgumentsParams rest
+  | ⟨t, some d, _⟩ :: rest =>
+    mentionsArgumentsPattern t || mentionsArgumentsExpr d || mentionsArgumentsParams rest
+
+/-- A pattern's defaults, computed keys, and member leaves; see
+`mentionsArgumentsExpr`. -/
+def mentionsArgumentsPattern : Pattern → Bool
+  | .target t => mentionsArgumentsTarget t
+  | .array elements rest =>
+    mentionsArgumentsElems elements || mentionsArgumentsPatternOpt rest
+  | .object props rest =>
+    mentionsArgumentsProps props ||
+      (match rest with | none => false | some t => mentionsArgumentsTarget t)
+
+/-- An `ArrayPattern`'s elements; see `mentionsArgumentsExpr`. -/
+def mentionsArgumentsElems : List (Option PatternElem) → Bool
+  | [] => false
+  | none :: rest => mentionsArgumentsElems rest
+  | some ⟨t, none⟩ :: rest => mentionsArgumentsPattern t || mentionsArgumentsElems rest
+  | some ⟨t, some d⟩ :: rest =>
+    mentionsArgumentsPattern t || mentionsArgumentsExpr d || mentionsArgumentsElems rest
+
+/-- An `ObjectPattern`'s properties; see `mentionsArgumentsExpr`. -/
+def mentionsArgumentsProps : List PatternProp → Bool
+  | [] => false
+  | ⟨k, t, none⟩ :: rest =>
+    mentionsArgumentsPropKey k || mentionsArgumentsPattern t || mentionsArgumentsProps rest
+  | ⟨k, t, some d⟩ :: rest =>
+    mentionsArgumentsPropKey k || mentionsArgumentsPattern t || mentionsArgumentsExpr d ||
+      mentionsArgumentsProps rest
+
+/-- An `ArrayPattern`'s rest; see `mentionsArgumentsExpr`. -/
+def mentionsArgumentsPatternOpt : Option Pattern → Bool
+  | none => false
+  | some p => mentionsArgumentsPattern p
 
 /-- A class's heritage; see `mentionsArgumentsExpr`. The elements are
 not descended into: each has an `arguments` of its own. -/
@@ -739,23 +826,32 @@ def mentionsArgumentsStmt : Stmt → Bool
   | .forStmt init (some t) (some u) body =>
     mentionsArgumentsForInit init || mentionsArgumentsExpr t || mentionsArgumentsExpr u ||
       mentionsArgumentsStmt body
-  | .forInStmt (.decl _ _) right body =>
-    mentionsArgumentsExpr right || mentionsArgumentsStmt body
+  | .forInStmt (.decl _ p) right body =>
+    mentionsArgumentsPattern p || mentionsArgumentsExpr right || mentionsArgumentsStmt body
   | .forInStmt (.target t) right body =>
     mentionsArgumentsTarget t || mentionsArgumentsExpr right || mentionsArgumentsStmt body
+  | .forInStmt (.pattern p) right body =>
+    mentionsArgumentsPattern p || mentionsArgumentsExpr right || mentionsArgumentsStmt body
+  | .forOfStmt (.decl _ p) right body =>
+    mentionsArgumentsPattern p || mentionsArgumentsExpr right || mentionsArgumentsStmt body
+  | .forOfStmt (.target t) right body =>
+    mentionsArgumentsTarget t || mentionsArgumentsExpr right || mentionsArgumentsStmt body
+  | .forOfStmt (.pattern p) right body =>
+    mentionsArgumentsPattern p || mentionsArgumentsExpr right || mentionsArgumentsStmt body
   | .switchStmt discriminant cases =>
     mentionsArgumentsExpr discriminant || mentionsArgumentsCases cases
   | .empty => false
   | .block body => mentionsArgumentsStmts body
   | .throwStmt argument => mentionsArgumentsExpr argument
   | .tryStmt block none none => mentionsArgumentsStmts block
-  | .tryStmt block (some ⟨_, handler⟩) none =>
-    mentionsArgumentsStmts block || mentionsArgumentsStmts handler
+  | .tryStmt block (some ⟨p, handler⟩) none =>
+    mentionsArgumentsStmts block || mentionsArgumentsPatternOpt p ||
+      mentionsArgumentsStmts handler
   | .tryStmt block none (some finalizer) =>
     mentionsArgumentsStmts block || mentionsArgumentsStmts finalizer
-  | .tryStmt block (some ⟨_, handler⟩) (some finalizer) =>
-    mentionsArgumentsStmts block || mentionsArgumentsStmts handler ||
-      mentionsArgumentsStmts finalizer
+  | .tryStmt block (some ⟨p, handler⟩) (some finalizer) =>
+    mentionsArgumentsStmts block || mentionsArgumentsPatternOpt p ||
+      mentionsArgumentsStmts handler || mentionsArgumentsStmts finalizer
   | .labeled _ body => mentionsArgumentsStmt body
   | .breakStmt _ | .continueStmt _ => false
   | .classDecl _ cls => mentionsArgumentsClass cls
@@ -766,11 +862,13 @@ def mentionsArgumentsForInit : Option ForInit → Bool
   | some (.decl _ declarators) => mentionsArgumentsDecls declarators
   | some (.expr value) => mentionsArgumentsExpr value
 
-/-- A declaration's initializers; see `mentionsArgumentsExpr`. -/
+/-- A declaration's targets and initializers; see
+`mentionsArgumentsExpr`. -/
 def mentionsArgumentsDecls : List Declarator → Bool
   | [] => false
-  | ⟨_, none⟩ :: rest => mentionsArgumentsDecls rest
-  | ⟨_, some e⟩ :: rest => mentionsArgumentsExpr e || mentionsArgumentsDecls rest
+  | ⟨t, none⟩ :: rest => mentionsArgumentsPattern t || mentionsArgumentsDecls rest
+  | ⟨t, some e⟩ :: rest =>
+    mentionsArgumentsPattern t || mentionsArgumentsExpr e || mentionsArgumentsDecls rest
 
 /-- A `switch`'s clauses; see `mentionsArgumentsExpr`. -/
 def mentionsArgumentsCases : List SwitchCase → Bool
@@ -797,17 +895,67 @@ writable and configurable but not enumerable; the indices are ordinary
 data properties, as CreateDataProperty makes them; `callee` is a
 non-enumerable, non-configurable accessor whose getter and setter are
 both `%ThrowTypeError%`, the one object the realm holds for it.
-`@@iterator` is #392's. -/
+`@@iterator` is `%Array.prototype.values%` itself (10.4.4.6 step 8), an
+ordinary method property, so `[...arguments]` iterates the indices. -/
 def makeArguments (args : List Value) : EvalM Value := do
   let r ← allocObj
     { proto := some objectProtoRef,
       kind := .arguments,
       properties :=
         (Key.str "length", Property.method (Value.ofNat args.length)) :: indexProps 0 args ++
-          [(Key.str "callee",
+          [(WellKnownSymbol.iterator.key, Property.method (.obj arrayValuesRef)),
+           (Key.str "callee",
             { slot := .accessor { getter := some (.obj throwTypeErrorRef),
                                   setter := some (.obj throwTypeErrorRef) },
               enumerable := false, configurable := false })] }
+  pure (.obj r)
+
+/-- An Iterator Record (7.4.1) without `[[Done]]`: the iterator object
+and its `next`, which GetIterator reads **once**, so replacing `next`
+after the loop has started changes nothing. *Done* is not a field here
+but a code path — see this module's header. -/
+structure IteratorRecord where
+  /-- `[[Iterator]]`. -/
+  iterator : Value
+  /-- `[[NextMethod]]`. -/
+  next : Value
+deriving Repr, Inhabited
+
+/-- How a destructuring leaf is written. `.init` is
+InitializeReferencedBinding on a cell an instantiation already
+allocated — a `let`, a `const`, a parameter, a `catch` parameter, a
+`for`-`of` declaration head; `.var` and `.assign` are PutValue, which is
+`putIdent`, `setProp`, or `writePrivate` by the leaf's shape. -/
+inductive BindMode where
+  /-- InitializeReferencedBinding into an allocated cell. -/
+  | init
+  /-- PutValue into a `var`'s binding. -/
+  | «var»
+  /-- PutValue into an assignment target. -/
+  | assign
+deriving Repr, DecidableEq, Inhabited
+
+/-- A leaf target's *reference*, evaluated before the value that will be
+written to it. 13.15.5.4 and 13.15.5.5 evaluate an assignment pattern's
+non-pattern target's reference before the property is read or the
+iterator is stepped, which is observable when the object expression has
+an effect. -/
+inductive LeafRef where
+  /-- An `Identifier` leaf. -/
+  | ident (name : String)
+  /-- A `MemberExpression` leaf, its base and key already evaluated. -/
+  | prop (base : Value) (key : Key)
+  /-- A private-element leaf. -/
+  | priv (base : Value) (name : String)
+deriving Repr, Inhabited
+
+/-- CreateIterResultObject (7.4.14): an ordinary object with `value` and
+then `done`, in that order, both ordinary data properties. -/
+def createIterResult (v : Value) (done : Bool) : EvalM Value := do
+  let r ← newObject
+  modifyObj r (fun o =>
+    (o.define "value" (Property.ordinary v)).define "done"
+      (Property.ordinary (.prim (.bool done))))
   pure (.obj r)
 
 /-- The tag `Object.prototype.toString` answers with, 20.1.3.6 steps
@@ -967,21 +1115,23 @@ its left. `initParams` is the step that fills them; the two are separate
 because filling one may run user code and allocating cannot. Duplicate
 parameter names are a strict-mode early error, so nothing deduplicates
 here. -/
-def allocParams (env : Env) : List Param → EvalM Env
+def allocNames (env : Env) (mutable : Bool) : List String → EvalM Env
   | [] => pure env
-  | p :: ps => do
-    let r ← allocCell { mutable := true }
-    allocParams ((p.name, r) :: env) ps
+  | n :: rest => do
+    let r ← allocCell { mutable }
+    allocNames ((n, r) :: env) mutable rest
+
+/-- A cell per parameter-bound name; see `allocNames`. A pattern
+parameter's leaves are names like any other. -/
+def allocParams (env : Env) (ps : List Param) : EvalM Env :=
+  allocNames env true (Param.names ps)
 
 /-- Pass one of block instantiation: a cell per declared name, holding
 nothing. A `let` or `const` cell stays uninitialized until its declarator
 runs, which is the temporal dead zone; a function declaration's is filled
 in by pass two. -/
-def hoistDeclarators (env : Env) (mutable : Bool) : List Declarator → EvalM Env
-  | [] => pure env
-  | d :: rest => do
-    let r ← allocCell { mutable }
-    hoistDeclarators ((d.name, r) :: env) mutable rest
+def hoistDeclarators (env : Env) (mutable : Bool) (ds : List Declarator) : EvalM Env :=
+  allocNames env mutable (ds.flatMap (·.target.boundNames))
 
 mutual
 
@@ -998,19 +1148,21 @@ def varNames : List Stmt → List String
 
 /-- One statement's VarDeclaredNames; see `varNames`. -/
 def varNamesStmt : Stmt → List String
-  | .varDecl .«var» declarators => declarators.map (·.name)
+  | .varDecl .«var» declarators => declarators.flatMap (·.target.boundNames)
   | .block body => varNames body
   | .ifStmt _ consequent none => varNamesStmt consequent
   | .ifStmt _ consequent (some alternate) => varNamesStmt consequent ++ varNamesStmt alternate
   | .whileStmt _ body => varNamesStmt body
   | .doWhileStmt body _ => varNamesStmt body
   | .forStmt (some (.decl .«var» declarators)) _ _ body =>
-    declarators.map (·.name) ++ varNamesStmt body
+    declarators.flatMap (·.target.boundNames) ++ varNamesStmt body
   | .forStmt _ _ _ body => varNamesStmt body
   -- A `for`-`in` head declares a `var` exactly as a `for` head does; a
   -- `let`, a `const`, and an assignment target declare nothing.
-  | .forInStmt (.decl .«var» name) _ body => name :: varNamesStmt body
+  | .forInStmt (.decl .«var» p) _ body => p.boundNames ++ varNamesStmt body
   | .forInStmt _ _ body => varNamesStmt body
+  | .forOfStmt (.decl .«var» p) _ body => p.boundNames ++ varNamesStmt body
+  | .forOfStmt _ _ body => varNamesStmt body
   | .switchStmt _ cases => varNamesCases cases
   | .tryStmt block none none => varNames block
   | .tryStmt block (some ⟨_, handler⟩) none => varNames block ++ varNames handler
@@ -1278,7 +1430,7 @@ def getTemplateObject (site : Nat) (strings : List TemplateString) : EvalM Value
 -- only a large definition, so raising it is the knob rather than
 -- splitting a block whose whole point is that its members may call one
 -- another.
-set_option maxHeartbeats 1000000 in
+set_option maxHeartbeats 2000000 in
 mutual
 
 /-- Evaluate an expression. -/
@@ -1405,10 +1557,10 @@ def evalExpr (env : Env) : Expr → EvalM Value
       pure (.prim (.bool true))
   | .call callee args => do
     let fr ← evalCallee env callee
-    callFunction fr.1 fr.2 (← evalExprs env args)
+    callFunction fr.1 fr.2 (← evalArgs env args)
   | .new callee args => do
     let f ← evalExpr env callee
-    construct f f (← evalExprs env args)
+    construct f f (← evalArgs env args)
   | .objectLit props => do
     let r ← newObject
     evalPropDefs env props r
@@ -1420,7 +1572,25 @@ def evalExpr (env : Env) : Expr → EvalM Value
     let fr ← evalCallee env tag
     let t ← getTemplateObject site strings
     callFunction fr.1 fr.2 (t :: (← evalExprs env exprs))
-  | .arrayLit elements => do newArray (← evalExprs env elements)
+  -- ArrayLiteral (13.2.4.2): a fresh array, then ArrayAccumulation,
+  -- then `Set(array, "length", n)` — which on an array nobody else has
+  -- seen is one field write.
+  | .arrayLit elements => do
+    let r ← allocObj (Obj.array (some arrayProtoRef) [])
+    let n ← evalArrayElements env r 0 elements
+    modifyObj r (fun o => { o with kind := .array n true })
+    pure (.obj r)
+  -- DestructuringAssignmentEvaluation (13.15.5): the value of the whole
+  -- expression is the *right* operand's, whatever the pattern wrote.
+  | .assignPattern p value => do
+    let v ← evalExpr env value
+    bindPattern env .assign p v
+    pure v
+  -- Neither can be reached through the decoder, which places a spread
+  -- only in a list that iterates it and a hole only in an array literal.
+  | .spread _ => throwJsError .syntaxError "Unexpected token '...'"
+  | .hole => throwJsError .syntaxError "Unexpected token ','"
+
   | .funcExpr name params body =>
     match name with
     -- An anonymous function reached any way but NamedEvaluation's four
@@ -1562,7 +1732,7 @@ def evalSuperCall (env : Env) (args : List Expr) : EvalM Value := do
           match Env.lookup env newTargetName with
           | some ntr => readCell newTargetName ntr
           | none => pure undefValue
-        let argv ← evalExprs env args
+        let argv ← evalArgs env args
         let result ← construct (.obj parent) newTarget argv
         match Env.lookup env thisName with
         | none => throwJsError .syntaxError "'super' keyword unexpected here"
@@ -1590,6 +1760,353 @@ def applyCoercing (op : BinaryOp) (l r : Value) : EvalM Value := do
   -- ToPrimitive never answers an object, so the last two arms cannot be
   -- reached; the message is the one a failed ToPrimitive would give.
   | _, _ => throwJsError .typeError "Cannot convert object to primitive value"
+  partial_fixpoint
+
+/-- GetIterator (7.4.3) for the sync hint. `next` is read once, here,
+which is what makes replacing it mid-loop unobservable. A nullish operand
+is answered before the lookup, as V8 answers it. -/
+def getIterator (v : Value) : EvalM IteratorRecord := do
+  match v with
+  | .prim .undef | .prim .null =>
+    throwJsError .typeError s!"{formatValue v} is not iterable"
+  | _ => do
+    let m ← getProp v WellKnownSymbol.iterator.key
+    if ← isCallable m then
+      match ← callFunction m v [] with
+      | .obj r => do
+        let next ← getProp (.obj r) "next"
+        pure { iterator := .obj r, next }
+      | _ =>
+        throwJsError .typeError "Result of the Symbol.iterator method is not an object"
+    else throwJsError .typeError s!"{formatValue v} is not iterable"
+  partial_fixpoint
+
+/-- IteratorStepValue (7.4.8): one step, `none` when the iterator said it
+was done. A throw from the call, from `done`, or from `value` propagates
+uncaught — 7.4.8 sets `[[Done]]` and rethrows, and nothing closes an
+iterator that threw for itself. -/
+def iteratorStep (ir : IteratorRecord) : EvalM (Option Value) := do
+  match ← callFunction ir.next ir.iterator [] with
+  | .obj r => do
+    if toBooleanPrim (← getProp (.obj r) "done") then pure none
+    else pure (some (← getProp (.obj r) "value"))
+  | v => throwJsError .typeError s!"Iterator result {formatValue v} is not an object"
+  partial_fixpoint
+
+/-- IteratorClose (7.4.11). When the completion being carried out is a
+throw, every outcome of reading and calling `return` is discarded (step
+5), so the original throw is what reaches the caller; otherwise a
+`return` that is absent or nullish is nothing, a non-callable one is the
+ordinary `not a function`, a throwing one propagates, and one answering a
+primitive is the `Iterator result` refusal. The caller rethrows the
+completion it was carrying. -/
+def iteratorClose (ir : IteratorRecord) (c : Option Completion) : EvalM Unit := do
+  match c with
+  | some (.throw _) => do
+    let _ ← attempt (do
+      match ← getProp ir.iterator "return" with
+      | .prim .undef | .prim .null => pure ()
+      | ret => do
+        let _ ← callFunction ret ir.iterator []
+        pure ())
+    pure ()
+  | _ => do
+    match ← getProp ir.iterator "return" with
+    | .prim .undef | .prim .null => pure ()
+    | ret => do
+      match ← callFunction ret ir.iterator [] with
+      | .obj _ => pure ()
+      | v => throwJsError .typeError s!"Iterator result {formatValue v} is not an object"
+  partial_fixpoint
+
+/-- IteratorToList (7.4.13): step until the iterator says stop. A throw
+escapes, the iterator having thrown for itself. Recurses until a heap
+value says stop, so it is `rw`'s and never a simp set's. -/
+def iteratorToList (ir : IteratorRecord) : EvalM (List Value) := do
+  match ← iteratorStep ir with
+  | none => pure []
+  | some v => do pure (v :: (← iteratorToList ir))
+  partial_fixpoint
+
+/-- A leaf target's reference, evaluated before the value it will be
+written. An `Identifier` has nothing to evaluate; a member's object —
+and a computed member's key — are evaluated here and once. -/
+def evalLeafRef (env : Env) : Target → EvalM LeafRef
+  | .ident n => pure (.ident n)
+  | .member object name => do pure (.prop (← evalExpr env object) name)
+  | .index object key => do
+    let base ← evalExpr env object
+    let k ← evalExpr env key
+    pure (.prop base (← toPropertyKey k))
+  | .privateMember object name => do pure (.priv (← evalExpr env object) name)
+  partial_fixpoint
+
+/-- Write one value through an already-evaluated leaf reference.
+`.init` ends a cell's dead zone, which is what a declaration, a
+parameter, a `catch` parameter, and a `for`-`of` declaration head do; the
+other two modes are PutValue. A missing cell under `.init` cannot happen —
+`allocNames` ran — and is `pure ()` as `initParams` has it. -/
+def writeLeaf (env : Env) (mode : BindMode) : LeafRef → Value → EvalM Unit
+  | .ident n, v =>
+    match mode with
+    | .init =>
+      match Env.lookup env n with
+      | some r => initCell r v
+      | none => pure ()
+    | _ => putIdent env n v
+  | .prop base key, v => setProp base key v
+  | .priv base name, v => writePrivate env base name v
+  partial_fixpoint
+
+/-- One walk for both pattern families (14.3.3 and 13.15.5), `mode`
+deciding how a leaf is written. An object pattern is RequireObjectCoercible
+and then its properties in source order; an array pattern is GetIterator,
+its elements, its rest, and then IteratorClose on every exit but
+exhaustion. -/
+def bindPattern (env : Env) (mode : BindMode) : Pattern → Value → EvalM Unit
+  | .target t, v => do writeLeaf env mode (← evalLeafRef env t) v
+  | .object props rest, v => do
+    match v with
+    | .prim .undef | .prim .null =>
+      throwJsError .typeError
+        s!"Cannot destructure '{formatValue v}' as it is {formatValue v}."
+    | _ => pure ()
+    let seen ← bindProps env mode v [] props
+    match rest with
+    | none => pure ()
+    | some t => do
+      -- The rest's reference first, then a fresh ordinary object holding
+      -- every own enumerable key the listed properties did not take.
+      let lr ← evalLeafRef env t
+      let r ← newObject
+      copyDataProperties r v seen
+      writeLeaf env mode lr (.obj r)
+  | .array elements rest, v => do
+    let ir ← getIterator v
+    let (r, done) ← bindElements env mode ir false elements
+    let (r', done') ←
+      match r, rest with
+      | .ok (), some p => bindRest env mode ir done p
+      | _, _ => pure (r, done)
+    if !done' then
+      iteratorClose ir (match r' with | .ok () => none | .error c => some c)
+    match r' with
+    | .ok () => pure ()
+    | .error c => throwCompletion c
+  partial_fixpoint
+
+/-- An assignment pattern evaluates a leaf target's *reference* before
+the value is read or stepped (13.15.5.4, 13.15.5.5); a binding pattern
+has none to evaluate, and neither does a nested pattern. -/
+def patternLeafRef (env : Env) (mode : BindMode) : Pattern → EvalM (Option LeafRef)
+  | .target t =>
+    match mode with
+    | .assign => do pure (some (← evalLeafRef env t))
+    | _ => pure none
+  | _ => pure none
+  partial_fixpoint
+
+/-- Write one destructuring element: the default in place of an
+`undefined` value, then the leaf reference an assignment pattern already
+evaluated or the nested pattern. It is one definition so that each caller
+can hand the whole of it to `attempt` as a plain application, which is
+what the monotonicity prover can see through. -/
+def bindOne (env : Env) (mode : BindMode) (l : Option LeafRef) (target : Pattern)
+    (dflt : Option Expr) (v : Value) : EvalM Unit := do
+  let value ←
+    match dflt, v with
+    | some d, .prim .undef =>
+      -- NamedEvaluation: a SingleNameBinding's default is named for it;
+      -- a pattern's and a member leaf's are not.
+      match target with
+      | .target (.ident n) => evalNamed env n d
+      | _ => evalExpr env d
+    | _, _ => pure v
+  match l with
+  | some leaf => writeLeaf env mode leaf value
+  | none => bindPattern env mode target value
+  partial_fixpoint
+
+/-- An object pattern's properties, in source order, answering the keys
+it read so the rest can exclude them. The key is evaluated first, then —
+in an assignment pattern with a leaf target — the target's reference,
+then GetV, then the default, then the write (13.15.5.4). -/
+def bindProps (env : Env) (mode : BindMode) (v : Value) (seen : List Key) :
+    List PatternProp → EvalM (List Key)
+  | [] => pure seen
+  | p :: rest => do
+    let k ← evalPropKey env p.key
+    let lr ← patternLeafRef env mode p.target
+    let x ← getProp v k
+    bindOne env mode lr p.target p.default x
+    bindProps env mode v (k :: seen) rest
+  partial_fixpoint
+
+/-- An array pattern's elements (14.3.3.2, 13.15.5.5). An elision steps
+the iterator and binds nothing. An element evaluates its leaf's reference
+first in an assignment pattern, then steps, then takes its default, then
+writes; the step's own throw escapes, and every other throw is reified so
+the caller can close. The `Bool` is whether the iterator is exhausted. -/
+def bindElements (env : Env) (mode : BindMode) (ir : IteratorRecord) (done : Bool) :
+    List (Option PatternElem) → EvalM (Except Completion Unit × Bool)
+  | [] => pure (.ok (), done)
+  | none :: rest => do
+    let done' ←
+      if done then pure true
+      else
+        match ← iteratorStep ir with
+        | none => pure true
+        | some _ => pure false
+    bindElements env mode ir done' rest
+  | some e :: rest => do
+    match ← attempt (patternLeafRef env mode e.target) with
+    | .error c => pure (.error c, done)
+    | .ok l => do
+      let (v, done') ←
+        if done then pure (undefValue, true)
+        else
+          match ← iteratorStep ir with
+          | none => pure (undefValue, true)
+          | some v => pure (v, false)
+      match ← attempt (bindOne env mode l e.target e.default v) with
+      | .ok () => bindElements env mode ir done' rest
+      | .error c => pure (.error c, done')
+  partial_fixpoint
+
+/-- An array pattern's `RestElement`: every value left, as a fresh array.
+The leaf's reference comes first in an assignment pattern, and the walk
+to exhaustion is what makes the answer's second component `true` — a rest
+never leaves an iterator open. -/
+def bindRest (env : Env) (mode : BindMode) (ir : IteratorRecord) (done : Bool)
+    (p : Pattern) : EvalM (Except Completion Unit × Bool) := do
+  match ← attempt (patternLeafRef env mode p) with
+  | .error c => pure (.error c, done)
+  | .ok l => do
+    let xs ← if done then pure ([] : List Value) else iteratorToList ir
+    let arr ← newArray xs
+    match ← attempt (bindOne env mode l p none arr) with
+    | .ok () => pure (.ok (), true)
+    | .error c => pure (.error c, true)
+  partial_fixpoint
+
+/-- CopyDataProperties (7.3.26). A nullish source copies nothing; every
+other primitive goes through ToObject, which is where a string meets
+#391's refusal until the wrapper object exists. -/
+def copyDataProperties (target : Ref) (source : Value) (excluded : List Key) :
+    EvalM Unit := do
+  match source with
+  | .prim .undef | .prim .null => pure ()
+  | _ => do
+    let src ← toObjectValue source
+    copyKeys target src excluded (← readObj src).ownKeys
+  partial_fixpoint
+
+/-- CopyDataProperties' key walk: each own enumerable key not excluded,
+read through the source and *defined* on the target. -/
+def copyKeys (target src : Ref) (excluded : List Key) : List Key → EvalM Unit
+  | [] => pure ()
+  | k :: rest => do
+    if excluded.contains k then pure ()
+    else
+      -- `ownProperty` rather than `getOwnProperty`, so a String exotic
+      -- object's synthesized indices are seen: `{ ..."ab" }` is two
+      -- members.
+      match (← readObj src).ownProperty k with
+      | some prop =>
+        if prop.enumerable then createDataProperty target k (← getProp (.obj src) k)
+        else pure ()
+      | none => pure ()
+    copyKeys target src excluded rest
+  partial_fixpoint
+
+/-- ArgumentListEvaluation (13.3.8.1): the arguments left to right, a
+`.spread` iterated in place. It replaces `evalExprs` at the three call
+sites that admit a spread; a template's substitutions cannot have one and
+keep `evalExprs`. -/
+def evalArgs (env : Env) : List Expr → EvalM (List Value)
+  | [] => pure []
+  | .spread e :: rest => do
+    let ir ← getIterator (← evalExpr env e)
+    let vs ← iteratorToList ir
+    let ws ← evalArgs env rest
+    pure (vs ++ ws)
+  | e :: rest => do
+    let v ← evalExpr env e
+    let vs ← evalArgs env rest
+    pure (v :: vs)
+  partial_fixpoint
+
+/-- ArrayAccumulation (13.2.4.1) into an already-allocated array,
+answering the next index. A hole advances the index and defines nothing,
+which is what makes `1 in [1, , 2]` false; a spread is iterated and its
+values defined one by one. -/
+def evalArrayElements (env : Env) (r : Ref) (i : Nat) : List Expr → EvalM Nat
+  | [] => pure i
+  | .hole :: rest => evalArrayElements env r (i + 1) rest
+  | .spread e :: rest => do
+    let ir ← getIterator (← evalExpr env e)
+    let vs ← iteratorToList ir
+    let n ← defineFrom r i vs
+    evalArrayElements env r n rest
+  | e :: rest => do
+    let v ← evalExpr env e
+    createDataProperty r (Nat.repr i) v
+    evalArrayElements env r (i + 1) rest
+  partial_fixpoint
+
+/-- CreateDataPropertyOrThrow at consecutive indices, answering the next
+one. On a fresh array no definition can refuse. -/
+def defineFrom (r : Ref) (i : Nat) : List Value → EvalM Nat
+  | [] => pure i
+  | v :: rest => do
+    createDataProperty r (Nat.repr i) v
+    defineFrom r (i + 1) rest
+  partial_fixpoint
+
+/-- AddEntriesFromIterable (24.1.1.2) for `Object.fromEntries`: each
+value must be an object, its `"0"` is the key and its `"1"` the value,
+and any throw between two steps closes the iterator. -/
+def fromEntriesInto (ir : IteratorRecord) (obj : Ref) : EvalM Unit := do
+  match ← iteratorStep ir with
+  | none => pure ()
+  | some e =>
+    match ← attempt (do
+      match e with
+      | .obj _ => do
+        let k ← getProp e "0"
+        let v ← getProp e "1"
+        createDataProperty obj (← toPropertyKey k) v
+      | _ =>
+        throwJsError .typeError
+          s!"Iterator value {formatValue e} is not an entry object") with
+    | .ok () => fromEntriesInto ir obj
+    | .error c => do
+      iteratorClose ir (some c)
+      throwCompletion c
+  partial_fixpoint
+
+/-- GroupBy (7.3.35) with `property` keys, for `Object.groupBy`: the
+callback takes the value and the zero-based index, its answer goes
+through ToPropertyKey, and each key's array is made on first sight — so
+the answer's own key order is first-sight order. -/
+def groupByInto (ir : IteratorRecord) (cb : Value) (groups : Ref) (k : Nat) :
+    EvalM Unit := do
+  match ← iteratorStep ir with
+  | none => pure ()
+  | some v =>
+    match ← attempt (do
+      let key ← toPropertyKey (← callFunction cb undefValue [v, Value.ofNat k])
+      match ← getProp (.obj groups) key with
+      | .prim .undef => do
+        let arr ← newArray [v]
+        createDataProperty groups key arr
+      | arr => do
+        let len ← toLengthValue (← getProp arr "length")
+        pushElements arr len [v]) with
+    | .ok () => groupByInto ir cb groups (k + 1)
+    | .error c => do
+      iteratorClose ir (some c)
+      throwCompletion c
   partial_fixpoint
 
 /-- Evaluate an argument list, left to right. -/
@@ -1640,6 +2157,13 @@ def evalPropDefs (env : Env) : List PropDef → Ref → EvalM Unit
       | .method => o.define k (Property.ordinary f)
       | .getter => o.defineAccessorHalf k (some f) none true true
       | .setter => o.defineAccessorHalf k none (some f) true true)
+    evalPropDefs env rest r
+  -- CopyDataProperties (7.3.26) with no excluded keys: every own
+  -- enumerable key of the source, string and symbol both, *defined* on
+  -- the literal — so a setter of that name on the literal is replaced
+  -- rather than called.
+  | .spread value :: rest, r => do
+    copyDataProperties r (← evalExpr env value) []
     evalPropDefs env rest r
   -- B.3.1: `__proto__: v` sets `[[Prototype]]` when `v` is an object or
   -- `null`, and does nothing at all otherwise — no property is made.
@@ -2037,19 +2561,27 @@ sees every parameter to its left initialized and every one to its right
 in its dead zone. -/
 def initParams (env : Env) : List Param → List Value → EvalM Unit
   | [], _ => pure ()
-  | p :: ps, args => do
-    let (a, rest) := match args with
-      | [] => (undefValue, ([] : List Value))
-      | a :: as => (a, as)
-    -- NamedEvaluation: `function f(g = function () {}) {}` names the
-    -- default `g`, as a declarator's initializer is named.
-    let v ← match p.default, a with
-      | some d, .prim .undef => evalNamed env p.name d
-      | _, _ => pure a
-    match Env.lookup env p.name with
-    | some r => initCell r v
-    | none => pure ()
-    initParams env ps rest
+  | p :: ps, args =>
+    if p.rest then do
+      -- A rest parameter takes everything left as a fresh array and ends
+      -- the walk; the grammar puts it last and never defaults it.
+      let arr ← newArray args
+      bindPattern env .init p.target arr
+    else do
+      let (a, rest) := match args with
+        | [] => (undefValue, ([] : List Value))
+        | a :: as => (a, as)
+      -- NamedEvaluation: `function f(g = function () {}) {}` names the
+      -- default `g`, as a declarator's initializer is named. A pattern
+      -- parameter's default names nothing.
+      let v ← match p.default, a with
+        | some d, .prim .undef =>
+          match p.target with
+          | .target (.ident n) => evalNamed env n d
+          | _ => evalExpr env d
+        | _, _ => pure a
+      bindPattern env .init p.target v
+      initParams env ps rest
   partial_fixpoint
 
 /-- FunctionDeclarationInstantiation (10.2.11) over what this AST has,
@@ -2791,6 +3323,15 @@ def callNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Valu
   | .errorIsError => callSymbolNative f thisArg args
   | .jsonParse | .jsonStringify => callJsonNative f thisArg args
   | .string g => callStringNative g thisArg args
+  -- The iterator surface is a fourth group, split out for
+  -- `callReflectNative`'s reason but — unlike the other three —
+  -- **registered** in `tarski_eval`: seven arms are nowhere near the
+  -- ceiling, and a closed destructuring or one `for`-`of` step has to
+  -- reduce without a local lemma list.
+  | .iteratorProtoIterator | .arrayIteratorNext | .arrayKeys | .arrayValues
+  | .arrayEntries | .objectFromEntries | .objectGroupBy
+  | .stringProtoIterator | .stringIteratorNext =>
+    callIteratorNative f thisArg args
   | .print => do
     -- The host's output binding. There is no IO in `EvalM`, so the line
     -- is appended to `%PrintLog%` and the binary writes the log out once
@@ -3162,10 +3703,9 @@ def callSymbolNative (f : NativeFn) (thisArg : Value) (args : List Value) : Eval
     | _ => pure (.prim (.bool false))
   | .aggregateErrorCtor => do
     -- 20.5.7.1.1, in its order: `message`, then the cause, then
-    -- `errors`. The errors are read as an **array-like** rather than
-    -- iterated: IterableToList is #394's, and the two agree for every
-    -- argument whose `@@iterator` is the intrinsic one. #394 replaces
-    -- this read with the iteration.
+    -- `errors`, which step 4 reads with IterableToList. A string
+    -- argument is therefore `is not iterable` until `String.prototype`
+    -- has an `@@iterator` (#391).
     match args[1]?.getD undefValue with
     | .prim .undef => pure ()
     | m => do
@@ -3175,7 +3715,7 @@ def callSymbolNative (f : NativeFn) (thisArg : Value) (args : List Value) : Eval
       | _ => pure ()
     installErrorCause thisArg (args[2]?.getD undefValue)
     let errorsArg := args.headD undefValue
-    let items ← errorsAsList errorsArg
+    let items ← iteratorToList (← getIterator errorsArg)
     let arr ← newArray items
     match thisArg with
     | .obj r => modifyObj r (fun o => o.define "errors" (Property.method arr))
@@ -3212,21 +3752,127 @@ def jsonSpaceOf (spaceArg : Value) : EvalM Value := do
   | _ => pure spaceArg
   partial_fixpoint
 
-/-- `AggregateError`'s `errors` argument as a list. It is read as an
-**array-like** — `length` and then the indices — rather than iterated:
-IterableToList is #394's, and the two agree for every argument whose
-`@@iterator` is the intrinsic one. A string is its characters, as
-iterating one would give; `undefined`, `null`, and every other primitive
-are the specification's refusal. -/
-def errorsAsList (errorsArg : Value) : EvalM (List Value) := do
-  match errorsArg with
-  | .obj _ => do
-    let len ← toLengthValue (← getProp errorsArg "length")
-    listFromArrayLike errorsArg 0 len
-  | .prim (.str text) =>
-    pure ((List.range text.length).map
-      (fun i => Value.prim (.str ((text.unitAt? i).getD (JsString.ofString "")))))
-  | v => throwJsError .typeError s!"{formatValue v} is not iterable"
+/-- The iteration surface: `%IteratorPrototype%[@@iterator]`, the Array
+Iterator, and the two `Object` members that consume an iterable.
+
+It is a definition of its own for `callReflectNative`'s reason —
+`callNative`'s `match` is already past the depth at which Lean generates
+equation lemmas — but it **is** in `tarski_eval`, because a closed
+destructuring or a single `for`-`of` step must reduce without a local
+lemma list, and seven arms are far below the ceiling.
+
+The three constructors take ToObject of their receiver (23.1.3.19 step
+1), so an array-like works and `Array.prototype.values.call({length: 1})`
+iterates. `next` reads its length every step, which is what makes an
+array that grows mid-iteration visit the new elements, and writes
+`undefined` into `[[IteratedArrayLike]]` when it runs out, which is what
+keeps an exhausted iterator done.
+
+The String Iterator is here too, and it is the one walk that steps by
+**code point** rather than by code unit: `JsString.codePointAt?` answers
+the point starting at an index and how many units it took, which is
+exactly the step 22.1.5.1.1 takes.
+
+The arm for anything else is unreachable: `callNative` routes exactly
+the nine constructors below here. -/
+def callIteratorNative (f : NativeFn) (thisArg : Value) (args : List Value) :
+    EvalM Value :=
+  match f with
+  | .iteratorProtoIterator => pure thisArg
+  | .arrayKeys | .arrayValues | .arrayEntries => do
+    let o ← toObjectValue thisArg
+    let kind := match f with
+      | .arrayKeys => IterKind.keys
+      | .arrayEntries => IterKind.entries
+      | _ => IterKind.values
+    let r ← allocObj
+      { proto := some arrayIteratorProtoRef,
+        kind := .arrayIterator (some (.obj o)) kind 0 }
+    pure (.obj r)
+  | .arrayIteratorNext =>
+    match thisArg with
+    | .obj r => do
+      match (← readObj r).kind with
+      | .arrayIterator iterated kind index =>
+        match iterated with
+        | none => createIterResult undefValue true
+        | some a => do
+          let len ← toLengthValue (← getProp a "length")
+          if index ≥ len then do
+            modifyObj r (fun o => { o with kind := .arrayIterator none kind index })
+            createIterResult undefValue true
+          else do
+            modifyObj r (fun o =>
+              { o with kind := .arrayIterator (some a) kind (index + 1) })
+            let v ← match kind with
+              | .keys => pure (Value.ofNat index)
+              | .values => getProp a (Nat.repr index)
+              | .entries => do newArray [Value.ofNat index, ← getProp a (Nat.repr index)]
+            createIterResult v false
+      | _ =>
+        throwJsError .typeError
+          s!"next method called on incompatible receiver {formatValue thisArg}"
+    | _ =>
+      throwJsError .typeError
+        s!"next method called on incompatible receiver {formatValue thisArg}"
+  | .objectFromEntries => do
+    match args.headD undefValue with
+    | .prim .undef | .prim .null =>
+      throwJsError .typeError "Cannot convert undefined or null to object"
+    | items => do
+      let obj ← newObject
+      let ir ← getIterator items
+      fromEntriesInto ir obj
+      pure (.obj obj)
+  | .stringProtoIterator => do
+    -- 22.1.3.36: RequireObjectCoercible, then ToString, then a fresh
+    -- iterator over the *string* — a receiver that is a wrapper object
+    -- is read through its own `toString`.
+    match thisArg with
+    | .prim .undef | .prim .null =>
+      throwJsError .typeError "Cannot convert undefined or null to object"
+    | _ => pure ()
+    let str ← toStringValue thisArg
+    let r ← allocObj
+      { proto := some stringIteratorProtoRef, kind := .stringIterator (some str) 0 }
+    pure (.obj r)
+  | .stringIteratorNext =>
+    match thisArg with
+    | .obj r => do
+      match (← readObj r).kind with
+      | .stringIterator iterated index =>
+        match iterated with
+        | none => createIterResult undefValue true
+        | some str =>
+          match str.codePointAt? index with
+          | none => do
+            modifyObj r (fun o => { o with kind := .stringIterator none index })
+            createIterResult undefValue true
+          | some (_, taken) => do
+            modifyObj r (fun o =>
+              { o with kind := .stringIterator (some str) (index + taken) })
+            createIterResult (.prim (.str (str.extract index (index + taken)))) false
+      | _ =>
+        throwJsError .typeError
+          s!"next method called on incompatible receiver {formatValue thisArg}"
+    | _ =>
+      throwJsError .typeError
+        s!"next method called on incompatible receiver {formatValue thisArg}"
+  | .objectGroupBy => do
+    match args.headD undefValue with
+    | .prim .undef | .prim .null =>
+      throwJsError .typeError "Cannot convert undefined or null to object"
+    | items => do
+      let cb := args[1]?.getD undefValue
+      if ← isCallable cb then do
+        -- 7.3.35 step 2: a null-prototyped object, so a group named
+        -- `toString` is a group and not an inherited method.
+        let groups ← allocObj { proto := none }
+        let ir ← getIterator items
+        groupByInto ir cb groups 0
+        pure (.obj groups)
+      else throwJsError .typeError "not a function"
+  | _ => pure undefValue
   partial_fixpoint
 
 /-- `JSON.parse`'s tree-to-heap step: allocation and nothing else. An
@@ -4170,6 +4816,7 @@ def evalStmt (env : Env) : Stmt → Option Value → EvalM (Option Value)
   | .doWhileStmt body test, _ => evalDoLoop env [] body test
   | .forStmt init test update body, _ => evalForLoop env [] init test update body
   | .forInStmt left right body, _ => evalForInLoop env [] left right body
+  | .forOfStmt left right body, _ => evalForOfLoop env [] left right body
   | .switchStmt discriminant cases, _ => evalSwitch env discriminant cases
   | .empty, acc =>
     -- The empty statement completes empty, so the running value stands:
@@ -4226,13 +4873,15 @@ def evalBlock (env : Env) (body : List Stmt) (acc : Option Value) :
 bound. The binding is mutable — `catch (e) { e = 2; }` is legal — and
 lives in a scope holding nothing but itself, so a same-named binding
 outside is shadowed for the clause and untouched after it. A clause
-without a parameter binds nothing. -/
+without a parameter binds nothing, and a binding pattern binds each of
+its leaves in that same scope. -/
 def evalCatch (env : Env) (h : CatchClause) (e : Value) : EvalM (Option Value) := do
   let inner ← match h.param with
     | none => pure env
-    | some name => do
-      let r ← allocCell { mutable := true, value := some e }
-      pure ((name, r) :: env)
+    | some p => do
+      let inner ← allocNames env true p.boundNames
+      bindPattern inner .init p e
+      pure inner
   evalBlock inner h.body (some undefValue)
   partial_fixpoint
 
@@ -4310,6 +4959,7 @@ def evalLabeled (env : Env) (labels : List String) :
   | .doWhileStmt body test, _ => evalDoLoop env labels body test
   | .forStmt init test update body, _ => evalForLoop env labels init test update body
   | .forInStmt left right body, _ => evalForInLoop env labels left right body
+  | .forOfStmt left right body, _ => evalForOfLoop env labels left right body
   | s, acc => evalStmt env s acc
   partial_fixpoint
 
@@ -4339,13 +4989,17 @@ def evalDeclarators (env : Env) (kind : DeclKind) : List Declarator → EvalM Un
     match kind, d.init with
     | .«var», none => pure ()
     | _, init =>
-      -- NamedEvaluation: `const f = () => 1;` names the arrow `f`.
+      -- NamedEvaluation: `const f = () => 1;` names the arrow `f`. A
+      -- pattern declarator names nothing, having no single name.
       let v ← match init with
-        | some e => evalNamed env d.name e
+        | some e =>
+          match d.target with
+          | .target (.ident n) => evalNamed env n e
+          | _ => evalExpr env e
         | none => pure undefValue
-      match Env.lookup env d.name with
-      | some r => initCell r v
-      | none => pure ()
+      match kind with
+      | .«var» => bindPattern env .«var» d.target v
+      | _ => bindPattern env .init d.target v
     evalDeclarators env kind rest
   partial_fixpoint
 
@@ -4431,7 +5085,7 @@ def evalForLoop (env : Env) (labels : List String) (init : Option ForInit)
     | some (.decl kind declarators) => do
       let inner ← hoistDeclarators env kind.isMutable declarators
       evalDeclarators inner kind declarators
-      pure (inner, if kind == .«let» then declarators.map (·.name) else [])
+      pure (inner, if kind == .«let» then declarators.flatMap (·.target.boundNames) else [])
   let firstEnv ← copyBindings loopEnv perIter
   match ← attempt (evalFor firstEnv labels test update body perIter (some undefValue)) with
   | .ok v => pure v
@@ -4483,10 +5137,9 @@ def evalForInLoop (env : Env) (labels : List String) (left : ForInLeft) (right :
   let headEnv ←
     match left with
     | .decl .«var» _ => pure env
-    | .decl kind name => do
-      let r ← allocCell { mutable := kind.isMutable }
-      pure ((name, r) :: env)
+    | .decl kind p => allocNames env kind.isMutable p.boundNames
     | .target _ => pure env
+    | .pattern _ => pure env
   let obj ← evalExpr headEnv right
   match obj with
   | .prim .undef => pure (some undefValue)
@@ -4542,19 +5195,73 @@ def forInNext (env : Env) (labels : List String) (left : ForInLeft) (body : Stmt
       ((← readObj p).stringKeys.filter (fun k => !visited.contains k)) visited acc
   partial_fixpoint
 
-/-- Bind one key to the head. A `var` or an assignment target writes the
-binding that is already there and answers the same scope; a `let` or a
-`const` gets a **fresh cell per iteration**, which is
+/-- ForIn/OfHeadEvaluation (14.7.5.6) with `iterate`, and the
+BreakableStatement around it. The head scope is the `for`-`in`'s: a `let`
+or `const` head evaluates the right operand with one *uninitialized* cell
+per bound name, so `for (let x of x)` is the dead zone's
+`ReferenceError`. There is no `attempt` here — `evalForOf` answers its
+own `break`, because it has an iterator to close first. -/
+def evalForOfLoop (env : Env) (labels : List String) (left : ForInLeft) (right : Expr)
+    (body : Stmt) : EvalM (Option Value) := do
+  let headEnv ←
+    match left with
+    | .decl .«var» _ => pure env
+    | .decl kind p => allocNames env kind.isMutable p.boundNames
+    | .target _ => pure env
+    | .pattern _ => pure env
+  let rhs ← evalExpr headEnv right
+  let ir ← getIterator rhs
+  evalForOf env labels left body ir (some undefValue)
+  partial_fixpoint
+
+/-- ForIn/OfBodyEvaluation (14.7.5.7) steps 6.a–6.l for `iterate`. The
+binding is *inside* the `attempt` because step 6.h closes the iterator
+when the binding itself fails. Exhaustion is the only exit that does not
+close, and a throw from the step never reaches here — `iteratorStep`
+throws for the iterator, which closes nothing.
+
+This recurses until the iterator says stop, so it is `rw`'s and never a
+simp set's. -/
+def evalForOf (env : Env) (labels : List String) (left : ForInLeft) (body : Stmt)
+    (ir : IteratorRecord) (acc : Option Value) : EvalM (Option Value) := do
+  match ← iteratorStep ir with
+  | none => pure acc
+  | some v =>
+    match ← attempt (do
+      let inner ← bindForIn env left v
+      evalStmt inner body acc) with
+    | .ok v' => evalForOf env labels left body ir v'
+    | .error (.«continue» l v') =>
+      if loopContinues labels l then evalForOf env labels left body ir v'
+      else do
+        iteratorClose ir (some (.«continue» l v'))
+        throwCompletion (.«continue» l v')
+    | .error (.«break» none v') => do
+      iteratorClose ir none
+      pure v'
+    | .error c => do
+      iteratorClose ir (some c)
+      throwCompletion c
+  partial_fixpoint
+
+/-- Bind one key or value to the head of a `for`-`in` or a `for`-`of`. A
+`var`, an assignment target, and an assignment pattern write the bindings
+that are already there and answer the same scope; a `let` or a `const`
+gets **fresh cells per iteration**, which is
 CreatePerIterationEnvironment's effect and what makes two closures the
 body builds see two bindings. -/
 def bindForIn (env : Env) (left : ForInLeft) (v : Value) : EvalM Env := do
   match left with
-  | .decl .«var» name => do
-    putIdent env name v
+  | .decl .«var» p => do
+    bindPattern env .«var» p v
     pure env
-  | .decl kind name => do
-    let r ← allocCell { mutable := kind.isMutable, value := some v }
-    pure ((name, r) :: env)
+  | .decl kind p => do
+    let inner ← allocNames env kind.isMutable p.boundNames
+    bindPattern inner .init p v
+    pure inner
+  | .pattern p => do
+    bindPattern env .assign p v
+    pure env
   | .target (.ident name) => do
     putIdent env name v
     pure env

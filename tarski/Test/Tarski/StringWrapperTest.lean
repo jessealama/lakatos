@@ -45,7 +45,7 @@ private def wrap (e : Expr) : Expr := .new (.ident "String") [e]
 
 /-- `const s = new String("ab"); <rest>` -/
 private def withS (str : String) (rest : List Stmt) : Program :=
-  .varDecl .«const» [{ name := "s", init := some (wrap (.strLit str)) }] :: rest
+  .varDecl .«const» [{ target := "s", init := some (wrap (.strLit str)) }] :: rest
 
 /-! ## The object -/
 
@@ -80,7 +80,7 @@ The indices come first, then `length`, then anything a script added. -/
 #guard outcome
     (withS "ab"
       [ .exprStmt (.assign (.member (.ident "s") "foo") (.numLit 1.0)),
-        .varDecl .«let» [{ name := "k", init := some (.strLit "") }],
+        .varDecl .«let» [{ target := "k", init := some (.strLit "") }],
         .forInStmt (.decl .«const» "x") (.ident "s")
           (.exprStmt (.assign (.ident "k") (.binary .add (.ident "k") (.ident "x")))),
         .exprStmt (.ident "k") ])
@@ -181,7 +181,7 @@ prototype and its `[[StringData]]` all the same. -/
 
 #guard outcome
     [ .classDecl "S" { name := some "S", superClass := some (.ident "String"), elements := [] },
-      .varDecl .«const» [{ name := "x", init := some (.new (.ident "S") [.strLit "ab"]) }],
+      .varDecl .«const» [{ target := "x", init := some (.new (.ident "S") [.strLit "ab"]) }],
       .exprStmt (.logical .and
         (.binary .strictEq (.member (.ident "x") "length") (.numLit 2.0))
         (.binary .instanceof (.ident "x") (.ident "S"))) ]

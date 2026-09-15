@@ -60,7 +60,7 @@ private def causeOpts (e : Expr) : Expr := .objectLit [.init "cause" (e)]
   "hasOwnProperty") [.strLit "cause"])) == "false"
 -- An inherited `cause` counts, HasProperty walking the chain.
 #guard outcome
-  [ .varDecl .«const» [{ name := "p", init := some (.objectLit [.init "cause" (.numLit 5.0)]) }],
+  [ .varDecl .«const» [{ target := "p", init := some (.objectLit [.init "cause" (.numLit 5.0)]) }],
     .exprStmt (.member (make "Error"
       [.strLit "m", .call (.member (.ident "Object") "create") [.ident "p"]]) "cause") ] == "5"
 
@@ -99,7 +99,7 @@ private def agg : Expr :=
 
 -- `errors` is a fresh array, and it is non-enumerable.
 #guard outcome
-  [ .varDecl .«const» [{ name := "xs", init := some (.arrayLit [.numLit 1.0]) }],
+  [ .varDecl .«const» [{ target := "xs", init := some (.arrayLit [.numLit 1.0]) }],
     .exprStmt (.binary .strictEq
       (.member (make "AggregateError" [.ident "xs"]) "errors") (.ident "xs")) ] == "false"
 #guard outcome (expr (.call (.member agg "propertyIsEnumerable") [.strLit "errors"])) == "false"
@@ -117,7 +117,8 @@ private def agg : Expr :=
 #guard outcome (expr (.member (.member
   (.call (.ident "AggregateError") [.arrayLit []]) "errors") "length")) == "0"
 
--- A string is its characters, as iterating one would give.
+-- Step 4 is IterableToList, so a string argument is its *code points*,
+-- through `String.prototype[@@iterator]`.
 #guard outcome (expr (.member (.member (make "AggregateError" [.strLit "ab"]) "errors")
   "length")) == "2"
 

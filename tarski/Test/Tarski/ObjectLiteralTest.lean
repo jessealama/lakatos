@@ -34,7 +34,7 @@ private def keysJoined (e : Expr) : Expr :=
 records that it ran and answers its second argument, so a case can read
 the order its members were evaluated in off `log`. -/
 private def declareLog : List Stmt :=
-  [ .varDecl .«let» [{ name := "log", init := some (.strLit "") }],
+  [ .varDecl .«let» [{ target := "log", init := some (.strLit "") }],
     .funcDecl "t" ["s", "v"]
       [ .exprStmt (.assign (.ident "log") (.binary .add (.ident "log") (.ident "s"))),
         .returnStmt (some (.ident "v")) ] ]
@@ -50,7 +50,7 @@ member and `{ undefined }` binds the literal `undefined` binds. -/
 
 -- `const v = 2; ({ v }).v;`
 #guard outcome
-    [ .varDecl .«const» [{ name := "v", init := some (.numLit 2.0) }],
+    [ .varDecl .«const» [{ target := "v", init := some (.numLit 2.0) }],
       .exprStmt (.member (.objectLit [.init "v" (.ident "v")]) "v") ]
   == "2"
 
@@ -60,7 +60,7 @@ member and `{ undefined }` binds the literal `undefined` binds. -/
 
 -- `const v = 2; Object.keys({ v }).join();`
 #guard outcome
-    [ .varDecl .«const» [{ name := "v", init := some (.numLit 2.0) }],
+    [ .varDecl .«const» [{ target := "v", init := some (.numLit 2.0) }],
       .exprStmt (keysJoined (.objectLit [.init "v" (.ident "v")])) ]
   == "v"
 
@@ -68,7 +68,7 @@ member and `{ undefined }` binds the literal `undefined` binds. -/
 
 -- `const k = "dyn"; ({ [k + "1"]: 1 }).dyn1;`
 #guard outcome
-    [ .varDecl .«const» [{ name := "k", init := some (.strLit "dyn") }],
+    [ .varDecl .«const» [{ target := "k", init := some (.strLit "dyn") }],
       .exprStmt (.member (.objectLit
         [.init (.computed (.binary .add (.ident "k") (.strLit "1"))) (.numLit 1.0)]) "dyn1") ]
   == "1"
@@ -177,7 +177,7 @@ A literal's method is the closure a class's method is: a `this`, no
 -- parameters before the first default.
 #guard outcome
     (expr (.member (.member (.objectLit
-      [.method .method "m" [⟨"a", none⟩, ⟨"b", some (.numLit 1.0)⟩] []]) "m") "length"))
+      [.method .method "m" ["a", ⟨"b", some (.numLit 1.0), false⟩] []]) "m") "length"))
   == "1"
 
 -- `const p = { x() { return 1; } };`
@@ -186,7 +186,7 @@ A literal's method is the closure a class's method is: a `this`, no
 -- the literal's own prototype.
 #guard outcome
     [ .varDecl .«const»
-        [ { name := "p",
+        [ { target := "p",
             init := some (.objectLit
               [.method .method "x" [] [.returnStmt (some (.numLit 1.0))]]) } ],
       .exprStmt (.call (.member (.objectLit
@@ -228,7 +228,7 @@ A literal's method is the closure a class's method is: a `this`, no
 -- `const o = { set s(v) { this.w = v * 2; } }; o.s = 2; o.w;`
 #guard outcome
     [ .varDecl .«const»
-        [ { name := "o",
+        [ { target := "o",
             init := some (.objectLit
               [ .method .setter "s" ["v"]
                   [.exprStmt (.assign (.member .this "w")
@@ -242,7 +242,7 @@ A literal's method is the closure a class's method is: a `this`, no
 -- `o.a = 3; o.a;`
 #guard outcome
     [ .varDecl .«const»
-        [ { name := "o",
+        [ { target := "o",
             init := some (.objectLit
               [ .method .getter "a" [] [.returnStmt (some (.member .this "_a"))],
                 .method .setter "a" ["v"]
@@ -255,7 +255,7 @@ A literal's method is the closure a class's method is: a `this`, no
 -- `const o = { get a() { return 1; } }; o.a = 2;`
 #guard outcome
     [ .varDecl .«const»
-        [ { name := "o",
+        [ { target := "o",
             init := some (.objectLit
               [.method .getter "a" [] [.returnStmt (some (.numLit 1.0))]]) } ],
       .exprStmt (.assign (.member (.ident "o") "a") (.numLit 2.0)) ]
@@ -307,7 +307,7 @@ otherwise. Every other spelling of the name is an ordinary member. -/
 -- counts, which is what the decoder's `.name` arm says.
 #guard outcome
     [ .varDecl .«const»
-        [ { name := "p",
+        [ { target := "p",
             init := some (.objectLit [.init "x" (.numLit 1.0)]) } ],
       .exprStmt (.member (.objectLit [.proto (.ident "p")]) "x") ]
   == "1"
@@ -315,7 +315,7 @@ otherwise. Every other spelling of the name is an ordinary member. -/
 -- `const f = function () {}; f.tag = 1; ({ __proto__: f }).tag;` — a
 -- function is an object, so it links.
 #guard outcome
-    [ .varDecl .«const» [{ name := "f", init := some (.funcExpr none [] []) }],
+    [ .varDecl .«const» [{ target := "f", init := some (.funcExpr none [] []) }],
       .exprStmt (.assign (.member (.ident "f") "tag") (.numLit 1.0)),
       .exprStmt (.member (.objectLit [.proto (.ident "f")]) "tag") ]
   == "1"
@@ -336,7 +336,7 @@ otherwise. Every other spelling of the name is an ordinary member. -/
 -- A computed key is an ordinary member, however it spells out.
 #guard outcome
     [ .varDecl .«const»
-        [ { name := "p",
+        [ { target := "p",
             init := some (.objectLit [.init "x" (.numLit 1.0)]) } ],
       .exprStmt (.call (.member (.objectLit
         [.init (.computed (.strLit "__proto__")) (.ident "p")]) "hasOwnProperty")
@@ -347,9 +347,9 @@ otherwise. Every other spelling of the name is an ordinary member. -/
 -- So is a shorthand.
 #guard outcome
     [ .varDecl .«const»
-        [ { name := "p",
+        [ { target := "p",
             init := some (.objectLit [.init "x" (.numLit 1.0)]) } ],
-      .varDecl .«const» [{ name := "__proto__", init := some (.ident "p") }],
+      .varDecl .«const» [{ target := "__proto__", init := some (.ident "p") }],
       .exprStmt (.call (.member (.objectLit [.init "__proto__" (.ident "__proto__")])
         "hasOwnProperty") [.strLit "__proto__"]) ]
   == "true"

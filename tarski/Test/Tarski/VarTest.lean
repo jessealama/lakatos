@@ -28,10 +28,10 @@ private def num (x : Float) : Expr := .numLit x
 
 /-- `var <name> = <value>;` -/
 private def varOf (name : String) (value : Expr) : Stmt :=
-  .varDecl .«var» [{ name, init := some value }]
+  .varDecl .«var» [{ target := name, init := some value }]
 
 /-- `var <name>;` -/
-private def bareVar (name : String) : Stmt := .varDecl .«var» [{ name, init := none }]
+private def bareVar (name : String) : Stmt := .varDecl .«var» [{ target := name, init := none }]
 
 /-! ## No dead zone -/
 
@@ -63,7 +63,7 @@ private def bareVar (name : String) : Stmt := .varDecl .«var» [{ name, init :=
 -- `for (let i = 0; i < 1; i++) { var q = 4; } q;` — and one inside a loop
 -- body.
 #guard outcome
-    [ .forStmt (some (.decl .«let» [{ name := "i", init := some (num 0.0) }]))
+    [ .forStmt (some (.decl .«let» [{ target := "i", init := some (num 0.0) }]))
         (some (.binary .lt (.ident "i") (num 1.0)))
         (some (.update .inc false (.ident "i")))
         (.block [varOf "q" (num 4.0)]),
@@ -88,7 +88,7 @@ private def bareVar (name : String) : Stmt := .varDecl .«var» [{ name, init :=
 -- nothing outside it, and the `var` beside it carries the value out.
 #guard outcome
     [ .block
-        [ .varDecl .«let» [{ name := "s", init := some (num 1.0) }],
+        [ .varDecl .«let» [{ target := "s", init := some (num 1.0) }],
           varOf "s2" (.ident "s") ],
       .exprStmt (.ident "s2") ]
   == "1"
@@ -97,7 +97,7 @@ private def bareVar (name : String) : Stmt := .varDecl .«var» [{ name, init :=
 -- the block and restores it after.
 #guard outcome
     [ varOf "b" (num 1.0),
-      .block [.varDecl .«let» [{ name := "b", init := some (num 2.0) }]],
+      .block [.varDecl .«let» [{ target := "b", init := some (num 2.0) }]],
       .exprStmt (.ident "b") ]
   == "1"
 

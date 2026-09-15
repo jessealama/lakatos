@@ -60,6 +60,7 @@ private def accumulated : Option Value :=
 -- rewrite: ToPrimitive answers a `Value` now, so without them every
 -- iteration's arithmetic pushes `simp` through a constructor match.
 attribute [local simp] evalExpr evalNamed evalStmt evalStmts evalForIn bindForIn
+  bindPattern evalLeafRef writeLeaf Pattern.boundNames targetBoundNames allocNames
   DeclKind.isMutable
   allocCell getCell readCell writeCell initCell putIdent
   readObj writeObj Env.lookup Heap.alloc Heap.read Heap.write Heap.readObj

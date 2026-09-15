@@ -31,7 +31,7 @@ private def expr (e : Expr) : Program := [.exprStmt e]
 
 /-- `const xs = <init>;` -/
 private def declareXs (init : Expr) : Stmt :=
-  .varDecl .«const» [{ name := "xs", init := some init }]
+  .varDecl .«const» [{ target := "xs", init := some init }]
 
 /-- An array literal of number literals. -/
 private def nums (xs : List Float) : Expr := .arrayLit (xs.map (.numLit ·))
@@ -57,7 +57,7 @@ private def negZero : Expr := .unary .neg (.numLit 0.0)
 #guard outcome
     [ declareXs (nums [1.0, 2.0]),
       .exprStmt (callOnXs "push" [.numLit 3.0]),
-      .varDecl .«const» [{ name := "s", init := some (.binary .add
+      .varDecl .«const» [{ target := "s", init := some (.binary .add
         (.binary .add
           (.binary .add (.strLit "n=") (.member (.ident "xs") "length"))
           (.strLit ":"))
@@ -183,7 +183,7 @@ private def setLength (v : Expr) (thenExpr : Expr) : Program :=
 -- `const o = {}; o.push = Array.prototype.push; o.push(1);` — pinned as
 -- #390's: the generic array-like form is not here.
 #guard outcome
-    [ .varDecl .«const» [{ name := "o", init := some (.objectLit []) }],
+    [ .varDecl .«const» [{ target := "o", init := some (.objectLit []) }],
       .exprStmt (.assign (.member (.ident "o") "push")
         (.member (.member (.ident "Array") "prototype") "push")),
       .exprStmt (.call (.member (.ident "o") "push") [.numLit 1.0]) ]
@@ -213,7 +213,7 @@ so, until #390 gives `Array.prototype` a `toString`, a `TypeError`. -/
 
 -- `const o = {}; o.join = Array.prototype.join; o.join();`
 #guard outcome
-    [ .varDecl .«const» [{ name := "o", init := some (.objectLit []) }],
+    [ .varDecl .«const» [{ target := "o", init := some (.objectLit []) }],
       .exprStmt (.assign (.member (.ident "o") "join")
         (.member (.member (.ident "Array") "prototype") "join")),
       .exprStmt (.call (.member (.ident "o") "join") []) ]

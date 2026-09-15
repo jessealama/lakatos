@@ -98,6 +98,15 @@ export default defineConfig({
         // covered — both sentinels' parse and validation arms, the
         // correspondence budget's forwarding rule, and the per-artifact
         // timeout allowance, each reached by a test.
+        // Ratcheted 2026-09-15: the bridge grew the pattern nodes — both
+        // binding patterns, both assignment patterns, `RestElement`,
+        // `SpreadElement`, and `ForOfStatement` — with a test for every
+        // arm, including the three an assignment pattern is still refused
+        // under (a BigInt key, a method, and an element that is not a
+        // reference). No ignore was added with them: `objectMember`'s old
+        // fallthrough became unreachable once spread got an arm of its
+        // own, so the three accessor forms are the function's tail rather
+        // than a guarded arm, and `declarators` no longer answers `null`.
         //
         // Measure this from a path with no dot-directory in it. The include
         // globs above do not match through one, and a run from, say, a
@@ -105,7 +114,7 @@ export default defineConfig({
         // — different denominator, different numbers.
         autoUpdate: true,
         statements: 99.66,
-        branches: 98.96,
+        branches: 98.97,
         functions: 100,
         lines: 99.74,
       },

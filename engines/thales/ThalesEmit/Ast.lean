@@ -187,6 +187,10 @@ partial def exprTerm : Tarski.Expr → RenderM Term
       #[updateOpTerm op, ← boolTerm isPrefix, ← targetTerm target]
   | .classExpr cls => do ctorApp "classExpr" #[← classDefTerm cls]
   | .delete operand => do ctorApp "delete" #[← exprTerm operand]
+  | .assignPattern pattern value => do
+    ctorApp "assignPattern" #[← patternTerm pattern, ← exprTerm value]
+  | .spread argument => do ctorApp "spread" #[← exprTerm argument]
+  | .hole => ctorApp "hole" #[]
 
 partial def exprsTerm (es : List Tarski.Expr) : RenderM Term := do
   let xs ← es.toArray.mapM exprTerm
@@ -207,6 +211,7 @@ partial def propDefTerm : Tarski.PropDef → RenderM Term
     ctorApp "method"
       #[methodKindTerm kind, ← propKeyTerm key, ← paramsTerm params, ← stmtsTerm body]
   | .proto value => do ctorApp "proto" #[← exprTerm value]
+  | .spread value => do ctorApp "spread" #[← exprTerm value]
 
 /-- An object literal's members, in the source order the AST keeps. -/
 partial def propsTerm (ps : List Tarski.PropDef) : RenderM Term := do
@@ -226,22 +231,63 @@ partial def arrowBodyTerm : Tarski.ArrowBody → RenderM Term
   | .expr value => do ctorApp "expr" #[← exprTerm value]
   | .block body => do ctorApp "block" #[← stmtsTerm body]
 
+/-- A pattern. A plain identifier leaf prints as its name — `Coe String
+Pattern` is what makes that elaborate — and every other shape as the
+constructor or structure it is. -/
+partial def patternTerm : Tarski.Pattern → RenderM Term
+  | .target (.ident name) => pure (strTerm name)
+  | .target t => do ctorApp "target" #[← targetTerm t]
+  | .array elements rest => do
+    ctorApp "array"
+      #[← patternElemsTerm elements, ← optTerm (← rest.mapM patternTerm)]
+  | .object props rest => do
+    ctorApp "object"
+      #[← patternPropsTerm props, ← optTerm (← rest.mapM targetTerm)]
+
+/-- One `ArrayPattern` element. -/
+partial def patternElemTerm (e : Tarski.PatternElem) : RenderM Term := do
+  let target ← patternTerm e.target
+  let dflt ← optTerm (← e.default.mapM exprTerm)
+  `({ target := $target, default := $dflt })
+
+/-- An `ArrayPattern`'s elements, `none` being an elision. -/
+partial def patternElemsTerm (es : List (Option Tarski.PatternElem)) :
+    RenderM Term := do
+  let xs ← es.toArray.mapM (fun e => do optTerm (← e.mapM patternElemTerm))
+  `([$xs,*])
+
+/-- One `ObjectPattern` property. -/
+partial def patternPropTerm (p : Tarski.PatternProp) : RenderM Term := do
+  let key ← propKeyTerm p.key
+  let target ← patternTerm p.target
+  let dflt ← optTerm (← p.default.mapM exprTerm)
+  `({ key := $key, target := $target, default := $dflt })
+
+/-- An `ObjectPattern`'s properties, in source order. -/
+partial def patternPropsTerm (ps : List Tarski.PatternProp) : RenderM Term := do
+  let xs ← ps.toArray.mapM patternPropTerm
+  `([$xs,*])
+
 /-- A plain parameter is its name as a string literal — `Coe String Param`
-is what makes that elaborate — and a defaulted one the structure it is. -/
+is what makes that elaborate — and a defaulted, destructuring, or rest
+one is the structure it is, `rest` printed only when it is set. -/
 partial def paramTerm (p : Tarski.Param) : RenderM Term := do
-  match p.default with
-  | none => pure (strTerm p.name)
-  | some d =>
-    let value ← exprTerm d
-    `({ name := $(strTerm p.name), default := some $value })
+  match p.target, p.default, p.rest with
+  | .target (.ident name), none, false => pure (strTerm name)
+  | _, _, _ =>
+    let target ← patternTerm p.target
+    let dflt ← optTerm (← p.default.mapM exprTerm)
+    if p.rest then `({ target := $target, default := $dflt, rest := true })
+    else `({ target := $target, default := $dflt })
 
 partial def paramsTerm (ps : List Tarski.Param) : RenderM Term := do
   let xs ← ps.toArray.mapM paramTerm
   `([$xs,*])
 
 partial def declaratorTerm (d : Tarski.Declarator) : RenderM Term := do
+  let target ← patternTerm d.target
   let init ← optTerm (← d.init.mapM exprTerm)
-  `({ name := $(strTerm d.name), init := $init })
+  `({ target := $target, init := $init })
 
 partial def declaratorsTerm (ds : List Tarski.Declarator) : RenderM Term := do
   let xs ← ds.toArray.mapM declaratorTerm
@@ -253,8 +299,9 @@ partial def forInitTerm : Tarski.ForInit → RenderM Term
   | .expr value => do ctorApp "expr" #[← exprTerm value]
 
 partial def forInLeftTerm : Tarski.ForInLeft → RenderM Term
-  | .decl kind name => ctorApp "decl" #[declKindTerm kind, strTerm name]
+  | .decl kind target => do ctorApp "decl" #[declKindTerm kind, ← patternTerm target]
   | .target t => do ctorApp "target" #[← targetTerm t]
+  | .pattern p => do ctorApp "pattern" #[← patternTerm p]
 
 partial def switchCaseTerm (c : Tarski.SwitchCase) : RenderM Term := do
   let test ← optTerm (← c.test.mapM exprTerm)
@@ -266,7 +313,7 @@ partial def casesTerm (cs : List Tarski.SwitchCase) : RenderM Term := do
   `([$xs,*])
 
 partial def catchTerm (c : Tarski.CatchClause) : RenderM Term := do
-  let param ← optTerm (c.param.map strTerm)
+  let param ← optTerm (← c.param.mapM patternTerm)
   let body ← stmtsTerm c.body
   `({ param := $param, body := $body })
 
@@ -333,6 +380,9 @@ partial def stmtTerm : Tarski.Stmt → RenderM Term
     ctorApp "continueStmt" #[← optTerm (label.map strTerm)]
   | .forInStmt left right body => do
     ctorApp "forInStmt"
+      #[← forInLeftTerm left, ← exprTerm right, ← stmtTerm body]
+  | .forOfStmt left right body => do
+    ctorApp "forOfStmt"
       #[← forInLeftTerm left, ← exprTerm right, ← stmtTerm body]
   | .classDecl name cls => do
     ctorApp "classDecl" #[strTerm name, ← classDefTerm cls]

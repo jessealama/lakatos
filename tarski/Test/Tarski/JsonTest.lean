@@ -53,7 +53,7 @@ private def nested : Expr :=
 #guard outcome (expr (stringify [.numLit 1.5])) == "1.5"
 
 #guard outcome
-  [ .varDecl .«const» [{ name := "o", init := some (.objectLit []) }],
+  [ .varDecl .«const» [{ target := "o", init := some (.objectLit []) }],
     .exprStmt (.assign (.member (.ident "o") "self") (.ident "o")),
     .exprStmt (stringify [.ident "o"]) ]
   == "uncaught: TypeError: Converting circular structure to JSON"
@@ -61,7 +61,7 @@ private def nested : Expr :=
 -- A repeated *sibling* is not a cycle: the stack holds the path, not
 -- everything already seen.
 #guard outcome
-  [ .varDecl .«const» [{ name := "x", init := some (.objectLit []) }],
+  [ .varDecl .«const» [{ target := "x", init := some (.objectLit []) }],
     .exprStmt (stringify [.arrayLit [.ident "x", .ident "x"]]) ] == "[{},{}]"
 
 /-! ## What has no JSON text -/
@@ -96,13 +96,13 @@ private def nested : Expr :=
 
 #guard outcome
   [ .varDecl .«const»
-      [{ name := "o",
+      [{ target := "o",
          init := some (.objectLit
            [.init "toJSON" (.funcExpr none ["k"] [.returnStmt (some (.ident "k"))])]) }],
     .exprStmt (stringify [.objectLit [.init "x" (.ident "o")]]) ] == "{\"x\":\"x\"}"
 
 #guard outcome
-  [ .varDecl .«const» [{ name := "o", init := some (.objectLit []) }],
+  [ .varDecl .«const» [{ target := "o", init := some (.objectLit []) }],
     .exprStmt (.call (.member (.ident "Object") "defineProperty")
       [ .ident "o", .strLit "x",
         .objectLit [.init "get" (.funcExpr none [] [.returnStmt (some (.numLit 7.0))]), .init "enumerable" (.boolLit true)] ]),
@@ -182,7 +182,7 @@ private def nested : Expr :=
 
 -- The walk is depth first and the root comes last, under the key `""`.
 #guard outcome
-  [ .varDecl .«let» [{ name := "seen", init := some (.strLit "") }],
+  [ .varDecl .«let» [{ target := "seen", init := some (.strLit "") }],
     .exprStmt (parse
       [ .strLit "{\"a\":{\"b\":1}}",
         .funcExpr none ["k", "v"]
@@ -193,7 +193,7 @@ private def nested : Expr :=
 
 -- An array's elements are walked by its length, in index order.
 #guard outcome
-  [ .varDecl .«let» [{ name := "seen", init := some (.strLit "") }],
+  [ .varDecl .«let» [{ target := "seen", init := some (.strLit "") }],
     .exprStmt (parse
       [ .strLit "[10,20]",
         .funcExpr none ["k", "v"]

@@ -14,7 +14,7 @@ open Tarski
 
 /-- `let n = 0; while (n < 3) { n = n + 1; } n;` -/
 private def program : Program :=
-  [ .varDecl .«let» [{ name := "n", init := some (.numLit 0.0) }],
+  [ .varDecl .«let» [{ target := "n", init := some (.numLit 0.0) }],
     .whileStmt (.binary .lt (.ident "n") (.numLit 3.0))
       (.block [.exprStmt (.assign (.ident "n") (.binary .add (.ident "n") (.numLit 1.0)))]),
     .exprStmt (.ident "n") ]
@@ -24,6 +24,7 @@ private def program : Program :=
 -- rewrite: ToPrimitive answers a `Value` now, so without them every
 -- iteration's arithmetic pushes `simp` through a constructor match.
 attribute [local simp] evalExpr evalStmt evalStmts evalDeclarators evalNamed
+  bindPattern evalLeafRef writeLeaf Pattern.boundNames targetBoundNames allocNames
   instantiateBlock hoistNames hoistDeclarators initFunctions
   varNames varNamesStmt varNamesCases hoistVars
   allocCell getCell readCell writeCell initCell putIdent

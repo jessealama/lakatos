@@ -18,8 +18,8 @@ open Tarski
 
 /-- `let x = 3; const y = x * 2.5; y === 7.5 ? 1 : 0` -/
 private def program : Program :=
-  [ .varDecl .«let» [{ name := "x", init := some (.numLit 3.0) }],
-    .varDecl .«const» [{ name := "y", init := some (.binary .mul (.ident "x") (.numLit 2.5)) }],
+  [ .varDecl .«let» [{ target := "x", init := some (.numLit 3.0) }],
+    .varDecl .«const» [{ target := "y", init := some (.binary .mul (.ident "x") (.numLit 2.5)) }],
     .exprStmt (.cond (.binary .strictEq (.ident "y") (.numLit 7.5))
       (.numLit 1.0) (.numLit 0.0)) ]
 

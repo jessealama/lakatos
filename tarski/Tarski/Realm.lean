@@ -57,11 +57,22 @@ the literal against the constants so the two cannot drift apart.
 | 106       | `Function.prototype[@@hasInstance]`                       |
 | 107       | `Object.getOwnPropertySymbols`                            |
 | 108       | `Error.isError`                                          |
+| 109–110   | `%IteratorPrototype%`, `%IteratorPrototype%[@@iterator]` |
+| 111–112   | `%ArrayIteratorPrototype%`, its `next`                    |
+| 113–115   | `Array.prototype.keys`, `values`, `entries`               |
+| 116–117   | `Object.fromEntries`, `Object.groupBy`                    |
 
 | 109       | `String.prototype`, itself a String object of `""`        |
 | 110–112   | `String.fromCharCode`, `String.fromCodePoint`, `String.raw` |
 | 113–143   | `String.prototype.at`, `charAt`, `charCodeAt`, `codePointAt`, `concat`, `endsWith`, `includes`, `indexOf`, `isWellFormed`, `lastIndexOf`, `localeCompare`, `normalize`, `padEnd`, `padStart`, `repeat`, `replace`, `replaceAll`, `slice`, `split`, `startsWith`, `substring`, `toLocaleLowerCase`, `toLocaleUpperCase`, `toLowerCase`, `toString`, `toUpperCase`, `toWellFormed`, `trim`, `trimEnd`, `trimStart`, `valueOf` |
-A hundred and forty-four objects, then, and thirty-seven cells. The
+| 144–145   | `%IteratorPrototype%`, `%IteratorPrototype%[@@iterator]` |
+| 146–147   | `%ArrayIteratorPrototype%`, its `next`                    |
+| 148–150   | `Array.prototype.keys`, `values`, `entries`               |
+| 151–152   | `Object.fromEntries`, `Object.groupBy`                    |
+| 153–154   | `%StringIteratorPrototype%`, its `next`                   |
+| 155       | `String.prototype[@@iterator]`                            |
+
+A hundred and fifty-six objects, then, and thirty-seven cells. The
 twenty-four global bindings are cells 0–23: the seven `Error`
 constructors, then `Object`, `Array`, `String`, `print`, `$262`,
 `Number`, `Boolean`, `Math`, `NaN`, `Infinity`, `parseFloat`,
@@ -74,9 +85,21 @@ immutable and empty and are never read.
 
 `Symbol` is the third primitive (`Tarski/Value.lean`), and the thirteen
 well-known symbols are *values* here: `@@toPrimitive`, `@@toStringTag`,
-and `@@hasInstance` have their semantics in the evaluator, and the other
-ten wait for the protocols that read them (#394's iterators, #390's
-`Array.prototype`). `%SymbolRegistry%` is an intrinsic with no binding,
+`@@hasInstance`, and `@@iterator` have their semantics in the evaluator,
+and the other nine wait for the protocols that read them (#390's
+`Array.prototype`).
+
+`%IteratorPrototype%` and `%ArrayIteratorPrototype%` are **unbound
+intrinsics**: nothing in source names either one — `Iterator`, the
+constructor, is outside this epic — and they are reached only through
+`[].values()` and `Object.getPrototypeOf`. `%IteratorPrototype%`'s
+`@@iterator` answers its own receiver, which is what makes every
+iterator that inherits from it iterable; `%ArrayIteratorPrototype%`'s
+`@@toStringTag` is `"Array Iterator"`, which is where
+`[object Array Iterator]` comes from, there being no `builtinTag` row
+for it. `Array.prototype[@@iterator]` *is* `Array.prototype.values`
+(23.1.3.40) — one object, not two — and an `arguments` object's
+`@@iterator` is that same object (10.4.4.6 step 8). `%SymbolRegistry%` is an intrinsic with no binding,
 like `%PrintLog%`: `Symbol.for`'s string keys to its symbols, which is
 what makes `Symbol.for("q") === Symbol.for("q")`.
 
@@ -480,6 +503,44 @@ def objectGetOwnPropertySymbolsRef : Ref := 107
 /-- `Error.isError`. -/
 def errorIsErrorRef : Ref := 108
 
+/-- `%IteratorPrototype%` (27.1.2), which every iterator here inherits
+from and which nothing in source can name. -/
+def iteratorProtoRef : Ref := 144
+
+/-- `%IteratorPrototype%[@@iterator]` (27.1.2.1). -/
+def iteratorProtoIteratorRef : Ref := 145
+
+/-- `%ArrayIteratorPrototype%` (23.1.5.2). -/
+def arrayIteratorProtoRef : Ref := 146
+
+/-- `%ArrayIteratorPrototype%.next` (23.1.5.2.1). -/
+def arrayIteratorNextRef : Ref := 147
+
+/-- `Array.prototype.keys`. -/
+def arrayKeysRef : Ref := 148
+
+/-- `Array.prototype.values`, which is `Array.prototype[@@iterator]` and
+an `arguments` object's `@@iterator` too. -/
+def arrayValuesRef : Ref := 149
+
+/-- `Array.prototype.entries`. -/
+def arrayEntriesRef : Ref := 150
+
+/-- `Object.fromEntries`. -/
+def objectFromEntriesRef : Ref := 151
+
+/-- `Object.groupBy`. -/
+def objectGroupByRef : Ref := 152
+
+/-- `%StringIteratorPrototype%` (22.1.5.1). -/
+def stringIteratorProtoRef : Ref := 153
+
+/-- `%StringIteratorPrototype%.next` (22.1.5.1.1). -/
+def stringIteratorNextRef : Ref := 154
+
+/-- `String.prototype[@@iterator]` (22.1.3.36). -/
+def stringProtoIteratorRef : Ref := 155
+
 /-- The cell the first well-known symbol's identity lives in; the
 thirteen run from here to 36, in 6.1.5.1's table order. -/
 def wellKnownSymbolCellBase : CellRef := 24
@@ -868,8 +929,7 @@ def Heap.initial : Heap where
              ("toLocaleString", Property.method (.obj 70)),
              ("toString", Property.method (.obj 68)),
              ("valueOf", Property.method (.obj 69)) ] },
-       -- 16: Object. `fromEntries` and `groupBy` want iterators (#394);
-       -- everything else 20.1.2 lists is here.
+       -- 16: Object, the whole of 20.1.2.
        Obj.builtinWith .objectCtor "Object" 1
          [ ("prototype", Property.constant (.obj 15)),
            ("assign", Property.method (.obj 73)),
@@ -878,11 +938,13 @@ def Heap.initial : Heap where
            ("defineProperty", Property.method (.obj 76)),
            ("entries", Property.method (.obj 77)),
            ("freeze", Property.method (.obj 78)),
+           ("fromEntries", Property.method (.obj 151)),
            ("getOwnPropertyDescriptor", Property.method (.obj 79)),
            ("getOwnPropertyDescriptors", Property.method (.obj 80)),
            ("getOwnPropertyNames", Property.method (.obj 81)),
            ("getOwnPropertySymbols", Property.method (.obj 107)),
            ("getPrototypeOf", Property.method (.obj 82)),
+           ("groupBy", Property.method (.obj 152)),
            ("hasOwn", Property.method (.obj 83)),
            ("is", Property.method (.obj 18)),
            ("isExtensible", Property.method (.obj 84)),
@@ -899,12 +961,18 @@ def Heap.initial : Heap where
        Obj.builtin .objectIs "is" 2,
        -- 19: Object.keys
        Obj.builtin .objectKeys "keys" 1,
-       -- 20: Array.prototype, an array of length 0.
+       -- 20: Array.prototype, an array of length 0. The members are in
+       -- 23.1.3's own order, and `@@iterator` is `values` itself
+       -- (23.1.3.40) rather than a second function object.
        { proto := some 15,
          properties :=
            [ ("constructor", Property.method (.obj 21)),
+             ("entries", Property.method (.obj 150)),
+             ("join", Property.method (.obj 23)),
+             ("keys", Property.method (.obj 148)),
              ("push", Property.method (.obj 22)),
-             ("join", Property.method (.obj 23)) ],
+             ("values", Property.method (.obj 149)),
+             (WellKnownSymbol.iterator.key, Property.method (.obj 149)) ],
          kind := .array 0 true },
        -- 21: Array
        Obj.builtinWith .arrayCtor "Array" 1
@@ -1279,7 +1347,8 @@ def Heap.initial : Heap where
              (Key.str "trim", Property.method (.obj 140)),
              (Key.str "trimEnd", Property.method (.obj 141)),
              (Key.str "trimStart", Property.method (.obj 142)),
-             (Key.str "valueOf", Property.method (.obj 143)) ] },
+             (Key.str "valueOf", Property.method (.obj 143)),
+             (WellKnownSymbol.iterator.key, Property.method (.obj 155)) ] },
        -- 110: String.fromCharCode
        Obj.builtin (.string .fromCharCode) "fromCharCode" 1,
        -- 111: String.fromCodePoint
@@ -1347,6 +1416,46 @@ def Heap.initial : Heap where
        -- 142: String.prototype.trimStart
        Obj.builtin (.string .trimStart) "trimStart" 0,
        -- 143: String.prototype.valueOf
-       Obj.builtin (.string .valueOf) "valueOf" 0 ]
+       Obj.builtin (.string .valueOf) "valueOf" 0,
+       -- 144: %IteratorPrototype%. Unbound: nothing in source names it.
+       { proto := some 15,
+         properties :=
+           [ (WellKnownSymbol.iterator.key, Property.method (.obj 145)) ] },
+       -- 145: %IteratorPrototype%[@@iterator], which answers its own
+       -- receiver.
+       Obj.builtin .iteratorProtoIterator "[Symbol.iterator]" 0,
+       -- 146: %ArrayIteratorPrototype%. Its tag is what makes
+       -- `Object.prototype.toString.call([].values())` answer
+       -- `[object Array Iterator]`.
+       { proto := some 144,
+         properties :=
+           [ ("next", Property.method (.obj 147)),
+             (WellKnownSymbol.toStringTag.key,
+               Property.attribute (.prim (.str "Array Iterator"))) ] },
+       -- 147: %ArrayIteratorPrototype%.next
+       Obj.builtin .arrayIteratorNext "next" 0,
+       -- 148: Array.prototype.keys
+       Obj.builtin .arrayKeys "keys" 0,
+       -- 149: Array.prototype.values, which Array.prototype[@@iterator]
+       -- and an `arguments` object's `@@iterator` both are.
+       Obj.builtin .arrayValues "values" 0,
+       -- 150: Array.prototype.entries
+       Obj.builtin .arrayEntries "entries" 0,
+       -- 151: Object.fromEntries
+       Obj.builtin .objectFromEntries "fromEntries" 1,
+       -- 152: Object.groupBy
+       Obj.builtin .objectGroupBy "groupBy" 2,
+       -- 153: %StringIteratorPrototype%, which walks a string by *code
+       -- point* rather than by code unit — the one place the two differ
+       -- observably outside `codePointAt`.
+       { proto := some 144,
+         properties :=
+           [ ("next", Property.method (.obj 154)),
+             (WellKnownSymbol.toStringTag.key,
+               Property.attribute (.prim (.str "String Iterator"))) ] },
+       -- 154: %StringIteratorPrototype%.next
+       Obj.builtin .stringIteratorNext "next" 0,
+       -- 155: String.prototype[@@iterator]
+       Obj.builtin .stringProtoIterator "[Symbol.iterator]" 0 ]
 
 end Tarski

@@ -33,7 +33,7 @@ private def expr (e : Expr) : Program := [.exprStmt e]
 
 /-- `const s = Symbol(<args>);` in front of one expression. -/
 private def withSymbol (args : List Expr) (e : Expr) : Program :=
-  [ .varDecl .«const» [{ name := "s", init := some (.call (.ident "Symbol") args) }],
+  [ .varDecl .«const» [{ target := "s", init := some (.call (.ident "Symbol") args) }],
     .exprStmt e ]
 
 /-- `s`, the symbol the two helpers above bind. -/
@@ -42,8 +42,8 @@ private def s : Expr := .ident "s"
 /-- `const s = Symbol("k"); const o = {}; o[s] = 1;` and then one
 expression. -/
 private def keyed (e : Expr) : Program :=
-  [ .varDecl .«const» [{ name := "s", init := some (.call (.ident "Symbol") [.strLit "k"]) }],
-    .varDecl .«const» [{ name := "o", init := some (.objectLit [.init "a" (.numLit 0.0)]) }],
+  [ .varDecl .«const» [{ target := "s", init := some (.call (.ident "Symbol") [.strLit "k"]) }],
+    .varDecl .«const» [{ target := "o", init := some (.objectLit [.init "a" (.numLit 0.0)]) }],
     .exprStmt (.assign (.index (.ident "o") s) (.numLit 1.0)),
     .exprStmt e ]
 
@@ -137,10 +137,10 @@ operation the specification makes string-only. -/
 
 -- `for`-`in` is string-only: the symbol key is never visited.
 #guard outcome
-  [ .varDecl .«const» [{ name := "s", init := some (.call (.ident "Symbol") [.strLit "k"]) }],
-    .varDecl .«const» [{ name := "o", init := some (.objectLit [.init "a" (.numLit 0.0)]) }],
+  [ .varDecl .«const» [{ target := "s", init := some (.call (.ident "Symbol") [.strLit "k"]) }],
+    .varDecl .«const» [{ target := "o", init := some (.objectLit [.init "a" (.numLit 0.0)]) }],
     .exprStmt (.assign (.index (.ident "o") s) (.numLit 1.0)),
-    .varDecl .«let» [{ name := "out", init := some (.strLit "") }],
+    .varDecl .«let» [{ target := "out", init := some (.strLit "") }],
     .forInStmt (.decl .«let» "k") (.ident "o")
       (.exprStmt (.assign (.ident "out") (.binary .add (.ident "out") (.ident "k")))),
     .exprStmt (.ident "out") ] == "a"
@@ -149,47 +149,47 @@ operation the specification makes string-only. -/
 -- lands as a symbol key and `{ [s]: 1 }` is the literal form of what
 -- `keyed` writes.
 #guard outcome
-  [ .varDecl .«const» [{ name := "s", init := some (.call (.ident "Symbol") [.strLit "k"]) }],
+  [ .varDecl .«const» [{ target := "s", init := some (.call (.ident "Symbol") [.strLit "k"]) }],
     .varDecl .«const»
-      [{ name := "o",
+      [{ target := "o",
          init := some (.objectLit [.init (.computed s) (.numLit 1.0), .init "a" (.numLit 0.0)]) }],
     .exprStmt (.index (.ident "o") s) ] == "1"
 #guard outcome
-  [ .varDecl .«const» [{ name := "s", init := some (.call (.ident "Symbol") [.strLit "k"]) }],
+  [ .varDecl .«const» [{ target := "s", init := some (.call (.ident "Symbol") [.strLit "k"]) }],
     .varDecl .«const»
-      [{ name := "o",
+      [{ target := "o",
          init := some (.objectLit [.init (.computed s) (.numLit 1.0), .init "a" (.numLit 0.0)]) }],
     .exprStmt (.call (.member (.ident "JSON") "stringify") [.ident "o"]) ] == "{\"a\":0}"
 
 -- A symbol-keyed method's `name` is its key's description in brackets
 -- (10.2.9).
 #guard outcome
-  [ .varDecl .«const» [{ name := "s", init := some (.call (.ident "Symbol") [.strLit "k"]) }],
+  [ .varDecl .«const» [{ target := "s", init := some (.call (.ident "Symbol") [.strLit "k"]) }],
     .varDecl .«const»
-      [{ name := "o",
+      [{ target := "o",
          init := some (.objectLit [.method .method (.computed s) [] []]) }],
     .exprStmt (.member (.index (.ident "o") s) "name") ] == "[k]"
 
 -- A symbol with no description names the method the empty string, which
 -- is 10.2.9 step 1.b and not `"[]"`.
 #guard outcome
-  [ .varDecl .«const» [{ name := "s", init := some (.call (.ident "Symbol") []) }],
+  [ .varDecl .«const» [{ target := "s", init := some (.call (.ident "Symbol") []) }],
     .varDecl .«const»
-      [{ name := "o",
+      [{ target := "o",
          init := some (.objectLit [.init (.computed s) (.funcExpr none [] [])]) }],
     .exprStmt (.member (.index (.ident "o") s) "name") ] == ""
 
 -- `Object.defineProperty` takes a symbol key like any other.
 #guard outcome
-  [ .varDecl .«const» [{ name := "s", init := some (.call (.ident "Symbol") [.strLit "k"]) }],
-    .varDecl .«const» [{ name := "o", init := some (.objectLit []) }],
+  [ .varDecl .«const» [{ target := "s", init := some (.call (.ident "Symbol") [.strLit "k"]) }],
+    .varDecl .«const» [{ target := "o", init := some (.objectLit []) }],
     .exprStmt (.call (.member (.ident "Object") "defineProperty")
       [.ident "o", s, .objectLit [.init "value" (.numLit 2.0)]]),
     .exprStmt (.index (.ident "o") s) ] == "2"
 
 -- A message that names a symbol key prints its descriptive string.
 #guard outcome
-  [ .varDecl .«const» [{ name := "s", init := some (.call (.ident "Symbol") [.strLit "k"]) }],
+  [ .varDecl .«const» [{ target := "s", init := some (.call (.ident "Symbol") [.strLit "k"]) }],
     .exprStmt (.assign (.index (.numLit 1.0) s) (.numLit 1.0)) ]
   == "uncaught: TypeError: Cannot set properties of 1 (setting 'Symbol(k)')"
 
@@ -253,7 +253,7 @@ private def twoSymbols : Obj :=
 
 -- A tag a script defines for itself.
 #guard outcome
-  [ .varDecl .«const» [{ name := "o", init := some (.objectLit []) }],
+  [ .varDecl .«const» [{ target := "o", init := some (.objectLit []) }],
     .exprStmt (.call (.member (.ident "Object") "defineProperty")
       [ .ident "o", .member (.ident "Symbol") "toStringTag",
         .objectLit [.init "value" (.strLit "X")] ]),
@@ -270,7 +270,7 @@ operator. -/
 /-- `const o = {}; Object.defineProperty(o, Symbol.toPrimitive, { value: function (h) { return h; } });`
 and then one expression. -/
 private def withHandler (body : List Stmt) (e : Expr) : Program :=
-  [ .varDecl .«const» [{ name := "o", init := some (.objectLit []) }],
+  [ .varDecl .«const» [{ target := "o", init := some (.objectLit []) }],
     .exprStmt (.call (.member (.ident "Object") "defineProperty")
       [ .ident "o", .member (.ident "Symbol") "toPrimitive",
         .objectLit [.init "value" (.funcExpr none ["h"] body)] ]),
@@ -294,8 +294,8 @@ private def echoHint : List Stmt := [.returnStmt (some (.ident "h"))]
 -- `Symbol.prototype[@@toPrimitive]` ignores its hint and answers the
 -- symbol, which is why a symbol survives ToPropertyKey.
 #guard outcome
-  [ .varDecl .«const» [{ name := "s", init := some (.call (.ident "Symbol") [.strLit "k"]) }],
-    .varDecl .«const» [{ name := "o", init := some (.objectLit []) }],
+  [ .varDecl .«const» [{ target := "s", init := some (.call (.ident "Symbol") [.strLit "k"]) }],
+    .varDecl .«const» [{ target := "o", init := some (.objectLit []) }],
     .exprStmt (.assign (.index (.ident "o") (.call (.ident "Object") [s])) (.numLit 1.0)),
     .exprStmt (.index (.ident "o") s) ] == "1"
 

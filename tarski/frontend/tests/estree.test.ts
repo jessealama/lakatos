@@ -46,6 +46,7 @@ const FIXTURES = [
   "object-function",
   "template-object",
   "symbol-json-error",
+  "iterators",
 ];
 
 describe("parseScript", () => {
@@ -232,30 +233,25 @@ describe("parseScript", () => {
   // Spread is the one object-literal member still outside the slice; it
   // stands where it appeared, so the literal itself still reaches the
   // Lean decoder.
-  const MEMBERS: [string, string][] = [["a spread", "{ ...o }"]];
-  const MEMBER_KINDS: Record<string, string> = {
-    "{ ...o }": "SpreadAssignment",
-  };
-
-  for (const [what, source] of MEMBERS) {
-    it(`replaces ${what} in place`, () => {
-      const program = parseScript(
-        `"use strict";\nconst o = ${source};\n`,
-        "p.js",
-      );
-      expect(program.body[1]).toMatchObject({
-        declarations: [
-          {
-            init: {
-              type: "ObjectExpression",
-              properties: [{ type: "Unsupported", kind: MEMBER_KINDS[source] }],
-            },
+  it("emits a SpreadElement for an object literal's spread", () => {
+    const program = parseScript('"use strict";\nconst o = { ...p };\n', "p.js");
+    expect(program.body[1]).toMatchObject({
+      declarations: [
+        {
+          init: {
+            type: "ObjectExpression",
+            properties: [
+              {
+                type: "SpreadElement",
+                argument: { type: "Identifier", name: "p" },
+              },
+            ],
           },
-        ],
-      });
-      validate(program);
+        },
+      ],
     });
-  }
+    validate(program);
+  });
 
   // Every other member form is in the slice, and each carries the three
   // flags that say which spelling it was.
@@ -783,7 +779,7 @@ describe("parseScript", () => {
   // A destructuring catch binding is refused in place, so the clause —
   // and the `try` around it — survives, as an out-of-slice parameter
   // leaves its function standing.
-  it("replaces a destructuring catch binding in place", () => {
+  it("emits an ObjectPattern for a destructuring catch binding", () => {
     const program = parseScript(
       '"use strict";\ntry { } catch ({ message }) { }\n',
       "t3.js",
@@ -792,7 +788,17 @@ describe("parseScript", () => {
       type: "TryStatement",
       handler: {
         type: "CatchClause",
-        param: { type: "Unsupported", kind: "ObjectBindingPattern" },
+        param: {
+          type: "ObjectPattern",
+          properties: [
+            {
+              type: "Property",
+              key: { type: "Identifier", name: "message" },
+              value: { type: "Identifier", name: "message" },
+              shorthand: true,
+            },
+          ],
+        },
       },
     });
     validate(program);
@@ -997,7 +1003,7 @@ describe("parseScript", () => {
   // A hole and a spread are each refused where they stand, as an
   // object-literal member and a call argument are, so the literal around
   // them still reaches the Lean decoder.
-  it("replaces a hole and a spread element in place", () => {
+  it("emits a null element for a hole and a SpreadElement for a spread", () => {
     const program = parseScript(
       '"use strict";\nconst a = [1, , 2];\nconst b = [...xs, 1];\n',
       "h.js",
@@ -1009,7 +1015,7 @@ describe("parseScript", () => {
             type: "ArrayExpression",
             elements: [
               { type: "Literal", value: 1 },
-              { type: "Unsupported", kind: "OmittedExpression" },
+              null,
               { type: "Literal", value: 2 },
             ],
           },
@@ -1022,7 +1028,10 @@ describe("parseScript", () => {
           init: {
             type: "ArrayExpression",
             elements: [
-              { type: "Unsupported", kind: "SpreadElement" },
+              {
+                type: "SpreadElement",
+                argument: { type: "Identifier", name: "xs" },
+              },
               { type: "Literal", value: 1 },
             ],
           },
@@ -1032,12 +1041,17 @@ describe("parseScript", () => {
     validate(program);
   });
 
-  it("replaces a spread argument in place, keeping the call", () => {
+  it("emits a SpreadElement for a spread argument", () => {
     const program = parseScript('"use strict";\nf(...xs);\n', "s.js");
     expect(program.body[1]).toMatchObject({
       expression: {
         type: "CallExpression",
-        arguments: [{ type: "Unsupported", kind: "SpreadElement" }],
+        arguments: [
+          {
+            type: "SpreadElement",
+            argument: { type: "Identifier", name: "xs" },
+          },
+        ],
       },
     });
     validate(program);
@@ -1047,7 +1061,7 @@ describe("parseScript", () => {
   // survives, which is what lets the decoder say `Parameter` rather than
   // `FunctionDeclaration`. A default is in the slice now, so `Parameter`
   // means a rest parameter.
-  it("replaces an out-of-slice parameter in place", () => {
+  it("emits every parameter binding form", () => {
     const program = parseScript(
       '"use strict";\nfunction f(a, b = 1, ...r) {}\nfunction g({ a }) {}\n',
       "pp.js",
@@ -1060,11 +1074,237 @@ describe("parseScript", () => {
           left: { type: "Identifier", name: "b" },
           right: { type: "Literal", value: 1 },
         },
-        { type: "Unsupported", kind: "Parameter" },
+        { type: "RestElement", argument: { type: "Identifier", name: "r" } },
       ],
     });
     expect(program.body[2]).toMatchObject({
-      params: [{ type: "Unsupported", kind: "ObjectBindingPattern" }],
+      params: [
+        {
+          type: "ObjectPattern",
+          properties: [
+            { type: "Property", value: { type: "Identifier", name: "a" } },
+          ],
+        },
+      ],
+    });
+    validate(program);
+  });
+
+  it("refuses a parameter property as its modifier", () => {
+    const program = parseScript(
+      '"use strict";\nclass C { constructor(public x) {} }\n',
+      "pq.js",
+    );
+    expect(program.body[1]).toMatchObject({
+      type: "ClassDeclaration",
+      body: {
+        body: [
+          {
+            type: "MethodDefinition",
+            value: {
+              params: [{ type: "Unsupported", kind: "PublicKeyword" }],
+            },
+          },
+        ],
+      },
+    });
+    validate(program);
+  });
+
+  it("emits a computed key in an object binding pattern", () => {
+    const program = parseScript(
+      '"use strict";\nfunction f({ [k]: v }) {}\n',
+      "ck.js",
+    );
+    expect(program.body[1]).toMatchObject({
+      params: [
+        {
+          type: "ObjectPattern",
+          properties: [
+            {
+              type: "Property",
+              key: { type: "Identifier", name: "k" },
+              value: { type: "Identifier", name: "v" },
+              computed: true,
+              shorthand: false,
+            },
+          ],
+        },
+      ],
+    });
+    validate(program);
+  });
+
+  it("emits a nested pattern inside a RestElement", () => {
+    const program = parseScript(
+      '"use strict";\nconst [...[a, b]] = xs;\n',
+      "np.js",
+    );
+    expect(program.body[1]).toMatchObject({
+      declarations: [
+        {
+          id: {
+            type: "ArrayPattern",
+            elements: [
+              {
+                type: "RestElement",
+                argument: {
+                  type: "ArrayPattern",
+                  elements: [
+                    { type: "Identifier", name: "a" },
+                    { type: "Identifier", name: "b" },
+                  ],
+                },
+              },
+            ],
+          },
+        },
+      ],
+    });
+    validate(program);
+  });
+
+  it("emits an ArrayPattern for a destructuring assignment", () => {
+    const program = parseScript('"use strict";\n[a, o.p] = xs;\n', "da.js");
+    expect(program.body[1]).toMatchObject({
+      expression: {
+        type: "AssignmentExpression",
+        operator: "=",
+        left: {
+          type: "ArrayPattern",
+          elements: [
+            { type: "Identifier", name: "a" },
+            { type: "MemberExpression", computed: false },
+          ],
+        },
+      },
+    });
+    validate(program);
+  });
+
+  // What an assignment pattern may still not spell. tsc parses the whole
+  // left side as a literal, so each of these is a *member* of it that is
+  // not a target, and each refuses where it stands.
+  it.each([
+    ["a BigInt key", "({ 1n: a } = o);", "BigIntLiteral"],
+    ["a method", "({ m() {} } = o);", "MethodDeclaration"],
+    ["a literal element", "[1] = xs;", "NumericLiteral"],
+  ])("refuses %s in an assignment pattern", (_what, source, kind) => {
+    const program = parseScript(`"use strict";\n${source}\n`, "ap.js");
+    expect(JSON.stringify(program)).toContain(`"kind":"${kind}"`);
+    validate(program);
+  });
+
+  it("refuses a BigInt property name in a binding pattern", () => {
+    const program = parseScript(
+      '"use strict";\nfunction f({ 1n: a }) {}\n',
+      "bb.js",
+    );
+    expect(JSON.stringify(program)).toContain('"kind":"BigIntLiteral"');
+    validate(program);
+  });
+
+  it("emits every element form of an assignment pattern", () => {
+    const program = parseScript(
+      '"use strict";\n[a, , b = 1, ...rest] = xs;\n',
+      "ae.js",
+    );
+    expect(program.body[1]).toMatchObject({
+      expression: {
+        left: {
+          type: "ArrayPattern",
+          elements: [
+            { type: "Identifier", name: "a" },
+            null,
+            {
+              type: "AssignmentPattern",
+              left: { type: "Identifier", name: "b" },
+              right: { type: "Literal", value: 1 },
+            },
+            {
+              type: "RestElement",
+              argument: { type: "Identifier", name: "rest" },
+            },
+          ],
+        },
+      },
+    });
+    validate(program);
+  });
+
+  it("emits a keyed and a nested target in an assignment pattern", () => {
+    const program = parseScript(
+      '"use strict";\n({ a: o.p, b: [c] } = q);\n',
+      "an.js",
+    );
+    expect(program.body[1]).toMatchObject({
+      expression: {
+        left: {
+          type: "ObjectPattern",
+          properties: [
+            {
+              type: "Property",
+              key: { type: "Identifier", name: "a" },
+              value: { type: "MemberExpression" },
+              shorthand: false,
+            },
+            {
+              type: "Property",
+              key: { type: "Identifier", name: "b" },
+              value: { type: "ArrayPattern" },
+            },
+          ],
+        },
+      },
+    });
+    validate(program);
+  });
+
+  it("emits a destructuring for-of head with a nested pattern", () => {
+    const program = parseScript(
+      '"use strict";\nfor ([a, ...{ length: n }] of xs) ;\n',
+      "fh.js",
+    );
+    expect(program.body[1]).toMatchObject({
+      type: "ForOfStatement",
+      left: {
+        type: "ArrayPattern",
+        elements: [
+          { type: "Identifier", name: "a" },
+          { type: "RestElement", argument: { type: "ObjectPattern" } },
+        ],
+      },
+    });
+    validate(program);
+  });
+
+  it("emits an ObjectPattern with a rest and a defaulted shorthand", () => {
+    const program = parseScript(
+      '"use strict";\n({ a = 1, ...rest } = o);\n',
+      "op.js",
+    );
+    expect(program.body[1]).toMatchObject({
+      expression: {
+        type: "AssignmentExpression",
+        left: {
+          type: "ObjectPattern",
+          properties: [
+            {
+              type: "Property",
+              shorthand: true,
+              value: {
+                type: "AssignmentPattern",
+                left: { type: "Identifier", name: "a" },
+                right: { type: "Literal", value: 1 },
+              },
+            },
+            {
+              type: "RestElement",
+              argument: { type: "Identifier", name: "rest" },
+            },
+          ],
+        },
+      },
     });
     validate(program);
   });
@@ -1072,13 +1312,19 @@ describe("parseScript", () => {
   // A binding pattern *with* a default leaves the slice whole: the schema
   // gives an AssignmentPattern an Identifier `left`, so there is nowhere
   // for the pattern to go.
-  it("refuses a defaulted binding pattern as one parameter", () => {
+  it("emits a defaulted binding pattern as an AssignmentPattern", () => {
     const program = parseScript(
       '"use strict";\nfunction f({ a } = {}) {}\n',
       "dp.js",
     );
     expect(program.body[1]).toMatchObject({
-      params: [{ type: "Unsupported", kind: "Parameter" }],
+      params: [
+        {
+          type: "AssignmentPattern",
+          left: { type: "ObjectPattern" },
+          right: { type: "ObjectExpression", properties: [] },
+        },
+      ],
     });
     validate(program);
   });
@@ -1390,14 +1636,17 @@ describe("parseScript", () => {
 
   // A pattern in the head is refused where it stands, so the loop around
   // it still reaches the Lean decoder and the refusal names the pattern.
-  it("refuses a destructuring for head in place", () => {
+  it("emits a destructuring for head as a declaration", () => {
     const program = parseScript(
       '"use strict";\nconst xs = [1];\nfor (const [a] = xs; ; ) {}\n',
       "p.js",
     );
     expect(program.body[2]).toMatchObject({
       type: "ForStatement",
-      init: { type: "Unsupported", kind: "VariableDeclarationList" },
+      init: {
+        type: "VariableDeclaration",
+        declarations: [{ id: { type: "ArrayPattern" } }],
+      },
     });
     validate(program);
   });
@@ -1429,16 +1678,38 @@ describe("parseScript", () => {
     validate(program);
   });
 
-  // The two loop forms that are not in the slice, each named by its own
-  // tsc kind so the runner's histogram says which one to land next.
-  it.each([["for (x of xs) ;", "ForOfStatement"]])(
-    "refuses %s as %s",
-    (source, kind) => {
-      const program = parseScript(`"use strict";\n${source}\n`, "l.js");
-      expect(program.body[1]).toEqual({ type: "Unsupported", kind });
-      validate(program);
-    },
-  );
+  // The three head forms a `for`-`of` may take, and the one modifier it
+  // may not: `for await` is async iteration, which is outside the epic.
+  it.each([
+    ["for (const v of xs) ;", { type: "VariableDeclaration", kind: "const" }],
+    ["for (x of xs) ;", { type: "Identifier", name: "x" }],
+    ["for ([a, b] of xs) ;", { type: "ArrayPattern" }],
+    ["for ({ a } of xs) ;", { type: "ObjectPattern" }],
+  ])("emits a ForOfStatement for %s", (source, left) => {
+    const program = parseScript(`"use strict";\n${source}\n`, "l.js");
+    expect(program.body[1]).toMatchObject({
+      type: "ForOfStatement",
+      left,
+      right: { type: "Identifier", name: "xs" },
+      await: false,
+    });
+    validate(program);
+  });
+
+  it("refuses for await as the AwaitKeyword", () => {
+    const program = parseScript(
+      '"use strict";\nasync function f() { for await (const v of xs) ; }\n',
+      "la.js",
+    );
+    expect(program.body[1]).toMatchObject({
+      type: "FunctionDeclaration",
+      async: true,
+      body: {
+        body: [{ type: "Unsupported", kind: "AwaitKeyword" }],
+      },
+    });
+    validate(program);
+  });
 
   // `do`/`while` is in the slice: the body comes first, as it does in
   // the source.
@@ -1510,15 +1781,29 @@ describe("parseScript", () => {
 
   // A destructuring binding is not an Identifier, and the schema's `id`
   // is one: the declaration leaves the slice as a whole, not piecewise.
-  it("refuses a destructuring declaration as one node", () => {
+  it("emits a destructuring declaration as a pattern declarator", () => {
     const program = parseScript(
-      '"use strict";\nlet o = 1;\nlet [a, b] = o;\n',
+      '"use strict";\nlet o = 1;\nlet [a, , b] = o;\n',
       "d.js",
     );
-    expect(program.body[2]).toEqual({
-      type: "Unsupported",
-      kind: "VariableStatement",
+    expect(program.body[2]).toMatchObject({
+      type: "VariableDeclaration",
+      kind: "let",
+      declarations: [
+        {
+          id: {
+            type: "ArrayPattern",
+            elements: [
+              { type: "Identifier", name: "a" },
+              null,
+              { type: "Identifier", name: "b" },
+            ],
+          },
+          init: { type: "Identifier", name: "o" },
+        },
+      ],
     });
+    validate(program);
   });
 
   // A program that does not parse never reaches the evaluator, and
@@ -1782,34 +2067,6 @@ describe("the schema as the seam", () => {
               type: "CallExpression",
               callee: { type: "Identifier", name: "f" },
             },
-          },
-        ],
-      },
-    ],
-    [
-      "an AssignmentPattern whose left is a MemberExpression",
-      {
-        type: "Program",
-        sourceType: "script",
-        body: [
-          {
-            type: "FunctionDeclaration",
-            id: { type: "Identifier", name: "f" },
-            params: [
-              {
-                type: "AssignmentPattern",
-                left: {
-                  type: "MemberExpression",
-                  object: { type: "Identifier", name: "o" },
-                  property: { type: "Identifier", name: "x" },
-                  computed: false,
-                },
-                right: { type: "Literal", value: 1, raw: "1" },
-              },
-            ],
-            body: { type: "BlockStatement", body: [] },
-            async: false,
-            generator: false,
           },
         ],
       },

@@ -143,7 +143,7 @@ the name alone is still a `ReferenceError`. -/
 /-! A name that *is* bound is read as usual — including one in the
 temporal dead zone, which `typeof` does not excuse. -/
 #guard outcome
-    [ .varDecl .«let» [{ name := "x", init := some (.numLit 1.0) }],
+    [ .varDecl .«let» [{ target := "x", init := some (.numLit 1.0) }],
       .exprStmt (.unary .typeof (.ident "x")) ]
   == "number"
 

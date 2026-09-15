@@ -1,8 +1,8 @@
 {
   "directories": {
     "test/built-ins/AggregateError": {
-      "pass": 11,
-      "fail": 6,
+      "pass": 13,
+      "fail": 4,
       "unsupported": 2,
       "timeout": 0,
       "harnessError": 0,
@@ -22,6 +22,90 @@
       "harnessError": 0,
       "notRun": {
         "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/Array/prototype/Symbol.iterator": {
+      "pass": 1,
+      "fail": 0,
+      "unsupported": 0,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/Array/prototype/entries": {
+      "pass": 9,
+      "fail": 0,
+      "unsupported": 3,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/Array/prototype/keys": {
+      "pass": 9,
+      "fail": 0,
+      "unsupported": 3,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/Array/prototype/values": {
+      "pass": 9,
+      "fail": 0,
+      "unsupported": 3,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/ArrayIteratorPrototype/Symbol.toStringTag": {
+      "pass": 3,
+      "fail": 0,
+      "unsupported": 0,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/built-ins/ArrayIteratorPrototype/next": {
+      "pass": 6,
+      "fail": 9,
+      "unsupported": 1,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 8,
         "raw": 0,
         "async": 0,
         "module": 0,
@@ -422,8 +506,8 @@
     },
     "test/built-ins/JSON/isRawJSON": {
       "pass": 0,
-      "fail": 5,
-      "unsupported": 1,
+      "fail": 6,
+      "unsupported": 0,
       "timeout": 0,
       "harnessError": 0,
       "notRun": {
@@ -436,8 +520,8 @@
     },
     "test/built-ins/JSON/parse": {
       "pass": 63,
-      "fail": 12,
-      "unsupported": 2,
+      "fail": 14,
+      "unsupported": 0,
       "timeout": 0,
       "harnessError": 0,
       "notRun": {
@@ -450,8 +534,8 @@
     },
     "test/built-ins/JSON/rawJSON": {
       "pass": 0,
-      "fail": 8,
-      "unsupported": 2,
+      "fail": 9,
+      "unsupported": 1,
       "timeout": 0,
       "harnessError": 0,
       "notRun": {
@@ -463,9 +547,9 @@
       }
     },
     "test/built-ins/JSON/stringify": {
-      "pass": 46,
+      "pass": 47,
       "fail": 11,
-      "unsupported": 9,
+      "unsupported": 8,
       "timeout": 0,
       "harnessError": 0,
       "notRun": {
@@ -1597,9 +1681,9 @@
       }
     },
     "test/built-ins/Object/defineProperties": {
-      "pass": 593,
+      "pass": 595,
       "fail": 35,
-      "unsupported": 4,
+      "unsupported": 2,
       "timeout": 0,
       "harnessError": 0,
       "notRun": {
@@ -1611,9 +1695,9 @@
       }
     },
     "test/built-ins/Object/defineProperty": {
-      "pass": 1050,
+      "pass": 1052,
       "fail": 66,
-      "unsupported": 7,
+      "unsupported": 5,
       "timeout": 0,
       "harnessError": 0,
       "notRun": {
@@ -1653,8 +1737,8 @@
       }
     },
     "test/built-ins/Object/fromEntries": {
-      "pass": 0,
-      "fail": 25,
+      "pass": 25,
+      "fail": 0,
       "unsupported": 0,
       "timeout": 0,
       "harnessError": 0,
@@ -1737,8 +1821,8 @@
       }
     },
     "test/built-ins/Object/groupBy": {
-      "pass": 2,
-      "fail": 12,
+      "pass": 14,
+      "fail": 0,
       "unsupported": 0,
       "timeout": 0,
       "harnessError": 0,
@@ -1835,9 +1919,9 @@
       }
     },
     "test/built-ins/Object/keys": {
-      "pass": 50,
-      "fail": 5,
-      "unsupported": 4,
+      "pass": 53,
+      "fail": 6,
+      "unsupported": 0,
       "timeout": 0,
       "harnessError": 0,
       "notRun": {
@@ -2143,8 +2227,8 @@
       }
     },
     "test/built-ins/String/prototype/Symbol.iterator": {
-      "pass": 1,
-      "fail": 5,
+      "pass": 6,
+      "fail": 0,
       "unsupported": 0,
       "timeout": 0,
       "harnessError": 0,
@@ -2340,8 +2424,8 @@
     },
     "test/built-ins/String/prototype/matchAll": {
       "pass": 0,
-      "fail": 10,
-      "unsupported": 15,
+      "fail": 12,
+      "unsupported": 13,
       "timeout": 0,
       "harnessError": 0,
       "notRun": {
@@ -2423,9 +2507,9 @@
       }
     },
     "test/built-ins/String/prototype/replaceAll": {
-      "pass": 27,
+      "pass": 29,
       "fail": 5,
-      "unsupported": 13,
+      "unsupported": 11,
       "timeout": 0,
       "harnessError": 0,
       "notRun": {
@@ -3054,8 +3138,8 @@
     },
     "test/harness": {
       "pass": 61,
-      "fail": 18,
-      "unsupported": 20,
+      "fail": 20,
+      "unsupported": 18,
       "timeout": 0,
       "harnessError": 0,
       "notRun": {
@@ -3067,9 +3151,9 @@
       }
     },
     "test/language/arguments-object": {
-      "pass": 57,
+      "pass": 64,
       "fail": 2,
-      "unsupported": 82,
+      "unsupported": 75,
       "timeout": 0,
       "harnessError": 0,
       "notRun": {
@@ -3095,9 +3179,9 @@
       }
     },
     "test/language/arguments-object/unmapped": {
-      "pass": 2,
+      "pass": 4,
       "fail": 0,
-      "unsupported": 2,
+      "unsupported": 0,
       "timeout": 0,
       "harnessError": 0,
       "notRun": {
@@ -3220,6 +3304,20 @@
         "budget": 0
       }
     },
+    "test/language/expressions/array": {
+      "pass": 50,
+      "fail": 0,
+      "unsupported": 2,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
     "test/language/expressions/arrow-function": {
       "pass": 29,
       "fail": 2,
@@ -3249,9 +3347,9 @@
       }
     },
     "test/language/expressions/arrow-function/dstr": {
-      "pass": 0,
+      "pass": 142,
       "fail": 0,
-      "unsupported": 174,
+      "unsupported": 32,
       "timeout": 0,
       "harnessError": 0,
       "notRun": {
@@ -3291,9 +3389,9 @@
       }
     },
     "test/language/expressions/arrow-function/syntax": {
-      "pass": 10,
+      "pass": 14,
       "fail": 0,
-      "unsupported": 4,
+      "unsupported": 0,
       "timeout": 0,
       "harnessError": 0,
       "notRun": {
@@ -3319,9 +3417,9 @@
       }
     },
     "test/language/expressions/assignment/destructuring": {
-      "pass": 0,
-      "fail": 0,
-      "unsupported": 7,
+      "pass": 3,
+      "fail": 2,
+      "unsupported": 2,
       "timeout": 0,
       "harnessError": 0,
       "notRun": {
@@ -3333,9 +3431,9 @@
       }
     },
     "test/language/expressions/assignment/dstr": {
-      "pass": 0,
+      "pass": 109,
       "fail": 0,
-      "unsupported": 223,
+      "unsupported": 114,
       "timeout": 0,
       "harnessError": 0,
       "notRun": {
@@ -3347,9 +3445,9 @@
       }
     },
     "test/language/expressions/call": {
-      "pass": 30,
-      "fail": 5,
-      "unsupported": 46,
+      "pass": 70,
+      "fail": 9,
+      "unsupported": 2,
       "timeout": 0,
       "harnessError": 0,
       "notRun": {
@@ -3599,9 +3697,9 @@
       }
     },
     "test/language/expressions/class/dstr": {
-      "pass": 0,
+      "pass": 284,
       "fail": 0,
-      "unsupported": 1288,
+      "unsupported": 1004,
       "timeout": 0,
       "harnessError": 0,
       "notRun": {
@@ -3991,9 +4089,9 @@
       }
     },
     "test/language/expressions/function/dstr": {
-      "pass": 0,
+      "pass": 142,
       "fail": 0,
-      "unsupported": 174,
+      "unsupported": 32,
       "timeout": 0,
       "harnessError": 0,
       "notRun": {
@@ -4158,10 +4256,24 @@
         "budget": 0
       }
     },
+    "test/language/expressions/new": {
+      "pass": 54,
+      "fail": 0,
+      "unsupported": 5,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 0,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
     "test/language/expressions/object": {
       "pass": 228,
-      "fail": 9,
-      "unsupported": 22,
+      "fail": 12,
+      "unsupported": 19,
       "timeout": 0,
       "harnessError": 0,
       "notRun": {
@@ -4173,9 +4285,9 @@
       }
     },
     "test/language/expressions/object/dstr": {
-      "pass": 0,
-      "fail": 0,
-      "unsupported": 403,
+      "pass": 142,
+      "fail": 3,
+      "unsupported": 258,
       "timeout": 0,
       "harnessError": 0,
       "notRun": {
@@ -4635,9 +4747,9 @@
       }
     },
     "test/language/statements/class/dstr": {
-      "pass": 0,
+      "pass": 284,
       "fail": 0,
-      "unsupported": 1288,
+      "unsupported": 1004,
       "timeout": 0,
       "harnessError": 0,
       "notRun": {
@@ -4649,9 +4761,9 @@
       }
     },
     "test/language/statements/class/elements": {
-      "pass": 226,
+      "pass": 234,
       "fail": 59,
-      "unsupported": 463,
+      "unsupported": 455,
       "timeout": 0,
       "harnessError": 2,
       "notRun": {
@@ -4999,9 +5111,9 @@
       }
     },
     "test/language/statements/class/subclass": {
-      "pass": 31,
+      "pass": 33,
       "fail": 2,
-      "unsupported": 6,
+      "unsupported": 4,
       "timeout": 0,
       "harnessError": 0,
       "notRun": {
@@ -5363,9 +5475,9 @@
       }
     },
     "test/language/statements/const/dstr": {
-      "pass": 0,
+      "pass": 71,
       "fail": 0,
-      "unsupported": 87,
+      "unsupported": 16,
       "timeout": 0,
       "harnessError": 0,
       "notRun": {
@@ -5377,9 +5489,9 @@
       }
     },
     "test/language/statements/const/syntax": {
-      "pass": 6,
+      "pass": 7,
       "fail": 0,
-      "unsupported": 1,
+      "unsupported": 0,
       "timeout": 0,
       "harnessError": 0,
       "notRun": {
@@ -5447,9 +5559,9 @@
       }
     },
     "test/language/statements/for": {
-      "pass": 47,
+      "pass": 48,
       "fail": 7,
-      "unsupported": 8,
+      "unsupported": 7,
       "timeout": 0,
       "harnessError": 0,
       "notRun": {
@@ -5460,10 +5572,38 @@
         "budget": 0
       }
     },
-    "test/language/statements/for/dstr": {
-      "pass": 0,
+    "test/language/statements/for-of": {
+      "pass": 47,
+      "fail": 40,
+      "unsupported": 46,
+      "timeout": 0,
+      "harnessError": 0,
+      "notRun": {
+        "noStrict": 10,
+        "raw": 0,
+        "async": 1,
+        "module": 1,
+        "budget": 0
+      }
+    },
+    "test/language/statements/for-of/dstr": {
+      "pass": 403,
       "fail": 0,
-      "unsupported": 267,
+      "unsupported": 86,
+      "timeout": 0,
+      "harnessError": 1,
+      "notRun": {
+        "noStrict": 22,
+        "raw": 0,
+        "async": 0,
+        "module": 0,
+        "budget": 0
+      }
+    },
+    "test/language/statements/for/dstr": {
+      "pass": 213,
+      "fail": 0,
+      "unsupported": 54,
       "timeout": 0,
       "harnessError": 0,
       "notRun": {
@@ -5489,9 +5629,9 @@
       }
     },
     "test/language/statements/function/dstr": {
-      "pass": 0,
+      "pass": 142,
       "fail": 0,
-      "unsupported": 174,
+      "unsupported": 32,
       "timeout": 0,
       "harnessError": 0,
       "notRun": {
@@ -5573,9 +5713,9 @@
       }
     },
     "test/language/statements/let/dstr": {
-      "pass": 0,
+      "pass": 71,
       "fail": 0,
-      "unsupported": 87,
+      "unsupported": 16,
       "timeout": 0,
       "harnessError": 0,
       "notRun": {
@@ -5657,9 +5797,9 @@
       }
     },
     "test/language/statements/try": {
-      "pass": 59,
+      "pass": 61,
       "fail": 15,
-      "unsupported": 6,
+      "unsupported": 4,
       "timeout": 0,
       "harnessError": 0,
       "notRun": {
@@ -5671,9 +5811,9 @@
       }
     },
     "test/language/statements/try/dstr": {
-      "pass": 0,
+      "pass": 71,
       "fail": 0,
-      "unsupported": 87,
+      "unsupported": 16,
       "timeout": 0,
       "harnessError": 0,
       "notRun": {
@@ -5699,9 +5839,9 @@
       }
     },
     "test/language/statements/variable/dstr": {
-      "pass": 0,
+      "pass": 71,
       "fail": 0,
-      "unsupported": 89,
+      "unsupported": 18,
       "timeout": 0,
       "harnessError": 0,
       "notRun": {

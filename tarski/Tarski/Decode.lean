@@ -17,10 +17,20 @@ number: a template object is cached per Parse Node, and this pass is the
 one that sees the document in order. `decodeProgram` runs the state from
 zero and answers an `Except`, so a caller never sees it.
 
-Object literals arrive whole. A numeric key decodes as a *computed* key
-over its `numLit`, so `{ 1.5: x }` takes its spelling from ToPropertyKey
-at evaluation; spread is the one member form still refused, and an
-`async` or generator member is `Property async` or `Property generator`.
+Object literals arrive whole, spread included. A numeric key decodes as
+a *computed* key over its `numLit`, so `{ 1.5: x }` takes its spelling
+from ToPropertyKey at evaluation; an `async` or generator member is
+`Property async` or `Property generator`.
+
+Patterns arrive whole too, and `decodePattern` is one decoder for both
+families: ESTree gives them one node family and the AST has one
+`Pattern`. What the grammar refuses is `malformed` here — a
+`RestElement` that is not last, a defaulted rest parameter, a compound
+operator on a pattern, a pattern declarator with no initializer, and
+`for await` — because the bridge emits none of them and a document that
+does is a broken producer. An object rest whose argument is itself a
+pattern is `unsupported`: it is real syntax (`({ ...[a] } = o)`) whose
+early error this epic does not check.
 
 Classes arrive whole. What a class may spell and the AST may not is
 refused here by name: a private method or accessor (a non-writable
@@ -375,18 +385,18 @@ partial def decodeExpr (j : Json) : DecodeM Expr := do
   | "CallExpression" =>
     let callee ← field j "callee"
     match ← nodeType callee with
-    | "Super" => pure (.superCall (← decodeExprs (← arrayField j "arguments")))
+    | "Super" => pure (.superCall (← decodeArgs (← arrayField j "arguments")))
     | _ =>
       match ← decodeExpr callee with
       | .ident "Function" => throw (.unsupported "Function constructor")
-      | f => pure (.call f (← decodeExprs (← arrayField j "arguments")))
+      | f => pure (.call f (← decodeArgs (← arrayField j "arguments")))
   -- `Super` is not an expression: it reaches here only as a call
   -- argument or some other position the schema does not allow it in.
   | "Super" => bad "Super outside a call or member access"
   | "NewExpression" =>
     match ← decodeExpr (← field j "callee") with
     | .ident "Function" => throw (.unsupported "Function constructor")
-    | f => pure (.new f (← decodeExprs (← arrayField j "arguments")))
+    | f => pure (.new f (← decodeArgs (← arrayField j "arguments")))
   | "TemplateLiteral" => decodeTemplate j
   -- The site number is taken after the tag is decoded and before the
   -- substitutions are, so a template nested in the tag numbers before
@@ -402,10 +412,9 @@ partial def decodeExpr (j : Json) : DecodeM Expr := do
     let (strings, exprs) ← decodeTemplateParts quasi
     pure (.taggedTemplate tag site strings exprs)
   | "ArrayExpression" =>
-    -- A hole and a spread arrived as `Unsupported` elements in place, so
-    -- `decodeExpr` refuses the element and names the kind it stood for;
-    -- nothing here is special-cased.
-    pure (.arrayLit (← decodeExprs (← arrayField j "elements")))
+    -- JSON `null` is an elision and a `SpreadElement` is a spread; both
+    -- are ordinary elements of the list, as ESTree has them.
+    pure (.arrayLit (← decodeArrayElements (← arrayField j "elements")))
   | "ObjectExpression" =>
     pure (.objectLit (← decodePropDefs (← arrayField j "properties")))
   | "FunctionExpression" =>
@@ -427,15 +436,49 @@ partial def decodeExpr (j : Json) : DecodeM Expr := do
     -- report itself: it arrived as the bridge's placeholder and names the
     -- kind it stood for, rather than being swallowed here.
     let op ← strField j "operator"
-    let target ← toTarget (← decodeExpr (← field j "left"))
-    let value ← decodeExpr (← field j "right")
-    if op == "=" then pure (.assign target value)
-    else pure (.compoundAssign (← compoundOp op) target value)
+    let left ← field j "left"
+    match ← nodeType left with
+    | "ArrayPattern" | "ObjectPattern" =>
+      -- Only `=` takes a pattern; `[a] += b` does not parse.
+      if op == "=" then
+        pure (.assignPattern (← decodePattern false left) (← decodeExpr (← field j "right")))
+      else bad "AssignmentExpression pattern with a compound operator"
+    | _ =>
+      let target ← toTarget (← decodeExpr left)
+      let value ← decodeExpr (← field j "right")
+      if op == "=" then pure (.assign target value)
+      else pure (.compoundAssign (← compoundOp op) target value)
   | "UpdateExpression" =>
     pure (.update (← updateOp (← strField j "operator")) (← boolField j "prefix")
       (← toTarget (← decodeExpr (← field j "argument"))))
+  -- A spread outside a list that iterates it never reaches here: the
+  -- decoder's three list readers take it, and the schema puts it nowhere
+  -- else.
+  | "SpreadElement" => bad "SpreadElement outside a list"
   | "Unsupported" => throw (.unsupported (← strField j "kind"))
   | other => throw (.unsupported other)
+
+/-- An argument list, a `SpreadElement` in place. -/
+partial def decodeArgs : List Json → DecodeM (List Expr)
+  | [] => pure []
+  | a :: rest => do
+    match ← nodeType a with
+    | "SpreadElement" =>
+      pure (.spread (← decodeExpr (← field a "argument")) :: (← decodeArgs rest))
+    | _ => pure ((← decodeExpr a) :: (← decodeArgs rest))
+
+/-- An array literal's elements: JSON `null` is a hole, a `SpreadElement`
+is a spread, and everything else is an ordinary expression. -/
+partial def decodeArrayElements : List Json → DecodeM (List Expr)
+  | [] => pure []
+  | e :: rest => do
+    if e.isNull then pure (.hole :: (← decodeArrayElements rest))
+    else
+      match ← nodeType e with
+      | "SpreadElement" =>
+        pure (.spread (← decodeExpr (← field e "argument")) ::
+          (← decodeArrayElements rest))
+      | _ => pure ((← decodeExpr e) :: (← decodeArrayElements rest))
 
 /-- A `MemberExpression`, whose `computed` flag says which spelling it
 was. A dot access needs an identifier property; a property that is the
@@ -480,29 +523,107 @@ partial def optExpr (j : Json) (name : String) : DecodeM (Option Expr) := do
   | none => pure none
   | some e => pure (some (← decodeExpr e))
 
-/-- A parameter list. A plain identifier and an `AssignmentPattern` over
-one are in the slice; anything else arrived as the bridge's placeholder
-and names the kind it stood for, so a rest parameter is refused as
-`Parameter` and a destructured one as its pattern. An
-`AssignmentPattern` whose `left` is not an `Identifier` is a binding
-pattern with a default, which the bridge refuses whole, so reaching it
-here is a broken producer rather than a program outside the slice. -/
+/-- A parameter list. Every binding form is in the slice: an
+`Identifier`, an `AssignmentPattern` over any pattern, an `ArrayPattern`
+or `ObjectPattern`, and a `RestElement`. A `RestElement` that is not last
+and a defaulted one do not parse, so either is `malformed`; anything
+else arrived as the bridge's placeholder and names the kind it stood for,
+which is how a TypeScript parameter property still reports itself. -/
 partial def decodeParams : List Json → DecodeM (List Param)
   | [] => pure []
   | p :: rest => do
     match ← nodeType p with
-    | "Identifier" =>
-      pure ({ name := ← strField p "name", default := none } :: (← decodeParams rest))
+    | "RestElement" =>
+      if !rest.isEmpty then bad "RestElement is not last"
+      else
+        pure [{ target := ← decodePattern true (← field p "argument"), default := none,
+                rest := true }]
     | "AssignmentPattern" =>
-      let left ← field p "left"
-      match ← nodeType left with
-      | "Identifier" =>
-        let name ← strField left "name"
-        let d ← decodeExpr (← field p "right")
-        pure ({ name, default := some d } :: (← decodeParams rest))
-      | other => bad s!"AssignmentPattern left is a {other}"
+      let target ← decodePattern true (← field p "left")
+      let d ← decodeExpr (← field p "right")
+      pure ({ target, default := some d } :: (← decodeParams rest))
     | "Unsupported" => throw (.unsupported (← strField p "kind"))
-    | other => bad s!"parameter is a {other}"
+    | _ =>
+      pure ({ target := ← decodePattern true p, default := none } :: (← decodeParams rest))
+
+/-- One binding or assignment pattern. The two families share a decoder
+because they share an ESTree node family; what tells them apart is
+`binding`, which is what makes a **binding** position — a parameter, a
+declarator, a `catch` clause, a declaration loop head — admit only an
+identifier leaf, as the grammar does. -/
+partial def decodePattern (binding : Bool) (j : Json) : DecodeM Pattern := do
+  match ← nodeType j with
+  | "Identifier" => pure (.target (.ident (← strField j "name")))
+  | "MemberExpression" =>
+    if binding then bad "binding pattern leaf is a MemberExpression"
+    else pure (.target (← toTarget (← decodeExpr j)))
+  | "ArrayPattern" =>
+    let (elements, rest) ← decodePatternElems binding (← arrayField j "elements")
+    pure (.array elements rest)
+  | "ObjectPattern" =>
+    let (props, rest) ← decodePatternProps binding (← arrayField j "properties")
+    pure (.object props rest)
+  | "Unsupported" => throw (.unsupported (← strField j "kind"))
+  | other => throw (.unsupported other)
+
+/-- An `ArrayPattern`'s elements: JSON `null` is an elision, a
+`RestElement` must be last, and anything else is an element with or
+without a default. -/
+partial def decodePatternElems (binding : Bool) :
+    List Json → DecodeM (List (Option PatternElem) × Option Pattern)
+  | [] => pure ([], none)
+  | e :: rest => do
+    if e.isNull then
+      let (es, r) ← decodePatternElems binding rest
+      pure (none :: es, r)
+    else
+      match ← nodeType e with
+      | "RestElement" =>
+        if !rest.isEmpty then bad "RestElement is not last"
+        else pure ([], some (← decodePattern binding (← field e "argument")))
+      | "AssignmentPattern" =>
+        let target ← decodePattern binding (← field e "left")
+        let d ← decodeExpr (← field e "right")
+        let (es, r) ← decodePatternElems binding rest
+        pure (some { target, default := some d } :: es, r)
+      | _ =>
+        let target ← decodePattern binding e
+        let (es, r) ← decodePatternElems binding rest
+        pure (some { target, default := none } :: es, r)
+
+/-- An `ObjectPattern`'s properties. A `RestElement` must be last and its
+argument must be a leaf, which is what the grammar says for both pattern
+families. -/
+partial def decodePatternProps (binding : Bool) :
+    List Json → DecodeM (List PatternProp × Option Target)
+  | [] => pure ([], none)
+  | p :: rest => do
+    match ← nodeType p with
+    | "RestElement" =>
+      if !rest.isEmpty then bad "RestElement is not last"
+      else
+        match ← decodePattern binding (← field p "argument") with
+        | .target t => pure ([], some t)
+        | _ => throw (.unsupported "RestElement pattern")
+    | "Property" =>
+      match ← strField p "kind" with
+      | "init" =>
+        if ← boolField p "method" then throw (.unsupported "Property method")
+        else
+          let key ← decodePropKey p
+          let value ← field p "value"
+          let prop ←
+            match ← nodeType value with
+            | "AssignmentPattern" =>
+              pure { key, target := ← decodePattern binding (← field value "left"),
+                     default := some (← decodeExpr (← field value "right")) }
+            | _ =>
+              pure { key, target := ← decodePattern binding value, default := none }
+          let (ps, r) ← decodePatternProps binding rest
+          pure (prop :: ps, r)
+      | other => throw (.unsupported s!"Property {other}")
+    | "Unsupported" => throw (.unsupported (← strField p "kind"))
+    | other => throw (.unsupported other)
 
 /-- An object literal member's key. A computed key is the expression in
 the brackets; so is a *numeric* `Literal` key, which is what lets
@@ -538,8 +659,7 @@ partial def decodePropMethod (p : Json) (kind : MethodKind) (label : String) :
   pure (.method kind key (← decodeParams (← arrayField value "params"))
     (← decodeStmts (← bodyField value)))
 
-/-- An object literal's members. Spread is the one form still refused,
-and it arrives as the bridge's placeholder in place. A shorthand needs no
+/-- An object literal's members, spread included. A shorthand needs no
 arm of its own: ESTree gives it a `value` that is its own `Identifier`,
 so `{ undefined }` binds `.undefLit` exactly as `undefined` alone does. -/
 partial def decodePropDefs : List Json → DecodeM (List PropDef)
@@ -567,6 +687,8 @@ partial def decodePropDefs : List Json → DecodeM (List PropDef)
             | _ => pure (.init key (← decodeExpr value))
         | other => throw (.unsupported s!"Property {other}")
       pure (member :: (← decodePropDefs rest))
+    | "SpreadElement" =>
+      pure (.spread (← decodeExpr (← field p "argument")) :: (← decodePropDefs rest))
     | "Unsupported" => throw (.unsupported (← strField p "kind"))
     | other => throw (.unsupported other)
 
@@ -691,11 +813,14 @@ partial def decodeClass (j : Json) : DecodeM ClassDef := do
 partial def decodeDeclarator (j : Json) : DecodeM Declarator := do
   match ← nodeType j with
   | "VariableDeclarator" =>
-    let id ← field j "id"
-    let name ← strField id "name"
+    let target ← decodePattern true (← field j "id")
     match ← optField j "init" with
-    | some e => pure { name, init := some (← decodeExpr e) }
-    | none => pure { name, init := none }
+    | some e => pure { target, init := some (← decodeExpr e) }
+    | none =>
+      -- A binding pattern with no initializer does not parse.
+      match target with
+      | .target _ => pure { target, init := none }
+      | _ => bad "VariableDeclarator pattern without initializer"
   | other => throw (.unsupported other)
 
 partial def decodeStmt (j : Json) : DecodeM Stmt := do
@@ -738,23 +863,16 @@ partial def decodeStmt (j : Json) : DecodeM Stmt := do
     let update ← optExpr j "update"
     pure (.forStmt init test update (← decodeStmt (← field j "body")))
   | "ForInStatement" =>
-    -- A declaration head is exactly one declarator with no initializer;
-    -- `for (var x = 1 in o)` is the sloppy-mode-only form B.3.5 keeps
-    -- alive and this epic does not have, and two declarators do not
-    -- parse at all.
-    let head ← field j "left"
-    let left ← match ← nodeType head with
-      | "VariableDeclaration" => do
-        let kind ← declKind (← strField head "kind")
-        match ← declaratorList head with
-        | [d] =>
-          match d.init with
-          | none => pure (ForInLeft.decl kind d.name)
-          | some _ => throw (.unsupported "ForInStatement initializer")
-        | _ => throw (.unsupported "ForInStatement initializer")
-      | _ => pure (ForInLeft.target (← toTarget (← decodeExpr head)))
-    pure (.forInStmt left (← decodeExpr (← field j "right"))
+    pure (.forInStmt (← decodeLoopHead j) (← decodeExpr (← field j "right"))
       (← decodeStmt (← field j "body")))
+  | "ForOfStatement" =>
+    -- `for await` is an async iteration and stays outside the epic; the
+    -- bridge refuses the `await` modifier in place, so a document with
+    -- `"await": true` is a broken producer.
+    if ← boolField j "await" then bad "ForOfStatement await"
+    else
+      pure (.forOfStmt (← decodeLoopHead j) (← decodeExpr (← field j "right"))
+        (← decodeStmt (← field j "body")))
   | "SwitchStatement" =>
     pure (.switchStmt (← decodeExpr (← field j "discriminant"))
       (← decodeCases (← arrayField j "cases")))
@@ -786,17 +904,43 @@ partial def decodeStmt (j : Json) : DecodeM Stmt := do
   | "Unsupported" => throw (.unsupported (← strField j "kind"))
   | other => throw (.unsupported other)
 
-/-- A `CatchClause`. An out-of-slice parameter is refused in place — the
-clause, and so the `try` around it, survives — which is the precedent a
-function parameter set. -/
+/-- The head of a `for`-`in` or a `for`-`of`. A declaration head is
+exactly one declarator with no initializer; `for (var x = 1 in o)` is the
+sloppy-mode-only form B.3.5 keeps alive and this epic does not have, and
+two declarators do not parse at all. An `ArrayPattern` or `ObjectPattern`
+head is an assignment pattern, and every other head is an assignment
+target. -/
+partial def decodeLoopHead (j : Json) : DecodeM ForInLeft := do
+  let head ← field j "left"
+  match ← nodeType head with
+  | "VariableDeclaration" =>
+    let kind ← declKind (← strField head "kind")
+    -- The declarator is read here rather than through `declaratorList`
+    -- because a *head*'s pattern declarator has no initializer and must
+    -- not have one: `for (const [a] of xs)` is the ordinary spelling,
+    -- where `const [a];` does not parse at all.
+    match (← field head "declarations").getArr? with
+    | .ok ds =>
+      match ds.toList with
+      | [d] =>
+        match ← nodeType d with
+        | "VariableDeclarator" =>
+          match ← optField d "init" with
+          | none => pure (.decl kind (← decodePattern true (← field d "id")))
+          | some _ => throw (.unsupported "ForInStatement initializer")
+        | other => throw (.unsupported other)
+      | _ => throw (.unsupported "ForInStatement initializer")
+    | .error _ => bad "VariableDeclaration declarations is not an array"
+  | "ArrayPattern" | "ObjectPattern" => pure (.pattern (← decodePattern false head))
+  | _ => pure (.target (← toTarget (← decodeExpr head)))
+
+/-- A `CatchClause`. The parameter is a binding pattern, and an
+out-of-slice one is refused in place — the clause, and so the `try`
+around it, survives — which is the precedent a function parameter set. -/
 partial def decodeCatch (j : Json) : DecodeM CatchClause := do
   let param ← match ← optField j "param" with
     | none => pure none
-    | some p =>
-      match ← nodeType p with
-      | "Identifier" => pure (some (← strField p "name"))
-      | "Unsupported" => throw (.unsupported (← strField p "kind"))
-      | other => bad s!"CatchClause param is a {other}"
+    | some p => pure (some (← decodePattern true p))
   pure { param, body := ← decodeStmts (← blockField j "body") }
 
 /-- A `VariableDeclaration`'s declarators, in a statement or in a `for`

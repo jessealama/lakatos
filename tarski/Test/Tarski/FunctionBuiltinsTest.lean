@@ -31,7 +31,7 @@ private def expr (e : Expr) : Program := [.exprStmt e]
 
 /-- `const <n> = <e>;` -/
 private def «let» (n : String) (e : Expr) : Stmt :=
-  .varDecl .«const» [{ name := n, init := some e }]
+  .varDecl .«const» [{ target := n, init := some e }]
 
 /-- `<f>.<method>(<args>)`. -/
 private def invoke (f : Expr) (method : String) (args : List Expr) : Expr :=
@@ -64,7 +64,7 @@ private def issueExample : Program :=
       [ .ident "o", .strLit "x",
         .objectLit [.init "value" (.numLit 1.0), .init "writable" (.boolLit false),
                     .init "enumerable" (.boolLit false), .init "configurable" (.boolLit false)] ]),
-    .varDecl .«let» [{ name := "threw", init := some (.boolLit false) }],
+    .varDecl .«let» [{ target := "threw", init := some (.boolLit false) }],
     .tryStmt [.exprStmt (.assign (.member (.ident "o") "x") (.numLit 2.0))]
       (some { param := some "e",
               body := [.exprStmt (.assign (.ident "threw")
@@ -272,7 +272,7 @@ everything else is named the empty string. -/
       .exprStmt (.member (.member (.new (.ident "A") []) "x") "name") ]
   == "x"
 #guard outcome
-    [ .varDecl .«let» [{ name := "k", init := none }],
+    [ .varDecl .«let» [{ target := "k", init := none }],
       .exprStmt (.assign (.ident "k") anon),
       .exprStmt (.member (.ident "k") "name") ]
   == "k"

@@ -162,7 +162,7 @@ private def stringOf (args : List Expr) : Program :=
 -- the string hint tries `toString` first. Method shorthand is #395's, so
 -- the member is a function expression.
 #guard outcome
-    [ .varDecl .«const» [{ name := "o", init := some (.objectLit
+    [ .varDecl .«const» [{ target := "o", init := some (.objectLit
         [.init "toString" (.funcExpr none [] [.returnStmt (some (.strLit "t"))])]) }],
       .exprStmt (.call (.ident "String") [.ident "o"]) ]
   == "t"

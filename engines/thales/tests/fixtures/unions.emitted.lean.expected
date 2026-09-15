@@ -73,7 +73,7 @@ def TsModel.relay (v : JsVal) : JsM JsNumber := do
 -- }
 def TsModel.viaLocal.ast : Tarski.Program :=
   [.funcDecl "viaLocal" ["v"]
-      [.varDecl .«const» [{ name := "w", init := some (.ident "v") }],
+      [.varDecl .«const» [{ target := "w", init := some (.ident "v") }],
         .ifStmt (.binary .strictEq (.unary .typeof (.ident "w")) (.strLit "number"))
           (.block [.returnStmt (some (.ident "w"))]) none,
         .returnStmt (some (.numLit 0))]]
@@ -98,7 +98,7 @@ def TsModel.viaLocal (v : JsVal) : JsM JsNumber := do
 -- }
 def TsModel.settle.ast : Tarski.Program :=
   [.funcDecl "settle" ["x"]
-      [.varDecl .«let» [{ name := "pending", init := some .undefLit }],
+      [.varDecl .«let» [{ target := "pending", init := some .undefLit }],
         .exprStmt (.assign (.ident "pending") (.ident "x")),
         .ifStmt (.binary .strictEq (.unary .typeof (.ident "pending")) (.strLit "number"))
           (.block [.returnStmt (some (.ident "pending"))]) none,

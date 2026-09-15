@@ -54,14 +54,20 @@ export function bridgeModule(text: string, file: string): Program | undefined {
 
 /** The top-level names a bridged statement binds. An `Unsupported`
  * statement binds nothing the frontend can see — the bridge kept no name
- * — which is right: it can be *selected*, never *resolved to*. */
+ * — which is right: it can be *selected*, never *resolved to*. A
+ * declarator whose `id` is a *binding pattern* binds nothing here for the
+ * same reason: what a closure resolves to is a function, a class, or a
+ * constant with a single name, and a pattern declares none of the
+ * three. */
 export function declaredNames(stmt: Statement): string[] {
   switch (stmt.type) {
     case "FunctionDeclaration":
     case "ClassDeclaration":
       return [stmt.id.name];
     case "VariableDeclaration":
-      return stmt.declarations.map((d) => d.id.name);
+      return stmt.declarations.flatMap((d) =>
+        d.id.type === "Identifier" ? [d.id.name] : [],
+      );
     default:
       return [];
   }

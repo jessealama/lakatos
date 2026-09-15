@@ -52,7 +52,7 @@ private def objectIs (args : List Expr) : Program :=
 
 -- `const o = {}; Object.is(o, o);` — objects compare by reference.
 #guard outcome
-    [ .varDecl .«const» [{ name := "o", init := some (.objectLit []) }],
+    [ .varDecl .«const» [{ target := "o", init := some (.objectLit []) }],
       .exprStmt (.call (.member (.ident "Object") "is") [.ident "o", .ident "o"]) ]
   == "true"
 
@@ -65,7 +65,7 @@ rather than its property list. -/
 
 -- `const o = { a: 1 }; o.hasOwnProperty("a");`
 private def declareO : Stmt :=
-  .varDecl .«const» [{ name := "o", init := some (.objectLit [.init "a" (.numLit 1.0)]) }]
+  .varDecl .«const» [{ target := "o", init := some (.objectLit [.init "a" (.numLit 1.0)]) }]
 
 /-- `const o = { a: 1 }; o.hasOwnProperty(<key>);` -/
 private def oHasOwn (key : Expr) : Program :=
@@ -105,7 +105,7 @@ private def errHasOwn (key : Expr) : Program :=
 -- #389's, and a primitive base has no wrapper prototype to reach it
 -- through.
 #guard outcome
-    [ .varDecl .«const» [{ name := "f", init := some (.member
+    [ .varDecl .«const» [{ target := "f", init := some (.member
         (.member (.ident "Object") "prototype") "hasOwnProperty") }],
       .exprStmt (.call (.ident "f") [.strLit "a"]) ]
   == "uncaught: TypeError: Cannot convert a primitive to an object"
@@ -126,7 +126,7 @@ private def keysOf (e : Expr) : Expr := .call (.member (.ident "Object") "keys")
 
 -- `const o = { b: 1 }; o[2] = 1; o.a = 1; o[1] = 1; Object.keys(o).join();`
 #guard outcome
-    [ .varDecl .«const» [{ name := "o", init := some (.objectLit [.init "b" (.numLit 1.0)]) }],
+    [ .varDecl .«const» [{ target := "o", init := some (.objectLit [.init "b" (.numLit 1.0)]) }],
       .exprStmt (.assign (.index (.ident "o") (.numLit 2.0)) (.numLit 1.0)),
       .exprStmt (.assign (.member (.ident "o") "a") (.numLit 1.0)),
       .exprStmt (.assign (.index (.ident "o") (.numLit 1.0)) (.numLit 1.0)),
@@ -175,7 +175,7 @@ Boolean, or a String is wrapped, and an object is itself. -/
 
 -- `const o = {}; Object(o) === o;`
 #guard outcome
-    [ .varDecl .«const» [{ name := "o", init := some (.objectLit []) }],
+    [ .varDecl .«const» [{ target := "o", init := some (.objectLit []) }],
       .exprStmt (.binary .strictEq (.call (.ident "Object") [.ident "o"]) (.ident "o")) ]
   == "true"
 

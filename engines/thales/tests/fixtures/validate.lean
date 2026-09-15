@@ -85,7 +85,7 @@ def TsModel.isSmall (n : JsNumber) : JsM Bool := do
 -- not a `JsM`, so the obligation compares against `Outcome.value` rather
 -- than against `Outcome.ofModel`.
 def TsModel.K.ast : Tarski.Program :=
-  [.varDecl .const [{ name := "K", init := some (.binary .mul (.numLit 1000.0) (.numLit 60.0)) }]]
+  [.varDecl .const [{ target := "K", init := some (.binary .mul (.numLit 1000.0) (.numLit 60.0)) }]]
 
 @[js_norm, grind]
 def TsModel.K : JsNumber := 1000.0 * 60.0

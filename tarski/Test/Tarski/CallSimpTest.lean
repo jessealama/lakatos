@@ -13,7 +13,7 @@ open Tarski
 
 /-- `const f = function (x) { return x + 1; }; f(2);` -/
 private def program : Program :=
-  [ .varDecl .«const» [{ name := "f", init := some (.funcExpr none ["x"]
+  [ .varDecl .«const» [{ target := "f", init := some (.funcExpr none ["x"]
       [.returnStmt (some (.binary .add (.ident "x") (.numLit 1.0)))]) }],
     .exprStmt (.call (.ident "f") [.numLit 2.0]) ]
 

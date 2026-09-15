@@ -27,7 +27,7 @@ private def outcome (p : Program) : String :=
 
 /-- `const <n> = <e>;` -/
 private def «let» (n : String) (e : Expr) : Stmt :=
-  .varDecl .«const» [{ name := n, init := some e }]
+  .varDecl .«const» [{ target := n, init := some e }]
 
 /-- `const seen = [];`, the array every ordering case collects into. -/
 private def seen : Stmt := «let» "seen" (.arrayLit [])
@@ -147,7 +147,7 @@ the loop; an assignment target is written once per key. -/
   == "ab"
 
 #guard outcome
-    [ .varDecl .«var» [{ name := "k", init := none }],
+    [ .varDecl .«var» [{ target := "k", init := none }],
       .exprStmt (.unary .typeof (.ident "k")) ]
   == "undefined"
 #guard outcome
@@ -157,7 +157,7 @@ the loop; an assignment target is written once per key. -/
   == "b"
 
 #guard outcome
-    [ .varDecl .«let» [{ name := "k", init := none }],
+    [ .varDecl .«let» [{ target := "k", init := none }],
       «let» "o" (.objectLit [.init "a" (.numLit 1.0)]),
       .forInStmt (.target (.ident "k")) (.ident "o") .empty,
       .exprStmt (.ident "k") ]
