@@ -20,8 +20,16 @@ describe("build-spec internal errors", () => {
   });
 
   it("a non-LemmaError thrown mid-annotation escapes main() unwrapped", async () => {
-    await expect(runMain(["refute", "fine.ts"])).rejects.toThrow(TypeError);
-    await expect(runMain(["refute", "fine.ts"])).rejects.toThrow(
+    // One run, both assertions: the class and the message belong to the
+    // same throw.
+    const thrown = await runMain(["refute", "fine.ts"]).then(
+      () => {
+        throw new Error("main() resolved; expected it to throw");
+      },
+      (error: unknown) => error,
+    );
+    expect(thrown).toBeInstanceOf(TypeError);
+    expect((thrown as TypeError).message).toMatch(
       /internal invariant violated in lowering/,
     );
   });
