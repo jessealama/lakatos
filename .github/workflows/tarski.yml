@@ -19,6 +19,15 @@ on:
     - cron: "0 5 * * 1"
   workflow_dispatch:
 
+# A superseded pull-request run is cancelled; a merge-queue run never is.
+# Cancelling a queue run reports its required check as cancelled, which
+# ejects the pull request from the queue.
+concurrency:
+  # The event is part of the key so the weekly whole-suite run and a
+  # push to main, which share a ref, do not queue behind each other.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   LC_ALL: C.UTF-8
   LANG: C.UTF-8

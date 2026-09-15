@@ -23,6 +23,13 @@ on:
   # same jobs on it; the required checks report from this event too.
   merge_group:
 
+# A superseded pull-request run is cancelled; a merge-queue run never is.
+# Cancelling a queue run reports its required check as cancelled, which
+# ejects the pull request from the queue.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   NODE_VERSION: "24.x"
   LC_ALL: C.UTF-8
