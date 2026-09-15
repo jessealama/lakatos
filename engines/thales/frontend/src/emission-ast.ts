@@ -18,7 +18,6 @@
 
 import {
   parseScript,
-  type Pattern,
   type Program,
   type Statement,
 } from "../../../../tarski/frontend/src/estree.js";
@@ -53,44 +52,22 @@ export function bridgeModule(text: string, file: string): Program | undefined {
   }
 }
 
-/** The names a binding pattern binds, in source order. A member leaf
- * binds nothing, and neither does a refusal — the bridge kept no name
- * for one. */
-function patternNames(p: Pattern): string[] {
-  switch (p.type) {
-    case "Identifier":
-      return [p.name];
-    case "ArrayPattern":
-      return p.elements.flatMap((e) =>
-        e === null
-          ? []
-          : e.type === "RestElement"
-            ? patternNames(e.argument)
-            : patternNames(e),
-      );
-    case "ObjectPattern":
-      return p.properties.flatMap((m) =>
-        m.type === "RestElement"
-          ? patternNames(m.argument)
-          : patternNames(m.value),
-      );
-    case "AssignmentPattern":
-      return patternNames(p.left);
-    default:
-      return [];
-  }
-}
-
 /** The top-level names a bridged statement binds. An `Unsupported`
  * statement binds nothing the frontend can see — the bridge kept no name
- * — which is right: it can be *selected*, never *resolved to*. */
+ * — which is right: it can be *selected*, never *resolved to*. A
+ * declarator whose `id` is a *binding pattern* binds nothing here for the
+ * same reason: what a closure resolves to is a function, a class, or a
+ * constant with a single name, and a pattern declares none of the
+ * three. */
 export function declaredNames(stmt: Statement): string[] {
   switch (stmt.type) {
     case "FunctionDeclaration":
     case "ClassDeclaration":
       return [stmt.id.name];
     case "VariableDeclaration":
-      return stmt.declarations.flatMap((d) => patternNames(d.id));
+      return stmt.declarations.flatMap((d) =>
+        d.id.type === "Identifier" ? [d.id.name] : [],
+      );
     default:
       return [];
   }

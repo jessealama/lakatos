@@ -841,29 +841,24 @@ function objectMember(
       method: false,
     };
   }
-  if (
-    ts.isMethodDeclaration(member) ||
-    ts.isGetAccessorDeclaration(member) ||
-    ts.isSetAccessorDeclaration(member)
-  ) {
-    const offending = offendingModifier(member);
-    if (offending) return unsupported(offending);
-    const value = methodValue(member, sf);
-    if (value.type === "Unsupported") return value;
-    const key = propertyKey(member.name, sf);
-    if (!key) return unsupported(member.name);
-    const kind = accessorKind(member);
-    return {
-      type: "Property",
-      key: key.key,
-      value,
-      kind: kind === "method" ? "init" : kind,
-      computed: key.computed,
-      shorthand: false,
-      method: kind === "method",
-    };
-  }
-  return unsupported(member);
+  // What is left is a method, a getter, or a setter: those three and the
+  // three above are the whole of `ObjectLiteralElementLike`.
+  const offending = offendingModifier(member);
+  if (offending) return unsupported(offending);
+  const value = methodValue(member, sf);
+  if (value.type === "Unsupported") return value;
+  const key = propertyKey(member.name, sf);
+  if (!key) return unsupported(member.name);
+  const kind = accessorKind(member);
+  return {
+    type: "Property",
+    key: key.key,
+    value,
+    kind: kind === "method" ? "init" : kind,
+    computed: key.computed,
+    shorthand: false,
+    method: kind === "method",
+  };
 }
 
 /** A function's body. One without a body is an ambient declaration,
@@ -1502,12 +1497,10 @@ function statement(node: ts.Statement, sf: ts.SourceFile): Statement {
   }
   if (ts.isVariableStatement(node)) {
     const list = node.declarationList;
-    const declarations = declarators(list, sf);
-    if (!declarations) return unsupported(node);
     return {
       type: "VariableDeclaration",
       kind: declarationKind(list),
-      declarations,
+      declarations: declarators(list, sf),
     };
   }
   if (ts.isClassDeclaration(node)) {

@@ -1182,6 +1182,102 @@ describe("parseScript", () => {
     validate(program);
   });
 
+  // What an assignment pattern may still not spell. tsc parses the whole
+  // left side as a literal, so each of these is a *member* of it that is
+  // not a target, and each refuses where it stands.
+  it.each([
+    ["a BigInt key", "({ 1n: a } = o);", "BigIntLiteral"],
+    ["a method", "({ m() {} } = o);", "MethodDeclaration"],
+    ["a literal element", "[1] = xs;", "NumericLiteral"],
+  ])("refuses %s in an assignment pattern", (_what, source, kind) => {
+    const program = parseScript(`"use strict";\n${source}\n`, "ap.js");
+    expect(JSON.stringify(program)).toContain(`"kind":"${kind}"`);
+    validate(program);
+  });
+
+  it("refuses a BigInt property name in a binding pattern", () => {
+    const program = parseScript(
+      '"use strict";\nfunction f({ 1n: a }) {}\n',
+      "bb.js",
+    );
+    expect(JSON.stringify(program)).toContain('"kind":"BigIntLiteral"');
+    validate(program);
+  });
+
+  it("emits every element form of an assignment pattern", () => {
+    const program = parseScript(
+      '"use strict";\n[a, , b = 1, ...rest] = xs;\n',
+      "ae.js",
+    );
+    expect(program.body[1]).toMatchObject({
+      expression: {
+        left: {
+          type: "ArrayPattern",
+          elements: [
+            { type: "Identifier", name: "a" },
+            null,
+            {
+              type: "AssignmentPattern",
+              left: { type: "Identifier", name: "b" },
+              right: { type: "Literal", value: 1 },
+            },
+            {
+              type: "RestElement",
+              argument: { type: "Identifier", name: "rest" },
+            },
+          ],
+        },
+      },
+    });
+    validate(program);
+  });
+
+  it("emits a keyed and a nested target in an assignment pattern", () => {
+    const program = parseScript(
+      '"use strict";\n({ a: o.p, b: [c] } = q);\n',
+      "an.js",
+    );
+    expect(program.body[1]).toMatchObject({
+      expression: {
+        left: {
+          type: "ObjectPattern",
+          properties: [
+            {
+              type: "Property",
+              key: { type: "Identifier", name: "a" },
+              value: { type: "MemberExpression" },
+              shorthand: false,
+            },
+            {
+              type: "Property",
+              key: { type: "Identifier", name: "b" },
+              value: { type: "ArrayPattern" },
+            },
+          ],
+        },
+      },
+    });
+    validate(program);
+  });
+
+  it("emits a destructuring for-of head with a nested pattern", () => {
+    const program = parseScript(
+      '"use strict";\nfor ([a, ...{ length: n }] of xs) ;\n',
+      "fh.js",
+    );
+    expect(program.body[1]).toMatchObject({
+      type: "ForOfStatement",
+      left: {
+        type: "ArrayPattern",
+        elements: [
+          { type: "Identifier", name: "a" },
+          { type: "RestElement", argument: { type: "ObjectPattern" } },
+        ],
+      },
+    });
+    validate(program);
+  });
+
   it("emits an ObjectPattern with a rest and a defaulted shorthand", () => {
     const program = parseScript(
       '"use strict";\n({ a = 1, ...rest } = o);\n',
