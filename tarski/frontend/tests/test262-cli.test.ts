@@ -731,16 +731,21 @@ describe("--merge", () => {
     ...extra,
   ];
 
-  it("three shards merged equal the unsharded table", () => {
-    const whole = path.join(scratch, "whole.json");
+  // Four runs of the tree, paid once: the timeout slice costs its own
+  // timeout every time, and the cases below only merge tables, which runs
+  // nothing.
+  const whole = path.join(scratch, "whole.json");
+  let parts: string[];
+  beforeAll(() => {
     expect(invoke(over("--write", whole)).status).toBe(0);
-
-    const parts = [1, 2, 3].map((i) => {
+    parts = [1, 2, 3].map((i) => {
       const file = path.join(scratch, `shard-${i}.json`);
       expect(invoke(over("--shard", `${i}/3`, "--write", file)).status).toBe(0);
       return file;
     });
+  }, 60_000);
 
+  it("three shards merged equal the unsharded table", () => {
     const merged = path.join(scratch, "merged.json");
     const run = invoke([
       ...parts.flatMap((f) => ["--merge", f]),
@@ -752,13 +757,6 @@ describe("--merge", () => {
   });
 
   it("checks the union against the expectations", () => {
-    const whole = path.join(scratch, "expected.json");
-    expect(invoke(over("--write", whole)).status).toBe(0);
-    const parts = [1, 2, 3].map((i) => {
-      const file = path.join(scratch, `c-shard-${i}.json`);
-      invoke(over("--shard", `${i}/3`, "--write", file));
-      return file;
-    });
     const run = invoke([
       ...parts.flatMap((f) => ["--merge", f]),
       "--check",
@@ -772,19 +770,13 @@ describe("--merge", () => {
   // the comparison runs in both directions, so this must be refused rather
   // than silently pass a thinner ratchet.
   it("one shard alone does not satisfy the whole table", () => {
-    const whole = path.join(scratch, "one-expected.json");
-    expect(invoke(over("--write", whole)).status).toBe(0);
-    const one = path.join(scratch, "one-shard.json");
-    invoke(over("--shard", "1/3", "--write", one));
-    const run = invoke(["--merge", one, "--check", whole]);
+    const run = invoke(["--merge", parts[0]!, "--check", whole]);
     expect(run.status).toBe(1);
     expect(run.stderr).toContain("expected but not run");
   });
 
   it("refuses two shards that count the same directory", () => {
-    const one = path.join(scratch, "dup.json");
-    invoke(over("--shard", "1/3", "--write", one));
-    const run = invoke(["--merge", one, "--merge", one]);
+    const run = invoke(["--merge", parts[0]!, "--merge", parts[0]!]);
     expect(run.status).toBe(1);
     expect(run.stderr).toContain("counted by more than one shard");
   });
