@@ -369,9 +369,9 @@ inductive NativeFn where
   | arrayCtor
   /-- `Array.isArray`. -/
   | arrayIsArray
-  /-- `Array.prototype.push`. -/
+  /-- `Array.prototype.push`, generic over an array-like (23.1.3.23). -/
   | arrayPush
-  /-- `Array.prototype.join`. -/
+  /-- `Array.prototype.join`, generic over an array-like (23.1.3.18). -/
   | arrayJoin
   /-- `print`, the test262 host's one output binding. `EvalM` has no IO,
   so ToString of the first argument is appended to the intrinsic array
@@ -561,6 +561,72 @@ inductive NativeFn where
   | stringProtoIterator
   /-- `%StringIteratorPrototype%.next` (22.1.5.1.1). -/
   | stringIteratorNext
+  -- The rest of the `Array` surface, 23.1.2 and 23.1.3, every one of
+  -- them generic over an array-like as the specification has it.
+  -- `callNative` routes the whole group to `callArrayNative`, for the
+  -- reason it routes the `Object` and `Function` group to
+  -- `callReflectNative`.
+  /-- `Array.from` (23.1.2.1). The iterable path is #394's; an array-like is read by index here. -/
+  | arrayFrom
+  /-- `Array.of` (23.1.2.3). -/
+  | arrayOf
+  /-- `Array.prototype.at` (23.1.3.1). -/
+  | arrayAt
+  /-- `Array.prototype.concat` (23.1.3.2). -/
+  | arrayConcat
+  /-- `Array.prototype.copyWithin` (23.1.3.4). -/
+  | arrayCopyWithin
+  /-- `Array.prototype.every` (23.1.3.6). -/
+  | arrayEvery
+  /-- `Array.prototype.fill` (23.1.3.7). -/
+  | arrayFill
+  /-- `Array.prototype.filter` (23.1.3.8). -/
+  | arrayFilter
+  /-- `Array.prototype.find` (23.1.3.9). -/
+  | arrayFind
+  /-- `Array.prototype.findIndex` (23.1.3.10). -/
+  | arrayFindIndex
+  /-- `Array.prototype.flat` (23.1.3.13). -/
+  | arrayFlat
+  /-- `Array.prototype.flatMap` (23.1.3.14). -/
+  | arrayFlatMap
+  /-- `Array.prototype.forEach` (23.1.3.15). -/
+  | arrayForEach
+  /-- `Array.prototype.includes` (23.1.3.16). -/
+  | arrayIncludes
+  /-- `Array.prototype.indexOf` (23.1.3.17). -/
+  | arrayIndexOf
+  /-- `Array.prototype.lastIndexOf` (23.1.3.20). -/
+  | arrayLastIndexOf
+  /-- `Array.prototype.map` (23.1.3.21). -/
+  | arrayMap
+  /-- `Array.prototype.pop` (23.1.3.22). -/
+  | arrayPop
+  /-- `Array.prototype.reduce` (23.1.3.24). -/
+  | arrayReduce
+  /-- `Array.prototype.reduceRight` (23.1.3.25). -/
+  | arrayReduceRight
+  /-- `Array.prototype.reverse` (23.1.3.26). -/
+  | arrayReverse
+  /-- `Array.prototype.shift` (23.1.3.27). -/
+  | arrayShift
+  /-- `Array.prototype.slice` (23.1.3.28). -/
+  | arraySlice
+  /-- `Array.prototype.some` (23.1.3.29). -/
+  | arraySome
+  /-- `Array.prototype.sort` (23.1.3.30). -/
+  | arraySort
+  /-- `Array.prototype.splice` (23.1.3.31). -/
+  | arraySplice
+  /-- `Array.prototype.toLocaleString` (23.1.3.32). It Invokes each element's own `toLocaleString`; ECMA-402 is outside this epic. -/
+  | arrayToLocaleString
+  /-- `Array.prototype.toString` (23.1.3.36). -/
+  | arrayToString
+  /-- `Array.prototype.unshift` (23.1.3.37). -/
+  | arrayUnshift
+  /-- `get Array[@@species]` (23.1.2.5). It answers its receiver, which
+  is how a subclass constructor becomes its own species. -/
+  | arraySpecies
 deriving Repr, DecidableEq, Inhabited
 
 /-- A bound function exotic object's three internal slots plus the one

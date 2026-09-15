@@ -112,7 +112,8 @@ test/language/statements/for-of
 test/language/expressions/array
 test/language/expressions/new
 test/built-ins/ArrayIteratorPrototype
-test/built-ins/Array/prototype/keys
-test/built-ins/Array/prototype/values
-test/built-ins/Array/prototype/entries
-test/built-ins/Array/prototype/Symbol.iterator
+
+# The Array built-ins (#390), the four iterator members #394 added among
+# them. fromAsync is async and not run; the ES2023 members are the
+# follow-up's.
+test/built-ins/Array

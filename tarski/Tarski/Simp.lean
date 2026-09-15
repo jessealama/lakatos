@@ -36,16 +36,23 @@ it, exactly as it stops `getFromUp` and the other two prototype walks.
 **`Heap.initial` stays in the set.** Folding the realm behind per-
 reference read lemmas was measured while planning #479 and did not lift
 the kernel ceiling #471 records; it made elaboration slower instead. A
-ninety-two-object literal heap is something `simp` pushes `readObj`
-through.
+hundred-and-seventy-four-object literal heap is something `simp` pushes
+`readObj` through.
 
 **What stays outside.** The list walks a native performs —
 `listFromArrayLike` for `apply`, and `forInNext`, the step from one
 object of a `for`-`in` to its prototype — recurse the way a loop does,
 and so do the three steps a bound function's target is reached by,
 `callBound`, `constructBound`, and `instanceOfBound`; each is `rw`'s and
-none is here. `rawSegments`, `String.raw`'s walk, is one of them.
-`callStringNative`, the `String` surface, is out for `callReflectNative`'s
+none is here. `rawSegments`, `String.raw`'s walk, is one of them, and the
+`Array` surface's walks are the same shape — `visitElements`,
+`reduceFrom`, `reduceRightFrom`, `firstPresent`, `lastPresent`,
+`indexOfFrom`, `lastIndexOfFrom`, `includesFrom`, `fillFrom`,
+`reverseFrom`, `copyElements`, `moveElements`, `deleteFrom`,
+`flattenInto`, `toLocaleStringFrom`, `collectPresent`, `mergeSortValues`,
+`mergeValues`, and `fromArrayLike`, each recursing on a length or a list
+the heap named. `callStringNative`, the `String` surface, and
+`callArrayNative`, the `Array` one, are out for `callReflectNative`'s
 reason rather than for a loop's. So are the four walks that run until an
 *iterator* says stop: `evalForOf`, `iteratorToList`, `fromEntriesInto`,
 and `groupByInto`. -/
@@ -96,13 +103,18 @@ attribute [tarski_eval]
 -- groups `callNative` defers the `Symbol` surface and `JSON` to, stay
 -- out for that same reason, and with them the heap walks they own —
 -- `jsonToValue`, `internalizeJsonProperty`, and the `serializeJson*`
--- family: no proof today reads a symbol or a JSON text.
+-- family: no proof today reads a symbol or a JSON text. `callArrayNative`,
+-- the rest of `Array`, is out for exactly that reason and with exactly
+-- that many arms.
 attribute [tarski_eval]
   callFunction callNative constructNative catchReturn attempt liftCompletion
   makeFunction isCallable isConstructor NativeFn.constructs nameOf functionSourceText builtinTag
   toStringValue toStringValues toNumberValue toNumberValues toLengthValue
   toIntegerOrInfinityValue mathUnary pushElements
   ordinaryHasInstance installErrorCause
+  lengthOfArrayLike createDataPropertyOrThrow requireCallable arraySpeciesCreate
+  arrayCreate sortCompare spreadInto defineElements relativeIndex lastIndexStart
+  spliceDeleteCount flatDepth
 
 -- FunctionDeclarationInstantiation: parameters, their defaults, the
 -- `var`s a body hoists past them, and the `arguments` object a body that
@@ -136,7 +148,7 @@ attribute [tarski_eval]
   getProp setProp getFrom findProperty hasProperty deleteProp toObjectValue
   createDataProperty
   descriptorField toDescriptor fromProperty refuseDefine defineArrayLength
-  definePropertyOrThrow readDescriptors applyDescriptors defineProperties
+  definePropertyOrThrow readDescriptors applyDescriptors defineProperties setArrayLength
   enumerableOwn assignKeys assignSources descriptorsInto
 
 -- The `Obj` operations, the one property list they keep, and the
@@ -160,7 +172,8 @@ attribute [tarski_eval]
   applyBinary applyUnary applyStrict applyCoercing BinaryOp.coerces
   toPrimitive toNumberPrim toBooleanPrim toStringPrim isStrPrim PrimHint.name
   symbolOperandRefusal
-  strictEqValue sameValueValue Js.JsVal.strictEq Value.ofNat
+  strictEqValue sameValueValue sameValueZeroValue Js.JsVal.strictEq Value.ofNat
+  maxArrayLength
 
 -- Keys and symbols.
 attribute [tarski_eval]
@@ -243,6 +256,12 @@ attribute [tarski_eval]
   objectIsExtensibleRef objectIsFrozenRef objectIsSealedRef objectPreventExtensionsRef
   objectSealRef objectSetPrototypeOfRef objectValuesRef templateMapRef
   stringProtoRef StringFn.ref StringFn.all
+  arrayFromRef arrayOfRef arrayAtRef arrayConcatRef arrayCopyWithinRef arrayEveryRef
+  arrayFillRef arrayFilterRef arrayFindRef arrayFindIndexRef arrayFlatRef
+  arrayFlatMapRef arrayForEachRef arrayIncludesRef arrayIndexOfRef arrayLastIndexOfRef
+  arrayMapRef arrayPopRef arrayReduceRef arrayReduceRightRef arrayReverseRef
+  arrayShiftRef arraySliceRef arraySomeRef arraySortRef arraySpliceRef
+  arrayToLocaleStringRef arrayToStringRef arrayUnshiftRef
   objectCellRef arrayCellRef stringCellRef printCellRef hostCellRef
   numberCellRef booleanCellRef mathCellRef nanCellRef infinityCellRef
   parseFloatCellRef parseIntCellRef consoleCellRef functionCellRef

@@ -35,8 +35,10 @@ private def program : Program :=
     Js.Number.FloatOps.tsSign (-3.0) = -1.0 := by decide
 @[local simp] private theorem two_sub_one : (2.0 + -1.0 : Float) = 1.0 := by decide
 
--- The realm is a hundred and fifty-six objects now, so `simp` walks a
--- deeper literal than the default recursion limit allows.
+-- The realm is a hundred and eighty-six objects now, so the term
+-- `simp` carries through the heap literal is deeper than the default
+-- recursion limit admits; `Test/Tarski/TrySimpTest.lean` says the same
+-- and #471 is the issue.
 set_option maxRecDepth 4000 in
 example : runProgram program = some (.ok (some (.prim (.num 1.0)))) := by
   simp [tarski_eval, program]

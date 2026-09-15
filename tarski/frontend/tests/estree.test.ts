@@ -47,6 +47,7 @@ const FIXTURES = [
   "template-object",
   "symbol-json-error",
   "iterators",
+  "array-builtins",
 ];
 
 describe("parseScript", () => {

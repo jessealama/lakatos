@@ -145,6 +145,32 @@ why a block's `var` outlives the block, and why a `var` naming a
 parameter or an existing global keeps the binding already there rather
 than erasing it.
 
+## The `Array` surface
+
+Every member of `Array.prototype` is **generic over an array-like**, as
+23.1.3 has each of them: the receiver goes through `toObjectValue` — so a
+string receiver meets #391's refusal until the wrapper object exists —
+its length through `lengthOfArrayLike`, its elements are read with
+`getProp` and their presence asked with `hasProperty`, so that a hole is
+a key that is not there; writes go through `setProp` (Set with Throw
+true), deletes through `deleteProp` (DeletePropertyOrThrow), and a result
+is filled in with `createDataPropertyOrThrow`. `arraySpeciesCreate` is
+ArraySpeciesCreate whole, **`@@species` read and all**, and `spreadInto`
+carries IsConcatSpreadable whole: both symbols are in the realm as of
+#392, and `get Array[@@species]` is the intrinsic that makes a subclass
+its own species.
+
+`callArrayNative` is the surface's own dispatcher, outside the simp set
+as `callReflectNative` is and for the same reason. The walks it performs
+recurse on a length the heap named rather than on syntax, so each is a
+`rw`'s and none joins a simp set: `visitElements` — the seven callback
+members in one definition over a `VisitKind` — `reduceFrom`,
+`reduceRightFrom`, `firstPresent`, `lastPresent`, `indexOfFrom`,
+`lastIndexOfFrom`, `includesFrom`, `fillFrom`, `reverseFrom`,
+`copyElements`, `moveElements`, `deleteFrom`, `flattenInto`,
+`toLocaleStringFrom`, `collectPresent`, `mergeSortValues`,
+`mergeValues`, and `fromArrayLike`.
+
 ## The messages the evaluator raises
 
 Every runtime error the evaluator itself throws is here, verbatim,
@@ -168,8 +194,9 @@ new refusal is written against a list rather than invented.
 | `xs.length = v` with a `v` that is not a uint32    | `RangeError`     | `Invalid array length`                                       |
 | `Object.keys` of `undefined` or `null`             | `TypeError`      | `Cannot convert undefined or null to object`                 |
 | `Object(v)` or `hasOwnProperty` on a string primitive | `TypeError`  | `Cannot convert a primitive to an object`                     |
-| `push` on a non-array                              | `TypeError`      | `Array.prototype.push called on non-array`                   |
-| `join` on a non-array                              | `TypeError`      | `Array.prototype.join called on non-array`                   |
+| `reduce` of an empty array with no initial value    | `TypeError`      | `Reduce of empty array with no initial value`                 |
+| `sort` with a comparator that is not a function     | `TypeError`      | `The comparison function must be either a function or undefined` |
+| a `push`, `unshift`, `splice`, `concat`, `flat`, or `flatMap` whose result would pass 2^53 - 1 elements | `TypeError` | `Array length exceeds 2**53 - 1` |
 | `Number.prototype.{toString,valueOf,toFixed,toExponential,toPrecision,toLocaleString}` off a Number | `TypeError` | `Number.prototype.<name> requires that 'this' be a Number` |
 | `Boolean.prototype.toString` off a Boolean         | `TypeError`      | `Boolean.prototype.toString requires that 'this' be a Boolean` |
 | `Boolean.prototype.valueOf` off a Boolean          | `TypeError`      | `Boolean.prototype.valueOf requires that 'this' be a Boolean`  |
@@ -320,6 +347,114 @@ def strictEqValue : Value → Value → Bool
   | .obj _, .sym _ => false
   | .sym _, .prim _ => false
   | .sym _, .obj _ => false
+
+/-- SameValueZero (7.2.11): `===` but for NaN, which is equal to itself.
+`Array.prototype.includes` is the one member that asks. -/
+def sameValueZeroValue (a b : Value) : Bool :=
+  strictEqValue a b || sameValueValue a b
+
+/-- 2^53 - 1, the length past which `push`, `unshift`, `splice`,
+`concat`, `flat`, and `flatMap` refuse to grow an array-like. -/
+def maxArrayLength : Nat := 9007199254740991
+
+/-- The clamp 23.1.3 repeats for `copyWithin`, `fill`, `includes`,
+`indexOf`, `slice`, and `splice`: ToIntegerOrInfinity of the argument,
+a negative counting back from the end and floored at 0, a non-negative
+capped at the length. The **signs of the two infinities are read off the
+float** rather than off `integerOrInfinity?`, which folds them both to
+`none` — `-∞` is 0 and `+∞` is the length. `at` is the one member that
+does *not* clamp, and writes its own arithmetic out. -/
+def relativeIndex (x : Float) (len : Nat) : Nat :=
+  match Number.FloatOps.integerOrInfinity? x with
+  | some i =>
+    if i < 0 then (if (len : Int) + i < 0 then 0 else ((len : Int) + i).toNat)
+    else if (len : Int) ≤ i then len else i.toNat
+  | none => if x < 0.0 then 0 else len
+
+/-- Which of the seven callback members `visitElements` is running. Their
+algorithms — 23.1.3.6, .29, .9, .10, .15, .21, .8 — differ only in what
+they do with the call's result and in whether a hole is visited at all,
+so they are one walk over this rather than seven walks. -/
+inductive VisitKind where
+  /-- `every`: stop at the first falsy result. -/
+  | every
+  /-- `some`: stop at the first truthy one. -/
+  | some
+  /-- `find`: answer the element, and visit a hole as `undefined`. -/
+  | find
+  /-- `findIndex`: answer the index, `-1` for none; visits a hole too. -/
+  | findIndex
+  /-- `forEach`: answer `undefined` whatever the results were. -/
+  | forEach
+  /-- `map`: define the result at the same index. -/
+  | map
+  /-- `filter`: define the element at a running index of its own. -/
+  | filter
+deriving Repr, DecidableEq, Inhabited
+
+/-- `flat`'s depth (23.1.3.13 step 4). `none` is `+∞` — an unbounded
+flatten — and a negative or `-∞` is 0, which copies. -/
+def flatDepth (x : Float) : Option Nat :=
+  match Number.FloatOps.integerOrInfinity? x with
+  | none => if x < 0.0 then Option.some 0 else Option.none
+  | Option.some i => if i ≤ 0 then Option.some 0 else Option.some i.toNat
+
+/-- `lastIndexOf`'s starting index (23.1.3.20 steps 4–6), which is not
+`relativeIndex`'s clamp: a non-negative `fromIndex` is capped at the last
+element rather than at the length, a negative one that falls off the
+front is `none` — the answer is -1 without a single element read — and so
+is `-∞`. The signs of the infinities are read off the float, as
+`relativeIndex` reads them. -/
+def lastIndexStart (x : Float) (len : Nat) : Option Nat :=
+  match Number.FloatOps.integerOrInfinity? x with
+  | none => if x < 0.0 then none else some (len - 1)
+  | some i =>
+    if 0 ≤ i then some (min i.toNat (len - 1))
+    else if (len : Int) + i < 0 then none
+    else some ((len : Int) + i).toNat
+
+/-- `splice`'s `deleteCount` (23.1.3.31 step 7.c), clamped into
+`[0, room]` with no counting back from the end: a negative is 0 and `+∞`
+is the whole tail. -/
+def spliceDeleteCount (x : Float) (room : Nat) : Nat :=
+  match Number.FloatOps.integerOrInfinity? x with
+  | none => if x < 0.0 then 0 else room
+  | some i => if i ≤ 0 then 0 else min i.toNat room
+
+/-- Whether a value is an object, as a `Bool` rather than a `match`:
+`arraySpeciesCreate` and `spreadInto` each ask it to decide whether a
+symbol-keyed read happens at all, and `partial_fixpoint`'s monotonicity
+prover wants that decision flat rather than nested in a bind.
+
+The shape is deliberate. A `match` on a monadic result inside another
+`match`'s arm is what `split` cannot see through; a pure predicate ahead
+of an `if` is what it can. -/
+def isObjectValue : Value → Bool
+  | .obj _ => true
+  | _ => false
+
+/-- ArraySpeciesCreate's step 4.b: a `null` **`@@species` read** is set to
+`undefined`, so it falls through to ArrayCreate at step 5. A `null`
+`constructor` never reaches this — step 4 runs only for an object, and
+step 6's IsConstructor is what refuses `null` — which is why the mapping
+belongs to the read rather than to the value. -/
+def speciesOfRead : Value → Value
+  | .prim .null => .prim .undef
+  | v => v
+
+/-- Whether a value is `undefined`, the other flat test the block wants
+ahead of an `if` rather than inside a bind. -/
+def isUndefValue : Value → Bool
+  | .prim .undef => true
+  | _ => false
+
+/-- IsConcatSpreadable (23.1.3.2.1) once the `@@isConcatSpreadable` read
+has happened: `undefined` defers to IsArray — the `isArray` argument —
+and anything else is ToBoolean of itself. -/
+def concatSpreadable (flag : Value) (isArray : Bool) : Bool :=
+  match flag with
+  | .prim .undef => isArray
+  | v => toBooleanPrim v
 
 /-- Which hint ToPrimitive was called with. `number` is what the
 relations and the unary operators use; `string` is what `String(v)`,
@@ -1014,6 +1149,19 @@ def toObjectValue (v : Value) : EvalM Ref :=
   | .prim (.str s) => allocObj (Obj.stringWrapper (some stringProtoRef) s)
   | .prim _ => throwJsError .typeError "Cannot convert a primitive to an object"
 
+/-- ArrayCreate (10.4.2.2), with the `RangeError` its step 1 raises.
+`newArrayOfLength` has no such check — `Array(n)` makes its own, through
+`uint32Of?` — so the check is here, where every species allocation and
+every result built by this surface goes through it. -/
+def arrayCreate (len : Nat) : EvalM Value := do
+  if 4294967296 ≤ len then throwJsError .rangeError "Invalid array length"
+  else newArrayOfLength len
+
+/-- The callback check the seven iteration members and `flatMap` make
+**before** any element is read, so that `[].every(1)` still throws. -/
+def requireCallable (v : Value) : EvalM Unit := do
+  if ← isCallable v then pure () else throwJsError .typeError "not a function"
+
 /-- `[[Delete]]` (10.1.10) behind the `delete` operator, with the
 strict-mode `TypeError` at the one refusal: a non-configurable own
 property. A key that is not there is `true`, and so is every primitive
@@ -1424,12 +1572,13 @@ def getTemplateObject (site : Nat) (strings : List TemplateString) : EvalM Value
     pure (.obj t)
 
 -- The interpreter's block is one `partial_fixpoint` strongly connected
--- component of some sixty definitions, and both elaboration and code
+-- component of some ninety definitions, and both elaboration and code
 -- generation run past the default heartbeat limit on it. That limit
 -- guards against a search that will not stop; there is no search here,
 -- only a large definition, so raising it is the knob rather than
 -- splitting a block whose whole point is that its members may call one
--- another.
+-- another. The iteration protocol and the `Array` surface pushed it past
+-- a million.
 set_option maxHeartbeats 2000000 in
 mutual
 
@@ -2805,16 +2954,33 @@ def constructNative (n : NativeFn) (newTarget : Value) (args : List Value) : Eva
   | _ => callNative n undefValue args
   partial_fixpoint
 
-/-- ToLength (7.1.20) on a value, the length `apply` reads off an
-array-like. Either infinity answers 0: `+∞` would ask for a list of
-2^53 - 1 values, which no heap here can hold, so the choice is between a
-wrong answer and a run that never ends, and a wrong answer can at least
-be seen.
--/
+/-- ToLength (7.1.20) on a value, the length `apply` and every member of
+`Array.prototype` read off an array-like: ToIntegerOrInfinity, then
+**clamped into `[0, 2^53 - 1]`**, which is what makes
+`push.call({ length: 2 ** 53 })` write `2 ** 53 - 1` back rather than
+refuse.
+
+Either infinity still answers 0, which is a documented limit rather than
+the clamp: `+∞` should be `2^53 - 1` too, but `listFromArrayLike` would
+then build a list of that many values for an `apply`, so the choice there
+is between a wrong answer and a run that never ends, and a wrong answer
+can at least be seen. -/
 def toLengthValue (v : Value) : EvalM Nat := do
   match ← toIntegerOrInfinityValue v with
   | none => pure 0
-  | some i => pure (if i ≤ 0 then 0 else i.toNat)
+  | some i => pure (if i ≤ 0 then 0 else min i.toNat maxArrayLength)
+  partial_fixpoint
+
+/-- LengthOfArrayLike (7.3.19): ToLength of `Get(O, "length")`. An Array
+exotic object answers from its kind rather than through the read — which
+is the *same* answer, `getFrom` special-casing exactly that key — so the
+reduction tests' path through `push` does not acquire a `toLengthValue`
+step it would have to discharge. Every other object, an array-like among
+them, takes the read. -/
+def lengthOfArrayLike (r : Ref) : EvalM Nat := do
+  match (← readObj r).kind with
+  | .array n _ => pure n
+  | _ => toLengthValue (← getProp (.obj r) "length")
   partial_fixpoint
 
 /-- CreateListFromArrayLike (7.3.18): the index properties `0 … len - 1`,
@@ -2889,24 +3055,30 @@ non-configurable element as a refusal after writing the length the scan
 reached. -/
 def defineArrayLength (r : Ref) (o : Obj) (len : Nat) (lengthWritable : Bool)
     (d : Descriptor) : EvalM Unit := do
-  if d.isAccessor || d.enumerable == some true || d.configurable == some true then
-    throwJsError .typeError "Cannot redefine property: length"
-  else
-    match d.value with
-    | none =>
-      if d.writable == some true && !lengthWritable then
-        throwJsError .typeError "Cannot redefine property: length"
-      else
-        match d.writable with
-        | some w => writeObj r { o with kind := .array len (lengthWritable && w) }
-        | none => pure ()
-    | some v => do
+  match d.value with
+  | none =>
+    if d.isAccessor || d.enumerable == some true || d.configurable == some true then
+      throwJsError .typeError "Cannot redefine property: length"
+    else if d.writable == some true && !lengthWritable then
+      throwJsError .typeError "Cannot redefine property: length"
+    else
+      match d.writable with
+      | some w => writeObj r { o with kind := .array len (lengthWritable && w) }
+      | none => pure ()
+  | some v => do
+      -- The coercion and its `RangeError` are 10.4.2.4 steps 3–5, and
+      -- they come **before** the attribute table of step 12: a
+      -- `{ value: -1, configurable: true }` is the `RangeError`, not the
+      -- refusal the `configurable` alone would be. The two coercions the
+      -- steps spell are one here (#520).
       let n ← match uint32Of? (← toNumberValue v) with
         | none => throwJsError .rangeError "Invalid array length"
         | some n => pure n
+      if d.isAccessor || d.enumerable == some true || d.configurable == some true then
+        throwJsError .typeError "Cannot redefine property: length"
       -- A non-writable `length` refuses a different value and refuses
       -- `writable: true` (10.1.6.3 step 5.e), whatever the value.
-      if !lengthWritable && d.writable == some true then
+      else if !lengthWritable && d.writable == some true then
         throwJsError .typeError "Cannot redefine property: length"
       else if len ≤ n then
         if !lengthWritable && n != len then
@@ -3068,9 +3240,10 @@ The rest are #380's floor. `String(v)` is ToString and nothing else;
 nullish argument and ToObject otherwise — the argument itself for an
 object, and the wrapper for a Number, a Boolean, or a String.
 `Object.keys` is ToObject and then OrdinaryOwnPropertyKeys, so a string's
-answer is its index keys and a Number's is empty. `push` and `join` require an Array exotic receiver: the
-generic array-like forms, and the rest of `Array.prototype`, are
-#390's. A missing argument is `undefined` throughout.
+answer is its index keys and a Number's is empty. `push` and `join` are
+generic over an array-like, as the whole of `Array.prototype` is;
+`callArrayNative` holds the rest of it. A missing argument is `undefined`
+throughout.
 
 `Number` and `Boolean` called as functions are their conversions;
 `constructNative` is what `new` does instead. The four `Number`
@@ -3177,27 +3350,31 @@ def callNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Valu
     match args[0]?.getD undefValue with
     | .obj r => do pure (.prim (.bool (← readObj r).isArray))
     | _ => pure (.prim (.bool false))
-  | .arrayPush =>
-    match thisArg with
-    | .obj r => do
-      match (← readObj r).kind with
-      | .array len _ => do
-        pushElements thisArg len args
-        pure (Value.ofNat (len + args.length))
-      | _ => throwJsError .typeError "Array.prototype.push called on non-array"
-    | _ => throwJsError .typeError "Array.prototype.push called on non-array"
-  | .arrayJoin =>
-    match thisArg with
-    | .obj r => do
-      match (← readObj r).kind with
-      | .array len _ => do
-        let sep ← match args with
-          | [] => pure (JsString.ofString ",")
-          | .prim .undef :: _ => pure (JsString.ofString ",")
-          | v :: _ => toStringValue v
-        pure (.prim (.str (← joinElements thisArg 0 len sep)))
-      | _ => throwJsError .typeError "Array.prototype.join called on non-array"
-    | _ => throwJsError .typeError "Array.prototype.join called on non-array"
+  -- `push` and `join` stay here rather than moving to `callArrayNative`
+  -- with the other twenty-nine: `Test/Tarski/ArraySimpTest.lean` reduces
+  -- a `push` through this match, and nothing else in the Array surface
+  -- is in a proof today.
+  | .arrayPush => do
+    -- 23.1.3.23, generic over an array-like. The final `length` write is
+    -- observable — a zero-argument `push` on an array whose `length` is
+    -- non-writable throws — so it happens whatever `args` is.
+    let o ← toObjectValue thisArg
+    let len ← lengthOfArrayLike o
+    if maxArrayLength < len + args.length then
+      throwJsError .typeError "Array length exceeds 2**53 - 1"
+    else do
+      pushElements (.obj o) len args
+      setProp (.obj o) "length" (Value.ofNat (len + args.length))
+      pure (Value.ofNat (len + args.length))
+  | .arrayJoin => do
+    -- 23.1.3.18, generic over an array-like.
+    let o ← toObjectValue thisArg
+    let len ← lengthOfArrayLike o
+    let sep ← match args with
+      | [] => pure (JsString.ofString ",")
+      | .prim .undef :: _ => pure (JsString.ofString ",")
+      | v :: _ => toStringValue v
+    pure (.prim (.str (← joinElements (.obj o) 0 len sep)))
   | .numberCtor => do pure (.prim (.num (← numberArg args)))
   | .numberIsFinite =>
     match args[0]?.getD undefValue with
@@ -3323,11 +3500,21 @@ def callNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Valu
   | .errorIsError => callSymbolNative f thisArg args
   | .jsonParse | .jsonStringify => callJsonNative f thisArg args
   | .string g => callStringNative g thisArg args
-  -- The iterator surface is a fourth group, split out for
-  -- `callReflectNative`'s reason but — unlike the other three —
-  -- **registered** in `tarski_eval`: seven arms are nowhere near the
-  -- ceiling, and a closed destructuring or one `for`-`of` step has to
-  -- reduce without a local lemma list.
+  -- The rest of the `Array` surface is a group of its own too, for the
+  -- reason the paragraph above gives: thirty more arms of this size
+  -- would put the whole match past the depth at which Lean generates a
+  -- match's equation lemmas, and `rw [callNative]` would stop working.
+  | .arrayAt | .arrayConcat | .arrayCopyWithin | .arrayFill | .arrayIncludes
+  | .arrayIndexOf | .arrayLastIndexOf | .arrayPop | .arrayReverse | .arrayShift
+  | .arraySlice | .arraySplice | .arrayToLocaleString | .arrayToString
+  | .arrayUnshift | .arrayFrom | .arrayOf | .arrayEvery | .arrayFilter
+  | .arrayFind | .arrayFindIndex | .arrayFlat | .arrayFlatMap | .arrayForEach
+  | .arrayMap | .arrayReduce | .arrayReduceRight | .arraySome
+  | .arraySort | .arraySpecies => callArrayNative f thisArg args
+  -- The iterator surface is a group split out for `callReflectNative`'s
+  -- reason but — unlike the others — **registered** in `tarski_eval`:
+  -- seven arms are nowhere near the ceiling, and a closed destructuring
+  -- or one `for`-`of` step has to reduce without a local lemma list.
   | .iteratorProtoIterator | .arrayIteratorNext | .arrayKeys | .arrayValues
   | .arrayEntries | .objectFromEntries | .objectGroupBy
   | .stringProtoIterator | .stringIteratorNext =>
@@ -4447,6 +4634,799 @@ def allocFromConstructor (newTarget : Value) (fallback : Ref) : EvalM Ref := do
     | _ => some fallback
   allocObj { proto }
   partial_fixpoint
+
+/-- CreateDataPropertyOrThrow (7.3.7): a definition, not a write, so a
+setter on the prototype chain cannot intercept a result element and a
+non-writable one does not refuse. Every member that fills an array it
+allocated uses it, which is why it takes a `Ref` rather than an
+array — a species constructor may hand back something that is not one. -/
+def createDataPropertyOrThrow (r : Ref) (key : String) (v : Value) : EvalM Unit :=
+  definePropertyOrThrow r key
+    { value := some v, writable := some true, enumerable := some true,
+      configurable := some true }
+  partial_fixpoint
+
+/-- ArraySpeciesCreate (10.4.2.3). A non-array allocates an ordinary
+array; otherwise `constructor` is read, and **an object constructor is
+asked for its `@@species`** (step 4), `null` reading as `undefined`.
+`undefined` falls through to ArrayCreate, anything else must meet
+IsConstructor, and the result is Construct(C, « len »). `get
+Array[@@species]` answers its receiver, so `class A extends Array`
+inherits it and `A.prototype.map` builds an `A`. Both reads can reach
+user code: `constructor` and `@@species` may each be an accessor. -/
+def arraySpeciesCreate (original : Ref) (len : Nat) : EvalM Value := do
+  if !(← readObj original).isArray then arrayCreate len
+  else
+    let ctor ← getProp (.obj original) "constructor"
+    let isObj := isObjectValue ctor
+    let read ← if isObj then getProp ctor WellKnownSymbol.species.key else pure ctor
+    let c := if isObj then speciesOfRead read else read
+    if isUndefValue c then arrayCreate len
+    else if ← isConstructor c then construct c c [Value.ofNat len]
+    else throwJsError .typeError "not a constructor"
+  partial_fixpoint
+
+/-- `concat`'s per-argument step (23.1.3.2 steps 5.a–5.c), with
+IsConcatSpreadable (23.1.3.2.1) in front of it: a non-object is never
+spread; otherwise `@@isConcatSpreadable` is read, and it decides by
+ToBoolean unless it is `undefined`, in which case IsArray answers. The
+read can reach user code, so it happens once per argument, ahead of the
+branch. -/
+def spreadInto (out : Ref) (n : Nat) : List Value → EvalM Nat
+  | [] => pure n
+  | e :: rest => do
+    let flag ← if isObjectValue e then getProp e WellKnownSymbol.isConcatSpreadable.key
+      else pure undefValue
+    let isArray ← match e with
+      | .obj r => pure (← readObj r).isArray
+      | _ => pure false
+    -- A non-object reads `undefined` for the flag and `false` for
+    -- IsArray, so the two arms need no test of their own.
+    let spreadable := concatSpreadable flag isArray
+    match e with
+    | .obj r =>
+      if spreadable then do
+        let len ← lengthOfArrayLike r
+        if maxArrayLength < n + len then
+          throwJsError .typeError "Array length exceeds 2**53 - 1"
+        else do
+          copyElements r out 0 n len
+          spreadInto out (n + len) rest
+      else do
+        if maxArrayLength ≤ n then
+          throwJsError .typeError "Array length exceeds 2**53 - 1"
+        else do
+          createDataPropertyOrThrow out (Nat.repr n) e
+          spreadInto out (n + 1) rest
+    | _ => do
+      if maxArrayLength ≤ n then
+        throwJsError .typeError "Array length exceeds 2**53 - 1"
+      else do
+        createDataPropertyOrThrow out (Nat.repr n) e
+        spreadInto out (n + 1) rest
+  partial_fixpoint
+
+/-- A run of elements copied from one array-like into another, a hole
+staying a hole: HasProperty, then Get, then CreateDataPropertyOrThrow.
+`slice`'s whole body, `splice`'s list of deleted elements, and `concat`'s
+spreading step. It recurses on a count the heap named, so its equation is
+`rw`'s and never a simp set's. -/
+def copyElements (src out : Ref) (i j count : Nat) : EvalM Unit := do
+  if count == 0 then pure ()
+  else do
+    if ← hasProperty src (Nat.repr i) then
+      createDataPropertyOrThrow out (Nat.repr j) (← getProp (.obj src) (Nat.repr i))
+    copyElements src out (i + 1) (j + 1) (count - 1)
+  partial_fixpoint
+
+/-- A run of elements moved within one array-like, presence and all: a
+present source is a Set, a missing one a DeletePropertyOrThrow of the
+target. `up` picks the direction, which is what keeps an overlapping move
+from overwriting what it has not read yet — `splice`'s shift of the tail,
+`shift` and `unshift`'s, and `copyWithin`'s (23.1.3.4 steps 14–18, whose
+direction is chosen by the same overlap test). -/
+def moveElements (o : Ref) (i j count : Nat) (up : Bool) : EvalM Unit := do
+  if count == 0 then pure ()
+  else do
+    let src := if up then i + count - 1 else i
+    let dst := if up then j + count - 1 else j
+    if ← hasProperty o (Nat.repr src) then
+      setProp (.obj o) (Nat.repr dst) (← getProp (.obj o) (Nat.repr src))
+    else do
+      let _ ← deleteProp (.obj o) (Nat.repr dst)
+      pure ()
+    if up then moveElements o i j (count - 1) up
+    else moveElements o (i + 1) (j + 1) (count - 1) up
+  partial_fixpoint
+
+/-- DeletePropertyOrThrow over a key range, ascending: `splice`'s shrink
+and `sort`'s tail of holes. -/
+def deleteFrom (o : Ref) (i n : Nat) : EvalM Unit := do
+  if i < n then do
+    let _ ← deleteProp (.obj o) (Nat.repr i)
+    deleteFrom o (i + 1) n
+  else pure ()
+  partial_fixpoint
+
+/-- `Array.prototype.fill`'s writes (23.1.3.7 step 8). -/
+def fillFrom (o : Ref) (v : Value) (i n : Nat) : EvalM Unit := do
+  if i < n then do
+    setProp (.obj o) (Nat.repr i) v
+    fillFrom o v (i + 1) n
+  else pure ()
+  partial_fixpoint
+
+/-- `Array.prototype.reverse`'s swap (23.1.3.26 step 5), all four
+presence cases: two present elements exchange, one present and one
+missing moves and deletes, and two missing do nothing at all. -/
+def reverseFrom (o : Ref) (lower upper : Nat) : EvalM Unit := do
+  if lower < upper then do
+    let lk := Nat.repr lower
+    let uk := Nat.repr upper
+    let lowerExists ← hasProperty o lk
+    let lowerValue ← if lowerExists then getProp (.obj o) lk else pure undefValue
+    let upperExists ← hasProperty o uk
+    let upperValue ← if upperExists then getProp (.obj o) uk else pure undefValue
+    if lowerExists && upperExists then do
+      setProp (.obj o) lk upperValue
+      setProp (.obj o) uk lowerValue
+    else if upperExists then do
+      setProp (.obj o) lk upperValue
+      let _ ← deleteProp (.obj o) uk
+      pure ()
+    else if lowerExists then do
+      let _ ← deleteProp (.obj o) lk
+      setProp (.obj o) uk lowerValue
+    else pure ()
+    reverseFrom o (lower + 1) (upper - 1)
+  else pure ()
+  partial_fixpoint
+
+/-- `indexOf`'s scan (23.1.3.17 step 8): a hole is skipped, and the test
+is IsStrictlyEqual. -/
+def indexOfFrom (o : Ref) (v : Value) (i len : Nat) : EvalM (Option Nat) := do
+  if i < len then do
+    if ← hasProperty o (Nat.repr i) then
+      if strictEqValue (← getProp (.obj o) (Nat.repr i)) v then pure (some i)
+      else indexOfFrom o v (i + 1) len
+    else indexOfFrom o v (i + 1) len
+  else pure none
+  partial_fixpoint
+
+/-- `lastIndexOf`'s scan (23.1.3.20 step 7), downward. `i` is **one past**
+the index to look at, so that the walk can count down through 0 in a
+`Nat`. -/
+def lastIndexOfFrom (o : Ref) (v : Value) (i : Nat) : EvalM (Option Nat) := do
+  if i == 0 then pure none
+  else do
+    if ← hasProperty o (Nat.repr (i - 1)) then
+      if strictEqValue (← getProp (.obj o) (Nat.repr (i - 1))) v then pure (some (i - 1))
+      else lastIndexOfFrom o v (i - 1)
+    else lastIndexOfFrom o v (i - 1)
+  partial_fixpoint
+
+/-- `includes`'s scan (23.1.3.16 step 8): a hole is **not** skipped — it
+reads `undefined`, which is what makes `[, 1].includes(undefined)` true
+where `[, 1].indexOf(undefined)` is -1 — and the test is SameValueZero. -/
+def includesFrom (o : Ref) (v : Value) (i len : Nat) : EvalM Bool := do
+  if i < len then do
+    if sameValueZeroValue (← getProp (.obj o) (Nat.repr i)) v then pure true
+    else includesFrom o v (i + 1) len
+  else pure false
+  partial_fixpoint
+
+/-- `toLocaleString`'s fold (23.1.3.32), `joinElements`'s twin: each
+non-nullish element has its *own* `toLocaleString` Invoked, and the parts
+are joined by `,`. There is no locale — ECMA-402 is outside this epic —
+so nothing here reads one. -/
+def toLocaleStringFrom (o : Ref) (i len : Nat) : EvalM JsString := do
+  if i < len then do
+    let s ← match ← getProp (.obj o) (Nat.repr i) with
+      | .prim .undef => pure (JsString.ofString "")
+      | .prim .null => pure (JsString.ofString "")
+      | e => do toStringValue (← callFunction (← getProp e "toLocaleString") e [])
+    let rest ← toLocaleStringFrom o (i + 1) len
+    pure (if i + 1 < len then s ++ JsString.ofString "," ++ rest else s ++ rest)
+  else pure (JsString.ofString "")
+  partial_fixpoint
+
+/-- CompareArrayElements (23.1.3.30.2): `undefined` sorts last whatever
+the comparator says, a comparator's answer is ToNumber'd with a NaN read
+as `+0`, and with no comparator the two elements are compared as
+strings. -/
+def sortCompare (cmp : Option Value) (x y : Value) : EvalM Float := do
+  match x, y with
+  | .prim .undef, .prim .undef => pure 0.0
+  | .prim .undef, _ => pure 1.0
+  | _, .prim .undef => pure (-1.0)
+  | _, _ =>
+    match cmp with
+    | some f => do
+      let r ← callFunction f undefValue [x, y]
+      let v ← toNumberValue r
+      -- A comparator answering NaN is +0, which is what makes it stable
+      -- rather than arbitrary.
+      pure (if v == v then v else 0.0)
+    | none => do
+      let xs ← toStringValue x
+      let ys ← toStringValue y
+      let lt := applyBinary .lt (.str xs) (.str ys)
+      let gt := applyBinary .lt (.str ys) (.str xs)
+      pure (if toBooleanPrim lt then -1.0 else if toBooleanPrim gt then 1.0 else 0.0)
+  partial_fixpoint
+
+/-- `Array.of`'s writes (23.1.2.3 step 5), `pushElements`'s twin over
+CreateDataPropertyOrThrow rather than Set. -/
+def defineElements (out : Ref) (i : Nat) : List Value → EvalM Unit
+  | [] => pure ()
+  | v :: rest => do
+    createDataPropertyOrThrow out (Nat.repr i) v
+    defineElements out (i + 1) rest
+  partial_fixpoint
+
+/-- The seven callback members in one walk. `HasProperty`, then `Get`,
+then `Call(cb, thisArg, « v, k, O »)`: `every`, `some`, `forEach`, `map`,
+and `filter` skip a hole, `find` and `findIndex` visit one as
+`undefined`; `every` and `some` stop early; `map` defines its result at
+`k` and `filter` defines the *element* at a running index of its own, so
+a hole stays a hole in one and is dropped in the other.
+
+It recurses on a length the heap named, so its equation is `rw`'s and
+never a simp set's. -/
+def visitElements (kind : VisitKind) (o : Ref) (cb thisArg : Value) (out : Ref)
+    (i len to : Nat) : EvalM Value := do
+  if len ≤ i then
+    match kind with
+    | .every => pure (.prim (.bool true))
+    | .some => pure (.prim (.bool false))
+    | .find => pure undefValue
+    | .findIndex => pure (.prim (.num (-1.0)))
+    | .forEach => pure undefValue
+    | .map => pure (.obj out)
+    | .filter => pure (.obj out)
+  else do
+    let k := Nat.repr i
+    let present ← hasProperty o k
+    let visits := match kind with
+      | .find => true
+      | .findIndex => true
+      | _ => present
+    if !visits then visitElements kind o cb thisArg out (i + 1) len to
+    else do
+      let v ← if present then getProp (.obj o) k else pure undefValue
+      let r ← callFunction cb thisArg [v, Value.ofNat i, .obj o]
+      let truthy := toBooleanPrim r
+      match kind with
+      | .every =>
+        if truthy then visitElements kind o cb thisArg out (i + 1) len to
+        else pure (.prim (.bool false))
+      | .some =>
+        if truthy then pure (.prim (.bool true))
+        else visitElements kind o cb thisArg out (i + 1) len to
+      | .find =>
+        if truthy then pure v
+        else visitElements kind o cb thisArg out (i + 1) len to
+      | .findIndex =>
+        if truthy then pure (Value.ofNat i)
+        else visitElements kind o cb thisArg out (i + 1) len to
+      | .forEach => visitElements kind o cb thisArg out (i + 1) len to
+      | .map => do
+        createDataPropertyOrThrow out k r
+        visitElements kind o cb thisArg out (i + 1) len to
+      | .filter =>
+        if truthy then do
+          createDataPropertyOrThrow out (Nat.repr to) v
+          visitElements kind o cb thisArg out (i + 1) len (to + 1)
+        else visitElements kind o cb thisArg out (i + 1) len to
+  partial_fixpoint
+
+/-- The first present element at or after `i`, with its index:
+`reduce`'s initial accumulator when it was given none (23.1.3.24 step
+6.b). -/
+def firstPresent (o : Ref) (i len : Nat) : EvalM (Option (Nat × Value)) := do
+  if len ≤ i then pure none
+  else do
+    if ← hasProperty o (Nat.repr i) then do
+      let v ← getProp (.obj o) (Nat.repr i)
+      pure (some (i, v))
+    else firstPresent o (i + 1) len
+  partial_fixpoint
+
+/-- `firstPresent` from the other end, `i` being **one past** the index
+to look at: `reduceRight`'s initial accumulator. -/
+def lastPresent (o : Ref) (i : Nat) : EvalM (Option (Nat × Value)) := do
+  if i == 0 then pure none
+  else do
+    if ← hasProperty o (Nat.repr (i - 1)) then do
+      let v ← getProp (.obj o) (Nat.repr (i - 1))
+      pure (some (i - 1, v))
+    else lastPresent o (i - 1)
+  partial_fixpoint
+
+/-- `reduce`'s fold (23.1.3.24 step 8), a hole skipped without a call. -/
+def reduceFrom (o : Ref) (cb acc : Value) (i len : Nat) : EvalM Value := do
+  if len ≤ i then pure acc
+  else do
+    if ← hasProperty o (Nat.repr i) then do
+      let v ← getProp (.obj o) (Nat.repr i)
+      let acc' ← callFunction cb undefValue [acc, v, Value.ofNat i, .obj o]
+      reduceFrom o cb acc' (i + 1) len
+    else reduceFrom o cb acc (i + 1) len
+  partial_fixpoint
+
+/-- `reduceRight`'s fold (23.1.3.25 step 8), counting down; `i` is one
+past the index, as `lastPresent`'s is. -/
+def reduceRightFrom (o : Ref) (cb acc : Value) (i : Nat) : EvalM Value := do
+  if i == 0 then pure acc
+  else do
+    if ← hasProperty o (Nat.repr (i - 1)) then do
+      let v ← getProp (.obj o) (Nat.repr (i - 1))
+      let acc' ← callFunction cb undefValue [acc, v, Value.ofNat (i - 1), .obj o]
+      reduceRightFrom o cb acc' (i - 1)
+    else reduceRightFrom o cb acc (i - 1)
+  partial_fixpoint
+
+/-- FlattenIntoArray (23.1.3.13.1), `flat`'s body and `flatMap`'s. A
+`depth` of `none` is `+∞`; `some 0` copies. An element is spread when it
+is an array and the depth is not spent, which is IsArray and nothing more
+— `@@isConcatSpreadable` has no part in this one even in the
+specification. The answer is the next free index in the target, which is
+what makes the recursive call compose. -/
+def flattenInto (target source : Ref) (sourceLen start : Nat) (depth : Option Nat)
+    (mapper : Option (Value × Value)) (i : Nat) : EvalM Nat := do
+  if sourceLen ≤ i then pure start
+  else do
+    let k := Nat.repr i
+    if ← hasProperty source k then do
+      let raw ← getProp (.obj source) k
+      let e ← match mapper with
+        | none => pure raw
+        | some ft => callFunction ft.1 ft.2 [raw, Value.ofNat i, .obj source]
+      let deeper := match depth with
+        | none => true
+        | some d => 0 < d
+      let inner ← match e with
+        | .obj r => do
+          let arr := (← readObj r).isArray
+          pure (if deeper && arr then some r else none)
+        | _ => pure none
+      match inner with
+      | some r => do
+        let elementLen ← lengthOfArrayLike r
+        let next ← flattenInto target r elementLen start (depth.map (· - 1)) none 0
+        flattenInto target source sourceLen next depth mapper (i + 1)
+      | none =>
+        if maxArrayLength ≤ start then
+          throwJsError .typeError "Array length exceeds 2**53 - 1"
+        else do
+          createDataPropertyOrThrow target (Nat.repr start) e
+          flattenInto target source sourceLen (start + 1) depth mapper (i + 1)
+    else flattenInto target source sourceLen start depth mapper (i + 1)
+  partial_fixpoint
+
+/-- SortIndexedProperties (23.1.3.30.1) with holes skipped: the elements
+`sort` actually orders, in index order. -/
+def collectPresent (o : Ref) (i len : Nat) : EvalM (List Value) := do
+  if len ≤ i then pure []
+  else do
+    if ← hasProperty o (Nat.repr i) then do
+      let v ← getProp (.obj o) (Nat.repr i)
+      let rest ← collectPresent o (i + 1) len
+      pure (v :: rest)
+    else collectPresent o (i + 1) len
+  partial_fixpoint
+
+/-- The merge of a stable merge sort: the left element stays first unless
+the comparator puts it strictly after, which is what makes the sort
+stable. -/
+def mergeValues (cmp : Option Value) : List Value → List Value → EvalM (List Value)
+  | [], ys => pure ys
+  | xs, [] => pure xs
+  | x :: xs, y :: ys => do
+    let c ← sortCompare cmp x y
+    if 0.0 < c then do
+      let rest ← mergeValues cmp (x :: xs) ys
+      pure (y :: rest)
+    else do
+      let rest ← mergeValues cmp xs (y :: ys)
+      pure (x :: rest)
+  partial_fixpoint
+
+/-- `sort`'s ordering: a **stable merge sort**, which the specification
+requires the sort to be. Merge rather than insertion because a user
+comparator is an evaluator call per comparison and
+`sort/stability-2048-elements.js` would make two million of them. -/
+def mergeSortValues (cmp : Option Value) : List Value → EvalM (List Value)
+  | [] => pure []
+  | [x] => pure [x]
+  | xs => do
+    let l ← mergeSortValues cmp (xs.take (xs.length / 2))
+    let r ← mergeSortValues cmp (xs.drop (xs.length / 2))
+    mergeValues cmp l r
+  partial_fixpoint
+
+/-- `Array.from`'s loop over an array-like (23.1.2.1 step 7.e). There is
+no HasProperty here — the specification has none — so a hole arrives as
+`undefined` rather than staying a hole. -/
+def fromArrayLike (src out : Ref) (i len : Nat) (mapper : Option (Value × Value)) :
+    EvalM Unit := do
+  if len ≤ i then pure ()
+  else do
+    let raw ← getProp (.obj src) (Nat.repr i)
+    let v ← match mapper with
+      | none => pure raw
+      | some ft => callFunction ft.1 ft.2 [raw, Value.ofNat i]
+    createDataPropertyOrThrow out (Nat.repr i) v
+    fromArrayLike src out (i + 1) len mapper
+  partial_fixpoint
+
+/-- The rest of the `Array` surface: the whole of 23.1.3 but the four
+iterator members (#394), plus `Array.from` and `Array.of`.
+
+It is a definition of its own rather than twenty-nine more arms of
+`callNative` for the reason `callReflectNative` is one — `NativeFn` has
+eighty-nine constructors now, and a `match` over all of them with a body
+this size is one whose equation lemmas the compiler cannot generate.
+
+Each arm is in its section's own step order — ToObject first, then
+LengthOfArrayLike, then the argument coercions — so a poisoned `valueOf`
+runs where the specification runs it. Every one of them is **generic over
+an array-like**: the four internal methods are `getProp`, `hasProperty`,
+`setProp`, and `deleteProp`, and a result is filled in with
+CreateDataPropertyOrThrow, which works on a species-constructed
+non-array too.
+
+The arm for anything else is unreachable: `callNative` routes exactly the
+twenty-nine constructors below here. -/
+def callArrayNative (f : NativeFn) (thisArg : Value) (args : List Value) : EvalM Value :=
+  match f with
+  | .arrayToString => do
+    -- 23.1.3.36: the receiver's *own* `join` if it has a callable one,
+    -- and `Object.prototype.toString` otherwise.
+    let o ← toObjectValue thisArg
+    let f ← getProp (.obj o) "join"
+    let callable ← isCallable f
+    if callable then callFunction f (.obj o) []
+    else callNative .objectProtoToString (.obj o) []
+  | .arrayToLocaleString => do
+    let o ← toObjectValue thisArg
+    let len ← lengthOfArrayLike o
+    let s ← toLocaleStringFrom o 0 len
+    pure (.prim (.str s))
+  | .arrayAt => do
+    -- 23.1.3.1. The one member that does not clamp: an index past either
+    -- end is `undefined`, and so is either infinity.
+    let o ← toObjectValue thisArg
+    let len ← lengthOfArrayLike o
+    let idx ← toNumberValue (args.headD undefValue)
+    match Number.FloatOps.integerOrInfinity? idx with
+    | none => pure undefValue
+    | some i =>
+      let k : Int := if 0 ≤ i then i else (len : Int) + i
+      if k < 0 || (len : Int) ≤ k then pure undefValue
+      else getProp (.obj o) (Nat.repr k.toNat)
+  | .arrayConcat => do
+    -- 23.1.3.2. The receiver is the first item, so `[].concat(1)` and
+    -- `Array.prototype.concat.call(1)` differ only in where the 1 lands.
+    let o ← toObjectValue thisArg
+    let a ← arraySpeciesCreate o 0
+    let out ← toObjectValue a
+    let n ← spreadInto out 0 (Value.obj o :: args)
+    setProp a "length" (Value.ofNat n)
+    pure a
+  | .arrayCopyWithin => do
+    -- 23.1.3.4. The direction is the overlap test of step 13.
+    let o ← toObjectValue thisArg
+    let len ← lengthOfArrayLike o
+    let toArg ← toNumberValue (args.headD undefValue)
+    let to := relativeIndex toArg len
+    let srcArg ← toNumberValue (args[1]?.getD undefValue)
+    let src := relativeIndex srcArg len
+    let fin ← match args[2]?.getD undefValue with
+      | .prim .undef => pure len
+      | v => do
+        let x ← toNumberValue v
+        pure (relativeIndex x len)
+    let count := min (fin - src) (len - to)
+    moveElements o src to count (src < to && to < src + count)
+    pure (.obj o)
+  | .arrayFill => do
+    -- 23.1.3.7. The value is not coerced; the two bounds are.
+    let o ← toObjectValue thisArg
+    let len ← lengthOfArrayLike o
+    let startArg ← toNumberValue (args[1]?.getD undefValue)
+    let k := relativeIndex startArg len
+    let fin ← match args[2]?.getD undefValue with
+      | .prim .undef => pure len
+      | v => do
+        let x ← toNumberValue v
+        pure (relativeIndex x len)
+    fillFrom o (args.headD undefValue) k fin
+    pure (.obj o)
+  | .arrayIncludes => do
+    -- 23.1.3.16. An empty receiver answers `false` **before** `fromIndex`
+    -- is coerced, so a poisoned `valueOf` there never runs.
+    let o ← toObjectValue thisArg
+    let len ← lengthOfArrayLike o
+    if len == 0 then pure (.prim (.bool false))
+    else do
+      let fromArg ← toNumberValue (args[1]?.getD undefValue)
+      let k := relativeIndex fromArg len
+      let found ← includesFrom o (args.headD undefValue) k len
+      pure (.prim (.bool found))
+  | .arrayIndexOf => do
+    -- 23.1.3.17, ordered as `includes` is.
+    let o ← toObjectValue thisArg
+    let len ← lengthOfArrayLike o
+    if len == 0 then pure (.prim (.num (-1.0)))
+    else do
+      let fromArg ← toNumberValue (args[1]?.getD undefValue)
+      let k := relativeIndex fromArg len
+      let found ← indexOfFrom o (args.headD undefValue) k len
+      match found with
+      | some i => pure (Value.ofNat i)
+      | none => pure (.prim (.num (-1.0)))
+  | .arrayLastIndexOf => do
+    -- 23.1.3.20. An absent `fromIndex` starts at the last element; a
+    -- `-∞` one answers -1 without looking at anything.
+    let o ← toObjectValue thisArg
+    let len ← lengthOfArrayLike o
+    if len == 0 then pure (.prim (.num (-1.0)))
+    else do
+      -- An absent `fromIndex` is the last index; one that is present and
+      -- `undefined` is ToIntegerOrInfinity's 0, so the default is a value
+      -- rather than a branch past the coercion.
+      let fromArg ← match args[1]? with
+        | none => pure (Value.ofNat (len - 1))
+        | some v => pure v
+      let x ← toNumberValue fromArg
+      match lastIndexStart x len with
+      | none => pure (.prim (.num (-1.0)))
+      | some k => do
+        let found ← lastIndexOfFrom o (args.headD undefValue) (k + 1)
+        match found with
+        | some i => pure (Value.ofNat i)
+        | none => pure (.prim (.num (-1.0)))
+  | .arrayPop => do
+    -- 23.1.3.22. An empty receiver still has its `length` written, which
+    -- is what makes `Object.freeze([]).pop()` throw.
+    let o ← toObjectValue thisArg
+    let len ← lengthOfArrayLike o
+    if len == 0 then do
+      setProp (.obj o) "length" (Value.ofNat 0)
+      pure undefValue
+    else do
+      let v ← getProp (.obj o) (Nat.repr (len - 1))
+      let _ ← deleteProp (.obj o) (Nat.repr (len - 1))
+      setProp (.obj o) "length" (Value.ofNat (len - 1))
+      pure v
+  | .arrayShift => do
+    -- 23.1.3.27, `pop`'s twin at the other end: the tail moves down one.
+    let o ← toObjectValue thisArg
+    let len ← lengthOfArrayLike o
+    if len == 0 then do
+      setProp (.obj o) "length" (Value.ofNat 0)
+      pure undefValue
+    else do
+      let v ← getProp (.obj o) "0"
+      moveElements o 1 0 (len - 1) false
+      let _ ← deleteProp (.obj o) (Nat.repr (len - 1))
+      setProp (.obj o) "length" (Value.ofNat (len - 1))
+      pure v
+  | .arrayUnshift => do
+    -- 23.1.3.37. The tail moves up first, from the top down, so an
+    -- overlapping move does not overwrite what it has not read.
+    let o ← toObjectValue thisArg
+    let len ← lengthOfArrayLike o
+    if maxArrayLength < len + args.length then
+      throwJsError .typeError "Array length exceeds 2**53 - 1"
+    else do
+      if args.isEmpty then pure () else moveElements o 0 args.length len true
+      pushElements (.obj o) 0 args
+      setProp (.obj o) "length" (Value.ofNat (len + args.length))
+      pure (Value.ofNat (len + args.length))
+  | .arrayReverse => do
+    let o ← toObjectValue thisArg
+    let len ← lengthOfArrayLike o
+    if len == 0 then pure (.obj o)
+    else do
+      reverseFrom o 0 (len - 1)
+      pure (.obj o)
+  | .arraySlice => do
+    -- 23.1.3.28. The result's `length` is the count, holes and all.
+    let o ← toObjectValue thisArg
+    let len ← lengthOfArrayLike o
+    let startArg ← toNumberValue (args.headD undefValue)
+    let k := relativeIndex startArg len
+    let fin ← match args[1]?.getD undefValue with
+      | .prim .undef => pure len
+      | v => do
+        let x ← toNumberValue v
+        pure (relativeIndex x len)
+    let count := fin - k
+    let a ← arraySpeciesCreate o count
+    let out ← toObjectValue a
+    copyElements o out k 0 count
+    setProp a "length" (Value.ofNat count)
+    pure a
+  | .arraySplice => do
+    -- 23.1.3.31. An absent `deleteCount` takes the whole tail; one that
+    -- is present and `undefined` is ToIntegerOrInfinity's 0, which is why
+    -- the two are separate arms of the match rather than a `getD`.
+    let o ← toObjectValue thisArg
+    let len ← lengthOfArrayLike o
+    let startArg ← toNumberValue (args.headD undefValue)
+    let start := relativeIndex startArg len
+    let items := args.drop 2
+    let delCount ← match args with
+      | [] => pure 0
+      | [_] => pure (len - start)
+      | _ :: d :: _ => do
+        let x ← toNumberValue d
+        pure (spliceDeleteCount x (len - start))
+    if maxArrayLength < len + items.length - delCount then
+      throwJsError .typeError "Array length exceeds 2**53 - 1"
+    else do
+      let a ← arraySpeciesCreate o delCount
+      let out ← toObjectValue a
+      copyElements o out start 0 delCount
+      setProp a "length" (Value.ofNat delCount)
+      let newLen := len + items.length - delCount
+      if items.length < delCount then do
+        moveElements o (start + delCount) (start + items.length) (len - start - delCount) false
+        deleteFrom o newLen len
+      else if delCount < items.length then
+        moveElements o (start + delCount) (start + items.length) (len - start - delCount) true
+      else pure ()
+      pushElements (.obj o) start items
+      setProp (.obj o) "length" (Value.ofNat newLen)
+      pure a
+  | .arrayEvery => do
+    -- 23.1.3.6. The callback is checked after ToObject and the length
+    -- and before any element, so `[].every(1)` still throws.
+    let o ← toObjectValue thisArg
+    let len ← lengthOfArrayLike o
+    requireCallable (args.headD undefValue)
+    visitElements .every o (args.headD undefValue) (args[1]?.getD undefValue) o 0 len 0
+  | .arraySome => do
+    let o ← toObjectValue thisArg
+    let len ← lengthOfArrayLike o
+    requireCallable (args.headD undefValue)
+    visitElements .some o (args.headD undefValue) (args[1]?.getD undefValue) o 0 len 0
+  | .arrayFind => do
+    let o ← toObjectValue thisArg
+    let len ← lengthOfArrayLike o
+    requireCallable (args.headD undefValue)
+    visitElements .find o (args.headD undefValue) (args[1]?.getD undefValue) o 0 len 0
+  | .arrayFindIndex => do
+    let o ← toObjectValue thisArg
+    let len ← lengthOfArrayLike o
+    requireCallable (args.headD undefValue)
+    visitElements .findIndex o (args.headD undefValue) (args[1]?.getD undefValue) o 0 len 0
+  | .arrayForEach => do
+    let o ← toObjectValue thisArg
+    let len ← lengthOfArrayLike o
+    requireCallable (args.headD undefValue)
+    visitElements .forEach o (args.headD undefValue) (args[1]?.getD undefValue) o 0 len 0
+  | .arrayMap => do
+    -- 23.1.3.21. The result's length is fixed at the start, so an
+    -- element the callback appends is not visited and not mapped.
+    let o ← toObjectValue thisArg
+    let len ← lengthOfArrayLike o
+    requireCallable (args.headD undefValue)
+    let a ← arraySpeciesCreate o len
+    let out ← toObjectValue a
+    visitElements .map o (args.headD undefValue) (args[1]?.getD undefValue) out 0 len 0
+  | .arrayFilter => do
+    -- 23.1.3.8, whose result starts empty and grows at its own index.
+    let o ← toObjectValue thisArg
+    let len ← lengthOfArrayLike o
+    requireCallable (args.headD undefValue)
+    let a ← arraySpeciesCreate o 0
+    let out ← toObjectValue a
+    visitElements .filter o (args.headD undefValue) (args[1]?.getD undefValue) out 0 len 0
+  | .arrayReduce => do
+    -- 23.1.3.24. With no initial value the accumulator is the first
+    -- *present* element, and an array with none at all is the refusal.
+    let o ← toObjectValue thisArg
+    let len ← lengthOfArrayLike o
+    requireCallable (args.headD undefValue)
+    match args[1]? with
+    | some init => reduceFrom o (args.headD undefValue) init 0 len
+    | none => do
+      let first ← firstPresent o 0 len
+      match first with
+      | none => throwJsError .typeError "Reduce of empty array with no initial value"
+      | some iv => reduceFrom o (args.headD undefValue) iv.2 (iv.1 + 1) len
+  | .arrayReduceRight => do
+    let o ← toObjectValue thisArg
+    let len ← lengthOfArrayLike o
+    requireCallable (args.headD undefValue)
+    match args[1]? with
+    | some init => reduceRightFrom o (args.headD undefValue) init len
+    | none => do
+      let last ← lastPresent o len
+      match last with
+      | none => throwJsError .typeError "Reduce of empty array with no initial value"
+      | some iv => reduceRightFrom o (args.headD undefValue) iv.2 iv.1
+  | .arrayFlat => do
+    -- 23.1.3.13. An absent depth and an `undefined` one are both 1.
+    let o ← toObjectValue thisArg
+    let len ← lengthOfArrayLike o
+    let depth : Option Nat ← match args.headD undefValue with
+      | .prim .undef => pure (some 1)
+      | v => do
+        let x ← toNumberValue v
+        pure (flatDepth x)
+    let a ← arraySpeciesCreate o 0
+    let out ← toObjectValue a
+    let _ ← flattenInto out o len 0 depth none 0
+    pure a
+  | .arrayFlatMap => do
+    -- 23.1.3.14: `flat` at depth one with a mapper in front of it.
+    let o ← toObjectValue thisArg
+    let len ← lengthOfArrayLike o
+    requireCallable (args.headD undefValue)
+    let a ← arraySpeciesCreate o 0
+    let out ← toObjectValue a
+    let _ ← flattenInto out o len 0 (some 1)
+      (some (args.headD undefValue, args[1]?.getD undefValue)) 0
+    pure a
+  | .arraySort => do
+    -- 23.1.3.30. The comparator is checked **first**, ahead of ToObject,
+    -- so `Array.prototype.sort.call(undefined, 1)` is this refusal and
+    -- not the one ToObject would make.
+    let cmp : Option Value ← match args.headD undefValue with
+      | .prim .undef => pure none
+      | v => do
+        let callable ← isCallable v
+        if callable then pure (some v)
+        else
+          throwJsError .typeError
+            "The comparison function must be either a function or undefined"
+    let o ← toObjectValue thisArg
+    let len ← lengthOfArrayLike o
+    let items ← collectPresent o 0 len
+    let sorted ← mergeSortValues cmp items
+    pushElements (.obj o) 0 sorted
+    deleteFrom o sorted.length len
+    pure (.obj o)
+  | .arrayFrom => do
+    -- 23.1.2.1 without step 5's `@@iterator` read (#394): an iterable is
+    -- read by index here like any other array-like. A constructor `this`
+    -- builds the result, which is what `Array.from.call(A, …)` observes.
+    let mapper : Option (Value × Value) ← match args[1]?.getD undefValue with
+      | .prim .undef => pure none
+      | v => do
+        requireCallable v
+        pure (some (v, args[2]?.getD undefValue))
+    let src ← toObjectValue (args.headD undefValue)
+    let len ← lengthOfArrayLike src
+    let ctor ← isConstructor thisArg
+    let a ← if ctor then construct thisArg thisArg [Value.ofNat len] else arrayCreate len
+    let out ← toObjectValue a
+    fromArrayLike src out 0 len mapper
+    setProp a "length" (Value.ofNat len)
+    pure a
+  | .arrayOf => do
+    -- 23.1.2.3, the same allocation over the argument list: `Array.of(7)`
+    -- is one element where `Array(7)` is seven holes.
+    let ctor ← isConstructor thisArg
+    let a ← if ctor then construct thisArg thisArg [Value.ofNat args.length]
+      else arrayCreate args.length
+    let out ← toObjectValue a
+    defineElements out 0 args
+    setProp a "length" (Value.ofNat args.length)
+    pure a
+  | .arraySpecies =>
+    -- `get Array[@@species]` (23.1.2.5): an accessor whose body is its
+    -- own receiver, which is the whole of what makes a subclass its own
+    -- species.
+    pure thisArg
+  | _ => pure undefValue
+  partial_fixpoint
+
+
 
 
 /-- Whether `p` is on `o`'s prototype chain, `o` itself not counted —

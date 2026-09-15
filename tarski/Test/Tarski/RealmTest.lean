@@ -16,7 +16,7 @@ open Tarski
 /-! ## The shape -/
 
 #guard Heap.initial.cells.size == 37
-#guard Heap.initial.objects.size == 156
+#guard Heap.initial.objects.size == 186
 
 /-! ## Each kind's prototype
 
@@ -269,13 +269,100 @@ explicit about and `Array.isArray(Array.prototype)` observes. -/
       && o.getOwn "join" == some (.obj arrayJoinRef)
   | none => false
 
+-- 23.1.3's own order, with `length` ahead of it: `length` is the array
+-- exotic object's own property and `Obj.ownKeys` puts it after the index
+-- keys, of which `Array.prototype` has none. `@@unscopables` (#524) is
+-- the whole of what is missing, and `@@iterator` is `values` itself.
+#guard (Heap.initial.readObj arrayProtoRef).map (·.ownKeys) ==
+  some ([ Key.str "length",
+  Key.str "at",
+  Key.str "concat",
+  Key.str "constructor",
+  Key.str "copyWithin",
+  Key.str "entries",
+  Key.str "every",
+  Key.str "fill",
+  Key.str "filter",
+  Key.str "find",
+  Key.str "findIndex",
+  Key.str "flat",
+  Key.str "flatMap",
+  Key.str "forEach",
+  Key.str "includes",
+  Key.str "indexOf",
+  Key.str "join",
+  Key.str "keys",
+  Key.str "lastIndexOf",
+  Key.str "map",
+  Key.str "pop",
+  Key.str "push",
+  Key.str "reduce",
+  Key.str "reduceRight",
+  Key.str "reverse",
+  Key.str "shift",
+  Key.str "slice",
+  Key.str "some",
+  Key.str "sort",
+  Key.str "splice",
+  Key.str "toLocaleString",
+  Key.str "toString",
+  Key.str "unshift",
+  Key.str "values",
+  WellKnownSymbol.iterator.key ] : List Key)
+
 #guard match Heap.initial.readObj arrayCtorRef with
   | some o =>
     o.getOwn "prototype" == some (.obj arrayProtoRef)
+      && o.getOwn "from" == some (.obj arrayFromRef)
       && o.getOwn "isArray" == some (.obj arrayIsArrayRef)
+      && o.getOwn "of" == some (.obj arrayOfRef)
       && (match o.callable with
           | some (.native .arrayCtor) => true
           | _ => false)
+  | none => false
+
+/-! ## The rest of the `Array` surface
+
+Each of the twenty-nine references 23.1.2 and 23.1.3 add is its own
+native, under its own name, with 17.1's `length`. -/
+
+#guard [ (arrayFromRef, (NativeFn.arrayFrom, "from", 1)),
+         (arrayOfRef, (NativeFn.arrayOf, "of", 0)),
+         (arrayAtRef, (NativeFn.arrayAt, "at", 1)),
+         (arrayConcatRef, (NativeFn.arrayConcat, "concat", 1)),
+         (arrayCopyWithinRef, (NativeFn.arrayCopyWithin, "copyWithin", 2)),
+         (arrayEveryRef, (NativeFn.arrayEvery, "every", 1)),
+         (arrayFillRef, (NativeFn.arrayFill, "fill", 1)),
+         (arrayFilterRef, (NativeFn.arrayFilter, "filter", 1)),
+         (arrayFindRef, (NativeFn.arrayFind, "find", 1)),
+         (arrayFindIndexRef, (NativeFn.arrayFindIndex, "findIndex", 1)),
+         (arrayFlatRef, (NativeFn.arrayFlat, "flat", 0)),
+         (arrayFlatMapRef, (NativeFn.arrayFlatMap, "flatMap", 1)),
+         (arrayForEachRef, (NativeFn.arrayForEach, "forEach", 1)),
+         (arrayIncludesRef, (NativeFn.arrayIncludes, "includes", 1)),
+         (arrayIndexOfRef, (NativeFn.arrayIndexOf, "indexOf", 1)),
+         (arrayLastIndexOfRef, (NativeFn.arrayLastIndexOf, "lastIndexOf", 1)),
+         (arrayMapRef, (NativeFn.arrayMap, "map", 1)),
+         (arrayPopRef, (NativeFn.arrayPop, "pop", 0)),
+         (arrayReduceRef, (NativeFn.arrayReduce, "reduce", 1)),
+         (arrayReduceRightRef, (NativeFn.arrayReduceRight, "reduceRight", 1)),
+         (arrayReverseRef, (NativeFn.arrayReverse, "reverse", 0)),
+         (arrayShiftRef, (NativeFn.arrayShift, "shift", 0)),
+         (arraySliceRef, (NativeFn.arraySlice, "slice", 2)),
+         (arraySomeRef, (NativeFn.arraySome, "some", 1)),
+         (arraySortRef, (NativeFn.arraySort, "sort", 1)),
+         (arraySpliceRef, (NativeFn.arraySplice, "splice", 2)),
+         (arrayToLocaleStringRef, (NativeFn.arrayToLocaleString, "toLocaleString", 0)),
+         (arrayToStringRef, (NativeFn.arrayToString, "toString", 0)),
+         (arrayUnshiftRef, (NativeFn.arrayUnshift, "unshift", 1)) ].all fun p =>
+  match Heap.initial.readObj p.1 with
+  | some o =>
+    (match o.callable with
+     | some (.native n) => n == p.2.1
+     | _ => false)
+      && o.getOwn "name" == some (.prim (.str p.2.2.1))
+      && o.getOwn "length" == some (Value.ofNat p.2.2.2)
+      && o.proto == some functionProtoRef
   | none => false
 
 #guard match Heap.initial.readObj arrayPushRef with

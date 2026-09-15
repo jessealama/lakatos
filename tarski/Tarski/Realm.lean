@@ -57,11 +57,6 @@ the literal against the constants so the two cannot drift apart.
 | 106       | `Function.prototype[@@hasInstance]`                       |
 | 107       | `Object.getOwnPropertySymbols`                            |
 | 108       | `Error.isError`                                          |
-| 109–110   | `%IteratorPrototype%`, `%IteratorPrototype%[@@iterator]` |
-| 111–112   | `%ArrayIteratorPrototype%`, its `next`                    |
-| 113–115   | `Array.prototype.keys`, `values`, `entries`               |
-| 116–117   | `Object.fromEntries`, `Object.groupBy`                    |
-
 | 109       | `String.prototype`, itself a String object of `""`        |
 | 110–112   | `String.fromCharCode`, `String.fromCodePoint`, `String.raw` |
 | 113–143   | `String.prototype.at`, `charAt`, `charCodeAt`, `codePointAt`, `concat`, `endsWith`, `includes`, `indexOf`, `isWellFormed`, `lastIndexOf`, `localeCompare`, `normalize`, `padEnd`, `padStart`, `repeat`, `replace`, `replaceAll`, `slice`, `split`, `startsWith`, `substring`, `toLocaleLowerCase`, `toLocaleUpperCase`, `toLowerCase`, `toString`, `toUpperCase`, `toWellFormed`, `trim`, `trimEnd`, `trimStart`, `valueOf` |
@@ -71,8 +66,11 @@ the literal against the constants so the two cannot drift apart.
 | 151–152   | `Object.fromEntries`, `Object.groupBy`                    |
 | 153–154   | `%StringIteratorPrototype%`, its `next`                   |
 | 155       | `String.prototype[@@iterator]`                            |
+| 156–157   | `Array.from`, `Array.of`                                  |
+| 158–184   | `Array.prototype.at`, `concat`, `copyWithin`, `every`, `fill`, `filter`, `find`, `findIndex`, `flat`, `flatMap`, `forEach`, `includes`, `indexOf`, `lastIndexOf`, `map`, `pop`, `reduce`, `reduceRight`, `reverse`, `shift`, `slice`, `some`, `sort`, `splice`, `toLocaleString`, `toString`, `unshift` |
+| 185       | `get Array[@@species]`                                    |
 
-A hundred and fifty-six objects, then, and thirty-seven cells. The
+A hundred and eighty-six objects, then, and thirty-seven cells. The
 twenty-four global bindings are cells 0–23: the seven `Error`
 constructors, then `Object`, `Array`, `String`, `print`, `$262`,
 `Number`, `Boolean`, `Math`, `NaN`, `Infinity`, `parseFloat`,
@@ -86,8 +84,9 @@ immutable and empty and are never read.
 `Symbol` is the third primitive (`Tarski/Value.lean`), and the thirteen
 well-known symbols are *values* here: `@@toPrimitive`, `@@toStringTag`,
 `@@hasInstance`, and `@@iterator` have their semantics in the evaluator,
-and the other nine wait for the protocols that read them (#390's
-`Array.prototype`).
+and the other nine wait for the protocols that read them. `@@species`
+and `@@isConcatSpreadable` are two of the nine no longer waiting:
+`ArraySpeciesCreate` and `concat` read them (#390).
 
 `%IteratorPrototype%` and `%ArrayIteratorPrototype%` are **unbound
 intrinsics**: nothing in source names either one — `Iterator`, the
@@ -178,7 +177,11 @@ as an object because 163 tests reach `Function.prototype` through it;
 the decoder refuses by name and `callNative` refuses through an alias.
 
 `Array.prototype` is itself an Array exotic object of length 0, as the
-spec has it, which is why `Array.isArray(Array.prototype)` is true.
+spec has it, which is why `Array.isArray(Array.prototype)` is true. It
+carries the whole of 23.1.3 but the four iterator members — `keys`,
+`values`, `entries`, and `@@iterator`, which are #394's — and
+`@@unscopables` (23.1.3.38), which is filed as a follow-up; `Array`
+carries `from`, `isArray`, `of`, and the `@@species` accessor.
 
 **Every property here carries its specified attributes.** `Obj.builtin`
 is the shape 17.1 gives every built-in function — a non-writable,
@@ -616,6 +619,98 @@ def WellKnownSymbol.key (w : WellKnownSymbol) : Key :=
 def WellKnownSymbol.all : List WellKnownSymbol :=
   [ .asyncIterator, .hasInstance, .isConcatSpreadable, .iterator, .«match», .matchAll,
     .replace, .search, .species, .split, .toPrimitive, .toStringTag, .unscopables ]
+/-- `Array.from`. -/
+def arrayFromRef : Ref := 156
+
+/-- `Array.of`. -/
+def arrayOfRef : Ref := 157
+
+/-- `Array.prototype.at`. -/
+def arrayAtRef : Ref := 158
+
+/-- `Array.prototype.concat`. -/
+def arrayConcatRef : Ref := 159
+
+/-- `Array.prototype.copyWithin`. -/
+def arrayCopyWithinRef : Ref := 160
+
+/-- `Array.prototype.every`. -/
+def arrayEveryRef : Ref := 161
+
+/-- `Array.prototype.fill`. -/
+def arrayFillRef : Ref := 162
+
+/-- `Array.prototype.filter`. -/
+def arrayFilterRef : Ref := 163
+
+/-- `Array.prototype.find`. -/
+def arrayFindRef : Ref := 164
+
+/-- `Array.prototype.findIndex`. -/
+def arrayFindIndexRef : Ref := 165
+
+/-- `Array.prototype.flat`. -/
+def arrayFlatRef : Ref := 166
+
+/-- `Array.prototype.flatMap`. -/
+def arrayFlatMapRef : Ref := 167
+
+/-- `Array.prototype.forEach`. -/
+def arrayForEachRef : Ref := 168
+
+/-- `Array.prototype.includes`. -/
+def arrayIncludesRef : Ref := 169
+
+/-- `Array.prototype.indexOf`. -/
+def arrayIndexOfRef : Ref := 170
+
+/-- `Array.prototype.lastIndexOf`. -/
+def arrayLastIndexOfRef : Ref := 171
+
+/-- `Array.prototype.map`. -/
+def arrayMapRef : Ref := 172
+
+/-- `Array.prototype.pop`. -/
+def arrayPopRef : Ref := 173
+
+/-- `Array.prototype.reduce`. -/
+def arrayReduceRef : Ref := 174
+
+/-- `Array.prototype.reduceRight`. -/
+def arrayReduceRightRef : Ref := 175
+
+/-- `Array.prototype.reverse`. -/
+def arrayReverseRef : Ref := 176
+
+/-- `Array.prototype.shift`. -/
+def arrayShiftRef : Ref := 177
+
+/-- `Array.prototype.slice`. -/
+def arraySliceRef : Ref := 178
+
+/-- `Array.prototype.some`. -/
+def arraySomeRef : Ref := 179
+
+/-- `Array.prototype.sort`. -/
+def arraySortRef : Ref := 180
+
+/-- `Array.prototype.splice`. -/
+def arraySpliceRef : Ref := 181
+
+/-- `Array.prototype.toLocaleString`. -/
+def arrayToLocaleStringRef : Ref := 182
+
+/-- `Array.prototype.toString`. -/
+def arrayToStringRef : Ref := 183
+
+/-- `Array.prototype.unshift`. -/
+def arrayUnshiftRef : Ref := 184
+
+/-- `get Array[@@species]` (23.1.2.5), the accessor that answers its
+receiver. It is what makes `ArraySpeciesCreate` build a subclass: a
+`class A extends Array` inherits this getter from `Array`, so reading
+`A[@@species]` answers `A`. -/
+def arraySpeciesGetterRef : Ref := 185
 
 /-- A built-in function object with extra own properties after its
 `length` and `name`: 17.1's shape, which is what makes
@@ -961,23 +1056,58 @@ def Heap.initial : Heap where
        Obj.builtin .objectIs "is" 2,
        -- 19: Object.keys
        Obj.builtin .objectKeys "keys" 1,
-       -- 20: Array.prototype, an array of length 0. The members are in
-       -- 23.1.3's own order, and `@@iterator` is `values` itself
-       -- (23.1.3.40) rather than a second function object.
+       -- 20: Array.prototype, an array of length 0. The whole of 23.1.3
+       -- but `@@unscopables` (#524), in the section's own order, and
+       -- `@@iterator` is `values` itself (23.1.3.40) rather than a
+       -- second function object.
        { proto := some 15,
          properties :=
-           [ ("constructor", Property.method (.obj 21)),
-             ("entries", Property.method (.obj 150)),
-             ("join", Property.method (.obj 23)),
-             ("keys", Property.method (.obj 148)),
-             ("push", Property.method (.obj 22)),
-             ("values", Property.method (.obj 149)),
+           [ (Key.str "at", Property.method (.obj 158)),
+             (Key.str "concat", Property.method (.obj 159)),
+             (Key.str "constructor", Property.method (.obj 21)),
+             (Key.str "copyWithin", Property.method (.obj 160)),
+             (Key.str "entries", Property.method (.obj 150)),
+             (Key.str "every", Property.method (.obj 161)),
+             (Key.str "fill", Property.method (.obj 162)),
+             (Key.str "filter", Property.method (.obj 163)),
+             (Key.str "find", Property.method (.obj 164)),
+             (Key.str "findIndex", Property.method (.obj 165)),
+             (Key.str "flat", Property.method (.obj 166)),
+             (Key.str "flatMap", Property.method (.obj 167)),
+             (Key.str "forEach", Property.method (.obj 168)),
+             (Key.str "includes", Property.method (.obj 169)),
+             (Key.str "indexOf", Property.method (.obj 170)),
+             (Key.str "join", Property.method (.obj 23)),
+             (Key.str "keys", Property.method (.obj 148)),
+             (Key.str "lastIndexOf", Property.method (.obj 171)),
+             (Key.str "map", Property.method (.obj 172)),
+             (Key.str "pop", Property.method (.obj 173)),
+             (Key.str "push", Property.method (.obj 22)),
+             (Key.str "reduce", Property.method (.obj 174)),
+             (Key.str "reduceRight", Property.method (.obj 175)),
+             (Key.str "reverse", Property.method (.obj 176)),
+             (Key.str "shift", Property.method (.obj 177)),
+             (Key.str "slice", Property.method (.obj 178)),
+             (Key.str "some", Property.method (.obj 179)),
+             (Key.str "sort", Property.method (.obj 180)),
+             (Key.str "splice", Property.method (.obj 181)),
+             (Key.str "toLocaleString", Property.method (.obj 182)),
+             (Key.str "toString", Property.method (.obj 183)),
+             (Key.str "unshift", Property.method (.obj 184)),
+             (Key.str "values", Property.method (.obj 149)),
              (WellKnownSymbol.iterator.key, Property.method (.obj 149)) ],
          kind := .array 0 true },
-       -- 21: Array
+       -- 21: Array. `@@species` (23.1.2.5) is an accessor with no
+       -- setter answering its receiver, which is what makes
+       -- `ArraySpeciesCreate` build an `A` for a `class A extends Array`.
        Obj.builtinWith .arrayCtor "Array" 1
          [ ("prototype", Property.constant (.obj 20)),
-           ("isArray", Property.method (.obj 24)) ],
+           ("from", Property.method (.obj 156)),
+           ("isArray", Property.method (.obj 24)),
+           ("of", Property.method (.obj 157)),
+           (WellKnownSymbol.species.key,
+             { slot := .accessor { getter := some (.obj 185) },
+               enumerable := false, configurable := true }) ],
        -- 22: Array.prototype.push
        Obj.builtin .arrayPush "push" 1,
        -- 23: Array.prototype.join
@@ -1456,6 +1586,67 @@ def Heap.initial : Heap where
        -- 154: %StringIteratorPrototype%.next
        Obj.builtin .stringIteratorNext "next" 0,
        -- 155: String.prototype[@@iterator]
-       Obj.builtin .stringProtoIterator "[Symbol.iterator]" 0 ]
+       Obj.builtin .stringProtoIterator "[Symbol.iterator]" 0,
+       -- 156: Array.from
+       Obj.builtin .arrayFrom "from" 1,
+       -- 157: Array.of
+       Obj.builtin .arrayOf "of" 0,
+       -- 158: Array.prototype.at
+       Obj.builtin .arrayAt "at" 1,
+       -- 159: Array.prototype.concat
+       Obj.builtin .arrayConcat "concat" 1,
+       -- 160: Array.prototype.copyWithin
+       Obj.builtin .arrayCopyWithin "copyWithin" 2,
+       -- 161: Array.prototype.every
+       Obj.builtin .arrayEvery "every" 1,
+       -- 162: Array.prototype.fill
+       Obj.builtin .arrayFill "fill" 1,
+       -- 163: Array.prototype.filter
+       Obj.builtin .arrayFilter "filter" 1,
+       -- 164: Array.prototype.find
+       Obj.builtin .arrayFind "find" 1,
+       -- 165: Array.prototype.findIndex
+       Obj.builtin .arrayFindIndex "findIndex" 1,
+       -- 166: Array.prototype.flat
+       Obj.builtin .arrayFlat "flat" 0,
+       -- 167: Array.prototype.flatMap
+       Obj.builtin .arrayFlatMap "flatMap" 1,
+       -- 168: Array.prototype.forEach
+       Obj.builtin .arrayForEach "forEach" 1,
+       -- 169: Array.prototype.includes
+       Obj.builtin .arrayIncludes "includes" 1,
+       -- 170: Array.prototype.indexOf
+       Obj.builtin .arrayIndexOf "indexOf" 1,
+       -- 171: Array.prototype.lastIndexOf
+       Obj.builtin .arrayLastIndexOf "lastIndexOf" 1,
+       -- 172: Array.prototype.map
+       Obj.builtin .arrayMap "map" 1,
+       -- 173: Array.prototype.pop
+       Obj.builtin .arrayPop "pop" 0,
+       -- 174: Array.prototype.reduce
+       Obj.builtin .arrayReduce "reduce" 1,
+       -- 175: Array.prototype.reduceRight
+       Obj.builtin .arrayReduceRight "reduceRight" 1,
+       -- 176: Array.prototype.reverse
+       Obj.builtin .arrayReverse "reverse" 0,
+       -- 177: Array.prototype.shift
+       Obj.builtin .arrayShift "shift" 0,
+       -- 178: Array.prototype.slice
+       Obj.builtin .arraySlice "slice" 2,
+       -- 179: Array.prototype.some
+       Obj.builtin .arraySome "some" 1,
+       -- 180: Array.prototype.sort
+       Obj.builtin .arraySort "sort" 1,
+       -- 181: Array.prototype.splice
+       Obj.builtin .arraySplice "splice" 2,
+       -- 182: Array.prototype.toLocaleString
+       Obj.builtin .arrayToLocaleString "toLocaleString" 0,
+       -- 183: Array.prototype.toString
+       Obj.builtin .arrayToString "toString" 0,
+       -- 184: Array.prototype.unshift
+       Obj.builtin .arrayUnshift "unshift" 1,
+       -- 185: get Array[@@species]. A symbol-keyed accessor's `name` is
+       -- `"get "` and its key's description in brackets (10.2.9).
+       Obj.builtin .arraySpecies "get [Symbol.species]" 0 ]
 
 end Tarski
