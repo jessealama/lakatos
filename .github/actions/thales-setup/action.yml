@@ -1,0 +1,61 @@
+name: thales setup
+description: Lean toolchain, Node, npm, and a restored Lake build for the thales package.
+
+inputs:
+  emit:
+    description: Also build the thales-emit binary.
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Install Lean toolchain
+      uses: leanprover/lean-action@v1
+      with:
+        lake-package-directory: engines/thales
+        # We run our own lake commands below; tell the action not to build/test/lint.
+        auto-config: false
+        build: false
+        test: false
+        lint: false
+        # We manage .lake/build + .lake/packages caching manually below.
+        use-github-cache: false
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v7
+      with:
+        node-version: "24.x"
+        cache: npm
+        cache-dependency-path: package-lock.json
+
+    - name: npm install
+      run: npm ci
+      shell: bash
+
+    - name: Build the front end
+      run: npx tsc -p tsconfig.json
+      shell: bash
+
+    # Restore only. The push-to-main warmer is the single writer; several
+    # jobs saving one key race and all but one fail.
+    - name: Restore Lake build artifacts
+      uses: actions/cache/restore@v6
+      with:
+        path: |
+          engines/thales/.lake/build
+          tarski/.lake/build
+        key: lake-v2-${{ runner.os }}-${{ hashFiles('tarski/lean-toolchain', 'tarski/lakefile.lean', 'engines/thales/lakefile.lean', 'engines/thales/lake-manifest.json') }}
+        restore-keys: |
+          lake-v2-${{ runner.os }}-
+
+    - name: Build
+      run: lake build
+      shell: bash
+      working-directory: engines/thales
+
+    - name: Build thales-emit
+      # A lean_exe is not a default target; the checks that run it ask for it.
+      if: inputs.emit == 'true'
+      run: lake build thales-emit
+      shell: bash
+      working-directory: engines/thales
