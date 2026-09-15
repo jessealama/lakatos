@@ -12,6 +12,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { checker, engineRoot, frontend, repoRoot } from "./harness.js";
+import { shardOf } from "./shard.js";
 
 const { emitModule } = await frontend("emission");
 const { parseVerdicts, runArtifact } = await frontend("run");
@@ -279,7 +280,7 @@ const MEMBER_FIXTURES = [
   `${CONFORMANCE}/inappropriate/math-sqrt-local-alias.ts`,
 ];
 
-const fixtures =
+const allFixtures =
   process.env.LAKATOS_PROVE_E2E === "1"
     ? [
         ...QUICK_FIXTURES,
@@ -312,6 +313,11 @@ check(
   !updating || process.env.LAKATOS_PROVE_E2E === "1",
   "UPDATE_ENVELOPES=1 needs LAKATOS_PROVE_E2E=1: a quick-only regeneration would drop the corpus slices from the store",
 );
+// Regeneration needs the whole manifest — a partial store is an empty store
+// — so the shard selector is inert when updating.
+const fixtures = updating
+  ? allFixtures
+  : shardOf(allFixtures, process.env.LAKATOS_ENVELOPE_SHARD);
 const expectedStore = updating
   ? {}
   : JSON.parse(fs.readFileSync(EXPECTED_FILE, "utf8"));

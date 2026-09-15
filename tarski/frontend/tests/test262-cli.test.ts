@@ -19,7 +19,7 @@ import {
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { main } from "../src/test262/cli.js";
+import { main, parseArgs } from "../src/test262/cli.js";
 import type { Expectations, Summary } from "../src/test262/report.js";
 
 const root = fileURLToPath(new URL("../../..", import.meta.url));
@@ -662,5 +662,128 @@ describe("the committed files", () => {
     expect(document.startsWith("# test262 results\n")).toBe(true);
     expect(document).toContain(pin.commit);
     expect(document).toContain("## Not run and skipped");
+  });
+});
+
+describe("--shard", () => {
+  const slices = [
+    "test/fail",
+    "test/harness-error",
+    "test/not-run",
+    "test/pass",
+    "test/timeout",
+    "test/unsupported",
+  ];
+
+  it("partitions the slices so the three shards together are the whole list", () => {
+    const all = parseArgs([...slices]).slices;
+    const parts = [1, 2, 3].map(
+      (i) => parseArgs([...slices, "--shard", `${i}/3`]).slices,
+    );
+    expect([...parts.flat()].sort()).toEqual([...all].sort());
+  });
+
+  it("gives no two shards the same slice", () => {
+    const parts = [1, 2, 3].map(
+      (i) => parseArgs([...slices, "--shard", `${i}/3`]).slices,
+    );
+    expect(new Set(parts.flat()).size).toBe(parts.flat().length);
+  });
+
+  it("refuses a malformed shard spec", () => {
+    expect(() => parseArgs([...slices, "--shard", "half"])).toThrow(/shard/);
+  });
+
+  it("refuses an out-of-range shard index", () => {
+    expect(() => parseArgs([...slices, "--shard", "4/3"])).toThrow(/shard/);
+  });
+
+  it("refuses a shard count of zero", () => {
+    expect(() => parseArgs([...slices, "--shard", "1/0"])).toThrow(
+      /at least 1/,
+    );
+  });
+});
+
+describe("--merge", () => {
+  const scratch = mkdtempSync(path.join(tmpdir(), "test262-merge-"));
+  afterAll(() => rmSync(scratch, { recursive: true, force: true }));
+
+  // The six slices of the fake tree, run whole and run in three shards,
+  // must produce the same table: that equality is what lets a sharded job
+  // be held to the committed ratchet.
+  const SLICES = [
+    "test/fail",
+    "test/harness-error",
+    "test/not-run",
+    "test/pass",
+    "test/timeout",
+    "test/unsupported",
+  ];
+  const over = (...extra: string[]): readonly string[] => [
+    ...SLICES,
+    "--test262",
+    TREE,
+    "--binary",
+    FAKE,
+    "--timeout",
+    "2000",
+    ...extra,
+  ];
+
+  // Four runs of the tree, paid once: the timeout slice costs its own
+  // timeout every time, and the cases below only merge tables, which runs
+  // nothing.
+  const whole = path.join(scratch, "whole.json");
+  let parts: string[];
+  beforeAll(() => {
+    expect(invoke(over("--write", whole)).status).toBe(0);
+    parts = [1, 2, 3].map((i) => {
+      const file = path.join(scratch, `shard-${i}.json`);
+      expect(invoke(over("--shard", `${i}/3`, "--write", file)).status).toBe(0);
+      return file;
+    });
+  }, 60_000);
+
+  it("three shards merged equal the unsharded table", () => {
+    const merged = path.join(scratch, "merged.json");
+    const run = invoke([
+      ...parts.flatMap((f) => ["--merge", f]),
+      "--write",
+      merged,
+    ]);
+    expect(run.status).toBe(0);
+    expect(readFileSync(merged, "utf8")).toBe(readFileSync(whole, "utf8"));
+  });
+
+  it("checks the union against the expectations", () => {
+    const run = invoke([
+      ...parts.flatMap((f) => ["--merge", f]),
+      "--check",
+      whole,
+    ]);
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("expectations match");
+  });
+
+  // A shard's own table is missing every directory it was never given, and
+  // the comparison runs in both directions, so this must be refused rather
+  // than silently pass a thinner ratchet.
+  it("one shard alone does not satisfy the whole table", () => {
+    const run = invoke(["--merge", parts[0]!, "--check", whole]);
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain("expected but not run");
+  });
+
+  it("refuses two shards that count the same directory", () => {
+    const run = invoke(["--merge", parts[0]!, "--merge", parts[0]!]);
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain("counted by more than one shard");
+  });
+
+  it("refuses --shard together with --merge", () => {
+    expect(() => parseArgs(["--merge", "a.json", "--shard", "1/3"])).toThrow(
+      /different runs/,
+    );
   });
 });

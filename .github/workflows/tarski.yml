@@ -245,12 +245,15 @@ jobs:
           test "$out" = "true" || { echo "expected true, got $out"; exit 1; }
 
   test262-slice:
-    name: test262 slice
+    name: test262 slice ${{ matrix.shard }}/3
     if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
     runs-on: ubuntu-latest
-    # The slice is this workflow's long pole and it grew with #390; the 30
-    # minutes its own step takes sit inside this budget alongside the setup.
-    timeout-minutes: 45
+    timeout-minutes: 30
+    strategy:
+      # Every shard reports: one failing shard must not hide another's.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -285,10 +288,24 @@ jobs:
         # with every other directory's `dstr` subtree behind them, and
         # #390's `Array` adds 2,958 whose callbacks are evaluator calls
         # of their own. Eight minutes locally, against three before #390.
-        timeout-minutes: 30
+        # A shard cannot be checked against the committed table on its
+        # own: the expectations are per directory and compared in both
+        # directions, so every directory this shard was not given reads as
+        # "expected but not run". Each shard writes its counts and the
+        # aggregator checks their union.
+        timeout-minutes: 20
         run: |
           node ../dist/tarski/frontend/src/test262/cli.js \
-            --slice-file test262/slice.txt --check test262/expected.json
+            --slice-file test262/slice.txt \
+            --shard ${{ matrix.shard }}/3 \
+            --write "shard-${{ matrix.shard }}.json"
+
+      - name: Upload this shard's counts
+        uses: actions/upload-artifact@v4
+        with:
+          name: test262-shard-${{ matrix.shard }}
+          path: tarski/shard-${{ matrix.shard }}.json
+          if-no-files-found: error
 
   runner-e2e:
     name: Runner and exe end to end
@@ -366,6 +383,49 @@ jobs:
     needs: [lean-tests, test262-slice, runner-e2e]
     runs-on: ubuntu-latest
     steps:
+      # The ratchet is compared once, over the union of the shards: the
+      # committed table is per directory, and the slice file names disjoint
+      # subtrees, so every directory belongs to exactly one shard and the
+      # union is the whole table. A directory counted twice is refused.
+      - name: Checkout
+        if: needs.test262-slice.result == 'success'
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        if: needs.test262-slice.result == 'success'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install npm dependencies
+        if: needs.test262-slice.result == 'success'
+        working-directory: .
+        run: npm ci
+
+      - name: Build the TypeScript
+        if: needs.test262-slice.result == 'success'
+        working-directory: .
+        run: npm run build
+
+      - name: Download every shard's counts
+        if: needs.test262-slice.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: test262-shard-*
+          path: tarski/shards
+          merge-multiple: true
+
+      - name: Check the union against the expectations
+        if: needs.test262-slice.result == 'success'
+        run: |
+          node ../dist/tarski/frontend/src/test262/cli.js \
+            --merge shards/shard-1.json \
+            --merge shards/shard-2.json \
+            --merge shards/shard-3.json \
+            --check test262/expected.json
+
       # `needs` alone does not fail a dependent job when a dependency is
       # cancelled or skipped, so a cancelled job would report this required
       # check green. Assert each result explicitly.

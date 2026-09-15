@@ -76,10 +76,15 @@ jobs:
         run: npm run check:verdict-channel
 
   envelopes:
-    name: Envelope expectations
+    name: Envelope expectations ${{ matrix.shard }}/3
     if: github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      # Every shard reports: one failing shard must not hide another's.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -92,6 +97,7 @@ jobs:
         run: npm run check:envelopes
         env:
           LAKATOS_PROVE_E2E: "1"
+          LAKATOS_ENVELOPE_SHARD: "${{ matrix.shard }}/3"
 
   prove-e2e:
     name: Prove end to end
@@ -110,10 +116,37 @@ jobs:
         # vitest positionals are substring filters (tests/e2e.test.ts also
         # matches engines/pabst/tests/e2e.test.ts); serialized because
         # parallel forks would race lake builds in the same checkout.
-        run: npx vitest run --no-file-parallelism --exclude "engines/**" tests/e2e.test.ts tests/verdict-corpus.test.ts
+        run: npx vitest run --no-file-parallelism --exclude "engines/**" tests/e2e.test.ts
         working-directory: .
         env:
           LAKATOS_PROVE_E2E: "1"
+
+  verdict-corpus:
+    name: Verdict corpus ${{ matrix.shard }}/3
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - uses: ./.github/actions/thales-setup
+        with:
+          emit: "true"
+
+      # A shard is still one prove invocation, so it is still one Lean
+      # build for everything it grades; the fixed cost of an invocation is
+      # a second against a corpus whose marginal cost is minutes.
+      - name: Verdict corpus
+        run: npx vitest run --no-file-parallelism --exclude "engines/**" tests/verdict-corpus.test.ts
+        working-directory: .
+        env:
+          LAKATOS_PROVE_E2E: "1"
+          LAKATOS_CORPUS_SHARD: "${{ matrix.shard }}/3"
 
   warm-cache:
     # A push to main gates nothing: every commit arrives through the merge
@@ -148,7 +181,7 @@ jobs:
     # context that never reports blocks every pull request.
     name: Build + verdict channel
     if: always() && github.event_name != 'push'
-    needs: [lean-tests, verdict-channel, envelopes, prove-e2e]
+    needs: [lean-tests, verdict-channel, envelopes, prove-e2e, verdict-corpus]
     runs-on: ubuntu-latest
     steps:
       # `needs` alone does not fail a dependent job when a dependency is

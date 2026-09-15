@@ -58,8 +58,10 @@ import { runOne, type Outcome } from "./run.js";
 import { headOf, setupTest262, type Exec, type Pin } from "./setup.js";
 
 /** What the command line asked for. */
-interface Options {
+export interface Options {
   slices: string[];
+  /** Tables to union instead of running anything; see `--merge`. */
+  merge: string[];
   test262?: string;
   binary?: string;
   timeout: number;
@@ -75,6 +77,8 @@ interface Options {
 class UsageError extends Error {}
 
 const FLAGS = [
+  "--shard",
+  "--merge",
   "--test262",
   "--binary",
   "--timeout",
@@ -101,9 +105,25 @@ function readSliceFile(file: string): string[] {
     .filter((line) => line.length > 0 && !line.startsWith("#"));
 }
 
-function parseArgs(argv: readonly string[]): Options {
+/** Round-robin rather than contiguous blocks: the slice file is grouped by
+ * area, and contiguous blocks would put a whole area in one shard. */
+function shardOf(items: readonly string[], spec: string): string[] {
+  const m = /^(\d+)\/(\d+)$/.exec(spec);
+  if (m === null)
+    throw new UsageError(`--shard must look like "2/3", got: ${spec}`);
+  const index = Number(m[1]);
+  const count = Number(m[2]);
+  if (count < 1) throw new UsageError(`--shard count must be at least 1`);
+  if (index < 1 || index > count)
+    throw new UsageError(`--shard index out of range for ${count} shards`);
+  return items.filter((_, i) => i % count === index - 1);
+}
+
+export function parseArgs(argv: readonly string[]): Options {
+  let shard: string | undefined;
   const options: Options = {
     slices: [],
+    merge: [],
     timeout: 10_000,
     // No budget until one is asked for: a slice small enough to name by
     // hand is one nobody wants truncated.
@@ -126,7 +146,9 @@ function parseArgs(argv: readonly string[]): Options {
     const value = argv[i + 1];
     if (value === undefined) throw new UsageError(`${arg} needs a value`);
     i++;
-    if (arg === "--test262") options.test262 = value;
+    if (arg === "--shard") shard = value;
+    else if (arg === "--merge") options.merge.push(value);
+    else if (arg === "--test262") options.test262 = value;
     else if (arg === "--binary") options.binary = value;
     else if (arg === "--check") options.check = value;
     else if (arg === "--write") options.write = value;
@@ -148,8 +170,16 @@ function parseArgs(argv: readonly string[]): Options {
       options.timeout = ms;
     }
   }
-  if (options.slices.length === 0)
+  // A merge run reads tables and runs nothing, so it needs no slices.
+  if (options.merge.length === 0 && options.slices.length === 0)
     throw new UsageError("at least one slice is needed");
+  if (shard !== undefined) {
+    if (options.merge.length > 0)
+      throw new UsageError("--shard and --merge are different runs");
+    // The slice file names disjoint subtrees, so a directory in the table
+    // belongs to exactly one shard and the union is the whole table.
+    options.slices = shardOf(options.slices, shard);
+  }
   return options;
 }
 
@@ -240,13 +270,56 @@ function runSlices(
   return results;
 }
 
-/** `--write`'s serialisation: prettier-clean, so the file can be committed. */
+/** `--write`'s serialisation: prettier-clean, so the file can be committed.
+ * Sorted by directory, so a table written by a merge of shards is byte for
+ * byte the one an unsharded run writes, whatever order the shards ran in. */
 function serialise(directories: Expectations["directories"]): string {
-  return `${JSON.stringify({ directories }, null, 2)}\n`;
+  const sorted = Object.fromEntries(
+    Object.keys(directories)
+      .sort()
+      .map((directory) => [directory, directories[directory]]),
+  );
+  return `${JSON.stringify({ directories: sorted }, null, 2)}\n`;
 }
 
 function readPin(file: string): Pin {
   return JSON.parse(readFileSync(file, "utf8")) as Pin;
+}
+
+/** Union the shard tables named by `--merge` and hold the result to
+ * `--check`. The expectations are per directory and compared in both
+ * directions, so a shard's own table always reads as missing the
+ * directories it was never given; only the union can be checked. The
+ * slices a shard runs are disjoint subtrees, so no directory is written
+ * by two shards and a collision means the shards overlapped. */
+function mergeAndCheck(options: Options): number {
+  const counts: Expectations["directories"] = {};
+  for (const file of options.merge) {
+    const table = JSON.parse(readFileSync(file, "utf8")) as Expectations;
+    for (const [directory, got] of Object.entries(table.directories)) {
+      if (counts[directory] !== undefined) {
+        console.error(`${directory}: counted by more than one shard`);
+        return 1;
+      }
+      counts[directory] = got;
+    }
+  }
+  if (options.write !== undefined) {
+    writeFileSync(options.write, serialise(counts));
+    console.log(`wrote ${options.write}`);
+  }
+  if (options.check !== undefined) {
+    const expected = JSON.parse(
+      readFileSync(options.check, "utf8"),
+    ) as Expectations;
+    const diff = diffExpectations(counts, expected.directories);
+    if (diff.length > 0) {
+      for (const line of diff) console.error(line);
+      return 1;
+    }
+    console.log(`expectations match ${options.check}`);
+  }
+  return 0;
 }
 
 export function main(argv: readonly string[]): number {
@@ -291,9 +364,12 @@ export function main(argv: readonly string[]): number {
       "       [--binary <path>] [--timeout <ms>] [--budget <ms>] [--summary]",
     );
     console.error("       [--check <expected.json>] [--write <expected.json>]");
+    console.error("       [--shard <i/n>] [--merge <table.json>]...");
     console.error("       [--markdown <file>] [--json <file>]");
     return 2;
   }
+
+  if (options.merge.length > 0) return mergeAndCheck(options);
 
   const checkout = options.test262 ?? defaultCheckout(root);
   if (!existsSync(path.join(checkout, "harness", "sta.js"))) {
