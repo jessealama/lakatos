@@ -37,7 +37,9 @@ jobs:
   build-and-test:
     name: Build + verdict channel
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The envelope store and the prove e2e each run the real prover over a
+    # corpus; together they are most of the job and they grow with it.
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v7
