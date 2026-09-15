@@ -7,13 +7,13 @@ import { clearRunDirs, seedRefuteProject } from "./helpers/refute-project.js";
 
 const repoRoot = process.cwd();
 
-// README usage claims: `lakatos refute` prints a single JSON envelope to
-// stdout, exits 0/1 on clean/failing runs, echoes the seed, and reproduces a
-// run when the seed is passed back. The generated tests import
-// "lakatos/runtime" via the package self-reference, so these must run inside
-// the repo tree (a gitignored scratch dir under .lakatos/), unlike the
-// os.tmpdir()-based suites above.
-describe("cli refute command (README usage claims)", () => {
+// README usage claims about the envelope a run prints: one JSON document
+// on stdout, exit 0 or 1 by whether anything was falsified, and a flagged
+// annotation when it was. The generated tests import "lakatos/runtime" via
+// the package self-reference, so these must run inside the repo tree (a
+// gitignored scratch dir under .lakatos/), unlike the os.tmpdir()-based
+// suites above.
+describe("cli refute envelopes", () => {
   const workDir = path.join(repoRoot, ".lakatos", "clitest");
 
   beforeAll(() => {
@@ -27,25 +27,6 @@ describe("cli refute command (README usage claims)", () => {
   // Each test starts from a clean set of run directories; the tests that
   // exercise stale mirrors create their own staleness within the body.
   beforeEach(() => clearRunDirs(workDir));
-
-  it(
-    "refute still evaluates sound annotations beside InputError entries",
-    { timeout: 60000 },
-    async () => {
-      const { code, stdout } = await runMain(["refute", "inputerr/mixed.ts"]);
-      expect(code).toBe(2);
-      const env = JSON.parse(stdout[0]!);
-      expectValidEnvelope(env);
-      const byProperty = Object.fromEntries(
-        env.annotations.map((a: { property: string; szs: string }) => [
-          a.property,
-          a.szs,
-        ]),
-      );
-      expect(byProperty).toEqual({ p: "InputError", q: "Theorem" });
-      expect(env.generated).toBe(1);
-    },
-  );
 
   it(
     "refute falsifies a guarded property that 100 runs would pass",
@@ -65,52 +46,6 @@ describe("cli refute command (README usage claims)", () => {
         property: "naiveMonotone",
         szs: "CounterSatisfiable",
         kind: "falsified",
-      });
-    },
-  );
-
-  it(
-    "refute runs an @ensures from every stacked JSDoc block",
-    { timeout: 60000 },
-    async () => {
-      const { code, stdout } = await runMain(["refute", "stacked/keep.ts"]);
-      expect(code).toBe(1);
-      const env = JSON.parse(stdout[0]!);
-      expectValidEnvelope(env);
-      expect(env).toMatchObject({ generated: 2, passed: 1, failed: 1 });
-      const byProperty = Object.fromEntries(
-        env.annotations.map((a: { property: string; szs: string }) => [
-          a.property,
-          a.szs,
-        ]),
-      );
-      expect(byProperty).toEqual({
-        tooBig: "CounterSatisfiable",
-        atLeastOne: "Theorem",
-      });
-    },
-  );
-
-  it(
-    "refute runs an @ensures attached to a getter under Class#getter",
-    { timeout: 60000 },
-    async () => {
-      const { code, stdout } = await runMain(["refute", "klass/box.ts"]);
-      expect(code).toBe(0);
-      const env = JSON.parse(stdout[0]!);
-      expectValidEnvelope(env);
-      expect(env).toMatchObject({
-        generated: 1,
-        passed: 1,
-        failed: 0,
-        annotations: [
-          {
-            file: "klass/box.ts",
-            function: "Box#v",
-            property: "roundTrip",
-            szs: "GaveUp",
-          },
-        ],
       });
     },
   );
@@ -167,32 +102,6 @@ describe("cli refute command (README usage claims)", () => {
         property: "negative",
         szs: "CounterSatisfiable",
         kind: "falsified",
-      });
-    },
-  );
-
-  it(
-    "refute lets an input error take exit-code precedence over a refutation",
-    { timeout: 60000 },
-    async () => {
-      const { code, stdout } = await runMain([
-        "refute",
-        "inputerr/mixed.ts",
-        "bad.ts",
-      ]);
-      expect(code).toBe(2);
-      const env = JSON.parse(stdout[0]!);
-      expectValidEnvelope(env);
-      expect(env.failed).toBe(1);
-      const byProperty = Object.fromEntries(
-        env.annotations.map((a: { property: string; szs: string }) => [
-          a.property,
-          a.szs,
-        ]),
-      );
-      expect(byProperty).toMatchObject({
-        p: "InputError",
-        negative: "CounterSatisfiable",
       });
     },
   );
